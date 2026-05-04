@@ -103,7 +103,8 @@ interface Utterance {
 }
 
 type SpeechAct = 
-  | "directive"          // Dodo issues the original task
+  // Substantive acts — issued by domain agents
+  | "directive"          // Dodo relays the original task to the team
   | "story"              // Alice generates user story
   | "question"           // Anyone seeking clarification
   | "ticket"             // Rabbit decomposes
@@ -116,9 +117,15 @@ type SpeechAct =
   | "observation"        // Dormouse reports from production
   | "reframe"            // Anyone changing the question
   | "deference"          // Acknowledging another agent's domain
+  
+  // Procedural acts — issued primarily by the Dodo
+  | "nudge"              // Minimum-force intervention surfacing a stuck state
+  | "composition"        // Publishing a coherent resolution from multi-domain proposals
+  | "escalation"         // Structured handoff to human review with suggested resolution
+  | "acknowledgment"     // Thread state transition: quiescence, completion, abandonment
 ```
 
-The `speech_act` typing is doing identity work — different characters have different distributions over which acts they perform. The Cat almost never issues `directive` or `ticket`; he issues `proposal`, `question`, and `reframe`. The Hatter's `test_scenario` events are his characteristic move. This becomes visible as a behavioral signature in logs.
+The `speech_act` typing is doing identity work — different characters have different distributions over which acts they perform. The Cat almost never issues `directive` or `ticket`; he issues `proposal`, `question`, and `reframe`. The Hatter's `test_scenario` events are his characteristic move. The Dodo issues only procedural acts — `nudge`, `composition`, `escalation`, `acknowledgment`, and the relayed `directive` — never substantive ones. This split between substantive (domain) and procedural (orchestration) speech acts is load-bearing: it prevents the orchestrator from drifting into domain content and is a primary check against the centralization failure mode. Speech-act distributions become a behavioral signature in logs, and signature drift is itself a diagnostic.
 
 ---
 
