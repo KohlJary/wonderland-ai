@@ -141,8 +141,9 @@
       {
         "id": "T6",
         "title": "Anthropic client wrapper with cache breakpoints",
-        "status": "pending",
-        "details": "src/wonderland/llm.py \u2014 thin wrapper around anthropic SDK. complete(messages, system, cache_breakpoints) -> response. Default model claude-haiku-4-5-20251001. Token accounting hook (callback per call). Cache_control inserted at the breakpoints we pass. Tests mock the SDK; one optional smoke test gated by env var."
+        "status": "done",
+        "details": "src/wonderland/llm.py \u2014 thin wrapper around anthropic SDK. complete(messages, system, cache_breakpoints) -> response. Default model claude-haiku-4-5-20251001. Token accounting hook (callback per call). Cache_control inserted at the breakpoints we pass. Tests mock the SDK; one optional smoke test gated by env var.",
+        "resolution": "src/wonderland/llm.py \u2014 LLMClient wrapping anthropic.AsyncAnthropic. Default model claude-haiku-4-5-20251001 per D-005; max_tokens default 4096. complete(*, system, messages, max_tokens, **extra) returns CompletionResult(text, stop_reason, usage, raw). System parts are list[str | CachedBlock]: CachedBlock items become {type:'text', text:..., cache_control:{type:'ephemeral'}} blocks for the Anthropic prompt cache; plain strs become uncached text blocks. The Anthropic API caches every prefix up to the rightmost cached block, so two CachedBlocks (constitution + relationships) means both prefixes are individually cacheable. on_token_usage callback fires after every successful call with TokenUsage(input/output/cache_creation/cache_read tokens) \u2014 wired this way so the eval harness in P7 gets per-request cost telemetry without the agent loop needing to know about it. Anthropic client lazily constructed if not injected (no API-key requirement at LLMClient instantiation). 15 mocked tests + 1 env-gated live smoke (WONDERLAND_LLM_SMOKE=1 + ANTHROPIC_API_KEY). 109 total pass; ruff clean."
       },
       {
         "id": "T7",

@@ -15,6 +15,14 @@ from wonderland.identity import (
     load_constitution,
     parse_constitution_header,
 )
+from wonderland.llm import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_MODEL,
+    CachedBlock,
+    CompletionResult,
+    LLMClient,
+    TokenUsage,
+)
 from wonderland.memory import EpisodicStore
 from wonderland.utterance import (
     PROCEDURAL_ACTS,
@@ -33,22 +41,28 @@ from wonderland.utterance import (
 __version__ = "0.0.1"
 
 __all__ = [
+    "DEFAULT_MAX_TOKENS",
+    "DEFAULT_MODEL",
     "DEFAULT_STREAM",
     "PROCEDURAL_ACTS",
     "SUBSTANTIVE_ACTS",
     "AffectVector",
     "AgentIdentity",
     "Artifact",
+    "CachedBlock",
     "Caucus",
+    "CompletionResult",
     "ConstitutionHeader",
     "ConstitutionParseError",
     "EngagementPolicy",
     "EpisodicStore",
     "Identity",
     "InMemoryCaucus",
+    "LLMClient",
     "RedisCaucus",
     "SpeechAct",
     "Stance",
+    "TokenUsage",
     "Utterance",
     "UtteranceContent",
     "__version__",
