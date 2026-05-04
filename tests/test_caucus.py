@@ -173,10 +173,28 @@ def test_inmemory_satisfies_caucus_protocol() -> None:
 
 
 REDIS_URL = os.environ.get("WONDERLAND_REDIS_URL")
+
+try:
+    import redis.asyncio  # noqa: F401
+
+    REDIS_INSTALLED = True
+except ImportError:
+    REDIS_INSTALLED = False
+
 redis_required = pytest.mark.skipif(
-    REDIS_URL is None,
-    reason="set WONDERLAND_REDIS_URL=redis://localhost:6379 to run Redis tests",
+    REDIS_URL is None or not REDIS_INSTALLED,
+    reason="set WONDERLAND_REDIS_URL and install with --extra redis (or --extra dev)",
 )
+
+
+def test_redis_caucus_raises_helpfully_when_redis_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If the redis package isn't installed, RedisCaucus construction fails with a hint."""
+    from wonderland import RedisCaucus
+    from wonderland import caucus as caucus_module
+
+    monkeypatch.setattr(caucus_module, "_REDIS_AVAILABLE", False)
+    with pytest.raises(ImportError, match="wonderland\\[redis\\]"):
+        RedisCaucus(client=object())  # type: ignore[arg-type]
 
 
 @redis_required

@@ -10,7 +10,8 @@ Two implementations land here:
 - ``RedisCaucus`` — production. One stream per project, consumer groups
   per agent so each agent can keep its own position. Filtering by
   thread_id and interests happens client-side after deserialization;
-  the bus stays generic and serializes the spec faithfully.
+  the bus stays generic and serializes the spec faithfully. Requires
+  the optional ``redis`` extra (``pip install 'wonderland[redis]'``).
 - ``InMemoryCaucus`` — pure-asyncio fan-out for unit tests. Same
   interface, no infrastructure required.
 
@@ -29,6 +30,13 @@ from pydantic import ValidationError
 
 from wonderland.utterance import SpeechAct, Utterance
 
+try:
+    import redis.exceptions as _redis_exc
+
+    _REDIS_AVAILABLE = True
+except ImportError:
+    _REDIS_AVAILABLE = False
+
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
@@ -36,6 +44,10 @@ if TYPE_CHECKING:
 DEFAULT_STREAM = "wonderland:utterances"
 _DATA_FIELD = "data"
 _ALL_ACTS: frozenset[SpeechAct] = frozenset(SpeechAct)
+_REDIS_INSTALL_HINT = (
+    "RedisCaucus requires the redis package. Install with: "
+    "pip install 'wonderland[redis]' (or `uv sync --extra redis`)."
+)
 
 
 class Caucus(Protocol):
@@ -80,6 +92,8 @@ class RedisCaucus:
     """
 
     def __init__(self, client: Redis, *, stream: str = DEFAULT_STREAM) -> None:
+        if not _REDIS_AVAILABLE:
+            raise ImportError(_REDIS_INSTALL_HINT)
         self._client = client
         self._stream = stream
 
@@ -91,10 +105,8 @@ class RedisCaucus:
         return _coerce_str(entry_id)
 
     async def _ensure_group(self, agent_name: str, *, from_beginning: bool) -> None:
-        # `redis.exceptions.ResponseError` raised with "BUSYGROUP" message when
-        # the group already exists — that's the desired idempotent outcome.
-        from redis.exceptions import ResponseError
-
+        # ResponseError with a "BUSYGROUP" message means the group already
+        # exists — the desired idempotent outcome.
         try:
             await self._client.xgroup_create(
                 name=self._stream,
@@ -102,7 +114,7 @@ class RedisCaucus:
                 id="0" if from_beginning else "$",
                 mkstream=True,
             )
-        except ResponseError as exc:
+        except _redis_exc.ResponseError as exc:
             if "BUSYGROUP" not in str(exc):
                 raise
 

@@ -21,17 +21,20 @@ classifiers = [
 ]
 dependencies = [
     "anthropic>=0.40",
-    "redis>=5.2",
     "pydantic>=2.10",
     "python-ulid>=3.0",
     "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]
+redis = [
+    "redis>=5.2",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
+    "redis>=5.2",  # full test coverage includes the Redis path
 ]
 
 [tool.hatch.build.targets.wheel]
