@@ -24,9 +24,11 @@ from wonderland import (
 # deliberately excluded — it is a relational artifact, not a character.
 CHARACTERS = [
     "alice",
+    "caterpillar",
     "cheshire_cat",
     "dodo",
     "mad_hatter",
+    "queen_of_hearts",
     "tweedledee",
     "tweedledum",
     "white_rabbit",
