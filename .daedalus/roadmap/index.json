@@ -379,6 +379,16 @@
       "status": "backlog",
       "created_at": "2026-05-04T20:46:00.665930",
       "created_by": "daedalus"
+    },
+    {
+      "id": "460b5ea9-3db7-4e89-b701-4690e6438988",
+      "title": "Cost analysis: Haiku-no-cache vs Sonnet-with-cache",
+      "description": "Once the full agent workflow is running across showcases (P6), instrument and compare per-directive token costs for: (a) current default \u2014 Haiku 4.5 with cache_control markers that don't fire below ~4096 tokens; (b) Sonnet 4.6 which caches at ~2000 tokens and gives 0.10x reads. Anthropic pricing \u2014 Haiku ~$1/M input, Sonnet ~$3/M. Cached Sonnet wins per-call but uncached Haiku may win per-directive depending on cache-hit rate, which depends on average turns-per-thread. Decide based on real numbers, not intuition. See D-005 follow-up for the measured Haiku thresholds.",
+      "priority": "P3",
+      "item_type": "task",
+      "status": "backlog",
+      "created_at": "2026-05-04T22:29:48.150963",
+      "created_by": "daedalus"
     }
   ],
   "version": 1
