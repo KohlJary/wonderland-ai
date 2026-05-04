@@ -1,5 +1,6 @@
 """Wonderland — an identity-native multi-agent development system."""
 
+from wonderland.agent import Context, WonderlandAgent
 from wonderland.caucus import (
     DEFAULT_STREAM,
     Caucus,
@@ -63,6 +64,7 @@ __all__ = [
     "CompletionResult",
     "ConstitutionHeader",
     "ConstitutionParseError",
+    "Context",
     "EngagementPolicy",
     "EpisodicStore",
     "Identity",
@@ -74,6 +76,7 @@ __all__ = [
     "TokenUsage",
     "Utterance",
     "UtteranceContent",
+    "WonderlandAgent",
     "WonderlandConfig",
     "__version__",
     "config_dir",
