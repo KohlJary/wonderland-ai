@@ -25,6 +25,29 @@ pip install 'wonderland[redis]' # adds RedisCaucus
 `RedisCaucus` requires the `redis` extra; constructing one without it raises
 an `ImportError` with an install hint.
 
+## Configuration
+
+Wonderland reads user-level config (API keys, model overrides) from a
+JSON file at the platform-appropriate location:
+
+| OS      | Path                                                        |
+|---------|-------------------------------------------------------------|
+| Linux   | `~/.config/wonderland/config.json` (honors `XDG_CONFIG_HOME`) |
+| macOS   | `~/Library/Application Support/wonderland/config.json`      |
+| Windows | `%APPDATA%\wonderland\config.json`                          |
+
+```json
+{
+  "anthropic": {
+    "api_key": "sk-ant-...",
+    "model": "claude-haiku-4-5-20251001"
+  }
+}
+```
+
+API key resolution order: explicit constructor arg → `ANTHROPIC_API_KEY`
+env var → config file. The env var wins if set.
+
 ## Development
 
 ```bash

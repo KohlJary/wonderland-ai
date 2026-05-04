@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -268,6 +269,82 @@ async def test_missing_cache_fields_default_to_zero() -> None:
     )
     assert result.usage.cache_creation_input_tokens == 0
     assert result.usage.cache_read_input_tokens == 0
+
+
+# ---------- API key resolution ----------
+
+
+def test_lazy_client_uses_env_var_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If ANTHROPIC_API_KEY is set, the lazily-constructed client gets that key."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-from-env")
+    captured: dict[str, object] = {}
+
+    class FakeAnthropic:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("anthropic.AsyncAnthropic", FakeAnthropic)
+    llm = LLMClient()
+    _ = llm.client  # trigger lazy construction
+    assert captured == {"api_key": "sk-ant-from-env"}
+
+
+def test_lazy_client_falls_back_to_config_when_env_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When env var is unset, the user config file is consulted."""
+    from wonderland import AnthropicConfig, WonderlandConfig, save_config
+    from wonderland import llm as llm_module
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    config_file = tmp_path / "config.json"
+    save_config(
+        WonderlandConfig(anthropic=AnthropicConfig(api_key="sk-ant-from-config")),
+        path=config_file,
+    )
+    monkeypatch.setattr(
+        llm_module,
+        "load_config",
+        lambda: WonderlandConfig(
+            anthropic=AnthropicConfig(api_key="sk-ant-from-config"),
+        ),
+    )
+
+    captured: dict[str, object] = {}
+
+    class FakeAnthropic:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("anthropic.AsyncAnthropic", FakeAnthropic)
+    llm = LLMClient()
+    _ = llm.client
+    assert captured == {"api_key": "sk-ant-from-config"}
+
+
+def test_lazy_client_lets_sdk_raise_when_neither_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If both env and config lack a key, no api_key kwarg is passed — the SDK
+    raises with its own helpful message on first use."""
+    from wonderland import AnthropicConfig, WonderlandConfig
+    from wonderland import llm as llm_module
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(
+        llm_module, "load_config", lambda: WonderlandConfig(anthropic=AnthropicConfig())
+    )
+
+    captured: dict[str, object] = {}
+
+    class FakeAnthropic:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("anthropic.AsyncAnthropic", FakeAnthropic)
+    llm = LLMClient()
+    _ = llm.client
+    assert captured == {}
 
 
 # ---------- live smoke test (opt-in) ----------

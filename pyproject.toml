@@ -24,6 +24,7 @@ dependencies = [
     "pydantic>=2.10",
     "python-ulid>=3.0",
     "aiosqlite>=0.20",
+    "platformdirs>=4.0",
 ]
 
 [project.optional-dependencies]

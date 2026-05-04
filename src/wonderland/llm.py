@@ -21,13 +21,21 @@ the constitution+relationships prefix are both cacheable.
 A sync ``on_token_usage`` callback fires after every call so an external
 budget tracker can see what each request cost — input tokens, output
 tokens, cache creation, cache reads. Useful for the eval harness in P7.
+
+API key resolution when no client is injected: ``ANTHROPIC_API_KEY``
+environment variable, then ``<config_dir>/config.json`` (see
+``wonderland.config``). The Anthropic SDK raises with a helpful message
+if neither is set.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from wonderland.config import load_config
 
 if TYPE_CHECKING:
     from anthropic import AsyncAnthropic
@@ -68,6 +76,17 @@ class CompletionResult:
 SystemPart = str | CachedBlock
 Message = dict[str, Any]
 TokenUsageCallback = Callable[[TokenUsage], None]
+
+
+def _api_key_from_config() -> str | None:
+    """Read the Anthropic API key from the user config file, if present."""
+    try:
+        return load_config().anthropic.api_key
+    except (OSError, ValueError):
+        # Missing file is handled by load_config returning defaults; ValueError
+        # covers JSONDecodeError. Either way, fall through to letting the
+        # Anthropic SDK raise its own helpful "no key" error on first use.
+        return None
 
 
 def _build_system_blocks(parts: list[SystemPart]) -> list[dict[str, Any]]:
@@ -147,7 +166,8 @@ class LLMClient:
         if self._client is None:
             from anthropic import AsyncAnthropic
 
-            self._client = AsyncAnthropic()
+            api_key = os.environ.get("ANTHROPIC_API_KEY") or _api_key_from_config()
+            self._client = AsyncAnthropic(api_key=api_key) if api_key else AsyncAnthropic()
         return self._client
 
     async def complete(

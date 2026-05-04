@@ -6,6 +6,14 @@ from wonderland.caucus import (
     InMemoryCaucus,
     RedisCaucus,
 )
+from wonderland.config import (
+    AnthropicConfig,
+    WonderlandConfig,
+    config_dir,
+    config_path,
+    load_config,
+    save_config,
+)
 from wonderland.identity import (
     ConstitutionHeader,
     ConstitutionParseError,
@@ -48,6 +56,7 @@ __all__ = [
     "SUBSTANTIVE_ACTS",
     "AffectVector",
     "AgentIdentity",
+    "AnthropicConfig",
     "Artifact",
     "CachedBlock",
     "Caucus",
@@ -65,10 +74,15 @@ __all__ = [
     "TokenUsage",
     "Utterance",
     "UtteranceContent",
+    "WonderlandConfig",
     "__version__",
+    "config_dir",
+    "config_path",
     "default_engagement_policy",
     "is_procedural",
     "is_substantive",
+    "load_config",
     "load_constitution",
     "parse_constitution_header",
+    "save_config",
 ]
