@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -78,8 +78,22 @@ class Context:
         return system, messages
 
 
-def _format_utterance(u: Utterance) -> str:
+def format_utterance(u: Utterance) -> str:
+    """Render one utterance as a labeled text block for prompt inclusion."""
     return f"[{u.speaker.name} — {u.speech_act.value}]\n{u.content.body}"
+
+
+def format_transcript(utterances: Iterable[Utterance]) -> str:
+    """Join an ordered sequence of utterances into a single transcript string.
+
+    Empty input yields an empty string. Order is preserved as given —
+    callers are expected to pass utterances chronologically.
+    """
+    return "\n\n".join(format_utterance(u) for u in utterances)
+
+
+# Backwards-compatible private alias used in Context.to_llm_request.
+_format_utterance = format_utterance
 
 
 class WonderlandAgent:
@@ -142,14 +156,30 @@ class WonderlandAgent:
         """
         return [await self.pending.get()]
 
-    def compose_context(self, triggers: list[Utterance]) -> Context:
+    async def compose_context(self, triggers: list[Utterance]) -> Context:
         """Build the layered context for this turn.
 
-        Default: constitution-only. P2 fills in relationships from
-        relational memory, current_thread from episodic memory.
+        Constitution comes from the identity (invariant). Current-thread
+        history is read from episodic memory and rendered as a
+        chronological transcript. Triggers themselves are excluded from
+        the transcript — they're already presented separately as the
+        immediate stimulus, and including them in the history layer
+        would just duplicate text in the prompt.
+
+        Relationships layer is left empty here; relational memory
+        lands in P3.
         """
+        thread_text = ""
+        if triggers:
+            thread_id = triggers[0].thread_id
+            history = await self.memory.query_by_thread(thread_id)
+            trigger_ids = {t.id for t in triggers}
+            history_excluding_triggers = [u for u in history if u.id not in trigger_ids]
+            thread_text = format_transcript(history_excluding_triggers)
+
         return Context(
             constitution=self.identity.constitution_text,
+            current_thread=thread_text,
             triggers=tuple(triggers),
         )
 
@@ -166,7 +196,7 @@ class WonderlandAgent:
         """Pull triggers, deliberate, publish + record on output."""
         while True:
             triggers = await self.gather_triggers()
-            context = self.compose_context(triggers)
+            context = await self.compose_context(triggers)
             utterance = await self.deliberate(context)
             if utterance is not None:
                 await self.bus.publish(utterance)

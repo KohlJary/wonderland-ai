@@ -1,6 +1,11 @@
 """Wonderland — an identity-native multi-agent development system."""
 
-from wonderland.agent import Context, WonderlandAgent
+from wonderland.agent import (
+    Context,
+    WonderlandAgent,
+    format_transcript,
+    format_utterance,
+)
 from wonderland.caucus import (
     DEFAULT_STREAM,
     Caucus,
@@ -82,6 +87,8 @@ __all__ = [
     "config_dir",
     "config_path",
     "default_engagement_policy",
+    "format_transcript",
+    "format_utterance",
     "is_procedural",
     "is_substantive",
     "load_config",

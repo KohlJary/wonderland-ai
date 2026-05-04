@@ -17,6 +17,8 @@ from wonderland import (
     Utterance,
     UtteranceContent,
     WonderlandAgent,
+    format_transcript,
+    format_utterance,
     load_constitution,
 )
 from wonderland.identity import (
@@ -74,6 +76,38 @@ async def _agent(
         memory=memory,
         bus=bus,
     )
+
+
+# ---------- transcript helpers ----------
+
+
+def test_format_utterance_includes_speaker_and_act() -> None:
+    u = _utterance(speaker="cat", act=SpeechAct.PROPOSAL, body="...")
+    out = format_utterance(u)
+    assert "[cat — proposal]" in out
+    assert "..." in out
+
+
+def test_format_transcript_joins_with_blank_line() -> None:
+    a = _utterance(speaker="A", body="first")
+    b = _utterance(speaker="B", body="second")
+    out = format_transcript([a, b])
+    assert out == f"{format_utterance(a)}\n\n{format_utterance(b)}"
+
+
+def test_format_transcript_empty() -> None:
+    assert format_transcript([]) == ""
+
+
+def test_format_transcript_preserves_order() -> None:
+    """Caller is responsible for chronological order; transcript honors it."""
+    a = _utterance(body="A")
+    b = _utterance(body="B")
+    c = _utterance(body="C")
+    forward = format_transcript([a, b, c])
+    reverse = format_transcript([c, b, a])
+    assert forward.index("A") < forward.index("B") < forward.index("C")
+    assert reverse.index("C") < reverse.index("B") < reverse.index("A")
 
 
 # ---------- Context ----------
@@ -155,9 +189,101 @@ async def test_should_engage_delegates_to_identity(tmp_path: Path) -> None:
 async def test_default_compose_context_contains_constitution(tmp_path: Path) -> None:
     agent = await _agent(tmp_path)
     triggers = [_utterance()]
-    ctx = agent.compose_context(triggers)
+    ctx = await agent.compose_context(triggers)
     assert ctx.constitution == agent.identity.constitution_text
     assert ctx.triggers == tuple(triggers)
+
+
+async def test_compose_context_with_no_triggers_has_empty_thread(tmp_path: Path) -> None:
+    agent = await _agent(tmp_path)
+    ctx = await agent.compose_context([])
+    assert ctx.current_thread == ""
+    assert ctx.triggers == ()
+
+
+async def test_compose_context_populates_current_thread_from_episodic_memory(
+    tmp_path: Path,
+) -> None:
+    """Prior utterances on the same thread show up in the current_thread layer."""
+    from datetime import UTC, datetime
+
+    agent = await _agent(tmp_path)
+    base = datetime(2026, 5, 4, 12, 0, 0, tzinfo=UTC)
+
+    # Prior thread history (recorded as if we'd observed and engaged earlier)
+    earlier = Utterance(
+        thread_id="t",
+        speaker=AgentIdentity(name="white_rabbit", constitution_version="0.1"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.TICKET,
+        content=UtteranceContent(body="ticket body"),
+        timestamp=base.replace(second=0),
+    )
+    await agent.memory.record(earlier)
+
+    # The trigger arrives now
+    trigger = Utterance(
+        thread_id="t",
+        speaker=AgentIdentity(name="mad_hatter", constitution_version="0.1"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.TEST_SCENARIO,
+        content=UtteranceContent(body="trigger body"),
+        timestamp=base.replace(second=10),
+    )
+    await agent.memory.record(trigger)
+
+    ctx = await agent.compose_context([trigger])
+    assert "ticket body" in ctx.current_thread
+    assert "[white_rabbit — ticket]" in ctx.current_thread
+
+
+async def test_compose_context_excludes_triggers_from_thread_history(tmp_path: Path) -> None:
+    """The trigger appears as the immediate stimulus — don't double it in the history."""
+    agent = await _agent(tmp_path)
+    trigger = _utterance(thread_id="t", body="trigger-only")
+    await agent.memory.record(trigger)
+
+    ctx = await agent.compose_context([trigger])
+    assert "trigger-only" not in ctx.current_thread
+    # But the trigger is still presented as the trigger
+    _, messages = ctx.to_llm_request()
+    assert "trigger-only" in messages[0]["content"]
+
+
+async def test_compose_context_isolates_threads(tmp_path: Path) -> None:
+    """Other threads' history doesn't leak into this thread's context."""
+    agent = await _agent(tmp_path)
+    other_thread = _utterance(thread_id="OTHER", body="other-thread-content")
+    await agent.memory.record(other_thread)
+
+    trigger = _utterance(thread_id="t", body="this-thread")
+    ctx = await agent.compose_context([trigger])
+    assert "other-thread-content" not in ctx.current_thread
+
+
+async def test_compose_context_orders_history_chronologically(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+
+    agent = await _agent(tmp_path)
+    base = datetime(2026, 5, 4, 12, 0, 0, tzinfo=UTC)
+    for i in range(3):
+        await agent.memory.record(
+            Utterance(
+                thread_id="t",
+                speaker=AgentIdentity(name="rabbit", constitution_version="0.1"),
+                addressed_to="caucus",
+                speech_act=SpeechAct.TICKET,
+                content=UtteranceContent(body=f"#{i}"),
+                timestamp=base.replace(second=i),
+            )
+        )
+    trigger = _utterance(thread_id="t", body="now")
+    ctx = await agent.compose_context([trigger])
+    # All three appear, in order
+    idx0 = ctx.current_thread.index("#0")
+    idx1 = ctx.current_thread.index("#1")
+    idx2 = ctx.current_thread.index("#2")
+    assert idx0 < idx1 < idx2
 
 
 async def test_default_deliberate_returns_none(tmp_path: Path) -> None:
