@@ -4,7 +4,7 @@
     {
       "id": "p1-foundation",
       "title": "Foundation",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [
         "159e2b55",
         "b7d59904",
@@ -148,8 +148,9 @@
       {
         "id": "T7",
         "title": "WonderlandAgent base class",
-        "status": "pending",
-        "details": "src/wonderland/agent.py \u2014 base class wiring identity + memory + caucus + llm. listen()/speak() loops per spec \u00a75. should_engage delegating to identity. compose_context stub returning the layered prompt skeleton (P2 fills in the layers). deliberate stub. Returning None must be supported (silence)."
+        "status": "done",
+        "details": "src/wonderland/agent.py \u2014 base class wiring identity + memory + caucus + llm. listen()/speak() loops per spec \u00a75. should_engage delegating to identity. compose_context stub returning the layered prompt skeleton (P2 fills in the layers). deliberate stub. Returning None must be supported (silence).",
+        "resolution": "src/wonderland/agent.py \u2014 WonderlandAgent base wires identity + EpisodicStore + Caucus + LLMClient. Two async loops: listen() consumes from a pre-registered bus iterator, records engaged utterances, queues for processing; speak() pulls triggers, composes context, deliberates (default returns None \u2014 silence is valid), publishes + records on output. Subscription is registered synchronously in __init__ (not lazily inside listen()'s body) so publishes between agent construction and first listen() iteration aren't lost \u2014 caught this in tests when the listen test hung. Context is a frozen dataclass with the layered prompt skeleton (constitution + relationships + current_thread + triggers) and a to_llm_request() helper that produces (system, messages) for LLMClient.complete with cache breakpoints on the invariant + slow-changing layers. P2 fills relationships/current_thread from semantic + relational + episodic memory. run() / stop() lifecycle for concurrent operation. 16 agent tests including end-to-end with a loaded constitution. 140 total pass; ruff clean. P1 substrate complete."
       }
     ],
     "deferred": []
