@@ -113,8 +113,9 @@
       {
         "id": "T9",
         "title": "Engagement policy: structured rules + LLM tiebreak",
-        "status": "pending",
-        "details": "Build a structured EngagementRules dataclass that encodes per-speech-act engagement (always/selectively/rarely/almost-never) with optional predicate hooks per category (e.g., 'engage with ticket from Rabbit only when implementation hint constrains architecture'). Heuristic evaluation first; LLM tiebreak only when heuristic is uncertain (P2 lands the structure, LLM tiebreak deferred until we have a reason to need it)."
+        "status": "done",
+        "details": "Build a structured EngagementRules dataclass that encodes per-speech-act engagement (always/selectively/rarely/almost-never) with optional predicate hooks per category (e.g., 'engage with ticket from Rabbit only when implementation hint constrains architecture'). Heuristic evaluation first; LLM tiebreak only when heuristic is uncertain (P2 lands the structure, LLM tiebreak deferred until we have a reason to need it).",
+        "resolution": "src/wonderland/engagement.py \u2014 Engagement enum (always/selectively/rarely/almost_never), EngagementRule(speech_act, category, optional condition predicate), EngagementRules collection with first-match-wins ordering and a default tier. categorize() returns the matched tier (preserving the *why* for telemetry); should_engage() collapses to a binary engage/skip decision (engage iff tier \u2260 ALMOST_NEVER). make_engagement_policy(rules) wraps rules into the EngagementPolicy callable Identity already accepts. Predicate helpers \u2014 speaker_is, addressed_to, body_contains_any, any_of, all_of \u2014 make rule construction read like the constitution prose. Tier-named factory functions (always, selectively, rarely, almost_never) keep call sites tight. LLM tiebreak deferred per the gameplan task \u2014 the structure makes adding it cheap when there's a real ambiguous case to resolve. 18 tests including a Cat-shaped rules sample that mirrors \u00a7III; 167 total pass; ruff clean."
       },
       {
         "id": "T10",
