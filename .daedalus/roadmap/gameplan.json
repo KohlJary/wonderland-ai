@@ -120,8 +120,9 @@
       {
         "id": "T14",
         "title": "Two-agent integration: Cat + Rabbit",
-        "status": "pending",
-        "details": "tests/test_two_agent.py \u2014 bus + episodic stores + Cat + Rabbit + directive. Mocked LLMs for assertions (Cat asks reframing question, Rabbit issues a holding-pattern ticket and waits for architecture, Cat proposes, Rabbit decomposes proposal into tickets that reference it). Verify role boundaries \u2014 no Cat-tickets in published utterances, no Rabbit-proposals. Live integration smoke (gated) runs the same dance against Haiku 4.5 and captures the transcript for analyses/002."
+        "status": "done",
+        "details": "tests/test_two_agent.py \u2014 bus + episodic stores + Cat + Rabbit + directive. Mocked LLMs for assertions (Cat asks reframing question, Rabbit issues a holding-pattern ticket and waits for architecture, Cat proposes, Rabbit decomposes proposal into tickets that reference it). Verify role boundaries \u2014 no Cat-tickets in published utterances, no Rabbit-proposals. Live integration smoke (gated) runs the same dance against Haiku 4.5 and captures the transcript for analyses/002.",
+        "resolution": "tests/test_two_agent.py \u2014 4 mocked + 1 live integration tests with Cat + Rabbit on the same bus. Verifies (a) each agent produces its characteristic artifact (Cat \u2192 ADR file, Rabbit \u2192 ticket files), (b) Rabbit records Cat proposals via always-engage rule, (c) Cat skips routine Rabbit tickets via almost-never default, (d) Cat engages with Rabbit ticket whose body explicitly raises architectural smell. Live dance against Haiku 4.5 passed in 5.18s \u2014 both agents spoke in-character without crossing domains. Uncovered + fixed a real bug: WonderlandAgent.listen() was processing own utterances as fresh triggers, which caused infinite loops for any agent whose engagement rules accept its own speech_act. Added speaker-self-skip in listen() with explanatory comment. Surfaced a heuristic limitation worth noting: body_contains_any only sees the utterance body, so architectural smell buried in artifact payloads doesn't trigger Cat engagement; the LLM via memory would catch it post-engagement, but engagement happens first. Reasonable for now \u2014 the heuristic is the coarse filter. 288 total pass; ruff clean."
       },
       {
         "id": "T15",

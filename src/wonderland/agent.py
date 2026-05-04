@@ -137,8 +137,18 @@ class WonderlandAgent:
         return self.identity.should_engage(u, self.memory)
 
     async def listen(self) -> None:
-        """Consume from the bus; record + queue what we engage with."""
+        """Consume from the bus; record + queue what we engage with.
+
+        The bus fans out to every subscriber including the agent itself,
+        so the agent observes its own published utterances. Skip those —
+        if an agent wants to reflect on something it said earlier, it
+        queries episodic memory (where speak() already recorded it).
+        Treating own utterances as fresh triggers would loop forever for
+        any agent whose engagement rules accept its own speech_act.
+        """
         async for utterance in self._bus_iterator:
+            if utterance.speaker.name == self.identity.name:
+                continue
             if self.should_engage(utterance):
                 await self.memory.record(utterance)
                 await self.pending.put(utterance)
