@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual envs
+.venv/
+venv/
+
+# uv
+uv.lock.bak
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Env / secrets
+.env
+.env.local
+*.key
+
+# Per-user Claude settings
+.claude/settings.local.json
+
+# Per-project Wonderland state lives in target projects, not here —
+# but if anyone runs Wonderland against this repo as a sandbox:
+.wonderland/

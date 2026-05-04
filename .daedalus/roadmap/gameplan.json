@@ -1,0 +1,152 @@
+{
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
+  "phases": [
+    {
+      "id": "p1-foundation",
+      "title": "Foundation",
+      "status": "in_progress",
+      "roadmapItems": [
+        "159e2b55",
+        "b7d59904",
+        "70d7e4e1",
+        "b6d8c20b",
+        "df140697",
+        "9c25e87c",
+        "e7dfa848"
+      ],
+      "notes": "Schema, bus, episodic memory, agent base. Nothing alive yet \u2014 just the substrate everything else hangs off."
+    },
+    {
+      "id": "p2-first-voice",
+      "title": "First Voice",
+      "status": "planned",
+      "roadmapItems": [
+        "4f9dafa2",
+        "5185d347",
+        "347c0c53",
+        "aac7f570"
+      ],
+      "notes": "Cheshire Cat end-to-end. Talking to himself. Layered context composer + engagement policy + ADR writer come online here because the Cat is their first consumer."
+    },
+    {
+      "id": "p3-first-tension",
+      "title": "First Tension",
+      "status": "planned",
+      "roadmapItems": [
+        "9371a743",
+        "339db74a",
+        "44c9966a",
+        "14a38060",
+        "35fec414"
+      ],
+      "notes": "Add the White Rabbit. Two voices, role tension, semantic + relational memory layers populated as the agents accumulate history. Compaction-as-behavior arrives because it has to."
+    },
+    {
+      "id": "p4-first-race",
+      "title": "First Race",
+      "status": "planned",
+      "roadmapItems": [
+        "4d8a19b4",
+        "732f68a2",
+        "de2eebde",
+        "02f43054",
+        "39a41906",
+        "4896a36d",
+        "3d323867"
+      ],
+      "notes": "Dodo orchestrator + quiescence + conflict resolution + first showcase (/health endpoint). The system runs end-to-end on a trivial directive. Init CLI lands here so the showcase can run against a real target project."
+    },
+    {
+      "id": "p5-full-cast",
+      "title": "Full Cast",
+      "status": "planned",
+      "roadmapItems": [
+        "a24f4425",
+        "729fc868",
+        "a73d25a9",
+        "de42c270",
+        "0cd8d3f0",
+        "503d40c3",
+        "1912c2a3",
+        "320fdfea",
+        "c7c8d4a4"
+      ],
+      "notes": "Bring the rest of the cast online with integration tests per agent. Per-character artifact handlers for the new speech act payloads. Synthetic-consensus guard goes here because it only matters once disagreement is real."
+    },
+    {
+      "id": "p6-real-threads",
+      "title": "Real Threads",
+      "status": "planned",
+      "roadmapItems": [
+        "75b74948",
+        "292ea917",
+        "38d6b7ba",
+        "19c13c2d",
+        "21e3fafe"
+      ],
+      "notes": "The hard showcases \u2014 translation chat MVP, security recovery, multi-session persistence. Transcript annotation tooling lets us publish them. Token telemetry confirms the engagement_policy is paying for itself."
+    },
+    {
+      "id": "p7-evals",
+      "title": "Evals",
+      "status": "planned",
+      "roadmapItems": [
+        "87b2ec9c"
+      ],
+      "notes": "Generic-baseline vs Wonderland comparison. The compounding-curve plot is the legibility-of-value mitigation from \u00a711. Without this the philosophy stays assertion."
+    }
+  ],
+  "activePhase": {
+    "id": "p1-foundation",
+    "title": "Foundation",
+    "started": "2026-05-04",
+    "goal": "Lay the substrate so the Cheshire Cat can come online in P2 without retrofitting any plumbing. By end of P1, an empty WonderlandAgent subclass should be able to subscribe to the Caucus, observe utterances, persist them episodically, and call Anthropic with a cached prompt prefix \u2014 even if it has nothing to say yet.",
+    "sequencing": "Schema first (utterance + identity), because every other piece references those types. Then the bus, then storage, then the LLM client, then the agent base that ties them together. Repo skeleton happens before any of it. Each step has its own tests; we don't move on until the previous primitive can be exercised in isolation.",
+    "tasks": [
+      {
+        "id": "T1",
+        "title": "Repo skeleton: pyproject + src layout + tooling",
+        "status": "done",
+        "details": "Init pyproject.toml (Python 3.12+, hatchling). src/wonderland package layout. Add deps: anthropic, redis, pydantic, ulid-py, aiosqlite, pytest, pytest-asyncio, ruff. Configure ruff for lint+format. Pre-commit optional. README stub pointing to WONDERLAND_SPEC.md.",
+        "resolution": "pyproject.toml with hatchling backend, Python 3.12+ floor (3.13 dev pin via .python-version). src/wonderland package layout with __init__.py and py.typed marker. Deps installed via uv: anthropic 0.98, redis 7.4, pydantic 2.13, python-ulid 3.1, aiosqlite 0.22. Dev: pytest 9.0, pytest-asyncio 1.3 (asyncio_mode=auto), ruff 0.15. Ruff lint selects E/W/F/I/B/UP/N/SIM/RUF; format uses double quotes. Smoke test passing. README stub points to WONDERLAND_SPEC.md and notes the .wonderland/ vs wonderland-ai/ separation. Substituted python-ulid for ulid-py \u2014 same import surface, more actively maintained. .gitignore added; repo not yet git-initialized."
+      },
+      {
+        "id": "T2",
+        "title": "Utterance + speech-act + sub-type schemas",
+        "status": "pending",
+        "details": "src/wonderland/utterance.py \u2014 Pydantic v2 models. Utterance, SpeechAct (Literal), AgentIdentity, Stance, AffectVector, Artifact. ULID id default factory. Frozen where it makes sense. Round-trip JSON tests."
+      },
+      {
+        "id": "T3",
+        "title": "Identity dataclass + constitution loader",
+        "status": "pending",
+        "details": "src/wonderland/identity.py \u2014 Identity (name, version, constitution_text, interests: set[SpeechAct], engagement_policy callable). Loader reads constitutions/<name>.md (already exist for cat, rabbit, hatter, alice, dodo). YAML frontmatter parsing if/when constitutions adopt it; otherwise plain markdown body. Tests load all five existing constitutions."
+      },
+      {
+        "id": "T4",
+        "title": "Caucus event bus over Redis Streams",
+        "status": "pending",
+        "details": "src/wonderland/caucus.py \u2014 Caucus class. publish(utterance) -> stream entry id. subscribe(interests, thread_id=None) -> async iterator of Utterance. Per-thread XADD to a thread-scoped stream key. Consumer groups for multi-agent fan-out. Local InMemoryCaucus stub for tests so we don't need Redis in CI for unit work."
+      },
+      {
+        "id": "T5",
+        "title": "Episodic memory store",
+        "status": "pending",
+        "details": "src/wonderland/memory/episodic.py \u2014 EpisodicStore wrapping aiosqlite. record(utterance), query_by_thread(thread_id), query_by_speaker(name), query_by_other_agent(name) (utterances I observed *from* X). Path resolved from project_root + agent_name. Migration stub for future schema changes."
+      },
+      {
+        "id": "T6",
+        "title": "Anthropic client wrapper with cache breakpoints",
+        "status": "pending",
+        "details": "src/wonderland/llm.py \u2014 thin wrapper around anthropic SDK. complete(messages, system, cache_breakpoints) -> response. Default model claude-haiku-4-5-20251001. Token accounting hook (callback per call). Cache_control inserted at the breakpoints we pass. Tests mock the SDK; one optional smoke test gated by env var."
+      },
+      {
+        "id": "T7",
+        "title": "WonderlandAgent base class",
+        "status": "pending",
+        "details": "src/wonderland/agent.py \u2014 base class wiring identity + memory + caucus + llm. listen()/speak() loops per spec \u00a75. should_engage delegating to identity. compose_context stub returning the layered prompt skeleton (P2 fills in the layers). deliberate stub. Returning None must be supported (silence)."
+      }
+    ],
+    "deferred": []
+  }
+}
