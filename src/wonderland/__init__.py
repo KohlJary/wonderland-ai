@@ -15,6 +15,7 @@ from wonderland.identity import (
     load_constitution,
     parse_constitution_header,
 )
+from wonderland.memory import EpisodicStore
 from wonderland.utterance import (
     PROCEDURAL_ACTS,
     SUBSTANTIVE_ACTS,
@@ -42,6 +43,7 @@ __all__ = [
     "ConstitutionHeader",
     "ConstitutionParseError",
     "EngagementPolicy",
+    "EpisodicStore",
     "Identity",
     "InMemoryCaucus",
     "RedisCaucus",

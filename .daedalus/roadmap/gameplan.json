@@ -134,8 +134,9 @@
       {
         "id": "T5",
         "title": "Episodic memory store",
-        "status": "pending",
-        "details": "src/wonderland/memory/episodic.py \u2014 EpisodicStore wrapping aiosqlite. record(utterance), query_by_thread(thread_id), query_by_speaker(name), query_by_other_agent(name) (utterances I observed *from* X). Path resolved from project_root + agent_name. Migration stub for future schema changes."
+        "status": "done",
+        "details": "src/wonderland/memory/episodic.py \u2014 EpisodicStore wrapping aiosqlite. record(utterance), query_by_thread(thread_id), query_by_speaker(name), query_by_other_agent(name) (utterances I observed *from* X). Path resolved from project_root + agent_name. Migration stub for future schema changes.",
+        "resolution": "src/wonderland/memory/episodic.py + src/wonderland/memory/__init__.py \u2014 per-agent SQLite log of observed/produced utterances at <project_root>/.wonderland/memory/<agent>/episodic.sqlite. Schema v1: utterances table with id/thread_id/parent_id/speaker_name/speaker_version/speech_act/timestamp/payload columns; payload is the full Utterance JSON for lossless replay; indexed columns enable cheap thread/speaker/speech_act queries. schema_meta sidecar table records SCHEMA_VERSION=1 \u2014 future migrations branch on the recorded version. record() uses INSERT OR IGNORE on id, so bus redelivery is idempotent and not a bug. query_by_thread / query_by_speaker / query_by_other_agent (alias of by_speaker for semantic clarity at call sites). Async context manager + explicit open/close. Per-agent isolation: separate paths, no cross-agent reads through this layer (the bus is the cross-agent surface). 18 episodic tests (lifecycle, persistence, idempotency, query semantics, concurrent records); 94 total pass; ruff clean."
       },
       {
         "id": "T6",
