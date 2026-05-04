@@ -14,12 +14,18 @@ from wonderland.agent import (
     format_transcript,
     format_utterance,
 )
-from wonderland.agents import CheshireCat, cheshire_cat_rules
+from wonderland.agents import CheshireCat, WhiteRabbit, cheshire_cat_rules, white_rabbit_rules
 from wonderland.agents.cheshire_cat import (
     CatDecision,
     CatResponse,
     CatResponseParseError,
     parse_cat_response,
+)
+from wonderland.agents.white_rabbit import (
+    RabbitDecision,
+    RabbitResponse,
+    RabbitResponseParseError,
+    parse_rabbit_response,
 )
 from wonderland.caucus import (
     DEFAULT_STREAM,
@@ -124,6 +130,9 @@ __all__ = [
     "Identity",
     "InMemoryCaucus",
     "LLMClient",
+    "RabbitDecision",
+    "RabbitResponse",
+    "RabbitResponseParseError",
     "RedisCaucus",
     "SpeechAct",
     "Stance",
@@ -137,6 +146,7 @@ __all__ = [
     "Utterance",
     "UtteranceContent",
     "UtterancePredicate",
+    "WhiteRabbit",
     "WonderlandAgent",
     "WonderlandConfig",
     "__version__",
@@ -157,6 +167,7 @@ __all__ = [
     "make_engagement_policy",
     "parse_cat_response",
     "parse_constitution_header",
+    "parse_rabbit_response",
     "rarely",
     "render_adr",
     "render_ticket",
@@ -164,4 +175,5 @@ __all__ = [
     "selectively",
     "slugify",
     "speaker_is",
+    "white_rabbit_rules",
 ]
