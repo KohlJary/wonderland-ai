@@ -350,10 +350,22 @@ def test_lazy_client_lets_sdk_raise_when_neither_set(
 # ---------- live smoke test (opt-in) ----------
 
 
+def _api_key_resolvable() -> bool:
+    """True if an Anthropic API key is available via env or user config."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return True
+    try:
+        from wonderland.config import load_config
+
+        return bool(load_config().anthropic.api_key)
+    except Exception:
+        return False
+
+
 SMOKE_ENABLED = os.environ.get("WONDERLAND_LLM_SMOKE") == "1"
 smoke_required = pytest.mark.skipif(
-    not SMOKE_ENABLED or not os.environ.get("ANTHROPIC_API_KEY"),
-    reason="set WONDERLAND_LLM_SMOKE=1 and ANTHROPIC_API_KEY to run live smoke test",
+    not SMOKE_ENABLED or not _api_key_resolvable(),
+    reason="set WONDERLAND_LLM_SMOKE=1 and provide an API key (env or config) to run live smoke",
 )
 
 
