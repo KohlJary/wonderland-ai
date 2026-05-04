@@ -1,5 +1,13 @@
 """Wonderland — an identity-native multi-agent development system."""
 
+from wonderland.adr import (
+    ADRPayload,
+    ADRRecord,
+    ADRRegistry,
+    ADRStatus,
+    render_adr,
+    slugify,
+)
 from wonderland.agent import (
     Context,
     WonderlandAgent,
@@ -74,6 +82,10 @@ __all__ = [
     "DEFAULT_STREAM",
     "PROCEDURAL_ACTS",
     "SUBSTANTIVE_ACTS",
+    "ADRPayload",
+    "ADRRecord",
+    "ADRRegistry",
+    "ADRStatus",
     "AffectVector",
     "AgentIdentity",
     "AnthropicConfig",
@@ -118,7 +130,9 @@ __all__ = [
     "make_engagement_policy",
     "parse_constitution_header",
     "rarely",
+    "render_adr",
     "save_config",
     "selectively",
+    "slugify",
     "speaker_is",
 ]

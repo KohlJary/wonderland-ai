@@ -120,8 +120,9 @@
       {
         "id": "T10",
         "title": "ADR writer and registry",
-        "status": "pending",
-        "details": "Service that takes an ADR artifact from a Cat proposal and writes it to <project_root>/.wonderland/architecture/adr-NNN-<slug>.md with auto-incrementing N. Validates Tradeoffs section is non-empty (the grin is non-optional). Registry queries: list_adrs, get_next_number, find_by_slug."
+        "status": "done",
+        "details": "Service that takes an ADR artifact from a Cat proposal and writes it to <project_root>/.wonderland/architecture/adr-NNN-<slug>.md with auto-incrementing N. Validates Tradeoffs section is non-empty (the grin is non-optional). Registry queries: list_adrs, get_next_number, find_by_slug.",
+        "resolution": "src/wonderland/adr.py \u2014 ADRPayload (Pydantic, validates non-empty title/context/decision/tradeoffs; tradeoffs additionally requires at least one substantive entry \u2014 the grin), ADRStatus (proposed/accepted/superseded), ADRRecord (number/slug/title/path with read() helper), ADRRegistry (writes auto-numbered files, queries existing). Files at <project_root>/.wonderland/architecture/adr-NNN-slug.md with 3-digit zero-padded numbering for filesystem sortability. No separate counter file \u2014 next_number derives from scanning existing files (resilient to manual deletions; max+1 even with gaps). render_adr produces markdown matching cheshire_cat.md \u00a7V format. slugify is ASCII-safe and falls back to 'untitled'. Registry tolerates unknown files in its directory (a hand-dropped README.md doesn't crash list_adrs). 34 ADR tests; 201 total pass; ruff clean."
       },
       {
         "id": "T11",
