@@ -120,8 +120,9 @@
       {
         "id": "T3",
         "title": "Identity dataclass + constitution loader",
-        "status": "pending",
-        "details": "src/wonderland/identity.py \u2014 Identity (name, version, constitution_text, interests: set[SpeechAct], engagement_policy callable). Loader reads constitutions/<name>.md (already exist for cat, rabbit, hatter, alice, dodo). YAML frontmatter parsing if/when constitutions adopt it; otherwise plain markdown body. Tests load all five existing constitutions."
+        "status": "done",
+        "details": "src/wonderland/identity.py \u2014 Identity (name, version, constitution_text, interests: set[SpeechAct], engagement_policy callable). Loader reads constitutions/<name>.md (already exist for cat, rabbit, hatter, alice, dodo). YAML frontmatter parsing if/when constitutions adopt it; otherwise plain markdown body. Tests load all five existing constitutions.",
+        "resolution": "src/wonderland/identity.py with Identity dataclass + ConstitutionHeader + load_constitution + parse_constitution_header. Header parser reads H1 display name + bold-key lines (Role/Lineage/License/optional Pair) until first --- separator, so body templates with **Status:** etc. don't contaminate the header. Version extracted from 'Wonderland v0.X' lineage. The Tweedle pair protocol is correctly rejected \u2014 it has Lineage and License but no Role, and the parser names that as the failure mode. EngagementPolicy aliased as Callable[[Utterance, AgentMemory|None], bool]; AgentMemory is a Protocol stub awaiting T5. default_engagement_policy(interests) returns a closure that engages iff act in interests. Identity.should_engage uses the supplied policy or the default. as_agent_identity() bridges to the bus-side AgentIdentity from utterance.py. 27 identity tests; 61 total pass; ruff clean."
       },
       {
         "id": "T4",
