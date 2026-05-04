@@ -67,6 +67,15 @@ from wonderland.llm import (
     TokenUsage,
 )
 from wonderland.memory import EpisodicStore
+from wonderland.ticket import (
+    TicketDependencies,
+    TicketPayload,
+    TicketRecord,
+    TicketRegistry,
+    TicketStatus,
+    TicketTier,
+    render_ticket,
+)
 from wonderland.utterance import (
     PROCEDURAL_ACTS,
     SUBSTANTIVE_ACTS,
@@ -118,6 +127,12 @@ __all__ = [
     "RedisCaucus",
     "SpeechAct",
     "Stance",
+    "TicketDependencies",
+    "TicketPayload",
+    "TicketRecord",
+    "TicketRegistry",
+    "TicketStatus",
+    "TicketTier",
     "TokenUsage",
     "Utterance",
     "UtteranceContent",
@@ -144,6 +159,7 @@ __all__ = [
     "parse_constitution_header",
     "rarely",
     "render_adr",
+    "render_ticket",
     "save_config",
     "selectively",
     "slugify",
