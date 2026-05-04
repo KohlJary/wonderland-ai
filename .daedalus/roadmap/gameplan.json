@@ -19,7 +19,7 @@
     {
       "id": "p2-first-voice",
       "title": "First Voice",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [
         "4f9dafa2",
         "5185d347",
@@ -127,8 +127,9 @@
       {
         "id": "T11",
         "title": "Cheshire Cat agent \u2014 first end-to-end",
-        "status": "pending",
-        "details": "Concrete WonderlandAgent subclass for the Cat. Loads constitutions/cheshire_cat.md. Engagement policy from T9 wired with the Cat's specific rules. compose_context overrides T8 if needed. deliberate calls LLMClient.complete and parses the response into a Utterance (proposal/question/reframe/concern/deference) with optional ADR artifact. End-to-end test: directive \u2192 Cat produces proposal \u2192 ADR file appears at .wonderland/architecture/adr-001-*.md. Live test gated behind WONDERLAND_LLM_SMOKE."
+        "status": "done",
+        "details": "Concrete WonderlandAgent subclass for the Cat. Loads constitutions/cheshire_cat.md. Engagement policy from T9 wired with the Cat's specific rules. compose_context overrides T8 if needed. deliberate calls LLMClient.complete and parses the response into a Utterance (proposal/question/reframe/concern/deference) with optional ADR artifact. End-to-end test: directive \u2192 Cat produces proposal \u2192 ADR file appears at .wonderland/architecture/adr-001-*.md. Live test gated behind WONDERLAND_LLM_SMOKE.",
+        "resolution": "src/wonderland/agents/cheshire_cat.py \u2014 CheshireCat(WonderlandAgent) subclass. Loads constitutions/cheshire_cat.md via load_constitution, then dataclasses.replace's the engagement_policy with make_engagement_policy(cheshire_cat_rules()). cheshire_cat_rules() encodes \u00a7III as data with body-keyword heuristics for the conditional engagements (architectural smell on tickets, primitive surfaces in stories, etc.) \u2014 heuristics intentionally narrow because deliberate() has the LLM behind it and can choose silence when in doubt. deliberate() builds prompt via Context.to_llm_request, inserts a CachedBlock(_OUTPUT_PROTOCOL) right after the constitution (both prefixes cached), calls LLMClient.complete, parses CatResponse JSON via parse_cat_response (handles fenced or unfenced), maps decision to SpeechAct or returns None for silence. ADR payload (when decision=='proposal') is written through the T10 registry and returned as an Artifact in the Utterance. parse_cat_response is defensive: tolerates missing fence, raises CatResponseParseError on missing JSON / invalid JSON / invalid decision / ADR-without-tradeoffs. End-to-end mocked test: directive on bus \u2192 cat publishes proposal \u2192 ADR file at .wonderland/architecture/adr-001-use-redis-streams-for-the-caucus.md. Live smoke against Haiku 4.5 (gated WONDERLAND_LLM_SMOKE) verified: real round-trip in 2.62s, Cat speaks substantively in his own voice. 26 mocked tests + 1 live (passing). 227 total pass; ruff clean. P2 First Voice complete."
       }
     ],
     "deferred": []

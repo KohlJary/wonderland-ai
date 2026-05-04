@@ -14,6 +14,13 @@ from wonderland.agent import (
     format_transcript,
     format_utterance,
 )
+from wonderland.agents import CheshireCat, cheshire_cat_rules
+from wonderland.agents.cheshire_cat import (
+    CatDecision,
+    CatResponse,
+    CatResponseParseError,
+    parse_cat_response,
+)
 from wonderland.caucus import (
     DEFAULT_STREAM,
     Caucus,
@@ -91,7 +98,11 @@ __all__ = [
     "AnthropicConfig",
     "Artifact",
     "CachedBlock",
+    "CatDecision",
+    "CatResponse",
+    "CatResponseParseError",
     "Caucus",
+    "CheshireCat",
     "CompletionResult",
     "ConstitutionHeader",
     "ConstitutionParseError",
@@ -118,6 +129,7 @@ __all__ = [
     "almost_never",
     "always",
     "body_contains_any",
+    "cheshire_cat_rules",
     "config_dir",
     "config_path",
     "default_engagement_policy",
@@ -128,6 +140,7 @@ __all__ = [
     "load_config",
     "load_constitution",
     "make_engagement_policy",
+    "parse_cat_response",
     "parse_constitution_header",
     "rarely",
     "render_adr",
