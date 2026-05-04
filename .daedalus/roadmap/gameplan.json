@@ -113,8 +113,9 @@
       {
         "id": "T2",
         "title": "Utterance + speech-act + sub-type schemas",
-        "status": "pending",
-        "details": "src/wonderland/utterance.py \u2014 Pydantic v2 models. Utterance, SpeechAct (Literal), AgentIdentity, Stance, AffectVector, Artifact. ULID id default factory. Frozen where it makes sense. Round-trip JSON tests."
+        "status": "done",
+        "details": "src/wonderland/utterance.py \u2014 Pydantic v2 models. Utterance, SpeechAct (Literal), AgentIdentity, Stance, AffectVector, Artifact. ULID id default factory. Frozen where it makes sense. Round-trip JSON tests.",
+        "resolution": "src/wonderland/utterance.py with Pydantic v2 models. SpeechAct StrEnum (17 values) + SUBSTANTIVE_ACTS/PROCEDURAL_ACTS frozensets + is_substantive/is_procedural predicates \u2014 categorization is data, not type, since the directive-relay carve-out makes type-level enforcement wrong. AffectVector option 3: arousal/valence/urgency in [-1,1] + extras dict for character-specific axes. AgentIdentity (name + constitution_version), Stance (in/out/meta), Artifact (kind discriminator + flexible payload \u2014 per-kind validation deferred to P5 handlers), UtteranceContent (body+artifacts), Utterance (frozen, ULID id default, UTC timestamp default, confidence in [0,1] default 1.0). 33 tests pass + smoke; ruff clean; round-trip JSON verified."
       },
       {
         "id": "T3",
