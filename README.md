@@ -13,13 +13,56 @@ Pre-alpha. Phase 1 (Foundation) — substrate under construction.
 Track in-flight work: `daedalus gameplan show`.
 Decisions: [`.daedalus/decisions.md`](./.daedalus/decisions.md).
 
+## Install
+
+Core install pulls only what the in-process bus needs:
+
+```bash
+pip install wonderland          # InMemoryCaucus only
+pip install 'wonderland[redis]' # adds RedisCaucus
+```
+
+`RedisCaucus` requires the `redis` extra; constructing one without it raises
+an `ImportError` with an install hint.
+
+## Configuration
+
+Wonderland reads user-level config (API keys, model overrides) from a
+JSON file at the platform-appropriate location:
+
+| OS      | Path                                                        |
+|---------|-------------------------------------------------------------|
+| Linux   | `~/.config/wonderland/config.json` (honors `XDG_CONFIG_HOME`) |
+| macOS   | `~/Library/Application Support/wonderland/config.json`      |
+| Windows | `%APPDATA%\wonderland\config.json`                          |
+
+```json
+{
+  "anthropic": {
+    "api_key": "sk-ant-...",
+    "model": "claude-haiku-4-5-20251001"
+  }
+}
+```
+
+API key resolution order: explicit constructor arg → `ANTHROPIC_API_KEY`
+env var → config file. The env var wins if set.
+
 ## Development
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev   # includes redis for full test coverage
 uv run pytest
 uv run ruff check
 uv run ruff format
+```
+
+The Redis-backed tests are gated behind `WONDERLAND_REDIS_URL` and skipped
+otherwise. To exercise them locally:
+
+```bash
+docker run -d --name wonderland-redis -p 6379:6379 redis:7-alpine
+WONDERLAND_REDIS_URL=redis://localhost:6379 uv run pytest
 ```
 
 ## Layout

@@ -120,26 +120,30 @@
       {
         "id": "T3",
         "title": "Identity dataclass + constitution loader",
-        "status": "pending",
-        "details": "src/wonderland/identity.py \u2014 Identity (name, version, constitution_text, interests: set[SpeechAct], engagement_policy callable). Loader reads constitutions/<name>.md (already exist for cat, rabbit, hatter, alice, dodo). YAML frontmatter parsing if/when constitutions adopt it; otherwise plain markdown body. Tests load all five existing constitutions."
+        "status": "done",
+        "details": "src/wonderland/identity.py \u2014 Identity (name, version, constitution_text, interests: set[SpeechAct], engagement_policy callable). Loader reads constitutions/<name>.md (already exist for cat, rabbit, hatter, alice, dodo). YAML frontmatter parsing if/when constitutions adopt it; otherwise plain markdown body. Tests load all five existing constitutions.",
+        "resolution": "src/wonderland/identity.py with Identity dataclass + ConstitutionHeader + load_constitution + parse_constitution_header. Header parser reads H1 display name + bold-key lines (Role/Lineage/License/optional Pair) until first --- separator, so body templates with **Status:** etc. don't contaminate the header. Version extracted from 'Wonderland v0.X' lineage. The Tweedle pair protocol is correctly rejected \u2014 it has Lineage and License but no Role, and the parser names that as the failure mode. EngagementPolicy aliased as Callable[[Utterance, AgentMemory|None], bool]; AgentMemory is a Protocol stub awaiting T5. default_engagement_policy(interests) returns a closure that engages iff act in interests. Identity.should_engage uses the supplied policy or the default. as_agent_identity() bridges to the bus-side AgentIdentity from utterance.py. 27 identity tests; 61 total pass; ruff clean."
       },
       {
         "id": "T4",
         "title": "Caucus event bus over Redis Streams",
-        "status": "pending",
-        "details": "src/wonderland/caucus.py \u2014 Caucus class. publish(utterance) -> stream entry id. subscribe(interests, thread_id=None) -> async iterator of Utterance. Per-thread XADD to a thread-scoped stream key. Consumer groups for multi-agent fan-out. Local InMemoryCaucus stub for tests so we don't need Redis in CI for unit work."
+        "status": "done",
+        "details": "src/wonderland/caucus.py \u2014 Caucus class. publish(utterance) -> stream entry id. subscribe(interests, thread_id=None) -> async iterator of Utterance. Per-thread XADD to a thread-scoped stream key. Consumer groups for multi-agent fan-out. Local InMemoryCaucus stub for tests so we don't need Redis in CI for unit work.",
+        "resolution": "src/wonderland/caucus.py with Caucus protocol + RedisCaucus + InMemoryCaucus. Single global stream per project (DEFAULT_STREAM='wonderland:utterances'); thread_id and interests filter client-side after deserialization, keeping the bus generic. RedisCaucus uses XADD for publish, XREADGROUP with per-agent consumer groups for subscribe (agents share position when they share a name; can rebalance when we add multi-instance). Always-ack policy on read: filtered messages are still acked so they don't get redelivered \u2014 filtering is the subscriber's choice, not a queueing concern. InMemoryCaucus registers queues *synchronously* on subscribe() so a subscriber created before publish() is guaranteed to receive it without create_task choreography in tests; asyncio is single-threaded and there are no awaits between read/write of _subscribers, so no lock is needed. Redis tests are gated behind WONDERLAND_REDIS_URL env var; no local Redis available so the production path stays unverified at runtime \u2014 exercised through code review until CI provides Redis. 11 caucus tests + 1 skipped Redis smoke; 74 total pass; ruff clean."
       },
       {
         "id": "T5",
         "title": "Episodic memory store",
-        "status": "pending",
-        "details": "src/wonderland/memory/episodic.py \u2014 EpisodicStore wrapping aiosqlite. record(utterance), query_by_thread(thread_id), query_by_speaker(name), query_by_other_agent(name) (utterances I observed *from* X). Path resolved from project_root + agent_name. Migration stub for future schema changes."
+        "status": "done",
+        "details": "src/wonderland/memory/episodic.py \u2014 EpisodicStore wrapping aiosqlite. record(utterance), query_by_thread(thread_id), query_by_speaker(name), query_by_other_agent(name) (utterances I observed *from* X). Path resolved from project_root + agent_name. Migration stub for future schema changes.",
+        "resolution": "src/wonderland/memory/episodic.py + src/wonderland/memory/__init__.py \u2014 per-agent SQLite log of observed/produced utterances at <project_root>/.wonderland/memory/<agent>/episodic.sqlite. Schema v1: utterances table with id/thread_id/parent_id/speaker_name/speaker_version/speech_act/timestamp/payload columns; payload is the full Utterance JSON for lossless replay; indexed columns enable cheap thread/speaker/speech_act queries. schema_meta sidecar table records SCHEMA_VERSION=1 \u2014 future migrations branch on the recorded version. record() uses INSERT OR IGNORE on id, so bus redelivery is idempotent and not a bug. query_by_thread / query_by_speaker / query_by_other_agent (alias of by_speaker for semantic clarity at call sites). Async context manager + explicit open/close. Per-agent isolation: separate paths, no cross-agent reads through this layer (the bus is the cross-agent surface). 18 episodic tests (lifecycle, persistence, idempotency, query semantics, concurrent records); 94 total pass; ruff clean."
       },
       {
         "id": "T6",
         "title": "Anthropic client wrapper with cache breakpoints",
-        "status": "pending",
-        "details": "src/wonderland/llm.py \u2014 thin wrapper around anthropic SDK. complete(messages, system, cache_breakpoints) -> response. Default model claude-haiku-4-5-20251001. Token accounting hook (callback per call). Cache_control inserted at the breakpoints we pass. Tests mock the SDK; one optional smoke test gated by env var."
+        "status": "done",
+        "details": "src/wonderland/llm.py \u2014 thin wrapper around anthropic SDK. complete(messages, system, cache_breakpoints) -> response. Default model claude-haiku-4-5-20251001. Token accounting hook (callback per call). Cache_control inserted at the breakpoints we pass. Tests mock the SDK; one optional smoke test gated by env var.",
+        "resolution": "src/wonderland/llm.py \u2014 LLMClient wrapping anthropic.AsyncAnthropic. Default model claude-haiku-4-5-20251001 per D-005; max_tokens default 4096. complete(*, system, messages, max_tokens, **extra) returns CompletionResult(text, stop_reason, usage, raw). System parts are list[str | CachedBlock]: CachedBlock items become {type:'text', text:..., cache_control:{type:'ephemeral'}} blocks for the Anthropic prompt cache; plain strs become uncached text blocks. The Anthropic API caches every prefix up to the rightmost cached block, so two CachedBlocks (constitution + relationships) means both prefixes are individually cacheable. on_token_usage callback fires after every successful call with TokenUsage(input/output/cache_creation/cache_read tokens) \u2014 wired this way so the eval harness in P7 gets per-request cost telemetry without the agent loop needing to know about it. Anthropic client lazily constructed if not injected (no API-key requirement at LLMClient instantiation). 15 mocked tests + 1 env-gated live smoke (WONDERLAND_LLM_SMOKE=1 + ANTHROPIC_API_KEY). 109 total pass; ruff clean."
       },
       {
         "id": "T7",
