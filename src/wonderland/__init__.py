@@ -1,5 +1,11 @@
 """Wonderland — an identity-native multi-agent development system."""
 
+from wonderland.caucus import (
+    DEFAULT_STREAM,
+    Caucus,
+    InMemoryCaucus,
+    RedisCaucus,
+)
 from wonderland.identity import (
     ConstitutionHeader,
     ConstitutionParseError,
@@ -26,15 +32,19 @@ from wonderland.utterance import (
 __version__ = "0.0.1"
 
 __all__ = [
+    "DEFAULT_STREAM",
     "PROCEDURAL_ACTS",
     "SUBSTANTIVE_ACTS",
     "AffectVector",
     "AgentIdentity",
     "Artifact",
+    "Caucus",
     "ConstitutionHeader",
     "ConstitutionParseError",
     "EngagementPolicy",
     "Identity",
+    "InMemoryCaucus",
+    "RedisCaucus",
     "SpeechAct",
     "Stance",
     "Utterance",

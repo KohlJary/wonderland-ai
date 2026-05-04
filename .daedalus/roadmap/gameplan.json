@@ -127,8 +127,9 @@
       {
         "id": "T4",
         "title": "Caucus event bus over Redis Streams",
-        "status": "pending",
-        "details": "src/wonderland/caucus.py \u2014 Caucus class. publish(utterance) -> stream entry id. subscribe(interests, thread_id=None) -> async iterator of Utterance. Per-thread XADD to a thread-scoped stream key. Consumer groups for multi-agent fan-out. Local InMemoryCaucus stub for tests so we don't need Redis in CI for unit work."
+        "status": "done",
+        "details": "src/wonderland/caucus.py \u2014 Caucus class. publish(utterance) -> stream entry id. subscribe(interests, thread_id=None) -> async iterator of Utterance. Per-thread XADD to a thread-scoped stream key. Consumer groups for multi-agent fan-out. Local InMemoryCaucus stub for tests so we don't need Redis in CI for unit work.",
+        "resolution": "src/wonderland/caucus.py with Caucus protocol + RedisCaucus + InMemoryCaucus. Single global stream per project (DEFAULT_STREAM='wonderland:utterances'); thread_id and interests filter client-side after deserialization, keeping the bus generic. RedisCaucus uses XADD for publish, XREADGROUP with per-agent consumer groups for subscribe (agents share position when they share a name; can rebalance when we add multi-instance). Always-ack policy on read: filtered messages are still acked so they don't get redelivered \u2014 filtering is the subscriber's choice, not a queueing concern. InMemoryCaucus registers queues *synchronously* on subscribe() so a subscriber created before publish() is guaranteed to receive it without create_task choreography in tests; asyncio is single-threaded and there are no awaits between read/write of _subscribers, so no lock is needed. Redis tests are gated behind WONDERLAND_REDIS_URL env var; no local Redis available so the production path stays unverified at runtime \u2014 exercised through code review until CI provides Redis. 11 caucus tests + 1 skipped Redis smoke; 74 total pass; ruff clean."
       },
       {
         "id": "T5",
