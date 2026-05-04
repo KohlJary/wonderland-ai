@@ -42,11 +42,25 @@ Each agent's SAM-equivalent memory lives in its own SQLite database under `<proj
 ## D-005 — Anthropic SDK with prompt caching, default Haiku 4.5
 
 **Date:** 2026-05-04
-**Status:** Accepted
+**Status:** Accepted (with follow-up)
 
-LLM calls go through the Anthropic SDK. Default model: `claude-haiku-4-5-20251001` to keep development costs low. The constitution layer of each agent's composed context is invariant per-agent — perfect cache target. Cache the constitution + relational memory; let episodic + trigger be the uncached tail.
+LLM calls go through the Anthropic SDK. Default model: `claude-haiku-4-5-20251001` to keep development costs low. The wrapper still emits `cache_control: ephemeral` markers on invariant prefixes (constitution + per-agent protocol) so caching can engage when the prefix is large enough.
 
-**Revisit:** when we have eval data, audit whether Sonnet 4.6 or Opus 4.7 outperforms Haiku 4.5 enough to justify the cost differential per agent.
+**Update 2026-05-04 — cache thresholds, measured:**
+
+Empirical bisection (see commit `<this commit>`) showed Haiku 4.5 has two distinct prompt-cache thresholds higher than the published Sonnet thresholds:
+
+| Threshold | Behavior |
+|---|---|
+| < ~4096 tok | No caching at all. Markers ignored; full input billed. |
+| ~4096–7000 tok | **Pessimal.** Cache *writes* (1.25× input cost) but never *reads*. We pay the write tax with no benefit. |
+| > ~7000 tok | Caching engages fully — write once, read on subsequent calls at 0.10×. |
+
+Sonnet 4.6 by contrast caches at ~2000 tokens — well below our current cached-prefix size of ~3100 tokens (Cat constitution + output protocol).
+
+**Decision for now:** stay on Haiku 4.5 even though caching doesn't fire at current prefix sizes. The per-token cost gap (Haiku ~$1/M input vs Sonnet ~$3/M) means uncached Haiku may still beat cached Sonnet depending on real per-directive token consumption — and we don't yet have data on that. By P3+ the cached prefix will grow naturally (relationships layer, possibly a shared "framework primer" block), and may cross the Haiku cache threshold organically.
+
+**Revisit:** new roadmap item — cost analysis once the full agent workflow is implemented and we have real per-directive token telemetry. Compare Haiku-no-cache and Sonnet-with-cache on the same showcase directives.
 
 ## D-006 — ADRs live in .wonderland/architecture/
 

@@ -142,16 +142,45 @@ thesis is in trouble.
 
 ## Notes for follow-up
 
-1. **Investigate the cache stats.** Either we're not getting prompt
-   caching at all, or the SDK isn't reporting it. Either way the
-   per-run cost picture changes meaningfully. (Likely a quick test:
-   run the demo twice in close succession with a persistent project
-   root and inspect `cache_read_input_tokens` on the second run.)
+1. ~~**Investigate the cache stats.**~~ **Resolved (same day) — see "Update: cache investigation" below.**
 2. **Add a "verbose" mode to the demo** that prints the assembled prompt
    so the cache-marker placement is visible at run time.
 3. **Try a directive that should commit to architecture** (e.g., "Add a
    /health endpoint to a Phoenix app" — the P4 showcase) and see if the
    Cat issues a `proposal` rather than a `question`.
+
+---
+
+## Update: cache investigation
+
+Ran an empirical bisection against the live Anthropic API to figure out
+why cache stats came back zero. Findings:
+
+**Haiku 4.5 has two distinct cache-eligibility thresholds, both higher
+than I'd assumed (and higher than Sonnet's):**
+
+| Cached prefix size | Behavior |
+|---|---|
+| < ~4096 tokens | No caching at all. `cache_control` markers ignored. |
+| ~4096–7000 tokens | **Pessimal.** Cache *writes* (1.25× cost) but never *reads* — pay the write tax with no benefit. |
+| > ~7000 tokens | Caching engages fully — write once, then 0.10× reads. |
+
+**Sonnet 4.6 by contrast** caches at ~2000 tokens — well below our
+current ~3100-token cached prefix (constitution + protocol). At our
+sizes, Sonnet caches cleanly; Haiku ignores the markers entirely.
+
+**Decision:** stay on Haiku. Per-token Haiku is ~3× cheaper than Sonnet.
+Whether uncached Haiku beats cached Sonnet depends on real per-directive
+token consumption, and we don't have that data yet. By P3+ the cached
+prefix grows naturally (relationships layer, possibly a shared
+"framework primer"); we may cross the Haiku threshold organically. Real
+cost analysis lands as roadmap item `460b5ea9`, to run during P6
+showcases when there's a workflow to measure.
+
+**What this changes for the thesis observation:** nothing direct. But it
+revises the operational intuition — for now, every Cat turn pays full
+~3000 input tokens. Across the full cast (P5+), that adds up. Worth
+keeping in view as we instrument.
 
 ---
 
