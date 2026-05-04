@@ -27,6 +27,7 @@ CHARACTERS = [
     "caterpillar",
     "cheshire_cat",
     "dodo",
+    "dormouse",
     "mad_hatter",
     "queen_of_hearts",
     "tweedledee",
