@@ -44,7 +44,7 @@
     {
       "id": "p4-first-race",
       "title": "First Race",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [
         "4d8a19b4",
         "732f68a2",
@@ -144,12 +144,6 @@
         "status": "done",
         "details": "scripts/health_endpoint_showcase.py \u2014 Dodo + Alice + Cat + Rabbit live against Haiku 4.5. Directive: 'Add a /health endpoint to a Phoenix app.' Watch happy-path flow: Dodo relays \u2192 Alice produces stories \u2192 Rabbit decomposes \u2192 Cat reframes-or-blesses \u2192 Dodo records quiescence/completion. Capture full transcript in analyses/003-first-race.md per the README-update memory. Per WONDERLAND_SPEC \u00a710 \u2014 the trivial-directive proof of the orchestration loop.",
         "resolution": "scripts/health_endpoint_showcase.py \u2014 Dodo + Alice + Cat + Rabbit live against Haiku 4.5; ThreadMonitor wired so quiescence (15s of bus-silence with no open expectations) triggers Dodo.acknowledge(state='complete'), which itself transitions the thread to COMPLETE. Showcase ran on a concrete /health directive; reached COMPLETE in 23.02s. Outcomes: Rabbit produced 1 well-formed ticket (0.25-0.5d, 85% confidence, acceptance criteria mapping 1:1 to directive constraints); Alice and Cat both correctly chose silence (Alice 2 calls / 38 output tokens, Cat 1 call / 19 output tokens \u2014 \u00a7VIII restraint held perfectly); Dodo zero LLM calls (relay + acknowledge are mechanical). Bug surfaced + fixed mid-task: live Haiku 4.5 occasionally emits {body:null,stories:null} for silence decisions; AliceResponse/CatResponse/RabbitResponse/ConflictResponse/BriefProseResponse each got field_validator(mode='before') coercing None\u2192default with 5 new regression tests. analyses/004-first-race.md captures the run + grades the four predictions from analysis 003 (1/4 strict pass, 2/4 strict-or-spirit pass, 2/4 N/A because Alice's correct silence prevented downstream-of-Alice predictions from firing). 505 tests pass, ruff clean."
-      },
-      {
-        "id": "T23",
-        "title": "Project init CLI: wonderland init",
-        "status": "pending",
-        "details": "src/wonderland/cli.py with  \u2014 creates .wonderland/ skeleton in target project (memory dirs, architecture/, tickets/, stories/, escalations/, optionally a config stub). Mirrors 'daedalus init' pattern. Lands last in P4 so the showcase has used its outputs and the CLI emerges from real need. Could slip to early P5 if scope tightens."
       }
     ],
     "deferred": [
@@ -162,6 +156,11 @@
         "id": "T22",
         "title": "Project init CLI: wonderland init",
         "reason": ""
+      },
+      {
+        "id": "T23",
+        "title": "Project init CLI: wonderland init",
+        "reason": "Moved to head of P5 (will be P5.T24). The init CLI is the natural setup for the rest of P5 work — once P5 is activated, the cast agents land into a stable .wonderland/ skeleton the CLI creates. P4's heart was the autonomous end-to-end run (T22), which shipped; the init CLI is a tooling convenience that doesn't gate phase closeout."
       }
     ]
   }
