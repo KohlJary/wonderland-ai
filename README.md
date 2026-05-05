@@ -36,6 +36,31 @@ running an autonomous /health directive to settlement, with three of four
 agents correctly choosing silence — but the falsifier is P7's
 generic-baseline-vs-identity-native eval.
 
+A second corollary, brought into focus by §VIII of every constitution:
+**failure modes are part of identity in this system**. Each character's
+constitution explicitly names the failure mode that character is most at
+risk of slipping into — Alice's *"product owner who keeps adding stories
+during implementation,"* the Cat's *"false certainty,"* the Hatter's
+*"scenario sprawl"* and *"severity inflation,"* the Dodo's *"performing
+orchestration."* These aren't policies imposed from outside; they're
+load-bearing parts of who the character is. An agent that recognizes its
+own characteristic failure mode can course-correct from inside, rather
+than waiting for a guardrail to intervene from outside. This is what
+makes the project materially different from a generic multi-agent
+architecture: the generic architecture defines what each agent should
+*do*; Wonderland defines, with equal specificity, what each agent
+should *not do*. [Analysis 004](./analyses/004-first-race.md) is the
+cleanest evidence so far — three of four agents on a concrete operational
+directive correctly chose silence because their constitutions named
+padding, false certainty, and orchestration-performance as failure modes
+to actively guard against, not because an external policy intervened.
+
+The framing the project is building around: *failures are how software
+gets built.* The iterative cycle of ship-then-discover-then-fix depends
+on recognizing what went wrong; agents whose failure modes are part of
+their identity can participate in that cycle as colleagues, not as tools
+that need supervising out of their bad habits.
+
 ## Status
 
 In-progress, building in public. Phase 4 of 7 complete.
