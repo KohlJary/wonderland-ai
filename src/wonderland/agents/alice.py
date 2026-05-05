@@ -20,7 +20,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.engagement import (
@@ -106,6 +106,19 @@ class AliceResponse(BaseModel):
     decision: AliceDecision
     body: str = ""
     stories: list[StoryPayload] = Field(default_factory=list)
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def _body_none_to_empty(cls, v: object) -> object:
+        # The LLM occasionally emits explicit nulls for omitted fields
+        # (especially on `silence`). Coerce to default — schema intent and
+        # absent-field intent are the same here.
+        return "" if v is None else v
+
+    @field_validator("stories", mode="before")
+    @classmethod
+    def _stories_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
 
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
         if self.decision == "story" and not self.stories:

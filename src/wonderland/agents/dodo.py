@@ -30,7 +30,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.conflict import (
@@ -117,6 +117,16 @@ class ConflictResponse(BaseModel):
     rationale: str = ""
     dissents: list[DissentSchema] = Field(default_factory=list)
 
+    @field_validator("composition", "rationale", mode="before")
+    @classmethod
+    def _str_none_to_empty(cls, v: object) -> object:
+        return "" if v is None else v
+
+    @field_validator("dissents", mode="before")
+    @classmethod
+    def _dissents_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
+
 
 _COMPOSITION_PROTOCOL = """\
 You will be shown N proposals from N agents, each with their domain.
@@ -179,6 +189,11 @@ class BriefProseResponse(BaseModel):
     decision_required: str = Field(min_length=1)
     stakes: str = ""
     background: str = ""
+
+    @field_validator("stakes", "background", mode="before")
+    @classmethod
+    def _str_none_to_empty(cls, v: object) -> object:
+        return "" if v is None else v
 
 
 _BRIEF_PROTOCOL = """\

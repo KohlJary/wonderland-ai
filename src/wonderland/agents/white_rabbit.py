@@ -22,7 +22,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.engagement import (
@@ -136,6 +136,18 @@ class RabbitResponse(BaseModel):
     decision: RabbitDecision
     body: str = ""
     tickets: list[TicketPayload] = Field(default_factory=list)
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def _body_none_to_empty(cls, v: object) -> object:
+        # The LLM occasionally emits explicit nulls for omitted fields
+        # (especially on `silence`). Coerce to default.
+        return "" if v is None else v
+
+    @field_validator("tickets", mode="before")
+    @classmethod
+    def _tickets_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
 
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
         if self.decision == "ticket" and not self.tickets:

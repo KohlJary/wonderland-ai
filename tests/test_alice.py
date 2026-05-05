@@ -172,6 +172,16 @@ def test_parse_silence() -> None:
     assert response.stories == []
 
 
+def test_parse_silence_coerces_explicit_nulls() -> None:
+    """Live Haiku 4.5 sometimes emits explicit nulls instead of omitting fields."""
+    response = parse_alice_response(
+        '{"decision": "silence", "body": null, "stories": null}'
+    )
+    assert response.decision == "silence"
+    assert response.body == ""
+    assert response.stories == []
+
+
 def test_parse_concern() -> None:
     text = '```json\n{"decision": "concern", "body": "the work is drifting from Maya"}\n```'
     response = parse_alice_response(text)

@@ -110,6 +110,16 @@ def test_parse_unfenced_brief_response() -> None:
     assert response.decision_required == "X?"
 
 
+def test_parse_brief_coerces_explicit_nulls() -> None:
+    """Live Haiku 4.5 sometimes emits nulls for omitted optional prose fields."""
+    response = parse_brief_response(
+        '{"decision_required": "Pick A or B?", "stakes": null, "background": null}'
+    )
+    assert response.decision_required == "Pick A or B?"
+    assert response.stakes == ""
+    assert response.background == ""
+
+
 def test_parse_rejects_missing_decision() -> None:
     with pytest.raises(BriefResponseParseError):
         parse_brief_response('{"stakes": "x"}')

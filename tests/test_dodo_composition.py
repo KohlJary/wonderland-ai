@@ -102,6 +102,17 @@ def test_parse_unfenced_json() -> None:
     assert response.composed is True
 
 
+def test_parse_conflict_coerces_explicit_nulls() -> None:
+    """Live Haiku 4.5 sometimes emits nulls instead of omitting optional fields."""
+    response = parse_conflict_response(
+        '{"composed": true, "composition": "merged", "rationale": null, "dissents": null}'
+    )
+    assert response.composed is True
+    assert response.composition == "merged"
+    assert response.rationale == ""
+    assert response.dissents == []
+
+
 def test_parse_rejects_missing_json() -> None:
     with pytest.raises(ConflictResponseParseError):
         parse_conflict_response("just plain text")
