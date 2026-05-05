@@ -20,12 +20,20 @@ from wonderland.agent import (
     parse_compaction_response,
 )
 from wonderland.agents import (
+    Alice,
     CheshireCat,
     Dodo,
     WhiteRabbit,
+    alice_rules,
     cheshire_cat_rules,
     dodo_rules,
     white_rabbit_rules,
+)
+from wonderland.agents.alice import (
+    AliceDecision,
+    AliceResponse,
+    AliceResponseParseError,
+    parse_alice_response,
 )
 from wonderland.agents.cheshire_cat import (
     CatDecision,
@@ -111,6 +119,13 @@ from wonderland.llm import (
     TokenUsage,
 )
 from wonderland.memory import AgentMemory, EpisodicStore, RelationalStore, SemanticStore
+from wonderland.story import (
+    StoryPayload,
+    StoryRecord,
+    StoryRegistry,
+    StoryTier,
+    render_story,
+)
 from wonderland.thread_monitor import (
     ThreadInfo,
     ThreadMonitor,
@@ -157,6 +172,10 @@ __all__ = [
     "AgentIdentity",
     "AgentMemory",
     "AgentProposalSchema",
+    "Alice",
+    "AliceDecision",
+    "AliceResponse",
+    "AliceResponseParseError",
     "AnthropicConfig",
     "Artifact",
     "BriefProseResponse",
@@ -203,6 +222,10 @@ __all__ = [
     "SemanticStore",
     "SpeechAct",
     "Stance",
+    "StoryPayload",
+    "StoryRecord",
+    "StoryRegistry",
+    "StoryTier",
     "ThreadInfo",
     "ThreadMonitor",
     "ThreadState",
@@ -222,6 +245,7 @@ __all__ = [
     "WonderlandConfig",
     "__version__",
     "addressed_to",
+    "alice_rules",
     "almost_never",
     "always",
     "body_contains_any",
@@ -238,6 +262,7 @@ __all__ = [
     "load_config",
     "load_constitution",
     "make_engagement_policy",
+    "parse_alice_response",
     "parse_brief_response",
     "parse_cat_response",
     "parse_compaction_response",
@@ -247,6 +272,7 @@ __all__ = [
     "rarely",
     "render_adr",
     "render_escalation",
+    "render_story",
     "render_ticket",
     "save_config",
     "selectively",
