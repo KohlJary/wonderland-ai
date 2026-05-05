@@ -20,6 +20,22 @@ generic-agents baseline is what the eval harness in P7 will measure; until
 then, the [`analyses/`](./analyses) directory tracks the qualitative
 observations as the system gets built out.
 
+A corollary the project takes seriously: **identity-based architecture
+lets smaller models outperform their expected capabilities**. Most of the
+judgment a generic agent has to derive turn-by-turn — what to engage with,
+what to refuse, when to stay silent, who owns this domain — is carried by
+the constitution itself. The model isn't being asked to *invent* the
+discipline on each prompt; it's being asked to *act in character*, which
+is a much easier task. The default target is Claude Haiku 4.5
+(`claude-haiku-4-5-20251001`), and that choice is a thesis statement, not
+a cost-savings move: if identity is doing the load-bearing work, a small
+model with a strong constitution should hold its own against a large model
+with a generic prompt. The early analyses are consistent with this — see
+[analysis 004](./analyses/004-first-race.md) for a Haiku-driven team
+running an autonomous /health directive to settlement, with three of four
+agents correctly choosing silence — but the falsifier is P7's
+generic-baseline-vs-identity-native eval.
+
 ## Status
 
 In-progress, building in public. Phase 3 of 7 complete.
