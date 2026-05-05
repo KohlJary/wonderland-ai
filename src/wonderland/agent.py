@@ -1,9 +1,9 @@
 """WonderlandAgent — the base class every character subclasses.
 
 Per WONDERLAND_SPEC §5. Wires the four primitives an agent needs to
-exist on the bus: an Identity (who am I), an EpisodicStore (what have
-I observed/produced), a Caucus (where do utterances live), and an
-LLMClient (how do I deliberate).
+exist on the bus: an Identity (who am I), an AgentMemory (the SAM
+composite — episodic + semantic + relational), a Caucus (where do
+utterances live), and an LLMClient (how do I deliberate).
 
 Two async loops run concurrently when ``run()`` is called:
 
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from wonderland.caucus import Caucus
     from wonderland.identity import Identity
     from wonderland.llm import LLMClient
-    from wonderland.memory import EpisodicStore
+    from wonderland.memory import AgentMemory
 
 
 @dataclass(frozen=True)
@@ -107,7 +107,7 @@ class WonderlandAgent:
     def __init__(
         self,
         identity: Identity,
-        memory: EpisodicStore,
+        memory: AgentMemory,
         bus: Caucus,
         llm: LLMClient | None = None,
     ) -> None:
@@ -169,17 +169,17 @@ class WonderlandAgent:
     async def compose_context(self, triggers: list[Utterance]) -> Context:
         """Build the layered context for this turn.
 
-        Constitution comes from the identity (invariant). Current-thread
-        history is read from episodic memory and rendered as a
-        chronological transcript. Triggers themselves are excluded from
-        the transcript — they're already presented separately as the
-        immediate stimulus, and including them in the history layer
-        would just duplicate text in the prompt.
-
-        Relationships layer is left empty here; relational memory
-        lands in P3.
+        Constitution comes from the identity (invariant, cached).
+        Relationships are pulled from relational memory for the speakers
+        we're seeing in this turn (cached if non-empty — slow-changing).
+        Current-thread history is read from episodic memory and
+        rendered as a chronological transcript (uncached — changes
+        every turn). Triggers themselves are excluded from the
+        transcript since they're presented separately as the immediate
+        stimulus.
         """
         thread_text = ""
+        relationships_text = ""
         if triggers:
             thread_id = triggers[0].thread_id
             history = await self.memory.query_by_thread(thread_id)
@@ -187,8 +187,15 @@ class WonderlandAgent:
             history_excluding_triggers = [u for u in history if u.id not in trigger_ids]
             thread_text = format_transcript(history_excluding_triggers)
 
+            speaker_names: set[str] = {t.speaker.name for t in triggers}
+            for past in history_excluding_triggers:
+                speaker_names.add(past.speaker.name)
+            speaker_names.discard(self.identity.name)
+            relationships_text = self.memory.relational.for_speakers(sorted(speaker_names))
+
         return Context(
             constitution=self.identity.constitution_text,
+            relationships=relationships_text,
             current_thread=thread_text,
             triggers=tuple(triggers),
         )

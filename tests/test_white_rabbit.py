@@ -14,9 +14,9 @@ import pytest
 
 from wonderland import (
     AgentIdentity,
+    AgentMemory,
     Context,
     Engagement,
-    EpisodicStore,
     InMemoryCaucus,
     LLMClient,
     RabbitResponseParseError,
@@ -77,7 +77,7 @@ async def _rabbit(
     with_registry: bool = True,
 ) -> WhiteRabbit:
     bus = InMemoryCaucus()
-    memory = EpisodicStore(tmp_path, "white_rabbit")
+    memory = AgentMemory.for_project(tmp_path, "white_rabbit")
     await memory.open()
     registry = TicketRegistry(tmp_path) if with_registry else None
     return WhiteRabbit(memory=memory, bus=bus, llm=llm, ticket_registry=registry)

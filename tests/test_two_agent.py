@@ -27,8 +27,8 @@ import pytest
 from wonderland import (
     ADRRegistry,
     AgentIdentity,
+    AgentMemory,
     CheshireCat,
-    EpisodicStore,
     InMemoryCaucus,
     LLMClient,
     SpeechAct,
@@ -81,8 +81,8 @@ async def _setup_pair(
     rabbit_response: str,
 ) -> tuple[CheshireCat, WhiteRabbit, InMemoryCaucus]:
     bus = InMemoryCaucus()
-    cat_memory = EpisodicStore(tmp_path, "cheshire_cat")
-    rabbit_memory = EpisodicStore(tmp_path, "white_rabbit")
+    cat_memory = AgentMemory.for_project(tmp_path, "cheshire_cat")
+    rabbit_memory = AgentMemory.for_project(tmp_path, "white_rabbit")
     await cat_memory.open()
     await rabbit_memory.open()
 
@@ -413,8 +413,8 @@ smoke_required = pytest.mark.skipif(
 async def test_live_two_agent_dance(tmp_path: Path) -> None:
     """Cat + Rabbit live against Haiku 4.5. Observe role boundaries hold."""
     bus = InMemoryCaucus()
-    cat_memory = EpisodicStore(tmp_path, "cheshire_cat")
-    rabbit_memory = EpisodicStore(tmp_path, "white_rabbit")
+    cat_memory = AgentMemory.for_project(tmp_path, "cheshire_cat")
+    rabbit_memory = AgentMemory.for_project(tmp_path, "white_rabbit")
     await cat_memory.open()
     await rabbit_memory.open()
 

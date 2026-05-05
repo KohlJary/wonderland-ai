@@ -72,7 +72,7 @@ from wonderland.llm import (
     LLMClient,
     TokenUsage,
 )
-from wonderland.memory import EpisodicStore
+from wonderland.memory import AgentMemory, EpisodicStore, RelationalStore, SemanticStore
 from wonderland.ticket import (
     TicketDependencies,
     TicketPayload,
@@ -110,6 +110,7 @@ __all__ = [
     "ADRStatus",
     "AffectVector",
     "AgentIdentity",
+    "AgentMemory",
     "AnthropicConfig",
     "Artifact",
     "CachedBlock",
@@ -134,6 +135,8 @@ __all__ = [
     "RabbitResponse",
     "RabbitResponseParseError",
     "RedisCaucus",
+    "RelationalStore",
+    "SemanticStore",
     "SpeechAct",
     "Stance",
     "TicketDependencies",

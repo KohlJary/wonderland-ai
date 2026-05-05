@@ -15,11 +15,11 @@ import pytest
 from wonderland import (
     ADRRegistry,
     AgentIdentity,
+    AgentMemory,
     CatResponseParseError,
     CheshireCat,
     Context,
     Engagement,
-    EpisodicStore,
     InMemoryCaucus,
     LLMClient,
     SpeechAct,
@@ -77,7 +77,7 @@ async def _cat(
     with_registry: bool = True,
 ) -> CheshireCat:
     bus = InMemoryCaucus()
-    memory = EpisodicStore(tmp_path, "cheshire_cat")
+    memory = AgentMemory.for_project(tmp_path, "cheshire_cat")
     await memory.open()
     registry = ADRRegistry(tmp_path) if with_registry else None
     return CheshireCat(memory=memory, bus=bus, llm=llm, adr_registry=registry)

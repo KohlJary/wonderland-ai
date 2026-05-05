@@ -56,7 +56,7 @@ from wonderland.utterance import (
 if TYPE_CHECKING:
     from wonderland.caucus import Caucus
     from wonderland.llm import LLMClient
-    from wonderland.memory import EpisodicStore
+    from wonderland.memory import AgentMemory
 
 
 CAT_NAME = "cheshire_cat"
@@ -212,7 +212,7 @@ class CheshireCat(WonderlandAgent):
 
     def __init__(
         self,
-        memory: EpisodicStore,
+        memory: AgentMemory,
         bus: Caucus,
         llm: LLMClient | None = None,
         adr_registry: ADRRegistry | None = None,
