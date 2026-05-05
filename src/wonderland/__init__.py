@@ -19,7 +19,14 @@ from wonderland.agent import (
     format_utterance,
     parse_compaction_response,
 )
-from wonderland.agents import CheshireCat, WhiteRabbit, cheshire_cat_rules, white_rabbit_rules
+from wonderland.agents import (
+    CheshireCat,
+    Dodo,
+    WhiteRabbit,
+    cheshire_cat_rules,
+    dodo_rules,
+    white_rabbit_rules,
+)
 from wonderland.agents.cheshire_cat import (
     CatDecision,
     CatResponse,
@@ -132,6 +139,7 @@ __all__ = [
     "ConstitutionHeader",
     "ConstitutionParseError",
     "Context",
+    "Dodo",
     "Engagement",
     "EngagementPolicy",
     "EngagementRule",
@@ -170,6 +178,7 @@ __all__ = [
     "config_dir",
     "config_path",
     "default_engagement_policy",
+    "dodo_rules",
     "format_transcript",
     "format_utterance",
     "is_procedural",
