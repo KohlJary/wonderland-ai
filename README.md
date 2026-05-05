@@ -101,6 +101,14 @@ its own — per-agent episodic/semantic/relational memory, ADRs, tickets,
 transcripts. The runtime here is project-agnostic; per-project state
 lives with the project.
 
+```bash
+wonderland init [path]   # create the .wonderland/ skeleton; idempotent
+```
+
+`init` creates `architecture/`, `tickets/`, `stories/`, `escalations/`,
+and `memory/` plus a README documenting the layout. Re-running is safe —
+existing artifacts and a user-edited README are left alone.
+
 ## Install
 
 Core install pulls only what the in-process bus needs:
