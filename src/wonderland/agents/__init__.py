@@ -10,6 +10,7 @@ from wonderland.agents.alice import Alice, alice_rules
 from wonderland.agents.caterpillar import Caterpillar, caterpillar_rules
 from wonderland.agents.cheshire_cat import CheshireCat, cheshire_cat_rules
 from wonderland.agents.dodo import Dodo, dodo_rules
+from wonderland.agents.dormouse import Dormouse, dormouse_rules
 from wonderland.agents.mad_hatter import MadHatter, mad_hatter_rules
 from wonderland.agents.queen_of_hearts import QueenOfHearts, queen_of_hearts_rules
 from wonderland.agents.white_rabbit import WhiteRabbit, white_rabbit_rules
@@ -19,6 +20,7 @@ __all__ = [
     "Caterpillar",
     "CheshireCat",
     "Dodo",
+    "Dormouse",
     "MadHatter",
     "QueenOfHearts",
     "WhiteRabbit",
@@ -26,6 +28,7 @@ __all__ = [
     "caterpillar_rules",
     "cheshire_cat_rules",
     "dodo_rules",
+    "dormouse_rules",
     "mad_hatter_rules",
     "queen_of_hearts_rules",
     "white_rabbit_rules",

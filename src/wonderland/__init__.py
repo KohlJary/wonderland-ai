@@ -24,6 +24,7 @@ from wonderland.agents import (
     Caterpillar,
     CheshireCat,
     Dodo,
+    Dormouse,
     MadHatter,
     QueenOfHearts,
     WhiteRabbit,
@@ -31,6 +32,7 @@ from wonderland.agents import (
     caterpillar_rules,
     cheshire_cat_rules,
     dodo_rules,
+    dormouse_rules,
     mad_hatter_rules,
     queen_of_hearts_rules,
     white_rabbit_rules,
@@ -63,6 +65,12 @@ from wonderland.agents.dodo import (
     parse_brief_response,
     parse_conflict_response,
     stderr_escalation_channel,
+)
+from wonderland.agents.dormouse import (
+    DormouseDecision,
+    DormouseResponse,
+    DormouseResponseParseError,
+    parse_dormouse_response,
 )
 from wonderland.agents.mad_hatter import (
     HatterDecision,
@@ -143,6 +151,14 @@ from wonderland.llm import (
     TokenUsage,
 )
 from wonderland.memory import AgentMemory, EpisodicStore, RelationalStore, SemanticStore
+from wonderland.observation import (
+    ObservationPayload,
+    ObservationRecord,
+    ObservationRegistry,
+    ObservationSeverity,
+    ObservationType,
+    render_observation,
+)
 from wonderland.review import (
     ReviewFinding,
     ReviewPayload,
@@ -253,6 +269,10 @@ __all__ = [
     "Dissent",
     "DissentSchema",
     "Dodo",
+    "Dormouse",
+    "DormouseDecision",
+    "DormouseResponse",
+    "DormouseResponseParseError",
     "Engagement",
     "EngagementPolicy",
     "EngagementRule",
@@ -269,6 +289,11 @@ __all__ = [
     "InMemoryCaucus",
     "LLMClient",
     "MadHatter",
+    "ObservationPayload",
+    "ObservationRecord",
+    "ObservationRegistry",
+    "ObservationSeverity",
+    "ObservationType",
     "QueenDecision",
     "QueenOfHearts",
     "QueenResponse",
@@ -331,6 +356,7 @@ __all__ = [
     "default_engagement_policy",
     "dodo_rules",
     "domain_owner",
+    "dormouse_rules",
     "format_transcript",
     "format_utterance",
     "is_procedural",
@@ -346,6 +372,7 @@ __all__ = [
     "parse_compaction_response",
     "parse_conflict_response",
     "parse_constitution_header",
+    "parse_dormouse_response",
     "parse_hatter_response",
     "parse_queen_response",
     "parse_rabbit_response",
@@ -353,6 +380,7 @@ __all__ = [
     "rarely",
     "render_adr",
     "render_escalation",
+    "render_observation",
     "render_review",
     "render_ruling",
     "render_story",
