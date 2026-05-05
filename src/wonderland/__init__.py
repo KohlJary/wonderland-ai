@@ -34,10 +34,15 @@ from wonderland.agents.cheshire_cat import (
     parse_cat_response,
 )
 from wonderland.agents.dodo import (
+    BriefProseResponse,
+    BriefResponseParseError,
     ConflictResponse,
     ConflictResponseParseError,
     DissentSchema,
+    EscalationChannel,
+    parse_brief_response,
     parse_conflict_response,
+    stderr_escalation_channel,
 )
 from wonderland.agents.white_rabbit import (
     RabbitDecision,
@@ -80,6 +85,13 @@ from wonderland.engagement import (
     rarely,
     selectively,
     speaker_is,
+)
+from wonderland.escalation import (
+    AgentProposalSchema,
+    EscalationBrief,
+    EscalationRecord,
+    EscalationRegistry,
+    render_escalation,
 )
 from wonderland.identity import (
     ConstitutionHeader,
@@ -144,8 +156,11 @@ __all__ = [
     "AffectVector",
     "AgentIdentity",
     "AgentMemory",
+    "AgentProposalSchema",
     "AnthropicConfig",
     "Artifact",
+    "BriefProseResponse",
+    "BriefResponseParseError",
     "CachedBlock",
     "CatDecision",
     "CatResponse",
@@ -172,6 +187,10 @@ __all__ = [
     "EngagementRule",
     "EngagementRules",
     "EpisodicStore",
+    "EscalationBrief",
+    "EscalationChannel",
+    "EscalationRecord",
+    "EscalationRegistry",
     "Identity",
     "InMemoryCaucus",
     "LLMClient",
@@ -219,6 +238,7 @@ __all__ = [
     "load_config",
     "load_constitution",
     "make_engagement_policy",
+    "parse_brief_response",
     "parse_cat_response",
     "parse_compaction_response",
     "parse_conflict_response",
@@ -226,10 +246,12 @@ __all__ = [
     "parse_rabbit_response",
     "rarely",
     "render_adr",
+    "render_escalation",
     "render_ticket",
     "save_config",
     "selectively",
     "slugify",
     "speaker_is",
+    "stderr_escalation_channel",
     "white_rabbit_rules",
 ]
