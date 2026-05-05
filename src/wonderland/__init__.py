@@ -9,17 +9,28 @@ from wonderland.adr import (
     slugify,
 )
 from wonderland.agent import (
+    CompactionContext,
+    CompactionResponse,
+    CompactionResponseParseError,
+    CompactionResult,
     Context,
     WonderlandAgent,
     format_transcript,
     format_utterance,
+    parse_compaction_response,
 )
-from wonderland.agents import CheshireCat, cheshire_cat_rules
+from wonderland.agents import CheshireCat, WhiteRabbit, cheshire_cat_rules, white_rabbit_rules
 from wonderland.agents.cheshire_cat import (
     CatDecision,
     CatResponse,
     CatResponseParseError,
     parse_cat_response,
+)
+from wonderland.agents.white_rabbit import (
+    RabbitDecision,
+    RabbitResponse,
+    RabbitResponseParseError,
+    parse_rabbit_response,
 )
 from wonderland.caucus import (
     DEFAULT_STREAM,
@@ -66,7 +77,16 @@ from wonderland.llm import (
     LLMClient,
     TokenUsage,
 )
-from wonderland.memory import EpisodicStore
+from wonderland.memory import AgentMemory, EpisodicStore, RelationalStore, SemanticStore
+from wonderland.ticket import (
+    TicketDependencies,
+    TicketPayload,
+    TicketRecord,
+    TicketRegistry,
+    TicketStatus,
+    TicketTier,
+    render_ticket,
+)
 from wonderland.utterance import (
     PROCEDURAL_ACTS,
     SUBSTANTIVE_ACTS,
@@ -95,6 +115,7 @@ __all__ = [
     "ADRStatus",
     "AffectVector",
     "AgentIdentity",
+    "AgentMemory",
     "AnthropicConfig",
     "Artifact",
     "CachedBlock",
@@ -103,6 +124,10 @@ __all__ = [
     "CatResponseParseError",
     "Caucus",
     "CheshireCat",
+    "CompactionContext",
+    "CompactionResponse",
+    "CompactionResponseParseError",
+    "CompactionResult",
     "CompletionResult",
     "ConstitutionHeader",
     "ConstitutionParseError",
@@ -115,13 +140,25 @@ __all__ = [
     "Identity",
     "InMemoryCaucus",
     "LLMClient",
+    "RabbitDecision",
+    "RabbitResponse",
+    "RabbitResponseParseError",
     "RedisCaucus",
+    "RelationalStore",
+    "SemanticStore",
     "SpeechAct",
     "Stance",
+    "TicketDependencies",
+    "TicketPayload",
+    "TicketRecord",
+    "TicketRegistry",
+    "TicketStatus",
+    "TicketTier",
     "TokenUsage",
     "Utterance",
     "UtteranceContent",
     "UtterancePredicate",
+    "WhiteRabbit",
     "WonderlandAgent",
     "WonderlandConfig",
     "__version__",
@@ -141,11 +178,15 @@ __all__ = [
     "load_constitution",
     "make_engagement_policy",
     "parse_cat_response",
+    "parse_compaction_response",
     "parse_constitution_header",
+    "parse_rabbit_response",
     "rarely",
     "render_adr",
+    "render_ticket",
     "save_config",
     "selectively",
     "slugify",
     "speaker_is",
+    "white_rabbit_rules",
 ]

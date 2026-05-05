@@ -23,8 +23,8 @@ from pathlib import Path
 from wonderland import (
     ADRRegistry,
     AgentIdentity,
+    AgentMemory,
     CheshireCat,
-    EpisodicStore,
     InMemoryCaucus,
     LLMClient,
     SpeechAct,
@@ -59,7 +59,7 @@ async def run_demo(directive: str, project_root: Path, *, timeout: float) -> int
         usage_log.append(u)
 
     bus = InMemoryCaucus()
-    memory = EpisodicStore(project_root, "cheshire_cat")
+    memory = AgentMemory.for_project(project_root, "cheshire_cat")
     await memory.open()
     registry = ADRRegistry(project_root)
     llm = LLMClient(on_token_usage=on_usage)

@@ -17,13 +17,12 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING
 
 from wonderland.utterance import AgentIdentity, SpeechAct, Utterance
 
-
-class AgentMemory(Protocol):
-    """Forward-declared memory interface (substantive shape lands in T5)."""
+if TYPE_CHECKING:
+    from wonderland.memory import AgentMemory
 
 
 EngagementPolicy = Callable[[Utterance, "AgentMemory | None"], bool]

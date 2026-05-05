@@ -9,9 +9,9 @@ import pytest
 
 from wonderland import (
     AgentIdentity,
+    AgentMemory,
     CachedBlock,
     Context,
-    EpisodicStore,
     InMemoryCaucus,
     SpeechAct,
     Utterance,
@@ -69,7 +69,7 @@ async def _agent(
     identity: Identity | None = None,
 ) -> WonderlandAgent:
     bus = InMemoryCaucus()
-    memory = EpisodicStore(tmp_path, "cheshire_cat")
+    memory = AgentMemory.for_project(tmp_path, "cheshire_cat")
     await memory.open()
     return WonderlandAgent(
         identity=identity or _make_identity(),
@@ -164,7 +164,7 @@ def test_context_to_llm_request_joins_multiple_triggers() -> None:
 
 async def test_constructor_wires_identity_memory_bus_llm(tmp_path: Path) -> None:
     bus = InMemoryCaucus()
-    memory = EpisodicStore(tmp_path, "cat")
+    memory = AgentMemory.for_project(tmp_path, "cat")
     await memory.open()
     identity = _make_identity()
     agent = WonderlandAgent(identity=identity, memory=memory, bus=bus, llm=None)
@@ -235,6 +235,59 @@ async def test_compose_context_populates_current_thread_from_episodic_memory(
     ctx = await agent.compose_context([trigger])
     assert "ticket body" in ctx.current_thread
     assert "[white_rabbit — ticket]" in ctx.current_thread
+
+
+async def test_compose_context_populates_relationships_from_relational_memory(
+    tmp_path: Path,
+) -> None:
+    """When the trigger comes from an agent we have notes about, those notes
+    show up in Context.relationships."""
+    agent = await _agent(tmp_path)
+    agent.memory.relational.write(
+        "white_rabbit",
+        "Asks me for estimates I shouldn't be giving. Gentle redirect each time.",
+    )
+
+    trigger = _utterance(thread_id="t", speaker="white_rabbit", body="by when?")
+    ctx = await agent.compose_context([trigger])
+
+    assert "white_rabbit" in ctx.relationships
+    assert "estimates I shouldn't be giving" in ctx.relationships
+
+
+async def test_compose_context_relationships_empty_when_no_notes(tmp_path: Path) -> None:
+    """No relational notes for the trigger's speaker → relationships layer empty."""
+    agent = await _agent(tmp_path)
+    trigger = _utterance(thread_id="t", speaker="white_rabbit")
+    ctx = await agent.compose_context([trigger])
+    assert ctx.relationships == ""
+
+
+async def test_compose_context_includes_relationships_for_thread_speakers(
+    tmp_path: Path,
+) -> None:
+    """Relationships layer covers everyone in the thread, not just the trigger speaker."""
+    agent = await _agent(tmp_path)
+    agent.memory.relational.write("white_rabbit", "rabbit-notes")
+    agent.memory.relational.write("alice", "alice-notes")
+
+    earlier = _utterance(thread_id="t", speaker="alice", body="user story...")
+    await agent.memory.record(earlier)
+
+    trigger = _utterance(thread_id="t", speaker="white_rabbit", body="ticketing it now")
+    ctx = await agent.compose_context([trigger])
+
+    assert "rabbit-notes" in ctx.relationships
+    assert "alice-notes" in ctx.relationships
+
+
+async def test_compose_context_excludes_self_from_relationships(tmp_path: Path) -> None:
+    """The agent doesn't keep relational notes about itself."""
+    agent = await _agent(tmp_path)
+    agent.memory.relational.write(agent.identity.name, "should not appear")
+    trigger = _utterance(thread_id="t", speaker=agent.identity.name)
+    ctx = await agent.compose_context([trigger])
+    assert "should not appear" not in ctx.relationships
 
 
 async def test_compose_context_excludes_triggers_from_thread_history(tmp_path: Path) -> None:
@@ -441,7 +494,7 @@ async def test_end_to_end_with_loaded_constitution(tmp_path: Path) -> None:
     """Wire identity-from-disk + memory + bus and observe one turn."""
     cat_identity = load_constitution("cheshire_cat")
     bus = InMemoryCaucus()
-    memory = EpisodicStore(tmp_path, "cheshire_cat")
+    memory = AgentMemory.for_project(tmp_path, "cheshire_cat")
     await memory.open()
 
     class FixedReplyAgent(WonderlandAgent):
