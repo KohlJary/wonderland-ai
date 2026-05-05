@@ -109,11 +109,18 @@ def test_init_layout_matches_what_registries_expect(tmp_path: Path) -> None:
     from wonderland.adr import ADR_DIRNAME
     from wonderland.escalation import ESCALATIONS_DIRNAME
     from wonderland.story import STORIES_DIRNAME
+    from wonderland.test_scenario import TEST_SCENARIOS_DIRNAME
     from wonderland.ticket import TICKETS_DIRNAME
 
     init_skeleton(tmp_path)
     wonderland = tmp_path / WONDERLAND_DIRNAME
-    for dirname in (ADR_DIRNAME, TICKETS_DIRNAME, STORIES_DIRNAME, ESCALATIONS_DIRNAME):
+    for dirname in (
+        ADR_DIRNAME,
+        TICKETS_DIRNAME,
+        STORIES_DIRNAME,
+        TEST_SCENARIOS_DIRNAME,
+        ESCALATIONS_DIRNAME,
+    ):
         assert (wonderland / dirname).is_dir(), f"registry expects {dirname}/"
     assert (wonderland / "memory").is_dir(), "AgentMemory expects memory/<agent>/ to live here"
 
