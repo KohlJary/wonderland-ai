@@ -9,10 +9,15 @@ from wonderland.adr import (
     slugify,
 )
 from wonderland.agent import (
+    CompactionContext,
+    CompactionResponse,
+    CompactionResponseParseError,
+    CompactionResult,
     Context,
     WonderlandAgent,
     format_transcript,
     format_utterance,
+    parse_compaction_response,
 )
 from wonderland.agents import CheshireCat, WhiteRabbit, cheshire_cat_rules, white_rabbit_rules
 from wonderland.agents.cheshire_cat import (
@@ -119,6 +124,10 @@ __all__ = [
     "CatResponseParseError",
     "Caucus",
     "CheshireCat",
+    "CompactionContext",
+    "CompactionResponse",
+    "CompactionResponseParseError",
+    "CompactionResult",
     "CompletionResult",
     "ConstitutionHeader",
     "ConstitutionParseError",
@@ -169,6 +178,7 @@ __all__ = [
     "load_constitution",
     "make_engagement_policy",
     "parse_cat_response",
+    "parse_compaction_response",
     "parse_constitution_header",
     "parse_rabbit_response",
     "rarely",

@@ -31,7 +31,7 @@
     {
       "id": "p3-first-tension",
       "title": "First Tension",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [
         "9371a743",
         "339db74a",
@@ -134,8 +134,9 @@
       {
         "id": "T16",
         "title": "Compaction-as-agent-behavior",
-        "status": "pending",
-        "details": "Per WONDERLAND_SPEC \u00a78: 'compaction is itself an agent behavior.' Hook on AgentMemory that triggers between threads (or on demand): the agent prompts itself in-character to reflect on the just-completed thread and produce semantic + relational distillations. Hatter's reflections are nonlinear; Caterpillar's are slow/categorical. For T16 we land the mechanism \u2014 a CompactionPrompt template, a hook on AgentMemory.compact(thread_id, llm), tests with mocked LLM. Per-character compaction prompts are stubs that subclasses override."
+        "status": "done",
+        "details": "Per WONDERLAND_SPEC \u00a78: 'compaction is itself an agent behavior.' Hook on AgentMemory that triggers between threads (or on demand): the agent prompts itself in-character to reflect on the just-completed thread and produce semantic + relational distillations. Hatter's reflections are nonlinear; Caterpillar's are slow/categorical. For T16 we land the mechanism \u2014 a CompactionPrompt template, a hook on AgentMemory.compact(thread_id, llm), tests with mocked LLM. Per-character compaction prompts are stubs that subclasses override.",
+        "resolution": "WonderlandAgent.compact(thread_id) \u2014 agent reflects on a thread in-character and persists semantic + relational updates. CompactionContext mirrors Context shape: constitution + protocol cached as invariant prefixes, existing_semantic + existing_relational cached when present, transcript in uncached user message. CompactionResponse Pydantic model: semantic_updates and relational_updates dicts (REPLACE-in-full semantics \u2014 agent must include everything it wants to keep, forcing active curation rather than append-only drift). CompactionResult dataclass tracks what changed, has is_empty property. parse_compaction_response defensive (tolerates unfenced JSON; empty {} is valid \u2014 uneventful threads produce honest empty compactions). Per-character flavor via class-attribute COMPACTION_PROTOCOL \u2014 subclasses override (test demonstrates with a HatterStyle stub). compact() short-circuits to empty result when no LLM injected or thread has no history. 25 mocked tests + 1 live smoke (passing in 15.24s \u2014 Cat actually reflected on a Cat+Rabbit thread end-to-end). 353 total pass; ruff clean."
       }
     ],
     "deferred": []
