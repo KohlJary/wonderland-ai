@@ -136,4 +136,4 @@ WONDERLAND_LLM_SMOKE=1 \
 
 ## License
 
-[Hippocratic 3.0](https://firstdonoharm.dev/).
+[MIT](./LICENSE).

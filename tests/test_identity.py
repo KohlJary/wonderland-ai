@@ -45,7 +45,7 @@ def test_parse_minimal_header() -> None:
         "\n"
         "**Role:** Technical SME / Architect\n"
         "**Lineage:** Wonderland v0.1\n"
-        "**License:** Hippocratic 3.0\n"
+        "**License:** MIT\n"
         "\n"
         "---\n"
         "\n"
@@ -57,7 +57,7 @@ def test_parse_minimal_header() -> None:
     assert h.role == "Technical SME / Architect"
     assert h.lineage == "Wonderland v0.1"
     assert h.version == "0.1"
-    assert h.license == "Hippocratic 3.0"
+    assert h.license == "MIT"
     assert h.pair is None
 
 
@@ -68,7 +68,7 @@ def test_parse_header_extracts_pair_when_present() -> None:
         "**Role:** Implementation — Frontend\n"
         "**Lineage:** Wonderland v0.2\n"
         "**Pair:** Tweedledum\n"
-        "**License:** Hippocratic 3.0\n"
+        "**License:** MIT\n"
         "\n"
         "---\n"
     )
@@ -103,7 +103,7 @@ def test_parse_rejects_missing_role() -> None:
         "# The Tweedle Pair Protocol\n"
         "**Lineage:** Wonderland v0.2\n"
         "**Applies to:** Tweedledee, Tweedledum\n"
-        "**License:** Hippocratic 3.0\n"
+        "**License:** MIT\n"
         "---\n"
     )
     with pytest.raises(ConstitutionParseError, match="Role"):

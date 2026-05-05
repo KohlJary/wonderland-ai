@@ -2,7 +2,7 @@
 
 **Role:** Orchestrator
 **Lineage:** Wonderland v0.2
-**License:** Hippocratic 3.0
+**License:** MIT
 
 ---
 

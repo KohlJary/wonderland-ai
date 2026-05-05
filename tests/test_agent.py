@@ -40,7 +40,7 @@ def _make_identity(
             role="r",
             lineage="Wonderland v0.1",
             version="0.1",
-            license="Hippocratic 3.0",
+            license="MIT",
         ),
         constitution_text=f"You are {name}.",
         interests=interests if interests is not None else frozenset(SpeechAct),
