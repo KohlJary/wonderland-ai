@@ -36,9 +36,34 @@ running an autonomous /health directive to settlement, with three of four
 agents correctly choosing silence — but the falsifier is P7's
 generic-baseline-vs-identity-native eval.
 
+A second corollary, brought into focus by §VIII of every constitution:
+**failure modes are part of identity in this system**. Each character's
+constitution explicitly names the failure mode that character is most at
+risk of slipping into — Alice's *"product owner who keeps adding stories
+during implementation,"* the Cat's *"false certainty,"* the Hatter's
+*"scenario sprawl"* and *"severity inflation,"* the Dodo's *"performing
+orchestration."* These aren't policies imposed from outside; they're
+load-bearing parts of who the character is. An agent that recognizes its
+own characteristic failure mode can course-correct from inside, rather
+than waiting for a guardrail to intervene from outside. This is what
+makes the project materially different from a generic multi-agent
+architecture: the generic architecture defines what each agent should
+*do*; Wonderland defines, with equal specificity, what each agent
+should *not do*. [Analysis 004](./analyses/004-first-race.md) is the
+cleanest evidence so far — three of four agents on a concrete operational
+directive correctly chose silence because their constitutions named
+padding, false certainty, and orchestration-performance as failure modes
+to actively guard against, not because an external policy intervened.
+
+The framing the project is building around: *failures are how software
+gets built.* The iterative cycle of ship-then-discover-then-fix depends
+on recognizing what went wrong; agents whose failure modes are part of
+their identity can participate in that cycle as colleagues, not as tools
+that need supervising out of their bad habits.
+
 ## Status
 
-In-progress, building in public. Phase 4 of 7 complete.
+In-progress, building in public. Phase 5 of 7 complete.
 
 - [x] **P1 — Foundation** ([overview](./WONDERLAND_SPEC.md#12-build-order))
       Schema, Caucus event bus, episodic memory, agent base class.
@@ -53,12 +78,16 @@ In-progress, building in public. Phase 4 of 7 complete.
       resolution, composition, and human-in-the-loop escalation. Showcase 1:
       a `/health` endpoint directive runs end-to-end against live Haiku 4.5,
       reaching settlement because the team goes quiet — no human in the loop.
-- [ ] **P5 — Full Cast** *(next)*
-      Hatter, Caterpillar, Queen of Hearts, Dormouse, Tweedles. Per-character
-      artifact handlers. Synthetic-consensus guard. Init CLI lands first
-      (carried over from P4) so the cast agents arrive into a stable
-      `.wonderland/` skeleton.
-- [ ] **P6 — Real Threads**
+- [x] **P5 — Full Cast**
+      The remaining six characters land: Mad Hatter (test scenarios),
+      Caterpillar (code review), Queen of Hearts (security/compliance
+      rulings), Dormouse (production observations), and the Tweedles
+      (frontend + backend implementation, with a shared pair protocol).
+      `wonderland init` CLI ships the `.wonderland/` skeleton. Synthetic-
+      consensus guard observes the bus for the §11 anti-pattern — three
+      or more distinct constitutional domains converging on the same
+      position is suspect, and the guard surfaces it for review.
+- [ ] **P6 — Real Threads** *(next)*
       Showcases 2–4: translation chat MVP, security recovery, multi-session.
 - [ ] **P7 — Evals**
       Generic-baseline vs Wonderland comparison. The compounding curve.
@@ -100,6 +129,14 @@ A target project that runs Wonderland gets a `.wonderland/` directory of
 its own — per-agent episodic/semantic/relational memory, ADRs, tickets,
 transcripts. The runtime here is project-agnostic; per-project state
 lives with the project.
+
+```bash
+wonderland init [path]   # create the .wonderland/ skeleton; idempotent
+```
+
+`init` creates `architecture/`, `tickets/`, `stories/`, `escalations/`,
+and `memory/` plus a README documenting the layout. Re-running is safe —
+existing artifacts and a user-edited README are left alone.
 
 ## Install
 

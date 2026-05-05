@@ -27,6 +27,9 @@ dependencies = [
     "platformdirs>=4.0",
 ]
 
+[project.scripts]
+wonderland = "wonderland.cli:main"
+
 [project.optional-dependencies]
 redis = [
     "redis>=5.2",
