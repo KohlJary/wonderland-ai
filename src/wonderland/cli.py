@@ -31,6 +31,7 @@ SKELETON_DIRS: tuple[str, ...] = (
     "tickets",
     "stories",
     "test-scenarios",
+    "rulings",
     "escalations",
     "memory",
 )
@@ -52,6 +53,8 @@ lives under `memory/`.
 - `stories/` — User stories Alice writes (`story-NNN-slug.md`).
 - `test-scenarios/` — Test scenarios the Mad Hatter writes
   (`scenario-NNN-slug.md`), each with a triaged severity.
+- `rulings/` — Security and compliance rulings the Queen of Hearts
+  writes (`ruling-NNN-slug.md`), each with a citation.
 - `escalations/` — Briefs the Dodo writes when conflicts need a human.
 - `memory/` — Per-agent episodic (SQLite) + semantic (markdown) +
   relational (markdown) notes. Subdirectories under `memory/<agent>/`

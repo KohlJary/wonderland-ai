@@ -25,12 +25,14 @@ from wonderland.agents import (
     CheshireCat,
     Dodo,
     MadHatter,
+    QueenOfHearts,
     WhiteRabbit,
     alice_rules,
     caterpillar_rules,
     cheshire_cat_rules,
     dodo_rules,
     mad_hatter_rules,
+    queen_of_hearts_rules,
     white_rabbit_rules,
 )
 from wonderland.agents.alice import (
@@ -67,6 +69,12 @@ from wonderland.agents.mad_hatter import (
     HatterResponse,
     HatterResponseParseError,
     parse_hatter_response,
+)
+from wonderland.agents.queen_of_hearts import (
+    QueenDecision,
+    QueenResponse,
+    QueenResponseParseError,
+    parse_queen_response,
 )
 from wonderland.agents.white_rabbit import (
     RabbitDecision,
@@ -143,6 +151,14 @@ from wonderland.review import (
     ReviewSeverity,
     ReviewVerdict,
     render_review,
+)
+from wonderland.ruling import (
+    RulingDomain,
+    RulingPayload,
+    RulingRecord,
+    RulingRegistry,
+    RulingSeverity,
+    render_ruling,
 )
 from wonderland.story import (
     StoryPayload,
@@ -253,6 +269,10 @@ __all__ = [
     "InMemoryCaucus",
     "LLMClient",
     "MadHatter",
+    "QueenDecision",
+    "QueenOfHearts",
+    "QueenResponse",
+    "QueenResponseParseError",
     "RabbitDecision",
     "RabbitResponse",
     "RabbitResponseParseError",
@@ -265,6 +285,11 @@ __all__ = [
     "ReviewRegistry",
     "ReviewSeverity",
     "ReviewVerdict",
+    "RulingDomain",
+    "RulingPayload",
+    "RulingRecord",
+    "RulingRegistry",
+    "RulingSeverity",
     "SemanticStore",
     "Severity",
     "SpeechAct",
@@ -322,11 +347,14 @@ __all__ = [
     "parse_conflict_response",
     "parse_constitution_header",
     "parse_hatter_response",
+    "parse_queen_response",
     "parse_rabbit_response",
+    "queen_of_hearts_rules",
     "rarely",
     "render_adr",
     "render_escalation",
     "render_review",
+    "render_ruling",
     "render_story",
     "render_test_scenario",
     "render_ticket",
