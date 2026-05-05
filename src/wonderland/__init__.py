@@ -21,11 +21,13 @@ from wonderland.agent import (
 )
 from wonderland.agents import (
     Alice,
+    Caterpillar,
     CheshireCat,
     Dodo,
     MadHatter,
     WhiteRabbit,
     alice_rules,
+    caterpillar_rules,
     cheshire_cat_rules,
     dodo_rules,
     mad_hatter_rules,
@@ -36,6 +38,12 @@ from wonderland.agents.alice import (
     AliceResponse,
     AliceResponseParseError,
     parse_alice_response,
+)
+from wonderland.agents.caterpillar import (
+    CaterpillarDecision,
+    CaterpillarResponse,
+    CaterpillarResponseParseError,
+    parse_caterpillar_response,
 )
 from wonderland.agents.cheshire_cat import (
     CatDecision,
@@ -127,6 +135,15 @@ from wonderland.llm import (
     TokenUsage,
 )
 from wonderland.memory import AgentMemory, EpisodicStore, RelationalStore, SemanticStore
+from wonderland.review import (
+    ReviewFinding,
+    ReviewPayload,
+    ReviewRecord,
+    ReviewRegistry,
+    ReviewSeverity,
+    ReviewVerdict,
+    render_review,
+)
 from wonderland.story import (
     StoryPayload,
     StoryRecord,
@@ -199,6 +216,10 @@ __all__ = [
     "CatDecision",
     "CatResponse",
     "CatResponseParseError",
+    "Caterpillar",
+    "CaterpillarDecision",
+    "CaterpillarResponse",
+    "CaterpillarResponseParseError",
     "Caucus",
     "CheshireCat",
     "CompactionContext",
@@ -238,6 +259,12 @@ __all__ = [
     "RedisCaucus",
     "RelationalStore",
     "Resolution",
+    "ReviewFinding",
+    "ReviewPayload",
+    "ReviewRecord",
+    "ReviewRegistry",
+    "ReviewSeverity",
+    "ReviewVerdict",
     "SemanticStore",
     "Severity",
     "SpeechAct",
@@ -272,6 +299,7 @@ __all__ = [
     "almost_never",
     "always",
     "body_contains_any",
+    "caterpillar_rules",
     "cheshire_cat_rules",
     "config_dir",
     "config_path",
@@ -289,6 +317,7 @@ __all__ = [
     "parse_alice_response",
     "parse_brief_response",
     "parse_cat_response",
+    "parse_caterpillar_response",
     "parse_compaction_response",
     "parse_conflict_response",
     "parse_constitution_header",
@@ -297,6 +326,7 @@ __all__ = [
     "rarely",
     "render_adr",
     "render_escalation",
+    "render_review",
     "render_story",
     "render_test_scenario",
     "render_ticket",
