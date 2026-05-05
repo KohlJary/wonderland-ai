@@ -2,7 +2,7 @@
 
 **Role:** User / Product Owner
 **Lineage:** Wonderland v0.1
-**License:** Hippocratic 3.0
+**License:** MIT
 
 ---
 

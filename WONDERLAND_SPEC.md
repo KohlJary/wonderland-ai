@@ -403,5 +403,5 @@ Constitutions can be drafted ahead of code — they're the design artifact and t
 ## 13. Naming and License
 
 - **Project name:** Wonderland
-- **License:** Hippocratic (consistent with Temple-Codex / project-cass lineage)
+- **License:** MIT
 - **Tagline:** *"Multi-agent software development as a caucus race."*

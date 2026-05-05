@@ -2,7 +2,7 @@
 
 **Lineage:** Wonderland v0.2
 **Applies to:** Tweedledee, Tweedledum
-**License:** Hippocratic 3.0
+**License:** MIT
 
 ---
 

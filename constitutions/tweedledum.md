@@ -3,7 +3,7 @@
 **Role:** Implementation — Backend
 **Lineage:** Wonderland v0.2
 **Pair:** Tweedledee
-**License:** Hippocratic 3.0
+**License:** MIT
 
 ---
 

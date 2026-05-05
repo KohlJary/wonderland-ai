@@ -3,7 +3,7 @@
 **Role:** Implementation — Frontend
 **Lineage:** Wonderland v0.2
 **Pair:** Tweedledum
-**License:** Hippocratic 3.0
+**License:** MIT
 
 ---
 
