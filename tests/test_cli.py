@@ -108,6 +108,7 @@ def test_init_layout_matches_what_registries_expect(tmp_path: Path) -> None:
     """Smoke test: each registry's expected dir is part of SKELETON_DIRS."""
     from wonderland.adr import ADR_DIRNAME
     from wonderland.escalation import ESCALATIONS_DIRNAME
+    from wonderland.implementation import IMPLEMENTATIONS_DIRNAME
     from wonderland.observation import OBSERVATIONS_DIRNAME
     from wonderland.ruling import RULINGS_DIRNAME
     from wonderland.story import STORIES_DIRNAME
@@ -123,6 +124,7 @@ def test_init_layout_matches_what_registries_expect(tmp_path: Path) -> None:
         TEST_SCENARIOS_DIRNAME,
         RULINGS_DIRNAME,
         OBSERVATIONS_DIRNAME,
+        IMPLEMENTATIONS_DIRNAME,
         ESCALATIONS_DIRNAME,
     ):
         assert (wonderland / dirname).is_dir(), f"registry expects {dirname}/"

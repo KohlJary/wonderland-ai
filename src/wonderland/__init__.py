@@ -27,6 +27,8 @@ from wonderland.agents import (
     Dormouse,
     MadHatter,
     QueenOfHearts,
+    Tweedledee,
+    Tweedledum,
     WhiteRabbit,
     alice_rules,
     caterpillar_rules,
@@ -35,6 +37,8 @@ from wonderland.agents import (
     dormouse_rules,
     mad_hatter_rules,
     queen_of_hearts_rules,
+    tweedledee_rules,
+    tweedledum_rules,
     white_rabbit_rules,
 )
 from wonderland.agents.alice import (
@@ -83,6 +87,12 @@ from wonderland.agents.queen_of_hearts import (
     QueenResponse,
     QueenResponseParseError,
     parse_queen_response,
+)
+from wonderland.agents.tweedles import (
+    TweedleDecision,
+    TweedleResponse,
+    TweedleResponseParseError,
+    parse_tweedle_response,
 )
 from wonderland.agents.white_rabbit import (
     RabbitDecision,
@@ -141,6 +151,13 @@ from wonderland.identity import (
     default_engagement_policy,
     load_constitution,
     parse_constitution_header,
+)
+from wonderland.implementation import (
+    ImplementationPayload,
+    ImplementationRecord,
+    ImplementationRegistry,
+    ImplementationSide,
+    render_implementation,
 )
 from wonderland.llm import (
     DEFAULT_MAX_TOKENS,
@@ -286,6 +303,10 @@ __all__ = [
     "HatterResponse",
     "HatterResponseParseError",
     "Identity",
+    "ImplementationPayload",
+    "ImplementationRecord",
+    "ImplementationRegistry",
+    "ImplementationSide",
     "InMemoryCaucus",
     "LLMClient",
     "MadHatter",
@@ -337,6 +358,11 @@ __all__ = [
     "TicketStatus",
     "TicketTier",
     "TokenUsage",
+    "TweedleDecision",
+    "TweedleResponse",
+    "TweedleResponseParseError",
+    "Tweedledee",
+    "Tweedledum",
     "Utterance",
     "UtteranceContent",
     "UtterancePredicate",
@@ -376,10 +402,12 @@ __all__ = [
     "parse_hatter_response",
     "parse_queen_response",
     "parse_rabbit_response",
+    "parse_tweedle_response",
     "queen_of_hearts_rules",
     "rarely",
     "render_adr",
     "render_escalation",
+    "render_implementation",
     "render_observation",
     "render_review",
     "render_ruling",
@@ -391,5 +419,7 @@ __all__ = [
     "slugify",
     "speaker_is",
     "stderr_escalation_channel",
+    "tweedledee_rules",
+    "tweedledum_rules",
     "white_rabbit_rules",
 ]

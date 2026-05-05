@@ -13,6 +13,12 @@ from wonderland.agents.dodo import Dodo, dodo_rules
 from wonderland.agents.dormouse import Dormouse, dormouse_rules
 from wonderland.agents.mad_hatter import MadHatter, mad_hatter_rules
 from wonderland.agents.queen_of_hearts import QueenOfHearts, queen_of_hearts_rules
+from wonderland.agents.tweedles import (
+    Tweedledee,
+    Tweedledum,
+    tweedledee_rules,
+    tweedledum_rules,
+)
 from wonderland.agents.white_rabbit import WhiteRabbit, white_rabbit_rules
 
 __all__ = [
@@ -23,6 +29,8 @@ __all__ = [
     "Dormouse",
     "MadHatter",
     "QueenOfHearts",
+    "Tweedledee",
+    "Tweedledum",
     "WhiteRabbit",
     "alice_rules",
     "caterpillar_rules",
@@ -31,5 +39,7 @@ __all__ = [
     "dormouse_rules",
     "mad_hatter_rules",
     "queen_of_hearts_rules",
+    "tweedledee_rules",
+    "tweedledum_rules",
     "white_rabbit_rules",
 ]
