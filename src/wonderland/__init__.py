@@ -85,6 +85,12 @@ from wonderland.llm import (
     TokenUsage,
 )
 from wonderland.memory import AgentMemory, EpisodicStore, RelationalStore, SemanticStore
+from wonderland.thread_monitor import (
+    ThreadInfo,
+    ThreadMonitor,
+    ThreadState,
+    ThreadStateChange,
+)
 from wonderland.ticket import (
     TicketDependencies,
     TicketPayload,
@@ -156,6 +162,10 @@ __all__ = [
     "SemanticStore",
     "SpeechAct",
     "Stance",
+    "ThreadInfo",
+    "ThreadMonitor",
+    "ThreadState",
+    "ThreadStateChange",
     "TicketDependencies",
     "TicketPayload",
     "TicketRecord",
