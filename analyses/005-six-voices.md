@@ -261,12 +261,12 @@ the substantive turns.
 
 ## What we'd expect to see strengthen the thesis
 
-- **The full-cast race (analysis 007)** should show the same voice
+- **The full-cast race (analysis 006)** should show the same voice
   distinctions *plus* the inter-agent dynamics — Queen's concerns
   routing to Cat as proposals, Hatter's scenarios picked up by
   Tweedles as implementation constraints, Caterpillar reviews
   triggering Tweedle revisions.
-- **The Tweedle dance (analysis 006)** should show the §I argument-
+- **The Tweedle dance (analysis 007)** should show the §I argument-
   is-the-work in action — Dee proposing a contract, Dum
   pushing back, Cat arbitrating. The two Tweedles in this sweep
   showed they each ask domain-distinct questions; the dance shows
@@ -321,8 +321,8 @@ the substantive turns.
 
 ## Next breath
 
-Analysis 006 — the Tweedle dance. Dee + Dum (and probably Cat) on a
-directive that forces real contract negotiation. The two Tweedles
-this run asked domain-distinct questions in isolation; the dance
-shows what happens when those questions are at each other and the
-answer has to compose into a working seam.
+Analysis 006 — the full-cast race. The same translation-chat
+scenario, but with all 10 agents on one bus and able to interact.
+The voices distinguished cleanly in isolation; the race shows what
+happens when they have to compose into a working team rather than
+six independent statements.

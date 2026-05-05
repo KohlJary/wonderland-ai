@@ -357,11 +357,33 @@ class WonderlandAgent:
         return None
 
     async def speak(self) -> None:
-        """Pull triggers, deliberate, publish + record on output."""
+        """Pull triggers, deliberate, publish + record on output.
+
+        ``deliberate()`` exceptions are caught and treated as silence rather
+        than killing the speak loop. A malformed LLM response, a cancelled
+        in-flight call, or any other transient deliberation failure should
+        cost one turn, not the agent's entire participation in the thread.
+        ``CancelledError`` is re-raised so ``stop()`` can shut down cleanly.
+        """
         while True:
             triggers = await self.gather_triggers()
             context = await self.compose_context(triggers)
-            utterance = await self.deliberate(context)
+            try:
+                utterance = await self.deliberate(context)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Drop this turn, keep the loop alive for the next trigger.
+                # Logged via stderr so the failure is visible without
+                # forcing every consumer to wire a logger.
+                import sys
+
+                print(
+                    f"[{self.identity.name}] deliberate() raised "
+                    f"{type(exc).__name__}: {exc} — treating as silence",
+                    file=sys.stderr,
+                )
+                continue
             if utterance is not None:
                 await self.bus.publish(utterance)
                 await self.memory.record(utterance)
