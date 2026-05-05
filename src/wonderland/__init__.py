@@ -122,6 +122,11 @@ from wonderland.conflict import (
     Resolution,
     domain_owner,
 )
+from wonderland.consensus import (
+    ConsensusAlert,
+    SyntheticConsensusGuard,
+    default_agent_domains,
+)
 from wonderland.engagement import (
     Engagement,
     EngagementRule,
@@ -280,6 +285,7 @@ __all__ = [
     "ConflictDomain",
     "ConflictResponse",
     "ConflictResponseParseError",
+    "ConsensusAlert",
     "ConstitutionHeader",
     "ConstitutionParseError",
     "Context",
@@ -344,6 +350,7 @@ __all__ = [
     "StoryRecord",
     "StoryRegistry",
     "StoryTier",
+    "SyntheticConsensusGuard",
     "TestScenarioPayload",
     "TestScenarioRecord",
     "TestScenarioRegistry",
@@ -379,6 +386,7 @@ __all__ = [
     "cheshire_cat_rules",
     "config_dir",
     "config_path",
+    "default_agent_domains",
     "default_engagement_policy",
     "dodo_rules",
     "domain_owner",

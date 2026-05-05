@@ -63,7 +63,7 @@ that need supervising out of their bad habits.
 
 ## Status
 
-In-progress, building in public. Phase 4 of 7 complete.
+In-progress, building in public. Phase 5 of 7 complete.
 
 - [x] **P1 — Foundation** ([overview](./WONDERLAND_SPEC.md#12-build-order))
       Schema, Caucus event bus, episodic memory, agent base class.
@@ -78,12 +78,16 @@ In-progress, building in public. Phase 4 of 7 complete.
       resolution, composition, and human-in-the-loop escalation. Showcase 1:
       a `/health` endpoint directive runs end-to-end against live Haiku 4.5,
       reaching settlement because the team goes quiet — no human in the loop.
-- [ ] **P5 — Full Cast** *(next)*
-      Hatter, Caterpillar, Queen of Hearts, Dormouse, Tweedles. Per-character
-      artifact handlers. Synthetic-consensus guard. Init CLI lands first
-      (carried over from P4) so the cast agents arrive into a stable
-      `.wonderland/` skeleton.
-- [ ] **P6 — Real Threads**
+- [x] **P5 — Full Cast**
+      The remaining six characters land: Mad Hatter (test scenarios),
+      Caterpillar (code review), Queen of Hearts (security/compliance
+      rulings), Dormouse (production observations), and the Tweedles
+      (frontend + backend implementation, with a shared pair protocol).
+      `wonderland init` CLI ships the `.wonderland/` skeleton. Synthetic-
+      consensus guard observes the bus for the §11 anti-pattern — three
+      or more distinct constitutional domains converging on the same
+      position is suspect, and the guard surfaces it for review.
+- [ ] **P6 — Real Threads** *(next)*
       Showcases 2–4: translation chat MVP, security recovery, multi-session.
 - [ ] **P7 — Evals**
       Generic-baseline vs Wonderland comparison. The compounding curve.
