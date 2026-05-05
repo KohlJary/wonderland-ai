@@ -33,6 +33,12 @@ from wonderland.agents.cheshire_cat import (
     CatResponseParseError,
     parse_cat_response,
 )
+from wonderland.agents.dodo import (
+    ConflictResponse,
+    ConflictResponseParseError,
+    DissentSchema,
+    parse_conflict_response,
+)
 from wonderland.agents.white_rabbit import (
     RabbitDecision,
     RabbitResponse,
@@ -52,6 +58,14 @@ from wonderland.config import (
     config_path,
     load_config,
     save_config,
+)
+from wonderland.conflict import (
+    DOMAIN_PRIMACY,
+    Conflict,
+    ConflictDomain,
+    Dissent,
+    Resolution,
+    domain_owner,
 )
 from wonderland.engagement import (
     Engagement,
@@ -120,6 +134,7 @@ __all__ = [
     "DEFAULT_MAX_TOKENS",
     "DEFAULT_MODEL",
     "DEFAULT_STREAM",
+    "DOMAIN_PRIMACY",
     "PROCEDURAL_ACTS",
     "SUBSTANTIVE_ACTS",
     "ADRPayload",
@@ -142,9 +157,15 @@ __all__ = [
     "CompactionResponseParseError",
     "CompactionResult",
     "CompletionResult",
+    "Conflict",
+    "ConflictDomain",
+    "ConflictResponse",
+    "ConflictResponseParseError",
     "ConstitutionHeader",
     "ConstitutionParseError",
     "Context",
+    "Dissent",
+    "DissentSchema",
     "Dodo",
     "Engagement",
     "EngagementPolicy",
@@ -159,6 +180,7 @@ __all__ = [
     "RabbitResponseParseError",
     "RedisCaucus",
     "RelationalStore",
+    "Resolution",
     "SemanticStore",
     "SpeechAct",
     "Stance",
@@ -189,6 +211,7 @@ __all__ = [
     "config_path",
     "default_engagement_policy",
     "dodo_rules",
+    "domain_owner",
     "format_transcript",
     "format_utterance",
     "is_procedural",
@@ -198,6 +221,7 @@ __all__ = [
     "make_engagement_policy",
     "parse_cat_response",
     "parse_compaction_response",
+    "parse_conflict_response",
     "parse_constitution_header",
     "parse_rabbit_response",
     "rarely",
