@@ -199,6 +199,16 @@ def test_parse_cat_response_silence_omits_body() -> None:
     assert response.body == ""
 
 
+def test_parse_cat_response_silence_coerces_explicit_nulls() -> None:
+    """Live Haiku 4.5 sometimes emits explicit nulls instead of omitting fields."""
+    response = parse_cat_response(
+        '{"decision": "silence", "body": null, "adr": null}'
+    )
+    assert response.decision == "silence"
+    assert response.body == ""
+    assert response.adr is None
+
+
 def test_parse_cat_response_raises_on_missing_json() -> None:
     with pytest.raises(CatResponseParseError):
         parse_cat_response("just plain text, no json")

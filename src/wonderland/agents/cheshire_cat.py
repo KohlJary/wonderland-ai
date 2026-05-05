@@ -30,7 +30,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 from wonderland.adr import ADRPayload, ADRRegistry
 from wonderland.agent import Context, WonderlandAgent, format_utterance
@@ -140,6 +140,13 @@ class CatResponse(BaseModel):
     decision: CatDecision
     body: str = ""
     adr: ADRPayload | None = None
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def _body_none_to_empty(cls, v: object) -> object:
+        # The LLM occasionally emits explicit nulls for omitted fields
+        # (especially on `silence`). Coerce to default.
+        return "" if v is None else v
 
 
 _OUTPUT_PROTOCOL = """\

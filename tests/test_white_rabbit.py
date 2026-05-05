@@ -166,6 +166,16 @@ def test_parse_silence() -> None:
     assert response.tickets == []
 
 
+def test_parse_silence_coerces_explicit_nulls() -> None:
+    """Live Haiku 4.5 sometimes emits explicit nulls instead of omitting fields."""
+    response = parse_rabbit_response(
+        '{"decision": "silence", "body": null, "tickets": null}'
+    )
+    assert response.decision == "silence"
+    assert response.body == ""
+    assert response.tickets == []
+
+
 def test_parse_concern() -> None:
     text = '```json\n{"decision": "concern", "body": "scope is sliding"}\n```'
     response = parse_rabbit_response(text)
