@@ -280,6 +280,15 @@ WONDERLAND_LLM_SMOKE=1 \
   uv run pytest
 ```
 
+## Sponsoring
+
+Wonderland runs on a personal Anthropic budget — one person, one API
+key. The architecture is designed to be cheap (small models, heavy
+caching) but multi-agent runs at scale still add up. If any of my
+work has been useful to you — to read, build on, or argue with —
+[GitHub Sponsors](https://github.com/sponsors/KohlJary) keeps the
+Cheshire Cat in tea and the Hatter in scenarios.
+
 ## License
 
 [MIT](./LICENSE).
