@@ -26,11 +26,18 @@ landing alongside the T38 refactor).
 
 from __future__ import annotations
 
+import time
+from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    from wonderland.runner import Runner
+    from wonderland.utterance import Utterance
 
 
 class SeedBinding(BaseModel):
@@ -180,12 +187,234 @@ def list_workflows() -> list[str]:
     return sorted(p.stem for p in workflows_dir().glob("*.yaml"))
 
 
+# ---------------------------------------------------------------------------
+# Execution — runs a workflow against a Runner
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WorkflowCapture:
+    """Accumulates substantive utterances across meetings so prior-meeting
+    artifacts can seed follow-up meetings.
+
+    Mirrors the ad-hoc Capture pattern from the T38 scripts but adds
+    per-meeting indexing — seed bindings can ask for utterances from a
+    *specific* prior meeting (the from: field), not just any prior turn.
+    """
+
+    utterances: list[Utterance] = field(default_factory=list)
+
+    def observe(self, u: Utterance) -> None:
+        # Only keep utterances that carried artifacts (the substantive ones).
+        # The seed needs to carry the artifact; we don't need every concern.
+        if u.content.artifacts:
+            self.utterances.append(u)
+
+    def utterances_for(self, meeting_id: str) -> list[Utterance]:
+        """Captured utterances whose thread_id matches the meeting id.
+
+        Per the canonical convention, meeting.id IS the thread_id used
+        when convening — so this is a direct filter, no extra mapping
+        needed.
+        """
+        return [u for u in self.utterances if u.thread_id == meeting_id]
+
+
+def resolve_seeds(
+    bindings: list[SeedBinding],
+    capture: WorkflowCapture,
+) -> list[Utterance]:
+    """Apply seed-binding rules to produce the seed utterance list for
+    a meeting. Mirrors the hand-rolled filtering in T38 scripts.
+
+    For each binding:
+      1. Pick candidates: utterances from the named prior meeting, OR
+         all captured utterances when ``from: any``.
+      2. Filter by ``kinds`` — keep utterances carrying at least one
+         artifact of a matching kind.
+      3. Apply ``where`` — payload key→value match against the matching
+         artifact's payload. If filter yields zero AND ``fallback: any``,
+         drop the where clause.
+      4. Apply ``limit`` — keep first N.
+
+    Bindings are processed in order; the union of their results becomes
+    the seed list, deduplicated by utterance id.
+    """
+    out: list[Utterance] = []
+    seen_ids: set[str] = set()
+    for binding in bindings:
+        if binding.from_meeting == "any":
+            candidates = capture.utterances
+        else:
+            candidates = capture.utterances_for(binding.from_meeting)
+
+        kinded = [
+            u
+            for u in candidates
+            if any(a.kind in binding.kinds for a in u.content.artifacts)
+        ]
+
+        if binding.where:
+            filtered = [
+                u
+                for u in kinded
+                if any(
+                    a.kind in binding.kinds
+                    and all(a.payload.get(k) == v for k, v in binding.where.items())
+                    for a in u.content.artifacts
+                )
+            ]
+            if not filtered and binding.fallback == "any":
+                filtered = kinded
+        else:
+            filtered = kinded
+
+        if binding.limit is not None:
+            filtered = filtered[: binding.limit]
+
+        for u in filtered:
+            if u.id not in seen_ids:
+                seen_ids.add(u.id)
+                out.append(u)
+
+    return out
+
+
+@dataclass
+class MeetingStartEvent:
+    """Emitted by run_workflow before convening each meeting."""
+
+    meeting: Meeting
+    seeds: list[Utterance]
+
+
+@dataclass
+class MeetingEndEvent:
+    """Emitted by run_workflow after each meeting terminates. The
+    outcome is one of: COMPLETE, MEETING_BUDGET, GLOBAL_BUDGET, TIMEOUT,
+    ABORTED."""
+
+    meeting: Meeting
+    outcome: str
+    elapsed_s: float
+    calls_delta: int
+    cost_delta: float
+    artifact_kinds: dict[str, int]
+
+
+# Type alias for the union of events the workflow runner yields.
+# The full union (including RunnerEvent from runner.py) is documented
+# but we keep the runtime annotation as `Any` to avoid the runner
+# import dependency at module load time.
+
+
+
+async def run_workflow(
+    workflow: Workflow,
+    runner: Runner,
+    directive: str,
+) -> AsyncIterator[Any]:
+    """Drive a workflow against a started Runner. Async generator
+    yielding MeetingStartEvent / MeetingEndEvent / RunnerEvent.
+
+    Caller is responsible for runner setup and teardown:
+
+        runner = await Runner.make_full_cast(project_root, ...)
+        await runner.setup()
+        try:
+            workflow = load_workflow("canonical")
+            async for event in run_workflow(workflow, runner, DIRECTIVE):
+                # render event, accumulate stats, etc.
+                ...
+        finally:
+            await runner.teardown()
+
+    Stops on global-budget exhaustion. Per-meeting budget exhaustion ends
+    the meeting and emits MeetingEndEvent(outcome='MEETING_BUDGET') but
+    the workflow continues to the next meeting (the caller may also
+    short-circuit if it sees the global budget tightening).
+    """
+    capture = WorkflowCapture()
+
+    for meeting in workflow.meetings:
+        seeds = resolve_seeds(meeting.seeds, capture)
+        is_entry = meeting is workflow.entry_meeting
+        convenor_directive = directive if is_entry else meeting.convenor_directive
+
+        cost_before = runner.total_cost
+        calls_before = runner.telemetry.call_count
+        artifact_count_before = len(capture.utterances)
+        meeting_start = time.monotonic()
+
+        yield MeetingStartEvent(meeting=meeting, seeds=seeds)
+
+        # Reset per-thread completion tracking so the runner can fire
+        # complete again for this new thread.
+        runner._completed = False
+
+        await runner.convene(
+            thread_id=meeting.id,
+            goal=meeting.goal,
+            roster=meeting.roster,
+            seed_utterances=seeds,
+            convenor_directive=convenor_directive,
+        )
+
+        outcome = "RUNNING"
+        async for event in runner.events():
+            if event.kind == "utterance":
+                capture.observe(event.payload["utterance"])
+
+            yield event
+
+            if event.kind == "budget_exceeded":
+                outcome = "GLOBAL_BUDGET"
+                break
+
+            # Per-meeting budget cap — soft, but ends the meeting early.
+            if meeting.meeting_budget is not None:
+                spent = runner.total_cost - cost_before
+                if spent >= meeting.meeting_budget:
+                    outcome = "MEETING_BUDGET"
+                    break
+
+            if event.kind in ("complete", "timeout", "aborted"):
+                outcome = event.kind.upper()
+                break
+
+        elapsed = time.monotonic() - meeting_start
+        calls_delta = runner.telemetry.call_count - calls_before
+        cost_delta = runner.total_cost - cost_before
+        new_utterances = capture.utterances[artifact_count_before:]
+        kinds_count: dict[str, int] = {}
+        for u in new_utterances:
+            for a in u.content.artifacts:
+                kinds_count[a.kind] = kinds_count.get(a.kind, 0) + 1
+
+        yield MeetingEndEvent(
+            meeting=meeting,
+            outcome=outcome,
+            elapsed_s=elapsed,
+            calls_delta=calls_delta,
+            cost_delta=cost_delta,
+            artifact_kinds=kinds_count,
+        )
+
+        if outcome == "GLOBAL_BUDGET":
+            return
+
+
 __all__ = [
     "Meeting",
+    "MeetingEndEvent",
+    "MeetingStartEvent",
     "SeedBinding",
     "Workflow",
+    "WorkflowCapture",
     "WorkflowDefaults",
     "list_workflows",
     "load_workflow",
+    "resolve_seeds",
+    "run_workflow",
     "workflows_dir",
 ]
