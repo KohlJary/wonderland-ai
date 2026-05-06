@@ -33,7 +33,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
-from wonderland.parsing import extract_and_validate
+from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.story import StoryPayload, StoryRegistry
 from wonderland.utterance import (
     Artifact,
@@ -177,7 +177,7 @@ look like when they're real.
 """
 
 
-class AliceResponseParseError(ValueError):
+class AliceResponseParseError(ResponseParseError):
     """Alice's LLM response did not parse into a valid AliceResponse."""
 
 
@@ -228,7 +228,7 @@ class Alice(WonderlandAgent):
         system.insert(2, CachedBlock(_OUTPUT_PROTOCOL))
 
         result = await self.llm.complete(system=system, messages=messages)
-        response = parse_alice_response(result.text)
+        response = await self._parse_with_retry(parse_alice_response, result.text, system=system, messages=messages)
         if response.decision == "silence":
             return None
 

@@ -45,6 +45,22 @@ JSON_FENCE_PATTERN: re.Pattern[str] = re.compile(
 _M = TypeVar("_M", bound=BaseModel)
 
 
+class ResponseParseError(ValueError):
+    """Base class for agent response parse failures.
+
+    Each agent (Cat, Alice, Rabbit, Tweedles, Hatter, Caterpillar,
+    Queen, Dormouse) defines its own subclass (e.g.
+    ``HatterResponseParseError``) so the failure mode names the agent
+    in stderr / telemetry. The base class lets callers
+    (``WonderlandAgent._parse_with_retry``) catch the family without
+    importing every subclass.
+
+    Inherits from ValueError for backward compatibility — the subclasses
+    all originally inherited from ValueError directly, and any code
+    that was catching ValueError still works.
+    """
+
+
 def balanced_json_objects(text: str) -> list[str]:
     """Return every top-level brace-balanced ``{...}`` substring in
     ``text``, in order of appearance. Tracks string contents so a JSON

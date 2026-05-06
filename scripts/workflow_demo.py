@@ -46,6 +46,44 @@ DEFAULT_DIRECTIVE = (
 )
 
 
+def _skeletons_dir() -> Path:
+    """Directory holding bundled project skeletons. Mirror of
+    workflow.workflows_dir() — left inline rather than promoted to
+    a wonderland.scaffold module until something else needs it.
+    """
+    import wonderland
+
+    return Path(wonderland.__file__).parent / "closet" / "skeletons"
+
+
+def _list_skeletons() -> list[str]:
+    return sorted(p.name for p in _skeletons_dir().iterdir() if p.is_dir())
+
+
+def _seed_skeleton(project_root: Path, skeleton_name: str) -> None:
+    """Copy a bundled skeleton into project_root and git-init it.
+    Idempotent — does nothing if .git already exists in project_root
+    (assume continuation of a prior run)."""
+    skel = _skeletons_dir() / skeleton_name
+    if not skel.is_dir():
+        raise SystemExit(
+            f"skeleton not found: {skel}. Available: {_list_skeletons()}"
+        )
+    if (project_root / ".git").exists():
+        print(f"Skeleton:     {project_root} already has .git — skipping seed copy")
+        return
+    print(f"Skeleton:     {skel.name} → {project_root}")
+    shutil.copytree(skel, project_root, dirs_exist_ok=True)
+    for cmd in (
+        ["git", "init", "--initial-branch=main"],
+        ["git", "config", "user.email", "wonderland@local"],
+        ["git", "config", "user.name", "Wonderland Runner"],
+        ["git", "add", "."],
+        ["git", "commit", "-m", f"seed: {skeleton_name} baseline"],
+    ):
+        subprocess.run(cmd, cwd=project_root, check=True, capture_output=True, timeout=10)
+
+
 def section(title: str) -> None:
     print()
     print("=" * 78)
@@ -241,14 +279,25 @@ def main() -> int:
         action="store_true",
         help="Wipe the project root before running (no carry-over from prior runs).",
     )
+    p.add_argument(
+        "--skeleton",
+        default=None,
+        help=(
+            "Pre-seed the project_root with a bundled skeleton from "
+            "closet/skeletons/<name>/ (e.g. fullstack-fastapi-react). "
+            "Idempotent on existing .git. Default: empty git-init only."
+        ),
+    )
     args = p.parse_args()
 
     if args.list:
-        names = list_workflows()
         section("Bundled workflows")
-        for name in names:
+        for name in list_workflows():
             wf = load_workflow(name)
             print(f"  {name:14s} — {wf.description.strip().splitlines()[0]}")
+        section("Bundled skeletons")
+        for name in _list_skeletons():
+            print(f"  {name}")
         return 0
 
     workflow = load_workflow(args.workflow)
@@ -261,8 +310,12 @@ def main() -> int:
         print(f"Cleaning {args.project_root}…")
         shutil.rmtree(args.project_root)
     args.project_root.mkdir(parents=True, exist_ok=True)
-    # Initialize git so the runner's _ensure_git_repo path is happy
-    if not (args.project_root / ".git").exists():
+
+    if args.skeleton:
+        _seed_skeleton(args.project_root, args.skeleton)
+    elif not (args.project_root / ".git").exists():
+        # No skeleton requested — still need git so the runner's
+        # _ensure_git_repo path is happy.
         subprocess.run(
             ["git", "init", "--initial-branch=main"],
             cwd=args.project_root,

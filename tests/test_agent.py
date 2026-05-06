@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import BaseModel
 
 from wonderland import (
     AgentIdentity,
@@ -25,6 +28,8 @@ from wonderland.identity import (
     ConstitutionHeader,
     Identity,
 )
+from wonderland.llm import LLMClient
+from wonderland.parsing import ResponseParseError, extract_and_validate
 
 # ---------- helpers ----------
 
@@ -537,3 +542,122 @@ async def test_end_to_end_with_loaded_constitution(tmp_path: Path) -> None:
     with contextlib_suppress(asyncio.CancelledError):
         await run_task
     await memory.close()
+
+
+# ---------- parse-error retry ----------
+
+
+class _SampleResponse(BaseModel):
+    decision: str
+    body: str = ""
+
+
+class _SampleParseError(ResponseParseError):
+    pass
+
+
+def _parse_sample(text: str) -> _SampleResponse:
+    return extract_and_validate(text, _SampleResponse, _SampleParseError)
+
+
+def _scripted_llm(*texts: str) -> LLMClient:
+    """LLMClient whose .complete() returns the given texts in order."""
+    responses = [
+        SimpleNamespace(
+            content=[SimpleNamespace(type="text", text=text)],
+            stop_reason="end_turn",
+            usage=SimpleNamespace(
+                input_tokens=10,
+                output_tokens=5,
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
+            ),
+        )
+        for text in texts
+    ]
+    iterator = iter(responses)
+    client = MagicMock()
+    client.messages = MagicMock()
+    client.messages.create = AsyncMock(side_effect=lambda **_: next(iterator))
+    return LLMClient(client=client)
+
+
+async def test_parse_with_retry_returns_immediately_on_first_success(tmp_path):
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm("ignored — only used on retry")
+    parsed = await agent._parse_with_retry(
+        _parse_sample,
+        '{"decision": "story", "body": "ok"}',
+        system=[],
+        messages=[],
+    )
+    assert parsed.decision == "story"
+    # No retry call should have happened
+    assert agent.llm._client.messages.create.await_count == 0
+
+
+async def test_parse_with_retry_recovers_after_one_failure(tmp_path, capsys):
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm('{"decision": "story", "body": "from retry"}')
+    parsed = await agent._parse_with_retry(
+        _parse_sample,
+        "this is prose, not JSON",
+        system=[],
+        messages=[{"role": "user", "content": "go"}],
+    )
+    assert parsed.decision == "story"
+    assert parsed.body == "from retry"
+    # Exactly one retry call
+    assert agent.llm._client.messages.create.await_count == 1
+    captured = capsys.readouterr()
+    assert "parse error on attempt 1" in captured.err
+    assert "parse retry succeeded on attempt 2" in captured.err
+
+
+async def test_parse_with_retry_raises_when_retry_also_fails(tmp_path, capsys):
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm("still not JSON either")
+    with pytest.raises(_SampleParseError):
+        await agent._parse_with_retry(
+            _parse_sample,
+            "first attempt also prose",
+            system=[],
+            messages=[{"role": "user", "content": "go"}],
+        )
+    # Retry happened (one extra LLM call), then both attempts failed
+    assert agent.llm._client.messages.create.await_count == 1
+    assert "parse error on attempt 1" in capsys.readouterr().err
+
+
+async def test_parse_with_retry_handles_empty_response(tmp_path):
+    """Empty original response — assistant message gets a placeholder so
+    the API doesn't reject the retry payload."""
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm('{"decision": "story", "body": "filled in"}')
+    parsed = await agent._parse_with_retry(
+        _parse_sample,
+        "",
+        system=[],
+        messages=[{"role": "user", "content": "go"}],
+    )
+    assert parsed.decision == "story"
+    # Inspect what the retry call sent — assistant content shouldn't be empty
+    call_args = agent.llm._client.messages.create.await_args
+    sent_messages = call_args.kwargs["messages"]
+    assistant_msg = next(m for m in sent_messages if m["role"] == "assistant")
+    assert assistant_msg["content"]  # non-empty
+
+
+async def test_parse_with_retry_max_retries_zero_disables_retry(tmp_path):
+    """max_retries=0 means no retry — fail-fast on the first parse error."""
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm("never called")
+    with pytest.raises(_SampleParseError):
+        await agent._parse_with_retry(
+            _parse_sample,
+            "not JSON",
+            system=[],
+            messages=[],
+            max_retries=0,
+        )
+    assert agent.llm._client.messages.create.await_count == 0

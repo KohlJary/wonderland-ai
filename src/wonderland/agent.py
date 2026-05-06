@@ -35,11 +35,14 @@ import re
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from pydantic import BaseModel, Field, ValidationError
 
+_T = TypeVar("_T")
+
 from wonderland.llm import CachedBlock, Message, SystemPart
+from wonderland.parsing import ResponseParseError
 from wonderland.primer import FRAMEWORK_PRIMER
 from wonderland.utterance import SpeechAct, Utterance
 
@@ -741,6 +744,80 @@ class WonderlandAgent:
             loop_messages.append({"role": "user", "content": tool_results})
 
         return ""
+
+    async def _parse_with_retry(
+        self,
+        parse_fn: Callable[[str], _T],
+        response_text: str,
+        *,
+        system: list,  # type: ignore[type-arg]
+        messages: list,  # type: ignore[type-arg]
+        max_retries: int = 1,
+    ) -> _T:
+        """Parse ``response_text`` with ``parse_fn``. On
+        ``ResponseParseError``, retry once by re-prompting the LLM with
+        the malformed response + a hint to respond with valid JSON only.
+
+        The retry is a plain ``llm.complete`` call — no tools — because
+        the goal is to recover the *structured response*, not to do more
+        work. The agent already finished its tool loop (if any); this is
+        purely about formatting the conclusion.
+
+        Returns the parsed model on success. Re-raises the parse error
+        from the *final* attempt if all retries fail; the speak loop's
+        existing exception handler then treats the turn as silence.
+
+        Logs every retry attempt to stderr (success or failure) so the
+        retry rate is observable from the run log.
+        """
+        assert self.llm is not None, "LLM must be wired to retry"
+        last_exc: ResponseParseError | None = None
+        for attempt in range(max_retries + 1):
+            try:
+                parsed = parse_fn(response_text)
+                if attempt > 0:
+                    import sys
+
+                    print(
+                        f"[{self.identity.name}] parse retry succeeded on attempt "
+                        f"{attempt + 1}",
+                        file=sys.stderr,
+                    )
+                return parsed
+            except ResponseParseError as exc:
+                last_exc = exc
+                if attempt >= max_retries:
+                    raise
+                import sys
+
+                print(
+                    f"[{self.identity.name}] parse error on attempt {attempt + 1}, "
+                    f"retrying: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+                # Build retry messages: the prior conversation + the
+                # malformed assistant turn + a user hint asking for clean
+                # JSON. Empty assistant content is rejected by the API,
+                # so substitute a placeholder when the LLM returned "".
+                retry_messages = list(messages) + [
+                    {
+                        "role": "assistant",
+                        "content": response_text or "(empty response)",
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Your previous response could not be parsed: {exc}\n\n"
+                            "Please respond again with VALID JSON ONLY matching "
+                            "your response schema. No prose outside the JSON. "
+                            "No tool calls — just the JSON response."
+                        ),
+                    },
+                ]
+                result = await self.llm.complete(system=system, messages=retry_messages)
+                response_text = result.text
+        # Unreachable: max_retries=N means N+1 attempts, last one re-raises.
+        raise last_exc  # type: ignore[misc]  # pragma: no cover
 
     def set_budget_guard(self, guard: Callable[[], bool] | None) -> None:
         """Wire (or clear) the hard budget gate. ``guard()`` returns True

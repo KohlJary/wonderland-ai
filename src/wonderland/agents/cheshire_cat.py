@@ -45,7 +45,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock, SystemPart
-from wonderland.parsing import extract_and_validate
+from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.utterance import (
     Artifact,
     SpeechAct,
@@ -279,7 +279,7 @@ that is what the ADR field already does. When in doubt, don't write.
 _OUTPUT_PROTOCOL_WITH_TOOLS = _OUTPUT_PROTOCOL + _TOOLS_SECTION
 
 
-class CatResponseParseError(ValueError):
+class CatResponseParseError(ResponseParseError):
     """The Cat's LLM response did not parse into a valid CatResponse."""
 
 
@@ -339,7 +339,7 @@ class CheshireCat(WonderlandAgent):
         else:
             result = await self.llm.complete(system=system, messages=messages)
             response_text = result.text
-        response = parse_cat_response(response_text)
+        response = await self._parse_with_retry(parse_cat_response, response_text, system=system, messages=messages)
         if response.decision == "silence":
             return None
 

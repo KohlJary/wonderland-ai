@@ -53,7 +53,7 @@ from wonderland.implementation import (
     ImplementationSide,
 )
 from wonderland.llm import CachedBlock
-from wonderland.parsing import extract_and_validate
+from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.tools import Tools
 from wonderland.utterance import (
     Artifact,
@@ -627,7 +627,7 @@ _OUTPUT_PROTOCOL_BACKEND_WITH_TOOLS = _build_protocol(
 )
 
 
-class TweedleResponseParseError(ValueError):
+class TweedleResponseParseError(ResponseParseError):
     """A Tweedle's LLM response did not parse into a valid TweedleResponse."""
 
 
@@ -728,7 +728,7 @@ class _TweedleBase(WonderlandAgent):
             result = await self.llm.complete(system=system, messages=messages)
             response_text = result.text
 
-        response = parse_tweedle_response(response_text)
+        response = await self._parse_with_retry(parse_tweedle_response, response_text, system=system, messages=messages)
 
         # Working-tree-as-implementation-artifact (analysis 018 followup):
         # if write_file calls landed during the tools loop but the LLM

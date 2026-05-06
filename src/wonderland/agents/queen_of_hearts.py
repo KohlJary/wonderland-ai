@@ -38,7 +38,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
-from wonderland.parsing import extract_and_validate
+from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.ruling import RulingPayload, RulingRegistry
 from wonderland.utterance import (
     Artifact,
@@ -308,7 +308,7 @@ planning.
 """
 
 
-class QueenResponseParseError(ValueError):
+class QueenResponseParseError(ResponseParseError):
     """The Queen's LLM response did not parse into a valid QueenResponse."""
 
 
@@ -360,7 +360,7 @@ class QueenOfHearts(WonderlandAgent):
         system.insert(2, CachedBlock(_OUTPUT_PROTOCOL))
 
         result = await self.llm.complete(system=system, messages=messages)
-        response = parse_queen_response(result.text)
+        response = await self._parse_with_retry(parse_queen_response, result.text, system=system, messages=messages)
         if response.decision == "silence":
             return None
 
