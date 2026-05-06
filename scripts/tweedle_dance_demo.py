@@ -46,6 +46,7 @@ from wonderland import (
     AgentIdentity,
     AgentMemory,
     CheshireCat,
+    ContractNoteRegistry,
     Dodo,
     EscalationRegistry,
     ImplementationRegistry,
@@ -141,6 +142,7 @@ async def run_dance(
     def usage_cb(name: str):
         def _cb(u: TokenUsage) -> None:
             usage[name].append(u)
+
         return _cb
 
     bus = InMemoryCaucus()
@@ -153,18 +155,21 @@ async def run_dance(
         await mem.open()
 
     impl_registry = ImplementationRegistry(project_root)
+    contract_note_registry = ContractNoteRegistry(project_root)
 
     dee = Tweedledee(
         memory=dee_memory,
         bus=bus,
         llm=LLMClient(on_token_usage=usage_cb("tweedledee")),
         implementation_registry=impl_registry,
+        contract_note_registry=contract_note_registry,
     )
     dum = Tweedledum(
         memory=dum_memory,
         bus=bus,
         llm=LLMClient(on_token_usage=usage_cb("tweedledum")),
         implementation_registry=impl_registry,
+        contract_note_registry=contract_note_registry,
     )
     cat = CheshireCat(
         memory=cat_memory,
@@ -226,8 +231,7 @@ async def run_dance(
     watcher_task = asyncio.create_task(state_watcher())
     agents = [dee, dum, cat, dodo]
     agent_tasks = [
-        asyncio.create_task(agent.run(), name=f"{agent.identity.name}-run")
-        for agent in agents
+        asyncio.create_task(agent.run(), name=f"{agent.identity.name}-run") for agent in agents
     ]
 
     exit_code = 0
@@ -261,6 +265,17 @@ async def run_dance(
             for path in files:
                 print(f"  - {path.name}")
 
+        section("Contract Notes on disk")
+        contract_notes = contract_note_registry.list_contract_notes()
+        if contract_notes:
+            for note in contract_notes:
+                version = note.contract_version or "(unlocked)"
+                print(f"  - {note.path.name}  [{note.state.value}, {version}]")
+            agreed = [n for n in contract_notes if n.state.value == "agreed"]
+            print(f"  → {len(agreed)} of {len(contract_notes)} reached agreed (T35 acceptance: ≥1)")
+        else:
+            print("  (none — pair did not produce a Contract Note)")
+
         section("Token usage (per agent)")
         total_in = 0
         total_out = 0
@@ -274,10 +289,7 @@ async def run_dance(
             tcr = sum(u.cache_read_input_tokens for u in calls)
             total_in += ti
             total_out += to
-            print(
-                f"  {name:14s}: calls={len(calls):2d}  "
-                f"in={ti:6d}  out={to:5d}  cache_r={tcr:5d}"
-            )
+            print(f"  {name:14s}: calls={len(calls):2d}  in={ti:6d}  out={to:5d}  cache_r={tcr:5d}")
         print(f"\n  {'TOTAL':14s}: in={total_in:6d}  out={total_out:5d}")
 
         section("Outcome")

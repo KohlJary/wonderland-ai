@@ -233,3 +233,291 @@ def test_init_result_contains_resolved_paths(tmp_path: Path) -> None:
     assert isinstance(result, InitResult)
     assert result.project_root == tmp_path
     assert result.wonderland_dir == tmp_path / WONDERLAND_DIRNAME
+
+
+# ---------- `wonderland run` subcommand ----------
+#
+# These exercise the argparse glue, the escalation-mode dispatch, and a
+# smoke test of _run_async end-to-end with a silent LLM that hits the
+# timeout path. The Runner itself has its own tests; here we only verify
+# the CLI dispatches into it correctly.
+
+
+def test_parser_run_has_required_directive_arg() -> None:
+    parser = build_parser()
+    namespace = parser.parse_args(["run", "build a thing"])
+    assert namespace.directive == "build a thing"
+    assert namespace.budget == 1.00
+    assert namespace.timeout == 600.0
+    assert namespace.on_escalation == "prompt"
+    assert namespace.auto_respond is None
+    assert hasattr(namespace, "func")
+
+
+def test_parser_run_accepts_overrides() -> None:
+    parser = build_parser()
+    namespace = parser.parse_args(
+        [
+            "run",
+            "directive",
+            "--budget",
+            "5.0",
+            "--timeout",
+            "30",
+            "--quiescence-seconds",
+            "10",
+            "--on-escalation",
+            "auto",
+            "--auto-respond",
+            "go with B",
+        ]
+    )
+    assert namespace.budget == 5.0
+    assert namespace.timeout == 30.0
+    assert namespace.quiescence_seconds == 10.0
+    assert namespace.on_escalation == "auto"
+    assert namespace.auto_respond == "go with B"
+
+
+def test_parser_run_rejects_invalid_on_escalation() -> None:
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "x", "--on-escalation", "wrong"])
+
+
+# --- _handle_escalation dispatch -------------------------------------- #
+
+
+async def test_handle_escalation_abort_mode_aborts_runner() -> None:
+    """--on-escalation=abort must call runner.abort and not block."""
+    import argparse
+    from unittest.mock import AsyncMock, MagicMock
+
+    from wonderland.cli import _handle_escalation
+    from wonderland.runner import RunnerEvent
+
+    runner = MagicMock()
+    runner.abort = MagicMock()
+    runner.respond_to_escalation = AsyncMock()
+    runner.total_cost = 0.42
+
+    brief = MagicMock()
+    brief.thread_id = "main"
+    brief.decision_required = "?"
+    brief.agent_proposals = []
+    brief.suggested_resolution = ""
+    brief.stakes = ""
+
+    event = RunnerEvent(
+        kind="escalation_prompt",
+        elapsed=1.0,
+        payload={
+            "prompt_id": "p1",
+            "brief": brief,
+            "record_path": "/tmp/x",
+        },
+    )
+    args = argparse.Namespace(on_escalation="abort", auto_respond=None)
+
+    await _handle_escalation(event, runner, args)
+
+    runner.abort.assert_called_once()
+    runner.respond_to_escalation.assert_not_called()
+
+
+async def test_handle_escalation_auto_mode_uses_auto_respond() -> None:
+    import argparse
+    from unittest.mock import AsyncMock, MagicMock
+
+    from wonderland.cli import _handle_escalation
+    from wonderland.runner import RunnerEvent
+
+    runner = MagicMock()
+    runner.abort = MagicMock()
+    runner.respond_to_escalation = AsyncMock()
+    runner.total_cost = 0.0
+
+    brief = MagicMock()
+    brief.thread_id = "main"
+    brief.decision_required = "?"
+    brief.agent_proposals = []
+    brief.suggested_resolution = ""
+    brief.stakes = ""
+
+    event = RunnerEvent(
+        kind="escalation_prompt",
+        elapsed=1.0,
+        payload={
+            "prompt_id": "p1",
+            "brief": brief,
+            "record_path": "/tmp/x",
+        },
+    )
+    args = argparse.Namespace(on_escalation="auto", auto_respond="approved")
+
+    await _handle_escalation(event, runner, args)
+
+    runner.respond_to_escalation.assert_awaited_once_with("p1", "approved")
+    runner.abort.assert_not_called()
+
+
+async def test_handle_escalation_prompt_without_tty_aborts() -> None:
+    """When stdin isn't a tty and prompt mode is active, abort rather than hang."""
+    import argparse
+    import sys
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from wonderland.cli import _handle_escalation
+    from wonderland.runner import RunnerEvent
+
+    runner = MagicMock()
+    runner.abort = MagicMock()
+    runner.respond_to_escalation = AsyncMock()
+    runner.total_cost = 0.0
+
+    brief = MagicMock()
+    brief.thread_id = "main"
+    brief.decision_required = "?"
+    brief.agent_proposals = []
+    brief.suggested_resolution = ""
+    brief.stakes = ""
+
+    event = RunnerEvent(
+        kind="escalation_prompt",
+        elapsed=1.0,
+        payload={"prompt_id": "p1", "brief": brief, "record_path": "/tmp/x"},
+    )
+    args = argparse.Namespace(on_escalation="prompt", auto_respond=None)
+
+    # Force stdin.isatty() to return False.
+    with patch.object(sys.stdin, "isatty", return_value=False):
+        await _handle_escalation(event, runner, args)
+
+    runner.abort.assert_called_once()
+    runner.respond_to_escalation.assert_not_called()
+
+
+# --- _handle_event rendering ----------------------------------------- #
+
+
+async def test_handle_event_utterance_prints_speaker_and_speech_act(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import argparse
+    from unittest.mock import MagicMock
+
+    from wonderland.cli import _handle_event
+    from wonderland.runner import RunnerEvent
+    from wonderland.utterance import SpeechAct
+
+    utterance = MagicMock()
+    utterance.speaker.name = "alice"
+    utterance.speech_act = SpeechAct.DIRECTIVE
+    utterance.content.body = "build it"
+    utterance.content.artifacts = []
+
+    event = RunnerEvent(kind="utterance", elapsed=2.5, payload={"utterance": utterance})
+    args = argparse.Namespace(on_escalation="abort", auto_respond=None)
+
+    await _handle_event(event, MagicMock(), args)
+    out = capsys.readouterr().out
+    assert "alice" in out
+    assert "directive" in out
+    assert "build it" in out
+
+
+async def test_handle_event_timeout_prints_to_stderr(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import argparse
+    from unittest.mock import MagicMock
+
+    from wonderland.cli import _handle_event
+    from wonderland.runner import RunnerEvent
+
+    event = RunnerEvent(
+        kind="timeout",
+        elapsed=600.0,
+        payload={"timeout_seconds": 600.0},
+    )
+    args = argparse.Namespace(on_escalation="abort", auto_respond=None)
+
+    await _handle_event(event, MagicMock(), args)
+    captured = capsys.readouterr()
+    assert "timeout" in captured.err.lower() or "exceeded" in captured.err
+
+
+# --- _run_async smoke test ------------------------------------------- #
+
+
+async def test_run_async_errors_when_project_root_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import argparse
+
+    from wonderland.cli import _run_async
+
+    args = argparse.Namespace(
+        directive="x",
+        project_root=tmp_path / "nope",
+        budget=1.0,
+        quiescence_seconds=30.0,
+        timeout=1.0,
+        on_escalation="abort",
+        auto_respond=None,
+    )
+    rc = await _run_async(args)
+    assert rc == 1
+    assert "does not exist" in capsys.readouterr().err
+
+
+async def test_run_async_smoke_hits_timeout_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: silent LLM, very short timeout → exit code 1, telemetry written."""
+    import argparse
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from wonderland import LLMClient
+    from wonderland.cli import _run_async
+    from wonderland.runner import Runner
+
+    def silent_llm() -> LLMClient:
+        response = SimpleNamespace(
+            content=[SimpleNamespace(type="text", text='```json\n{"decision": "silence"}\n```')],
+            stop_reason="end_turn",
+            usage=SimpleNamespace(
+                input_tokens=10,
+                output_tokens=5,
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
+            ),
+        )
+        client = MagicMock()
+        client.messages = MagicMock()
+        client.messages.create = AsyncMock(return_value=response)
+        return LLMClient(client=client)
+
+    real_make_full_cast = Runner.make_full_cast
+
+    async def patched_make_full_cast(project_root, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs.setdefault("llm_factory", lambda name, tel: silent_llm())
+        return await real_make_full_cast(project_root, **kwargs)
+
+    monkeypatch.setattr(Runner, "make_full_cast", patched_make_full_cast)
+
+    args = argparse.Namespace(
+        directive="silent test",
+        project_root=tmp_path,
+        budget=10.0,
+        quiescence_seconds=30.0,
+        timeout=0.5,
+        on_escalation="abort",
+        auto_respond=None,
+    )
+    rc = await _run_async(args)
+    assert rc == 1  # timeout
+    # Telemetry record written
+    records = list((tmp_path / ".wonderland" / "telemetry").glob("run-*.json"))
+    assert len(records) == 1

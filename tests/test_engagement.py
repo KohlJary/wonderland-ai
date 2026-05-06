@@ -31,6 +31,7 @@ def _u(
     speaker: str = "white_rabbit",
     addressed: list[str] | str = "caucus",
     body: str = "...",
+    is_seed: bool = False,
 ) -> Utterance:
     return Utterance(
         thread_id="t",
@@ -42,6 +43,7 @@ def _u(
         ),
         speech_act=act,
         content=UtteranceContent(body=body),
+        is_seed=is_seed,
     )
 
 
@@ -72,6 +74,19 @@ def test_rule_requires_condition_to_pass_when_present() -> None:
 def test_categorize_returns_default_when_no_rule_matches() -> None:
     rules = EngagementRules.of(default=Engagement.ALMOST_NEVER)
     assert rules.categorize(_u()) is Engagement.ALMOST_NEVER
+
+
+def test_categorize_short_circuits_seed_utterances_to_almost_never() -> None:
+    """Seeded utterances (Runner.convene re-publishing prior-thread artifacts
+    as context for a follow-up meeting) are visible in thread history but
+    must not trigger engagement as if they were fresh turns. Otherwise
+    agents respond to historical contracts/proposals as new negotiation
+    surface, never transitioning to the meeting's actual purpose."""
+    rules = EngagementRules.of(always(SpeechAct.CONTRACT_NOTE))
+    fresh = _u(act=SpeechAct.CONTRACT_NOTE, is_seed=False)
+    seed = _u(act=SpeechAct.CONTRACT_NOTE, is_seed=True)
+    assert rules.categorize(fresh) is Engagement.ALWAYS
+    assert rules.categorize(seed) is Engagement.ALMOST_NEVER
 
 
 def test_categorize_first_matching_rule_wins() -> None:

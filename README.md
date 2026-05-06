@@ -87,8 +87,95 @@ In-progress, building in public. Phase 5 of 7 complete.
       consensus guard observes the bus for the §11 anti-pattern — three
       or more distinct constitutional domains converging on the same
       position is suspect, and the guard surfaces it for review.
-- [ ] **P6 — Real Threads** *(next)*
-      Showcases 2–4: translation chat MVP, security recovery, multi-session.
+- [>] **P6 — Real Threads** *(in progress)*
+      Substrate fixes for the polite-deadlock pattern surfaced in P5
+      ([analysis 006](./analyses/006-first-full-cast.md),
+      [analysis 007](./analyses/007-tweedle-dance.md)) before the showcases run:
+      framework primer for cache-padding ([T32](./analyses/009-primer-chattiness.md)),
+      Dodo nudge ladder on STUCK transitions (T33), Contract Note artifact for
+      the Tweedles' negotiation surface ([T35](./analyses/010-contract-note-acceptance.md)),
+      Runner + budget caps + interactive escalation CLI (T34), and
+      [roster architecture](./analyses/012-roster-scoping-rerun.md) for
+      scoped meetings (T36 prep, Block 1+2a). Calibration to operationalize
+      "ship the artifact" landed in
+      [analysis 013](./analyses/013-cat-calibrated-ships.md) and the framework
+      now produces architectural artifacts cleanly under bounded cost — first
+      shipped ADR-001 in 100s for $0.13. Cross-meeting composition validated
+      in [analysis 014](./analyses/014-cross-meeting-composition.md): a single
+      ADR drives 5 agreed Tweedle Contract Notes in a follow-up meeting for
+      $0.10. Tool integration ships real code in
+      [analysis 015](./analyses/015-tweedles-ship-real-code.md). The full
+      5-meeting translation-chat enchilada
+      ([analysis 016](./analyses/016-cat-story-deafness.md)) surfaced Cat's
+      STORY engagement filter as a critical-path bottleneck — once
+      broadened (every Alice story + cumulative-synthesis protocol), every
+      artifact type lands in one $1.04 run. Substrate fixes (`is_seed`
+      flag, working-tree-as-artifact via git_status/git_diff) compose into
+      [analysis 017](./analyses/017-first-arc-completion.md) — the first
+      end-to-end arc completion: vague directive → 6 stories → 1 ADR → 6
+      tickets → 4 agreed contracts → real frontend types on disk citing
+      the contracts by name, in $0.49. Three more substrate improvements
+      (shared parser with brace-balanced JSON fallback, decision-coercion
+      validator, Caterpillar engaging on directives) compose in
+      [analysis 018](./analyses/018-the-breakthrough.md) into a working
+      module: **9 files, 1580 lines** (SQLAlchemy models with invariants,
+      a SQL migration with check constraints, React component, hook,
+      types, pytest test file with fixtures), all citing the contracts
+      that produced them by name, $0.93 / 100 calls.
+      [Analysis 019](./analyses/019-security-recovery.md) is the second
+      showcase — a synthesized credential-stuffing incident landing as a
+      Dormouse observation against a *pre-seeded* FastAPI auth service.
+      The team responds with **+296 lines of new rate-limiting code,
+      modifications to 4 existing files (+722 / -42), 4 Caterpillar
+      reviews citing RFC 6585, 18 Hatter test_scenarios pointing at
+      specific class names in the proposed implementation**, in $3.04 /
+      200 calls / 211s. First showcase to test reactive (vs greenfield)
+      behavior; first time Caterpillar's working-tree review path produces
+      substantive code-review findings (line ranges, code quotes, RFC
+      citations). [Analysis 020](./analyses/020-multi-session-persistence.md)
+      is the third — multi-session continuation. Two sessions ran on the
+      same `.wonderland/`: Session 1 built the translation chat (870-line
+      backend diff), Session 2 added user-blocking. Memory compounds at
+      the registry level: contract-notes count 1–8 → 9–11 across sessions,
+      Rabbit's tickets cite Session 1's endpoints by name, Cat correctly
+      declined a redundant ADR. Tweedles' tool-loop hit `max_tool_iterations=10`
+      mid-exploration in Session 2 and didn't ship code; cap bumped to 20.
+      [Analysis 021](./analyses/021-multi-session-validation.md) is the
+      validation rerun with the iter-bump and an inter-session git-commit
+      step in place — Session 1 ran at -49% elapsed / -48% cost vs the
+      020 baseline ($0.80 / 92 calls / 8.7 min), Session 2 actually
+      shipped code this time (+214 lines / 4 files / new `blocks.py`).
+      Headline finding: **memory compounds for design artifacts but
+      regressed for execution artifacts** — stories went 5→10, tickets
+      5→9, contract-notes 6→8, ADRs 1→2 across sessions, but
+      `implementations/` and `reviews/` registries didn't even get
+      created (zero successful artifact persists). Mechanism: M3/M4
+      meeting boundary suppresses late-arriving implementation
+      utterances; Caterpillar exhausts shared iter cap on read tools
+      before the review utterance can synthesize. Four roadmap items
+      filed; the two P1s (M3+M4 consolidation, turn-based quiescence)
+      address the bug class architecturally before the next showcase.
+      [Analysis 022](./analyses/022-consolidation-alone.md) isolates
+      consolidation as a variable: Session 1 against the consolidated
+      4-meeting workflow but the still-wall-clock substrate. Result:
+      late-publish events down 6→2, but consolidation alone is
+      insufficient — the wall-clock model still kills meetings
+      mid-deliberation. Surprise finding: M4 self-healed by pivoting
+      from review into recovery-implementation, shipping 1 of 7 tickets
+      and producing a real review artifact. Sharpens the 021 diagnosis:
+      the M3/M4 boundary was a symptom; wall-clock quiescence is the
+      cause. Turn-based quiescence is the load-bearing fix, next P1.
+      [Analysis 023](./analyses/023-quiescence-and-split-phases.md)
+      closes the loop. Two runs: (A) consolidation + turn-based
+      quiescence — the substrate works (44% wall-clock speedup, no
+      false-positive closures) but the merged workflow short-circuits;
+      (B) re-split phases + turn-based quiescence — code ships
+      reliably (1539 lines across 8 files, real translation chat MVP
+      end-to-end). The substrate fix enables the workflow shape that
+      was previously unsafe. The "Tweedles don't ship" bug class is
+      closed. Worth naming explicitly: working-tree-as-implementation-
+      artifact — the bus utterance is ancillary to the actual
+      deliverable, which is the diff.
 - [ ] **P7 — Evals**
       Generic-baseline vs Wonderland comparison. The compounding curve.
 

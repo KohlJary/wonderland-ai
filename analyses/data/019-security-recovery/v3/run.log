@@ -1,0 +1,254 @@
+Pre-seed:      /home/jaryk/wonderland-ai/analyses/data/019-security-recovery-seed → /tmp/t37-recovery-v3
+==============================================================================
+T37 SECURITY RECOVERY SHOWCASE — credential-stuffing incident
+==============================================================================
+Project root:  /tmp/t37-recovery-v3
+Roster:        full cast (Queen, Dormouse, Cat, Tweedles, Hatter, Caterpillar, Alice, Rabbit, Dodo)
+Budget cap:    $3.00 hard
+Timeout:       480s (8min, T37 acceptance)
+Quiescence:    60s
+
+[t=  0.00s] dormouse           observation    INCIDENT — credential-stuffing pattern in progress. Production telemetry shows an anomalous auth-failure spike from source_ip=203.0.113.42 i…
+                             ↳ observation: Anomalous auth-failure spike from single IP — possible credential stuffing in progress [severity=sev1]
+[t=  0.00s] dodo               directive      Security incident response thread. The Dormouse just published an observation indicating a credential-stuffing attack in progress (severity=…
+[t= 16.60s] cheshire_cat       reframe        The credential-stuffing incident exploits the deferred rate-limit and lockout policy. Before shipping the mitigation, we need to clarify wha…
+[t= 17.31s] white_rabbit       ticket         Credential-stuffing incident: Dormouse has published sev1 observation. Attack is ongoing; 47 users locked out. Queen's ruling needed on rate…
+                             ↳ ticket: Implement rate-limiting and account-lockout hardening to stop credential-stuffing attack
+                             ↳ ticket: Queen's ruling: rate-limit shape, lockout threshold, breach-disclosure obligations
+                             ↳ ticket: Caterpillar: review rate-limiting and lockout implementation
+[t= 34.80s] mad_hatter         test_scenario  (no body)
+                             ↳ test_scenario: Credential-stuffing attack from single IP with rotating usernames — should be rate-limited after threshold [severity=breakage]
+                             ↳ test_scenario: Account lockout after repeated failed login attempts — should prevent further login attempts on the specific email [severity=breakage]
+                             ↳ test_scenario: Rate-limit false positives — legitimate user on shared IP during attack should not be permanently locked out [severity=degradation]
+                             ↳ test_scenario: Silent wrongness — rate-limit bypass via distributed attack across many IPs on same email [severity=silent-wrongness]
+                             ↳ test_scenario: Lockout escape hatch — legitimate password-reset flow must not be rate-limited [severity=degradation]
+                             ↳ test_scenario: Monitoring gap — rate-limit and lockout events should be observable in production [severity=degradation]
+[t= 43.59s] white_rabbit       concern        Hatter's scenarios surface three critical work items that weren't tracked:
+[t= 48.21s] dormouse           observation    (no body)
+                             ↳ observation: Credential-stuffing attack ongoing; 47 users locked out; observability gap in rate-limit and lockout event tracking [severity=sev1]
+                             ↳ observation: Critical observability gap: no production instrumentation for rate-limit decisions or lockout events [severity=sev1]
+[t= 49.94s] queen_of_hearts    ruling         Credential-stuffing attack is active; production mitigation is immediate priority. Rate-limiting and account lockout hardening are ship-bloc…
+                             ↳ ruling: Rate-limiting on /login endpoint — immediate hardening required [severity=critical]
+                             ↳ ruling: Account lockout policy — threshold and notification adjustment [severity=critical]
+                             ↳ ruling: Breach notification obligations — credential-stuffing success determination and user notification [severity=critical]
+                             ↳ ruling: Post-incident credential rotation — all authentication secrets in scope [severity=high]
+[t= 54.85s] dormouse           concern        Rabbit has surfaced real dependencies. I'm adding one observability-specific clarification to his three points.
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+[mad_hatter] deliberate() raised HatterResponseParseError: no JSON block found in HatterResponse response — treating as silence
+[t= 69.32s] dormouse           observation    (no body)
+                             ↳ observation: Credential-stuffing attack: 47 users compromised; attack ongoing as of ruling publication [severity=sev1]
+                             ↳ observation: Queen's rulings require observability instrumentation not yet present in implementation plan [severity=sev2]
+                             ↳ observation: Rate-limit and lockout observability contract missing before implementation; risk of non-observable mitigation [severity=sev2]
+[t= 73.84s] cheshire_cat       proposal       The mitigation code ships with a defense-in-depth strategy: IP-based rate limiting catches bulk attacks from a single source; per-email lock…
+                             ↳ adr: Auth defense-in-depth: IP rate limiting + per-email account lockout
+[t= 73.96s] alice              story          The credential-stuffing attack is real and ongoing. I'm shifting perspective to the users caught in it — the ones locked out, and the ones w…
+                             ↳ story: User locked out by credential-stuffing attack needs to know why and how to recover
+                             ↳ story: Legitimate user on shared IP experiences rate-limiting during credential-stuffing attack, needs to understand it's temporary
+                             ↳ story: Security-conscious user receives lockout notification and wants to verify it's real (not phishing)
+                             ↳ story: User experiencing the attack in real-time (failed login attempts from their own location/device) needs help distinguishing their own error from a compromise
+[t= 74.72s] queen_of_hearts    ruling         Hatter's scenarios surface three classes of risk that extend beyond the immediate attack. I am ruling on all three. Scenarios 1-3 are ship-b…
+                             ↳ ruling: Distributed-IP credential-stuffing bypass — email-based rate-limiting required [severity=high]
+                             ↳ ruling: Password-reset endpoint rate-limiting — must not lockout legitimate password-recovery flow [severity=high]
+                             ↳ ruling: Rate-limit and lockout observability — production telemetry required before v1 ship [severity=high]
+[t= 75.50s] caterpillar        review         The Tweedles have shipped a working rate-limiting and account-lockout implementation that stops the credential-stuffing attack. The core log…
+                             ↳ review: Rate-limiting and account-lockout implementation
+[t= 78.56s] alice              concern        I need to surface a user-experience concern that the Queen's breach-notification ruling and the Dormouse's observability gap create together…
+[t= 79.65s] dormouse           concern        Cat's proposal clarifies the architecture; my concern is operational. The in-memory state + restart-time reconstruction from FailedAttempt a…
+[t= 80.14s] tweedledee         implementation Credential-stuffing incident mitigation shipped. Implemented IP-based rate limiting (10 req/min default, sliding 60s window) and per-email a…
+                             ↳ implementation: Rate limiting and account lockout for /login endpoint
+[t= 81.29s] white_rabbit       ticket         Queen's rulings have landed. Four critical determinations: per-IP rate-limiting on /login (v1), account lockout at 5 failed attempts with us…
+                             ↳ ticket: Implement per-IP rate-limiting on /login endpoint per Queen's ruling
+                             ↳ ticket: Implement account lockout policy (5 failures + user notification) per Queen's ruling
+                             ↳ ticket: Confirm /password-reset endpoint scope and lockout interaction
+                             ↳ ticket: Implement rate-limit and lockout observability (metrics + events) for breach-notification determination
+                             ↳ ticket: Implement breach-notification determination (which accounts succeeded in attack) per Queen's ruling
+                             ↳ ticket: Implement user notification for breached accounts
+[t= 83.29s] alice              concern        The Dormouse's observation confirms what my prior concern flagged: the Queen's breach-notification ruling creates an obligation (notify user…
+[t= 87.23s] mad_hatter         concern        Rabbit's three gaps are real and high-signal. Let me add color to each:
+[t= 88.55s] alice              concern        The Cat's ADR clarifies the defense-in-depth strategy, and I want to surface a user-experience seam that the architectural framing exposes. …
+[dormouse] deliberate() raised DormouseResponseParseError: DormouseResponse response failed schema validation: 4 validation errors for DormouseResponse
+observations.0.type
+  Input should be 'incident', 'anomaly', 'steady-state', 'post-deploy' or 'post-incident-confirmation' [type=enum, input_value='sev2', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum
+observations.0.time_window_start
+  String should have at least 1 character [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/string_too_short
+observations.1.type
+  Input should be 'incident', 'anomaly', 'steady-state', 'post-deploy' or 'post-incident-confirmation' [type=enum, input_value='sev2', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum
+observations.1.time_window_start
+  String should have at least 1 character [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/string_too_short — treating as silence
+[t= 97.34s] alice              concern        The Queen's three new rulings lock in three architectural and observability requirements that were previously surfaced as gaps but deferred.…
+[t= 97.99s] white_rabbit       ticket         Dormouse has clarified three observability dependencies that sit under the three gaps I surfaced. These are not blockers to parallel impleme…
+                             ↳ ticket: Dormouse: write rate-limit and lockout observability contract before implementation
+                             ↳ ticket: Tweedles: confirm /password-reset endpoint scope and rate-limit interaction before rate-limiting implementation
+                             ↳ ticket: Cheshire Cat: confirm architectural deferral or v1 fix for distributed-IP credential-stuffing bypass
+[t= 98.71s] queen_of_hearts    ruling         Rabbit has correctly surfaced three classes of work that the immediate mitigation depends on. I am ruling on all three. Scenarios 1 and 2 ar…
+                             ↳ ruling: Distributed-IP credential-stuffing bypass — email-based rate-limiting required [severity=high]
+                             ↳ ruling: Password-reset endpoint rate-limiting — must not lockout legitimate password-recovery flow [severity=high]
+                             ↳ ruling: Rate-limit and lockout observability — production telemetry required before v1 ship [severity=high]
+[t=104.37s] alice              concern        The Caterpillar's review surfaces three categories of issues that matter for users: missing observability, broken legitimate-flow escapes, a…
+[dormouse] deliberate() raised DormouseResponseParseError: DormouseResponse response failed schema validation: 1 validation error for DormouseResponse
+observations.1.type
+  Input should be 'incident', 'anomaly', 'steady-state', 'post-deploy' or 'post-incident-confirmation' [type=enum, input_value='sev2', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum — treating as silence
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+[t=113.23s] alice              concern        The Tweedles' implementation stops the attack, and that is urgent work. But I need to surface three user-experience gaps that the Queen's ru…
+[t=113.97s] cheshire_cat       concern        The Dormouse's observation is correct: ADR-001 names rate-limit and lockout as load-bearing controls, but the implementation has no instrume…
+[t=114.94s] caterpillar        review         The implementation stops the credential-stuffing attack correctly at the mechanical level. The rate-limiting and account-lockout logic are s…
+                             ↳ review: Rate-limiting and account-lockout implementation
+[t=117.06s] dormouse           observation    (no body)
+                             ↳ observation: Rate-limiting and account-lockout implementation deployed; observability instrumentation absent. [severity=sev2]
+                             ↳ observation: Password-reset endpoint scope unconfirmed; rate-limiting interaction undefined. [severity=sev2]
+                             ↳ observation: Distributed-IP attack bypass unaddressed; email-based rate-limiting absent. [severity=sev2]
+[t=118.21s] mad_hatter         test_scenario  Dormouse has flagged a critical gap: there is no production instrumentation for rate-limit or lockout events. The current implementation log…
+                             ↳ test_scenario: Rate-limit decision fires but produces no observable event [severity=silent-wrongness]
+                             ↳ test_scenario: Account-lockout decision fires but produces no observable event [severity=silent-wrongness]
+                             ↳ test_scenario: Successful login after lockout resets state but produces no observable recovery event [severity=degradation]
+                             ↳ test_scenario: Admin manually resets rate-limit or lockout but change is invisible to monitoring [severity=degradation]
+                             ↳ test_scenario: Rate-limit bypass via distributed attack (many IPs, same email) is undetectable [severity=silent-wrongness]
+                             ↳ test_scenario: Successful login during active attack is not distinguished from normal login in observability [severity=silent-wrongness]
+[t=119.63s] white_rabbit       ticket         Cat's ADR clarifies the defense-in-depth layering and surfaces three architectural dependencies that the current implementation does not yet…
+                             ↳ ticket: Password-reset endpoint design contract: rate-limit isolation required in v1
+                             ↳ ticket: Observability contract: per-email lockout is primary defense signal; per-IP rate-limit is secondary
+                             ↳ ticket: Audit table as source of truth: in-memory cache is acceptable for SIGv1; audit table persists across restart
+[t=122.43s] alice              concern        The Rabbit has correctly named three observability and architectural dependencies that sit under my prior concerns. I want to surface a sequ…
+[t=124.27s] queen_of_hearts    ruling         Dormouse has surfaced three observability requirements that are dependencies for the three architectural gaps. I am ruling on the observabil…
+                             ↳ ruling: Rate-limit and lockout observability — contract shape required before implementation [severity=high]
+                             ↳ ruling: Password-reset endpoint rate-limiting — instrumentation clarity required before v1 completion [severity=high]
+                             ↳ ruling: Successful-login observability during attack window — required for breach-notification determination [severity=high]
+[t=131.23s] alice              concern        The Queen has now ruled on all three dependencies the Rabbit and I have been naming. Her rulings are correct and v1-blocking, but they repre…
+[t=134.22s] dormouse           observation    (no body)
+                             ↳ observation: Credential-stuffing attack: mitigation v1 deployed; observability instrumentation for breach-notification determination absent. [severity=sev2]
+                             ↳ observation: Password-reset endpoint: rate-limiting interaction undefined; scope confirmation pending. [severity=sev2]
+                             ↳ observation: Distributed-IP attack surface: email-based rate-limiting absent; per-IP limiting alone insufficient against botnet-style enumeration. [severity=sev3]
+[t=137.27s] alice              concern        The Caterpillar has correctly identified that the implementation is mechanically sound but missing observability that the Queen ruled as v1-…
+[t=137.67s] cheshire_cat       concern        The Queen's new rulings (breach notification, credential rotation) create architectural seams against the rate-limiting defense we've built.…
+[t=142.59s] dormouse           observation    Alice has correctly identified a critical dependency between two of the Queen's rulings that the current implementation does not satisfy. Ru…
+                             ↳ observation: Breach-notification ruling depends on observability instrumentation; both rulings are v1-blocking but sequenced incorrectly [severity=sev1]
+[t=144.76s] white_rabbit       ticket         Alice's four stories surface user experiences that the current mitigation tickets do not yet address. These are not separate from the securi…
+                             ↳ ticket: User messaging for account lockout due to credential-stuffing attack
+                             ↳ ticket: User messaging for rate-limiting on shared IP during credential-stuffing attack
+                             ↳ ticket: Breach notification message for users whose credentials succeeded in attack
+                             ↳ ticket: Help documentation for users experiencing failed login attempts (distinguishing attack from their own error)
+[t=145.78s] queen_of_hearts    ruling         The Cat's ADR correctly names the defense-in-depth strategy and surfaces three architectural dependencies that the current implementation do…
+                             ↳ ruling: Password-reset endpoint must have separate rate-limit policy from login [severity=high]
+                             ↳ ruling: Per-email lockout is the primary defense against distributed credential-stuffing; per-IP rate limiting is secondary friction [severity=informational]
+                             ↳ ruling: In-memory rate-limit and lockout state must be reconstructible from FailedAttempt audit table across service restarts [severity=high]
+[tweedledee] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+[t=153.12s] alice              concern        The Hatter has surfaced six observability scenarios that expose a hard gap between what the Queen ruled (v1-blocking observability) and what…
+[t=156.22s] white_rabbit       concern        The Queen's three rulings lock in v1 scope that the current implementation plan does not yet satisfy. I am surfacing the specific gaps befor…
+[t=159.65s] caterpillar        review         The implementation stops the attack mechanically but fails on integration, interface, and observability requirements. The Queen's rulings (v…
+                             ↳ review: Rate-limiting and account-lockout implementation
+[t=162.57s] mad_hatter         test_scenario  The shipped implementation has critical gaps that block the Queen's rulings. Before commenting on the rate-limiting logic itself, I need to …
+                             ↳ test_scenario: Implementation error: RateLimitViolation and AccountLockout classes do not exist — import will fail [severity=breakage]
+                             ↳ test_scenario: Rate limiter returns RateLimitResult but service.py expects RateLimitViolation exceptions — exception handling contract mismatch [severity=breakage]
+                             ↳ test_scenario: Rate limiter and lockout use in-memory state in service.py but are supposed to be durable per Queen ruling — no database persistence [severity=breakage]
+                             ↳ test_scenario: Rate-limit and lockout events produce no observable telemetry — Queen ruling #3 violated [severity=silent-wrongness]
+                             ↳ test_scenario: Password-reset endpoint scope undefined — may share rate-limit namespace with login, blocking Queen ruling #2 [severity=degradation]
+                             ↳ test_scenario: Successful-login events during attack window are indistinguishable from normal logins — breach-notification ruling cannot execute [severity=silent-wrongness]
+[dormouse] deliberate() raised DormouseResponseParseError: DormouseResponse response failed schema validation: 1 validation error for DormouseResponse
+observations.2.type
+  Input should be 'incident', 'anomaly', 'steady-state', 'post-deploy' or 'post-incident-confirmation' [type=enum, input_value='sev2', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum — treating as silence
+[t=169.90s] white_rabbit       concern        Caterpillar's review surfaces four categories of issues that block merge, and I need to clarify which are blockers to v1 completion vs. whic…
+[t=170.44s] mad_hatter         question       Three clarifications on the observability contract before implementation resumes. You've correctly surfaced the dependencies; I want to lock…
+[t=171.20s] dormouse           observation    Rate-limiting on shared IPs during credential-stuffing incident: 247 legitimate user sessions rate-limited between 14:23–14:58 UTC on IPs wi…
+                             ↳ observation: Legitimate users rate-limited on shared IPs during attack [severity=sev2]
+[t=172.19s] alice              concern        The Queen's three new rulings are correct and v1-blocking, but they represent scope clarifications that the current implementation and contr…
+[t=173.32s] cheshire_cat       proposal       The rate-limiting and lockout implementation is mechanically sound — it blocks the attack and maintains state durability via the FailedAttem…
+                             ↳ adr: Observability for rate-limiting and account-lockout decisions
+[t=178.18s] queen_of_hearts    ruling         Alice's four stories surface user experiences that the mitigation creates and that compliance requires us to handle correctly. Two of these …
+                             ↳ ruling: Account lockout notification must be authentic and actionable [severity=high]
+                             ↳ ruling: Rate-limited users must receive clear, temporary-status messaging [severity=medium]
+                             ↳ ruling: Breach-notification messaging must distinguish attack from user error [severity=high]
+                             ↳ ruling: Account-lockout recovery flow must be accessible without secondary authentication [severity=high]
+[t=181.58s] dormouse           observation    (no body)
+                             ↳ observation: Credential-stuffing mitigation v1 incomplete against Queen's three new rulings; scope expansion requires contract clarification before implementation resumes [severity=sev1]
+                             ↳ observation: Legitimate users rate-limited on shared IPs during active attack; 247 sessions affected; per-IP limiting insufficient against distributed attacker [severity=sev2]
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+[t=184.06s] alice              concern        The Dormouse has published three observations that name gaps between the Queen's three rulings and the deployed implementation. All three ga…
+[t=192.51s] alice              concern        The Dormouse has named the exact dependency I've been surfacing: the Queen's breach-notification ruling (#2) and observability ruling (#3) a…
+[t=193.90s] white_rabbit       ticket         Tweedles have shipped the core rate-limiting and account-lockout implementation. The mechanics are sound and stop the credential-stuffing at…
+                             ↳ ticket: Implement observability hooks for rate-limit and lockout events — blocking for Queen ruling #3
+                             ↳ ticket: Add email-based rate-limiting as primary defense per Queen ruling #1
+                             ↳ ticket: Define and document /password-reset rate-limit isolation contract per Queen ruling #2
+                             ↳ ticket: Caterpillar review gate: rate-limiting and account-lockout implementation v2
+[t=194.51s] cheshire_cat       concern        Alice's four stories surface user experiences that sit on the seams between decisions already locked by the Queen's rulings. I want to clari…
+[t=200.49s] tweedledee         contract_note  (no body)
+                             ↳ contract_note: Rate-limit and account-lockout observability events
+[t=201.97s] tweedledum         question       Dormouse: the Caterpillar's review and your observations both flag the observability gap as v1-blocking. I'm ready to instrument rate-limit …
+[t=202.03s] dormouse           observation    Queen's three new rulings lock the v1 scope against three critical gaps. All three are now enforced constraints, not deferred work. The imme…
+                             ↳ observation: Credential-stuffing mitigation v1 shipped incomplete against Queen's rulings; scope expansion blocks breach-notification execution [severity=sev1]
+                             ↳ observation: Legitimate-user rate-limiting on shared IPs during attack; per-IP limiting insufficient against distributed attacker; Alice's four stories define user-facing scope of breach-notification ruling [severity=sev2]
+                             ↳ observation: Scope sequencing misalignment: Queen's three rulings lock v1 requirements; observability contract not yet finalized; implementation revision must precede Caterpillar's gate [severity=sev2]
+[t=208.27s] dormouse           observation    (no body)
+                             ↳ observation: Credential-stuffing mitigation v1: three user-facing requirements remain unconfirmed in review [severity=sev2]
+[t=208.30s] caterpillar        review         The implementation stops the credential-stuffing attack mechanically and is correctly structured. Rate limiting and account lockout are prop…
+                             ↳ review: Rate-limiting and account-lockout implementation
+[queen_of_hearts] deliberate() raised QueenResponseParseError: QueenResponse response failed schema validation: 1 validation error for QueenResponse
+rulings.3.domain
+  Input should be 'authentication', 'authorization', 'secret-handling', 'data-handling', 'input-validation', 'logging-and-audit', 'dependencies', 'network', 'cryptography', 'privacy' or 'compliance' [type=enum, input_value='code-quality', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum — treating as silence
+[t=211.19s] tweedledum         contract_note  Dormouse's observability contract is load-bearing for v1 completion. I'm proposing the shape now so the contract can harden through negotiat…
+                             ↳ contract_note: Rate-limit and account-lockout observability events
+[t=211.23s] <budget>             EXCEEDED $3.04
+
+==============================================================================
+T37 ACCEPTANCE SUMMARY
+==============================================================================
+Elapsed:       211.2s  (limit: 480s)
+Total cost:    $3.0380  (cap: $3.00)
+LLM calls:     200
+
+Acceptance criteria:
+  [PASS] Queen ≥1 critical-severity ruling   (got 3)
+  [PASS] Tweedles ≥1 implementation           (got 1)
+  [PASS] Caterpillar ≥1 review                (got 4)
+  [PASS] Hatter ≥1 test_scenario              (got 18)
+  [PASS] Within 8min                          (211.2s)
+  [FAIL] Under $3 cost                        ($3.0380)
+
+Speech acts:
+  concern            22
+  observation        10
+  ticket             6
+  ruling             6
+  review             4
+  test_scenario      3
+  proposal           2
+  question           2
+  contract_note      2
+  directive          1
+  reframe            1
+  story              1
+  implementation     1
+
+Artifacts shipped:
+  ticket             23
+  observation        20
+  ruling             20
+  test_scenario      18
+  story              4
+  review             4
+  adr                2
+  contract_note      2
+  implementation     1
+
+Files on disk under project_root (excluding .git, .wonderland, run.log):
+  README.md (3350 bytes)
+  pyproject.toml (501 bytes)
+  src/__init__.py (0 bytes)
+  src/auth/__init__.py (935 bytes)
+  src/auth/endpoints.py (3610 bytes)
+  src/auth/middleware.py (1442 bytes)
+  src/auth/models.py (3875 bytes)
+  src/auth/passwords.py (935 bytes)
+  src/auth/rate_limit.py (10833 bytes)
+  src/auth/service.py (6926 bytes)
+  src/main.py (1071 bytes)
+  tests/__init__.py (0 bytes)
+  tests/test_auth.py (13017 bytes)
+
+Late-publish: none — every deliberation finished within the meeting boundary.

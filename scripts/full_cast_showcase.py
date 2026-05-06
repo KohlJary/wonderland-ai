@@ -147,7 +147,9 @@ async def run_showcase(
     print("Wonderland — Full-Cast Showcase (10 agents, end-to-end)")
     print("=" * 72)
     print(f"Project root: {project_root}")
-    print(f"Quiescence threshold: {quiescence_seconds:.1f}s of bus-silence with no open expectations")
+    print(
+        f"Quiescence threshold: {quiescence_seconds:.1f}s of bus-silence with no open expectations"
+    )
     print(f"Hard timeout: {timeout:.0f}s")
 
     usage: dict[str, list[TokenUsage]] = defaultdict(list)
@@ -155,6 +157,7 @@ async def run_showcase(
     def usage_cb(name: str):
         def _cb(u: TokenUsage) -> None:
             usage[name].append(u)
+
         return _cb
 
     bus = InMemoryCaucus()
@@ -273,6 +276,11 @@ async def run_showcase(
             sys.stdout.flush()
 
     async def state_watcher() -> None:
+        # Single consumer of monitor.transitions() — does logging + delegates
+        # the procedural acts to the Dodo's per-state handlers (T33). The
+        # Dodo's NUDGE / ACKNOWLEDGMENT / ESCALATION utterances land on the
+        # bus and the printer task prints them inline with the rest of the
+        # transcript.
         async for change in monitor.transitions():
             elapsed = time.monotonic() - start
             line = (
@@ -283,7 +291,29 @@ async def run_showcase(
             sys.stdout.flush()
             state_log.append(line.strip())
 
-            if change.to_state is ThreadState.QUIESCENT:
+            if change.to_state is ThreadState.STUCK:
+                # Per T33: structural anti-deadlock fix — Dodo nudges instead
+                # of waiting for conflict-keyword concerns. Record the nudge
+                # before publishing so the deadlock threshold tracks correctly.
+                monitor.record_nudge(change.thread_id)
+                await dodo.nudge(change.thread_id, reason=change.reason)
+            elif change.to_state is ThreadState.DEADLOCKED:
+                # Polite-deadlock escalation — uses the templated brief
+                # path (escalate_deadlock) since there's no Conflict to
+                # compose, just paralysis to surface.
+                try:
+                    await dodo.escalate_deadlock(change.thread_id, reason=change.reason)
+                except RuntimeError:
+                    # No escalation registry configured; log instead.
+                    await dodo.acknowledge(
+                        change.thread_id,
+                        state="deadlocked",
+                        body=(
+                            f"Thread {change.thread_id} → deadlocked "
+                            f"({change.reason}); no escalation registry."
+                        ),
+                    )
+            elif change.to_state is ThreadState.QUIESCENT:
                 await dodo.acknowledge(
                     change.thread_id,
                     state="complete",
@@ -291,11 +321,6 @@ async def run_showcase(
                         f"Thread {change.thread_id} → complete. The team has gone "
                         "quiet with no open expectations; the directive is settled."
                     ),
-                )
-            elif change.to_state in (ThreadState.STUCK, ThreadState.DEADLOCKED):
-                print(
-                    f"   (showcase note: thread is {change.to_state.value}; "
-                    "a real team would resolve via Dodo nudge → conflict ladder.)"
                 )
             elif change.to_state is ThreadState.COMPLETE:
                 completion_event.set()
@@ -349,9 +374,7 @@ async def run_showcase(
                 print(f"    domains: {', '.join(alert.domains)}")
                 print(f"    reason:  {alert.reason}")
         else:
-            print(
-                "\n  (none — the team produced disagreement, not synthetic consensus.)"
-            )
+            print("\n  (none — the team produced disagreement, not synthetic consensus.)")
 
         section("Token usage (per agent, summed across calls)")
         total_in = 0

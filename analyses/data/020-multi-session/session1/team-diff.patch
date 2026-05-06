@@ -1,0 +1,900 @@
+diff --git a/src/backend/api/messages.py b/src/backend/api/messages.py
+index b2edca7..db04279 100644
+--- a/src/backend/api/messages.py
++++ b/src/backend/api/messages.py
+@@ -1,42 +1,308 @@
+-"""POST /api/messages — placeholder echo endpoint demonstrating the
+-DB → API → response flow. The team should replace this with the
+-actual feature endpoints (delete or repurpose this file)."""
++"""
++POST /conversations — create a new two-user conversation
++GET /conversations/{id} — read a conversation
++GET /conversations/{id}/messages — poll for messages (polling contract v1)
++POST /conversations/{id}/messages — create a message (translation state machine)
+ 
+-from fastapi import APIRouter, Depends
++Contracts:
++- message-envelope v1: original_text, translated_text, language_pair, translation_status
++- polling-contract v1: GET returns all messages with status fields
++- optimistic-render v1: message appears immediately with status=pending_translation
++"""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from typing import Optional
++
++from fastapi import APIRouter, Depends, HTTPException
+ from pydantic import BaseModel, Field
++from sqlalchemy import and_, or_
+ from sqlalchemy.orm import Session
+ 
++from src.backend.api.schemas import (
++    ConversationCreate,
++    ConversationResponse,
++    MessageCreate,
++    MessageResponse,
++    UserCreate,
++    UserResponse,
++)
+ from src.backend.db import get_db
+-from src.backend.models import HelloMessage
++from src.backend.models import Conversation, Message, TranslationStatus, User
+ 
+ router = APIRouter()
+ 
+ 
+-class MessageCreate(BaseModel):
+-    text: str = Field(min_length=1, max_length=280)
++# ============================================================================
++# User Management
++# ============================================================================
++
++
++@router.post("/users", response_model=UserResponse)
++def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
++    """Create a user with language preference.
++
++    Returns 400 if username already exists.
++    """
++    existing = db.query(User).filter(User.username == payload.username).first()
++    if existing:
++        raise HTTPException(status_code=400, detail="Username already exists")
++
++    user = User(
++        username=payload.username,
++        language_preference=payload.language_preference,
++    )
++    db.add(user)
++    db.commit()
++    db.refresh(user)
++    return UserResponse(**user.to_dict())
++
++
++@router.get("/users/{user_id}", response_model=UserResponse)
++def get_user(user_id: int, db: Session = Depends(get_db)) -> UserResponse:
++    """Fetch a user by ID."""
++    user = db.query(User).filter(User.id == user_id).first()
++    if not user:
++        raise HTTPException(status_code=404, detail="User not found")
++    return UserResponse(**user.to_dict())
++
++
++# ============================================================================
++# Conversation Management
++# ============================================================================
+ 
+ 
+-class MessageResponse(BaseModel):
+-    id: int
+-    text: str
+-    created_at: str
++@router.post("/conversations", response_model=ConversationResponse)
++def create_conversation(
++    payload: ConversationCreate, db: Session = Depends(get_db)
++) -> ConversationResponse:
++    """Create a two-user conversation.
+ 
++    Both users must exist and be different. Returns 400 if conversation
++    already exists (conversations are uniquely identified by unordered
++    pair of user IDs per the contract).
++    """
++    # Verify both users exist
++    user1 = db.query(User).filter(User.id == payload.user1_id).first()
++    user2 = db.query(User).filter(User.id == payload.user2_id).first()
+ 
+-@router.post("/messages", response_model=MessageResponse)
++    if not user1:
++        raise HTTPException(status_code=404, detail="User 1 not found")
++    if not user2:
++        raise HTTPException(status_code=404, detail="User 2 not found")
++
++    if payload.user1_id == payload.user2_id:
++        raise HTTPException(status_code=400, detail="Cannot create conversation with same user")
++
++    # Check if conversation already exists (either direction per unique constraint)
++    existing = (
++        db.query(Conversation)
++        .filter(
++            or_(
++                and_(Conversation.user1_id == payload.user1_id, Conversation.user2_id == payload.user2_id),
++                and_(Conversation.user1_id == payload.user2_id, Conversation.user2_id == payload.user1_id),
++            )
++        )
++        .first()
++    )
++    if existing:
++        raise HTTPException(status_code=400, detail="Conversation already exists between these users")
++
++    conv = Conversation(user1_id=payload.user1_id, user2_id=payload.user2_id)
++    db.add(conv)
++    db.commit()
++    db.refresh(conv)
++    return ConversationResponse(**conv.to_dict())
++
++
++@router.get("/conversations/{conversation_id}", response_model=ConversationResponse)
++def get_conversation(conversation_id: int, db: Session = Depends(get_db)) -> ConversationResponse:
++    """Fetch a conversation by ID."""
++    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
++    if not conv:
++        raise HTTPException(status_code=404, detail="Conversation not found")
++    return ConversationResponse(**conv.to_dict())
++
++
++# ============================================================================
++# Message Polling (contract-note-006: polling-contract v1)
++# ============================================================================
++
++
++@router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
++def list_messages(conversation_id: int, db: Session = Depends(get_db)) -> list[MessageResponse]:
++    """Fetch all messages in a conversation.
++
++    Per contract-note-006 (polling-contract v1), returns all messages
++    in the conversation with their translation_status fields. Frontend
++    polls this endpoint (default 2-second interval) to detect when
++    translation completes (status changes from pending_translation to
++    translated).
++
++    Invariant: conversation must exist.
++    Ordering: ascending by created_at (oldest first).
++    """
++    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
++    if not conv:
++        raise HTTPException(status_code=404, detail="Conversation not found")
++
++    messages = (
++        db.query(Message)
++        .filter(Message.conversation_id == conversation_id)
++        .order_by(Message.created_at)
++        .all()
++    )
++
++    return [MessageResponse(**msg.to_dict()) for msg in messages]
++
++
++# ============================================================================
++# Message Creation (contract-note-001: message envelope v1)
++# ============================================================================
++
++
++@router.post("/conversations/{conversation_id}/messages", response_model=MessageResponse)
+ def create_message(
+-    payload: MessageCreate, db: Session = Depends(get_db)
++    conversation_id: int,
++    payload: MessageCreate,
++    db: Session = Depends(get_db),
+ ) -> MessageResponse:
+-    """Echo a message into the DB and return it. Replace with real
+-    feature work."""
+-    msg = HelloMessage(text=payload.text)
++    """Create a message in a conversation (async translation state machine).
++
++    Per contract-note-001 (message envelope v1) and contract-note-007
++    (optimistic render timing):
++
++    1. Sender must be either user1_id or user2_id in the conversation
++    2. Message is created with translation_status = pending_translation
++    3. Message appears immediately to both users in the conversation
++       (optimistic render — translation arrives async via polling)
++    4. language_pair is computed from sender's language to receiver's
++       language (immutable, set at creation)
++    5. translated_text is initially empty string (populated when translation completes)
++
++    Invariants enforced:
++    - conversation_id must be valid
++    - sender_id must be a member of the conversation
++    - original_text is always non-null
++    - translation_status = pending_translation on creation
++    - language_pair is immutable (set now, never updated)
++    """
++    # Verify conversation exists
++    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
++    if not conv:
++        raise HTTPException(status_code=404, detail="Conversation not found")
++
++    # Verify sender is a member of the conversation
++    if payload.sender_id not in (conv.user1_id, conv.user2_id):
++        raise HTTPException(status_code=400, detail="Sender is not a member of this conversation")
++
++    # Fetch sender and receiver (the other user)
++    sender = db.query(User).filter(User.id == payload.sender_id).first()
++    if not sender:
++        raise HTTPException(status_code=400, detail="Sender not found")
++
++    receiver_id = conv.user2_id if payload.sender_id == conv.user1_id else conv.user1_id
++    receiver = db.query(User).filter(User.id == receiver_id).first()
++    if not receiver:
++        raise HTTPException(status_code=400, detail="Receiver not found")
++
++    # Compute language_pair: sender's language -> receiver's language
++    # If sender is German and receiver is English, language_pair = 'de->en'
++    language_pair = f"{sender.language_preference}->{receiver.language_preference}"
++
++    # Create message with translation_status = pending_translation
++    # Per optimistic render contract, message appears immediately (to both users
++    # via next poll); translated_text remains empty until translation worker
++    # processes it.
++    msg = Message(
++        conversation_id=conversation_id,
++        sender_id=payload.sender_id,
++        original_text=payload.original_text,
++        translated_text=None,  # stored as None in DB, returned as "" in API response
++        language_pair=language_pair,
++        translation_status=TranslationStatus.PENDING_TRANSLATION,
++        created_at=datetime.now(timezone.utc),
++        translated_at=None,  # set when translation completes
++        error_code=None,
++        error_message=None,
++    )
+     db.add(msg)
+     db.commit()
+     db.refresh(msg)
++
++    return MessageResponse(**msg.to_dict())
++
++
++# ============================================================================
++# Utility: mark translation complete (for translation worker)
++# ============================================================================
++
++
++@router.post("/messages/{message_id}/translate", response_model=MessageResponse)
++def mark_message_translated(
++    message_id: int,
++    translated_text: str = Field(min_length=1),
++    db: Session = Depends(get_db),
++) -> MessageResponse:
++    """Mark a message as translated (internal API for translation worker).
++
++    Sets translation_status = translated and populates translated_text
++    and translated_at. This endpoint is called by the async translation
++    worker after the translation service completes.
++
++    Called by: translation worker service (not user-facing)
++    Invariant: message must exist and have translation_status = pending_translation
++    """
++    msg = db.query(Message).filter(Message.id == message_id).first()
++    if not msg:
++        raise HTTPException(status_code=404, detail="Message not found")
++
++    if msg.translation_status != TranslationStatus.PENDING_TRANSLATION:
++        raise HTTPException(
++            status_code=400,
++            detail=f"Message status is {msg.translation_status.value}, not pending_translation",
++        )
++
++    msg.translation_status = TranslationStatus.TRANSLATED
++    msg.translated_text = translated_text
++    msg.translated_at = datetime.now(timezone.utc)
++    db.commit()
++    db.refresh(msg)
++
+     return MessageResponse(**msg.to_dict())
+ 
+ 
+-@router.get("/messages", response_model=list[MessageResponse])
+-def list_messages(db: Session = Depends(get_db)) -> list[MessageResponse]:
+-    """List all messages (newest last). For development convenience."""
+-    rows = db.query(HelloMessage).order_by(HelloMessage.id).all()
+-    return [MessageResponse(**r.to_dict()) for r in rows]
++@router.post("/messages/{message_id}/translate-failed", response_model=MessageResponse)
++def mark_message_translation_failed(
++    message_id: int,
++    error_code: str = Field(min_length=1),
++    error_message: str = Field(min_length=1),
++    db: Session = Depends(get_db),
++) -> MessageResponse:
++    """Mark a message as failed translation (internal API for translation worker).
++
++    Sets translation_status = translation_failed and populates error_code
++    and error_message. This endpoint is called by the translation worker
++    when the translation service fails (quota exceeded, service down, etc.).
++
++    Called by: translation worker service (not user-facing)
++    Invariant: message must exist and have translation_status = pending_translation
++    """
++    msg = db.query(Message).filter(Message.id == message_id).first()
++    if not msg:
++        raise HTTPException(status_code=404, detail="Message not found")
++
++    if msg.translation_status != TranslationStatus.PENDING_TRANSLATION:
++        raise HTTPException(
++            status_code=400,
++            detail=f"Message status is {msg.translation_status.value}, not pending_translation",
++        )
++
++    msg.translation_status = TranslationStatus.TRANSLATION_FAILED
++    msg.error_code = error_code
++    msg.error_message = error_message
++    db.commit()
++    db.refresh(msg)
++
++    return MessageResponse(**msg.to_dict())
+diff --git a/src/backend/api/schemas.py b/src/backend/api/schemas.py
+new file mode 100644
+index 0000000..d67cb57
+--- /dev/null
++++ b/src/backend/api/schemas.py
+@@ -0,0 +1,79 @@
++"""Shared request/response schemas for API endpoints.
++
++Centralized schema definitions to prevent duplication and ensure
++contract consistency across route handlers.
++"""
++
++from typing import Optional
++
++from pydantic import BaseModel, Field
++
++
++class UserCreate(BaseModel):
++    """POST /users — create a user with language preference."""
++
++    username: str = Field(min_length=1, max_length=255)
++    language_preference: str = Field(min_length=2, max_length=5)  # e.g. 'en', 'de', 'ja'
++
++
++class UserResponse(BaseModel):
++    """User representation in API responses."""
++
++    id: int
++    username: str
++    language_preference: str
++    created_at: str
++
++
++class ConversationCreate(BaseModel):
++    """POST /conversations — create a two-user conversation."""
++
++    user1_id: int = Field(gt=0)
++    user2_id: int = Field(gt=0)
++
++
++class ConversationResponse(BaseModel):
++    """Conversation representation (metadata only, no messages)."""
++
++    id: int
++    user1_id: int
++    user2_id: int
++    created_at: str
++
++
++class MessageCreate(BaseModel):
++    """POST /conversations/{id}/messages — create a message.
++
++    Invariants:
++    - sender_id must be either user1_id or user2_id in the conversation
++    - original_text is always provided
++    - language_pair is computed from sender's language and receiver's language preference
++    """
++
++    sender_id: int
++    original_text: str = Field(min_length=1, max_length=5000)
++
++
++class MessageResponse(BaseModel):
++    """Message representation per contract-note-001 (message envelope v1).
++
++    Fields:
++    - original_text: what the sender typed (always non-null)
++    - translated_text: the translated version (null until translation completes)
++    - language_pair: immutable, set at creation (e.g. 'de->en')
++    - translation_status: enum (pending_translation | translated | translation_failed)
++    - translated_at: when translation completed (null until translated)
++    - error_code, error_message: null unless translation_failed
++    """
++
++    id: int
++    conversation_id: int
++    sender_id: int
++    original_text: str
++    translated_text: str  # empty string if null (per contract)
++    language_pair: str
++    translation_status: str  # enum value as string
++    created_at: str
++    translated_at: Optional[str]
++    error_code: Optional[str]
++    error_message: Optional[str]
+diff --git a/src/backend/api/users.py b/src/backend/api/users.py
+new file mode 100644
+index 0000000..5076221
+--- /dev/null
++++ b/src/backend/api/users.py
+@@ -0,0 +1,30 @@
++"""User and Conversation endpoints.
++
++This module re-exports all endpoints from messages.py for organizational clarity.
++The canonical location for all API endpoints is src/backend/api/messages.py
++to avoid route collisions and schema duplication.
++
++Users should only import from this module if explicitly needed for backwards compatibility;
++all new code should import from messages.py directly.
++"""
++
++# Re-export router and schemas from messages
++from src.backend.api.messages import (
++    ConversationCreate,
++    ConversationResponse,
++    MessageCreate,
++    MessageResponse,
++    UserCreate,
++    UserResponse,
++    router,
++)
++
++__all__ = [
++    "router",
++    "UserCreate",
++    "UserResponse",
++    "ConversationCreate",
++    "ConversationResponse",
++    "MessageCreate",
++    "MessageResponse",
++]
+diff --git a/src/backend/models.py b/src/backend/models.py
+index abd60be..0a4fe04 100644
+--- a/src/backend/models.py
++++ b/src/backend/models.py
+@@ -1,35 +1,166 @@
+-"""SQLAlchemy models. Just `Base` + an example `HelloMessage` showing
+-the pattern. Replace HelloMessage with the actual feature models."""
++"""SQLAlchemy models for translation chat.
++
++Owned domains:
++- User: represents a user in the system, with a language preference
++- Conversation: represents a two-user conversation, immutable participants
++- Message: represents a message within a conversation, with async translation state
++
++Invariants enforced at DB layer:
++- User.language_preference is non-null (all users have a language)
++- Conversation has exactly two users (enforced via unique constraint at create time)
++- Message.sender_id is a foreign key to User (always non-null)
++- Message.original_text is always non-null
++- Message.translation_status is an enum (pending_translation | translated | translation_failed)
++- Message.translated_text is null iff translation_status = pending_translation
++- Message.translated_at is null iff translation_status = pending_translation
++- Message.error_code and error_message are null iff translation_status != translation_failed
++- Message.language_pair is immutable (set at creation, never updated)
++"""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
++from enum import Enum
+ 
+-from sqlalchemy import Column, DateTime, Integer, String, func
+-from sqlalchemy.orm import declarative_base
++from sqlalchemy import (
++    Column,
++    DateTime,
++    Enum as SQLEnum,
++    ForeignKey,
++    Integer,
++    String,
++    Text,
++    UniqueConstraint,
++    func,
++)
++from sqlalchemy.orm import declarative_base, relationship
+ 
+ Base = declarative_base()
+ 
+ 
+-class HelloMessage(Base):
+-    """Placeholder model demonstrating the SQLAlchemy pattern.
++class TranslationStatus(str, Enum):
++    """Translation state machine for messages.
++    
++    pending_translation: message created, translation not yet attempted
++    translated: translation succeeded, translated_text is populated
++    translation_failed: translation service failed, error_code populated
++    """
++
++    PENDING_TRANSLATION = "pending_translation"
++    TRANSLATED = "translated"
++    TRANSLATION_FAILED = "translation_failed"
++
++
++class User(Base):
++    """A user in the system."""
++
++    __tablename__ = "users"
++
++    id = Column(Integer, primary_key=True, autoincrement=True)
++    username = Column(String(255), unique=True, nullable=False)
++    language_preference = Column(String(5), nullable=False)  # e.g. 'en', 'de', 'ja'
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++
++    conversations = relationship("Conversation", back_populates="user1", foreign_keys="Conversation.user1_id")
++    messages_sent = relationship("Message", back_populates="sender", foreign_keys="Message.sender_id")
++
++    def to_dict(self) -> dict:
++        return {
++            "id": self.id,
++            "username": self.username,
++            "language_preference": self.language_preference,
++            "created_at": self.created_at.isoformat() if self.created_at else datetime.now(timezone.utc).isoformat(),
++        }
++
++
++class Conversation(Base):
++    """A conversation between exactly two users.
++    
++    Both user_ids are non-null and must be different. The conversation
++    is bidirectional: messages sent by user1 go to user2 and vice versa.
++    """
++
++    __tablename__ = "conversations"
++
++    id = Column(Integer, primary_key=True, autoincrement=True)
++    user1_id = Column(Integer, ForeignKey("users.id"), nullable=False)
++    user2_id = Column(Integer, ForeignKey("users.id"), nullable=False)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+ 
+-    The team should DELETE this when shipping real features — it
+-    exists only so the seed has a working end-to-end flow (DB row →
+-    API response → frontend render) for the human verifying the
+-    seed."""
++    __table_args__ = (UniqueConstraint("user1_id", "user2_id", name="uq_conversation_users"),)
+ 
+-    __tablename__ = "hello_messages"
++    user1 = relationship("User", back_populates="conversations", foreign_keys=[user1_id])
++    user2 = relationship("User", foreign_keys=[user2_id])
++    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
++
++    def to_dict(self) -> dict:
++        return {
++            "id": self.id,
++            "user1_id": self.user1_id,
++            "user2_id": self.user2_id,
++            "created_at": self.created_at.isoformat() if self.created_at else datetime.now(timezone.utc).isoformat(),
++        }
++
++
++class Message(Base):
++    """A message in a conversation, with async translation state.
++    
++    Invariants (enforced at DB layer):
++    - sender_id is non-null and is either user1_id or user2_id from the conversation
++    - original_text is always non-null
++    - translation_status determines nullability of translated_text and error fields:
++      * pending_translation: translated_text null, translated_at null, error_code/message null
++      * translated: translated_text non-null, translated_at non-null, error_code/message null
++      * translation_failed: translated_text null, translated_at null, error_code/message non-null
++    - language_pair is immutable (set at creation, never updated)
++    """
++
++    __tablename__ = "messages"
+ 
+     id = Column(Integer, primary_key=True, autoincrement=True)
+-    text = Column(String(280), nullable=False)
++    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
++    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
++    
++    # Message content: original (always present) and translation (eventual)
++    original_text = Column(Text, nullable=False)
++    translated_text = Column(Text, nullable=True)
++    
++    # Language metadata: immutable, set at creation
++    language_pair = Column(String(11), nullable=False)  # e.g. 'de->en', 'ja->en'
++    
++    # Translation state machine
++    translation_status = Column(
++        SQLEnum(TranslationStatus),
++        nullable=False,
++        default=TranslationStatus.PENDING_TRANSLATION,
++    )
++    
++    # Timestamps
+     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++    translated_at = Column(DateTime(timezone=True), nullable=True)
++    
++    # Error context (populated only when translation_status = translation_failed)
++    error_code = Column(String(64), nullable=True)
++    error_message = Column(Text, nullable=True)
++
++    conversation = relationship("Conversation", back_populates="messages")
++    sender = relationship("User", back_populates="messages_sent", foreign_keys=[sender_id])
+ 
+     def to_dict(self) -> dict:
++        """Serialize message to dict for API response.
++        
++        Include all fields per contract-note-001 (message envelope v1).
++        """
+         return {
+             "id": self.id,
+-            "text": self.text,
+-            "created_at": (
+-                self.created_at.isoformat() if self.created_at else datetime.now(timezone.utc).isoformat()
+-            ),
++            "conversation_id": self.conversation_id,
++            "sender_id": self.sender_id,
++            "original_text": self.original_text,
++            "translated_text": self.translated_text if self.translated_text else "",
++            "language_pair": self.language_pair,
++            "translation_status": self.translation_status.value,
++            "created_at": self.created_at.isoformat() if self.created_at else datetime.now(timezone.utc).isoformat(),
++            "translated_at": self.translated_at.isoformat() if self.translated_at else None,
++            "error_code": self.error_code,
++            "error_message": self.error_message,
+         }
+diff --git a/tests/test_messages.py b/tests/test_messages.py
+index 8e39784..2b2964f 100644
+--- a/tests/test_messages.py
++++ b/tests/test_messages.py
+@@ -1,25 +1,239 @@
+-"""Baseline test — POST /api/messages echoes a message into the DB,
+-GET /api/messages lists what's been posted."""
++"""Test message creation and listing, per contract notes.
+ 
++Covers:
++- contract_note_001: message envelope (original + translated + status)
++- contract_note_002: polling contract (GET /conversations/{id}/messages)
++- contract_note_003: optimistic render (message appears immediately)
++- contract_note_004: language display logic (sender → receiver)
++"""
+ 
+-def test_post_and_list_messages(client):
+-    res = client.post("/api/messages", json={"text": "hello"})
++from datetime import datetime, timezone
++
++import pytest
++
++
++@pytest.fixture
++def setup_users_and_conversation(client, db_session):
++    """Helper to set up two users and a conversation.
++    
++    Returns: (user1_dict, user2_dict, conversation_dict)
++    """
++    # Create user1 (German preference)
++    res1 = client.post("/api/users", json={"username": "klaus", "language_preference": "de"})
++    assert res1.status_code == 200
++    user1 = res1.json()
++
++    # Create user2 (English preference)
++    res2 = client.post("/api/users", json={"username": "alice", "language_preference": "en"})
++    assert res2.status_code == 200
++    user2 = res2.json()
++
++    # Create conversation
++    res = client.post(
++        "/api/conversations", json={"user1_id": user1["id"], "user2_id": user2["id"]}
++    )
++    assert res.status_code == 200
++    conversation = res.json()
++
++    return user1, user2, conversation
++
++
++def test_create_message_optimistic_render(client, setup_users_and_conversation):
++    """Message appears immediately with pending_translation status.
++    
++    Per contract_note_003: message optimistic render.
++    """
++    user1, user2, conversation = setup_users_and_conversation
++
++    res = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"sender_id": user1["id"], "original_text": "Guten Tag!"},
++    )
+     assert res.status_code == 200
+     msg = res.json()
+-    assert msg["text"] == "hello"
+-    assert msg["id"] >= 1
+ 
+-    res = client.get("/api/messages")
++    # Envelope contract (contract_note_001)
++    assert msg["conversation_id"] == conversation["id"]
++    assert msg["sender_id"] == user1["id"]
++    assert msg["original_text"] == "Guten Tag!"
++    assert msg["translated_text"] == ""  # Empty until translation completes
++    assert msg["language_pair"] == "de->en"
++    assert msg["translation_status"] == "pending_translation"  # optimistic render state
++    assert msg["created_at"] is not None
++    assert msg["translated_at"] is None
++    assert msg["error_code"] is None
++    assert msg["error_message"] is None
++
++
++def test_list_messages_polling_contract(client, setup_users_and_conversation):
++    """GET /conversations/{id}/messages returns all messages with status.
++    
++    Per contract_note_002: polling contract.
++    """
++    user1, user2, conversation = setup_users_and_conversation
++
++    # Create two messages
++    res1 = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"sender_id": user1["id"], "original_text": "Hello"},
++    )
++    assert res1.status_code == 200
++    msg1 = res1.json()
++
++    res2 = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"sender_id": user2["id"], "original_text": "Hi there"},
++    )
++    assert res2.status_code == 200
++    msg2 = res2.json()
++
++    # Poll endpoint should return both
++    res = client.get(f"/api/conversations/{conversation['id']}/messages")
++    assert res.status_code == 200
++    messages = res.json()
++
++    assert len(messages) == 2
++    assert messages[0]["id"] == msg1["id"]
++    assert messages[1]["id"] == msg2["id"]
++
++
++def test_language_pair_contract(client, setup_users_and_conversation):
++    """Language pair is sender_lang->receiver_lang per contract_note_004.
++    
++    Sender sees original; receiver sees translation (eventual).
++    """
++    user1, user2, conversation = setup_users_and_conversation
++
++    # User1 (de) sends to User2 (en)
++    res = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"sender_id": user1["id"], "original_text": "Guten Tag"},
++    )
++    assert res.status_code == 200
++    msg = res.json()
++    assert msg["language_pair"] == "de->en"
++
++    # User2 (en) sends to User1 (de)
++    res = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"sender_id": user2["id"], "original_text": "Good day"},
++    )
++    assert res.status_code == 200
++    msg = res.json()
++    assert msg["language_pair"] == "en->de"
++
++
++def test_create_message_sender_not_in_conversation(client, setup_users_and_conversation):
++    """Reject message if sender is not in the conversation."""
++    user1, user2, conversation = setup_users_and_conversation
++
++    # Create a third user not in the conversation
++    res = client.post("/api/users", json={"username": "bob", "language_preference": "en"})
+     assert res.status_code == 200
+-    rows = res.json()
+-    assert any(r["text"] == "hello" for r in rows)
++    user3 = res.json()
++
++    # Try to send from user3
++    res = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"sender_id": user3["id"], "original_text": "Hello"},
++    )
++    assert res.status_code == 400
++
++
++def test_create_message_conversation_not_found(client, setup_users_and_conversation):
++    """Reject message if conversation doesn't exist."""
++    user1, user2, conversation = setup_users_and_conversation
++
++    res = client.post(
++        "/api/conversations/9999/messages",
++        json={"sender_id": user1["id"], "original_text": "Hello"},
++    )
++    assert res.status_code == 404
++
++
++def test_list_messages_conversation_not_found(client):
++    """Reject list if conversation doesn't exist."""
++    res = client.get("/api/conversations/9999/messages")
++    assert res.status_code == 404
+ 
+ 
+-def test_post_message_rejects_empty_text(client):
+-    res = client.post("/api/messages", json={"text": ""})
++def test_create_message_rejects_empty_text(client, setup_users_and_conversation):
++    """Reject empty message text."""
++    user1, user2, conversation = setup_users_and_conversation
++
++    res = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"sender_id": user1["id"], "original_text": ""},
++    )
+     assert res.status_code == 422  # pydantic validation
+ 
+ 
+-def test_post_message_rejects_text_over_280_chars(client):
+-    res = client.post("/api/messages", json={"text": "x" * 281})
+-    assert res.status_code == 422
++def test_create_message_rejects_missing_sender_id(client, setup_users_and_conversation):
++    """Reject message if sender_id is missing."""
++    user1, user2, conversation = setup_users_and_conversation
++
++    res = client.post(
++        f"/api/conversations/{conversation['id']}/messages",
++        json={"original_text": "Hello"},
++    )
++    assert res.status_code == 422  # pydantic validation
++
++
++def test_user_creation(client):
++    """Create users with language preferences."""
++    res = client.post("/api/users", json={"username": "alice", "language_preference": "en"})
++    assert res.status_code == 200
++    user = res.json()
++    assert user["username"] == "alice"
++    assert user["language_preference"] == "en"
++    assert user["id"] >= 1
++
++
++def test_duplicate_username_rejected(client):
++    """Reject duplicate usernames."""
++    res1 = client.post("/api/users", json={"username": "alice", "language_preference": "en"})
++    assert res1.status_code == 200
++
++    res2 = client.post("/api/users", json={"username": "alice", "language_preference": "de"})
++    assert res2.status_code == 400
++
++
++def test_conversation_creation(client):
++    """Create conversations between two users."""
++    # Create users
++    res1 = client.post("/api/users", json={"username": "alice", "language_preference": "en"})
++    user1 = res1.json()
++
++    res2 = client.post("/api/users", json={"username": "bob", "language_preference": "de"})
++    user2 = res2.json()
++
++    # Create conversation
++    res = client.post(
++        "/api/conversations", json={"user1_id": user1["id"], "user2_id": user2["id"]}
++    )
++    assert res.status_code == 200
++    conv = res.json()
++    assert conv["user1_id"] == user1["id"]
++    assert conv["user2_id"] == user2["id"]
++
++
++def test_conversation_rejects_same_user_twice(client):
++    """Reject conversation where both users are the same."""
++    res = client.post("/api/users", json={"username": "alice", "language_preference": "en"})
++    user = res.json()
++
++    res = client.post(
++        "/api/conversations", json={"user1_id": user["id"], "user2_id": user["id"]}
++    )
++    assert res.status_code == 400
++
++
++def test_conversation_rejects_nonexistent_user(client):
++    """Reject conversation if a user doesn't exist."""
++    res = client.post("/api/users", json={"username": "alice", "language_preference": "en"})
++    user = res.json()
++
++    res = client.post(
++        "/api/conversations", json={"user1_id": user["id"], "user2_id": 9999}
++    )
++    assert res.status_code == 404

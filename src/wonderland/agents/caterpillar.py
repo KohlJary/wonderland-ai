@@ -17,13 +17,11 @@ ReviewRegistry was injected. Persistence is opt-in.
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.engagement import (
@@ -40,6 +38,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
+from wonderland.parsing import extract_and_validate
 from wonderland.review import ReviewPayload, ReviewRegistry
 from wonderland.utterance import (
     Artifact,
@@ -85,6 +84,17 @@ def caterpillar_rules() -> EngagementRules:
     is_tweedle = any_of(speaker_is("tweedledee"), speaker_is("tweedledum"))
 
     return EngagementRules.of(
+        # ALWAYS — INVITE addressed to me always wakes me up (Block 2c)
+        always(SpeechAct.INVITE, condition=addressed_to(CATERPILLAR_NAME)),
+        # ALWAYS — meeting frame from Dodo (or any convenor). Without
+        # this, review-only meetings (Caterpillar + Tweedles, no fresh
+        # IMPLEMENTATION from sibling because the implementation was a
+        # prior-thread seed) don't engage on the convenor directive:
+        # the directive lands on the bus and Caterpillar stays silent
+        # because his other triggers (IMPLEMENTATION from Tweedles,
+        # REVIEW addressed to him) haven't fired. The directive is what
+        # tells him to call git_status / git_diff and surface findings.
+        always(SpeechAct.DIRECTIVE),
         # ALWAYS
         always(SpeechAct.IMPLEMENTATION, condition=is_tweedle),
         always(SpeechAct.REVIEW, condition=addressed_to(CATERPILLAR_NAME)),
@@ -163,7 +173,7 @@ The JSON must conform to this schema:
   "reviews": [                        // include ONLY when decision is "review"
     {
       "title": "short human-readable summary, e.g. 'Payment refund handler'",
-      "target_utterance_id": "the id of the implementation utterance under review",
+      "target_files": ["src/foo.py", "src/bar.ts"],  // the files this review covers
       "verdict": "accept" | "request-changes" | "block",
       "findings": [
         {
@@ -187,6 +197,32 @@ The JSON must conform to this schema:
   ]
 }
 ```
+
+**The working tree IS the implementation artifact.** Earlier protocols
+expected an `implementation` utterance on the bus to anchor your
+review, but the framework now treats files-on-disk as the deliverable
+directly. Your starting move on a review thread is `git_status`, then
+`git_diff` for any path that changed. Each review's `target_files`
+names the paths your review covers — pulled from what you read in
+the diff, not from a parallel metadata utterance. Findings cite
+file:line locations within those paths.
+
+When the directive opens a review thread (or any thread you're
+engaged on), the decision tree is:
+
+1. Call `git_status`. If the working tree is clean (no changes since
+   the prior commit), there is nothing to review — choose `silence`.
+2. If there are changes, call `git_diff` (or `git_diff path` to
+   narrow). Read the actual code.
+3. Ship a `review` with `target_files` listing what you read,
+   `verdict` matching your judgment, and `findings` for anything
+   you'd request changes on. An empty findings list with verdict
+   `accept` is allowed (and common!) — but it requires substantive
+   `approvals`, per the rule below.
+
+Choosing `deference` because "the implementation utterance isn't on
+the bus" is the failure mode this protocol revision exists to
+prevent. The diff IS the work; the diff is enough to review.
 
 Severity vocabulary is precise:
 
@@ -227,7 +263,42 @@ reviewer-as-author trap) are part of who you are; don't slip into them.
 """
 
 
-_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_TOOLS_SECTION = """
+**Tools available.** The working tree IS the implementation artifact.
+Reach for `git_status` first to see what the meeting produced, then
+`git_diff` to read the changes — that is how you find what shipped,
+not by consulting separate metadata.
+
+- **`git_status`**: lists files modified, added, deleted, or
+  untracked since the last commit. Your starting move. Tells you
+  the surface area of work to review.
+- **`git_diff`** (no path): full unified diff of working-tree
+  changes against HEAD. With a `path` argument: scoped to one file.
+  Use scoped diffs when the full diff is large.
+- **`read_file`**: full file contents (post-change). Use when a
+  finding needs the surrounding context, or when the diff
+  references a function whose definition you need to see in full.
+- **`list_files`**: explore the project shape — what other files
+  exist that the change might affect.
+- **`grep`**: when you suspect duplication or drift, search for
+  the relevant symbol or contract version across the tree.
+
+A finding that names a specific file and line is sharper than a
+finding that names a pattern. Quote the code; cite the diff.
+
+`write_file` is also available, but you do not write source code —
+that is the Tweedles' domain. The review is your characteristic
+artifact, persisted by the framework when you choose
+`decision: "review"`. If you find yourself wanting to write a
+patch, surface it as a `finding` with a concrete recommendation
+rather than implementing the fix yourself; that's the
+reviewer-as-author trap your §VIII names. The one legitimate write
+is to documentation files when a finding implies a doc gap — and
+even then, prefer flagging the gap as a finding.
+"""
+
+
+_OUTPUT_PROTOCOL_WITH_TOOLS = _OUTPUT_PROTOCOL + _TOOLS_SECTION
 
 
 class CaterpillarResponseParseError(ValueError):
@@ -235,29 +306,13 @@ class CaterpillarResponseParseError(ValueError):
 
 
 def parse_caterpillar_response(text: str) -> CaterpillarResponse:
-    """Extract the fenced JSON block from `text` and validate it."""
-    match = _JSON_BLOCK.search(text)
-    if match is None:
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise CaterpillarResponseParseError(
-                "no JSON block found in Caterpillar response"
-            )
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise CaterpillarResponseParseError(
-            f"Caterpillar response was not valid JSON: {exc}"
-        ) from exc
-    try:
-        return CaterpillarResponse.model_validate(data)
-    except ValidationError as exc:
-        raise CaterpillarResponseParseError(
-            f"Caterpillar response failed schema validation: {exc}"
-        ) from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``, which
+    handles fenced/bare/balanced-fallback extraction uniformly across
+    every agent.
+    """
+    return extract_and_validate(text, CaterpillarResponse, CaterpillarResponseParseError)
 
 
 # --------------------------------------------------------------------- #
@@ -274,6 +329,7 @@ class Caterpillar(WonderlandAgent):
         bus: Caucus,
         llm: LLMClient | None = None,
         review_registry: ReviewRegistry | None = None,
+        tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(CATERPILLAR_NAME, root=constitutions_root)
@@ -283,6 +339,7 @@ class Caterpillar(WonderlandAgent):
         )
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._review_registry = review_registry
+        self._tools = tools
 
     @property
     def review_registry(self) -> ReviewRegistry | None:
@@ -294,11 +351,17 @@ class Caterpillar(WonderlandAgent):
 
         system, messages = context.to_llm_request()
         # Output protocol cached alongside the constitution — both invariant
-        # per Caterpillar.
-        system.insert(1, CachedBlock(_OUTPUT_PROTOCOL))
+        # per Caterpillar. With-tools variant when tools are wired so the
+        # LLM is told about the read/list/grep capabilities.
+        protocol = _OUTPUT_PROTOCOL_WITH_TOOLS if self._tools is not None else _OUTPUT_PROTOCOL
+        system.insert(2, CachedBlock(protocol))
 
-        result = await self.llm.complete(system=system, messages=messages)
-        response = parse_caterpillar_response(result.text)
+        if self._tools is not None:
+            response_text = await self._complete_with_tools(system, messages)
+        else:
+            result = await self.llm.complete(system=system, messages=messages)
+            response_text = result.text
+        response = parse_caterpillar_response(response_text)
         if response.decision == "silence":
             return None
 
@@ -336,7 +399,7 @@ class Caterpillar(WonderlandAgent):
                         kind="review",
                         payload={
                             "title": payload.title,
-                            "target_utterance_id": payload.target_utterance_id,
+                            "target_files": list(payload.target_files),
                             "verdict": payload.verdict.value,
                             "review": payload.model_dump(mode="json"),
                         },
@@ -352,7 +415,7 @@ class Caterpillar(WonderlandAgent):
                         "slug": record.slug,
                         "title": record.title,
                         "verdict": record.verdict.value,
-                        "target_utterance_id": record.target_utterance_id,
+                        "target_files": list(record.target_files),
                         "path": str(record.path),
                     },
                 )

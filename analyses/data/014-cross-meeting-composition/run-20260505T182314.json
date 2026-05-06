@@ -1,0 +1,134 @@
+{
+  "run_id": "20260505T182314",
+  "model": "claude-haiku-4-5-20251001",
+  "pricing_per_mtok": {
+    "input": 1.0,
+    "output": 5.0,
+    "cache_write_5m": 1.25,
+    "cache_read": 0.1
+  },
+  "total_cost": 0.099729,
+  "total_calls": 10,
+  "per_agent": {
+    "tweedledum": {
+      "calls": 5,
+      "input_tokens": 8159,
+      "output_tokens": 4148,
+      "cache_creation_input_tokens": 12681,
+      "cache_read_input_tokens": 50724,
+      "cost": 0.049822649999999996
+    },
+    "tweedledee": {
+      "calls": 4,
+      "input_tokens": 5078,
+      "output_tokens": 4513,
+      "cache_creation_input_tokens": 12276,
+      "cache_read_input_tokens": 36828,
+      "cost": 0.046670800000000005
+    },
+    "cheshire_cat": {
+      "calls": 1,
+      "input_tokens": 363,
+      "output_tokens": 430,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.0032354000000000003
+    }
+  },
+  "entries": [
+    {
+      "agent": "tweedledum",
+      "input_tokens": 232,
+      "output_tokens": 398,
+      "cache_creation_input_tokens": 12681,
+      "cache_read_input_tokens": 0,
+      "cost": 0.018073,
+      "timestamp": "2026-05-05T18:23:21.741330+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 232,
+      "output_tokens": 561,
+      "cache_creation_input_tokens": 12276,
+      "cache_read_input_tokens": 0,
+      "cost": 0.018382,
+      "timestamp": "2026-05-05T18:23:24.190051+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 363,
+      "output_tokens": 430,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.003235,
+      "timestamp": "2026-05-05T18:23:28.275485+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 765,
+      "output_tokens": 632,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12681,
+      "cost": 0.005193,
+      "timestamp": "2026-05-05T18:23:32.814555+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 765,
+      "output_tokens": 1435,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12276,
+      "cost": 0.009168,
+      "timestamp": "2026-05-05T18:23:41.722763+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1383,
+      "output_tokens": 1272,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12681,
+      "cost": 0.009011,
+      "timestamp": "2026-05-05T18:23:55.346665+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1383,
+      "output_tokens": 1550,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12276,
+      "cost": 0.010361,
+      "timestamp": "2026-05-05T18:23:59.102084+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2698,
+      "output_tokens": 967,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12276,
+      "cost": 0.008761,
+      "timestamp": "2026-05-05T18:24:09.227572+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2698,
+      "output_tokens": 1127,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12681,
+      "cost": 0.009601,
+      "timestamp": "2026-05-05T18:24:10.156983+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3081,
+      "output_tokens": 719,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12681,
+      "cost": 0.007944,
+      "timestamp": "2026-05-05T18:24:17.370211+00:00"
+    }
+  ],
+  "outcome": "complete",
+  "elapsed_seconds": 85.09,
+  "budget_dollars": 1.0,
+  "budget_exceeded": false
+}

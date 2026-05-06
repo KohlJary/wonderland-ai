@@ -102,7 +102,7 @@ def _finding_dict(**overrides) -> dict:
 def _review_dict(**overrides) -> dict:
     base = {
         "title": "Payment refund handler",
-        "target_utterance_id": "01HXYZABCDE",
+        "target_files": ["src/payments/refund.py"],
         "verdict": "request-changes",
         "findings": [_finding_dict()],
         "approvals": [],
@@ -118,8 +118,7 @@ def test_rules_implementation_from_tweedle_is_always() -> None:
     rules = caterpillar_rules()
     for tweedle in ("tweedledee", "tweedledum"):
         assert (
-            rules.categorize(_u(act=SpeechAct.IMPLEMENTATION, speaker=tweedle))
-            is Engagement.ALWAYS
+            rules.categorize(_u(act=SpeechAct.IMPLEMENTATION, speaker=tweedle)) is Engagement.ALWAYS
         )
 
 
@@ -134,21 +133,15 @@ def test_rules_implementation_from_other_is_almost_never() -> None:
 def test_rules_review_only_when_addressed_to_caterpillar() -> None:
     rules = caterpillar_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.REVIEW, addressed=["caterpillar"]))
-        is Engagement.ALWAYS
+        rules.categorize(_u(act=SpeechAct.REVIEW, addressed=["caterpillar"])) is Engagement.ALWAYS
     )
-    assert (
-        rules.categorize(_u(act=SpeechAct.REVIEW, addressed="caucus"))
-        is Engagement.ALMOST_NEVER
-    )
+    assert rules.categorize(_u(act=SpeechAct.REVIEW, addressed="caucus")) is Engagement.ALMOST_NEVER
 
 
 def test_rules_concern_with_quality_words_is_always() -> None:
     rules = caterpillar_rules()
     assert (
-        rules.categorize(
-            _u(act=SpeechAct.CONCERN, body="this affects test coverage and naming")
-        )
+        rules.categorize(_u(act=SpeechAct.CONCERN, body="this affects test coverage and naming"))
         is Engagement.ALWAYS
     )
 
@@ -164,28 +157,24 @@ def test_rules_concern_without_quality_words_is_almost_never() -> None:
 def test_rules_test_scenario_from_hatter_is_always() -> None:
     rules = caterpillar_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.TEST_SCENARIO, speaker="mad_hatter"))
-        is Engagement.ALWAYS
+        rules.categorize(_u(act=SpeechAct.TEST_SCENARIO, speaker="mad_hatter")) is Engagement.ALWAYS
     )
 
 
 def test_rules_test_scenario_from_other_is_almost_never() -> None:
     rules = caterpillar_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.TEST_SCENARIO, speaker="dodo"))
-        is Engagement.ALMOST_NEVER
+        rules.categorize(_u(act=SpeechAct.TEST_SCENARIO, speaker="dodo")) is Engagement.ALMOST_NEVER
     )
 
 
 def test_rules_question_only_when_addressed_to_caterpillar() -> None:
     rules = caterpillar_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.QUESTION, addressed=["caterpillar"]))
-        is Engagement.ALWAYS
+        rules.categorize(_u(act=SpeechAct.QUESTION, addressed=["caterpillar"])) is Engagement.ALWAYS
     )
     assert (
-        rules.categorize(_u(act=SpeechAct.QUESTION, addressed="caucus"))
-        is Engagement.ALMOST_NEVER
+        rules.categorize(_u(act=SpeechAct.QUESTION, addressed="caucus")) is Engagement.ALMOST_NEVER
     )
 
 
@@ -199,17 +188,13 @@ def test_rules_proposal_from_cat_is_selective() -> None:
 
 def test_rules_proposal_from_other_is_almost_never() -> None:
     rules = caterpillar_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="dodo"))
-        is Engagement.ALMOST_NEVER
-    )
+    assert rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="dodo")) is Engagement.ALMOST_NEVER
 
 
 def test_rules_ticket_from_rabbit_is_selective() -> None:
     rules = caterpillar_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.TICKET, speaker="white_rabbit"))
-        is Engagement.SELECTIVELY
+        rules.categorize(_u(act=SpeechAct.TICKET, speaker="white_rabbit")) is Engagement.SELECTIVELY
     )
 
 
@@ -237,10 +222,7 @@ def test_rules_deference_is_rare() -> None:
 def test_rules_story_is_almost_never() -> None:
     """The Caterpillar does not engage with stories — Alice's domain."""
     rules = caterpillar_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.STORY, speaker="alice"))
-        is Engagement.ALMOST_NEVER
-    )
+    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="alice")) is Engagement.ALMOST_NEVER
 
 
 # ---------- parse_caterpillar_response ----------
@@ -254,9 +236,7 @@ def test_parse_silence() -> None:
 
 def test_parse_silence_coerces_explicit_nulls() -> None:
     """Live Haiku 4.5 sometimes emits explicit nulls for omitted fields."""
-    response = parse_caterpillar_response(
-        '{"decision": "silence", "body": null, "reviews": null}'
-    )
+    response = parse_caterpillar_response('{"decision": "silence", "body": null, "reviews": null}')
     assert response.decision == "silence"
     assert response.body == ""
     assert response.reviews == []
@@ -264,8 +244,7 @@ def test_parse_silence_coerces_explicit_nulls() -> None:
 
 def test_parse_concern() -> None:
     text = (
-        '```json\n{"decision": "concern", '
-        '"body": "third reviewer-as-author drift this week"}\n```'
+        '```json\n{"decision": "concern", "body": "third reviewer-as-author drift this week"}\n```'
     )
     response = parse_caterpillar_response(text)
     assert response.decision == "concern"
@@ -310,9 +289,7 @@ def test_parse_review_with_multiple_reviews() -> None:
 
 def test_parse_rejects_review_decision_with_no_reviews() -> None:
     with pytest.raises(CaterpillarResponseParseError):
-        parse_caterpillar_response(
-            '{"decision": "review", "body": "...", "reviews": []}'
-        )
+        parse_caterpillar_response('{"decision": "review", "body": "...", "reviews": []}')
 
 
 def test_parse_rejects_accept_with_no_approvals() -> None:
@@ -446,11 +423,15 @@ async def test_deliberate_includes_protocol_in_system_prompt(tmp_path: Path) -> 
 
     create_kwargs = cat.llm.client.messages.create.call_args.kwargs
     system_blocks = create_kwargs["system"]
-    assert system_blocks[0]["text"] == "C"
+    # Position 0 is the framework primer (shared across all agents)
+    assert "Wonderland — Framework Primer" in system_blocks[0]["text"]
     assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
-    assert "fenced JSON block" in system_blocks[1]["text"]
-    assert "approval is not given cheaply" in system_blocks[1]["text"]
+    # Position 1 is the per-agent constitution
+    assert system_blocks[1]["text"] == "C"
     assert system_blocks[1]["cache_control"] == {"type": "ephemeral"}
+    assert "fenced JSON block" in system_blocks[2]["text"]
+    assert "approval is not given cheaply" in system_blocks[2]["text"]
+    assert system_blocks[2]["cache_control"] == {"type": "ephemeral"}
 
 
 # ---------- end-to-end (mocked LLM) ----------

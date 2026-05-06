@@ -1,0 +1,89 @@
+{
+  "run_id": "20260505T175656",
+  "model": "claude-haiku-4-5-20251001",
+  "pricing_per_mtok": {
+    "input": 1.0,
+    "output": 5.0,
+    "cache_write_5m": 1.25,
+    "cache_read": 0.1
+  },
+  "total_cost": 0.057646,
+  "total_calls": 5,
+  "per_agent": {
+    "cheshire_cat": {
+      "calls": 2,
+      "input_tokens": 1057,
+      "output_tokens": 896,
+      "cache_creation_input_tokens": 6591,
+      "cache_read_input_tokens": 6591,
+      "cost": 0.014434849999999999
+    },
+    "queen_of_hearts": {
+      "calls": 2,
+      "input_tokens": 931,
+      "output_tokens": 1039,
+      "cache_creation_input_tokens": 11334,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.0214269
+    },
+    "alice": {
+      "calls": 1,
+      "input_tokens": 118,
+      "output_tokens": 2513,
+      "cache_creation_input_tokens": 7281,
+      "cache_read_input_tokens": 0,
+      "cost": 0.021784249999999998
+    }
+  },
+  "entries": [
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 118,
+      "output_tokens": 367,
+      "cache_creation_input_tokens": 6591,
+      "cache_read_input_tokens": 0,
+      "cost": 0.010192,
+      "timestamp": "2026-05-05T17:57:02.180725+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 118,
+      "output_tokens": 512,
+      "cache_creation_input_tokens": 11334,
+      "cache_read_input_tokens": 0,
+      "cost": 0.016845,
+      "timestamp": "2026-05-05T17:57:04.241977+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 939,
+      "output_tokens": 529,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 6591,
+      "cost": 0.004243,
+      "timestamp": "2026-05-05T17:57:11.641942+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 118,
+      "output_tokens": 2513,
+      "cache_creation_input_tokens": 7281,
+      "cache_read_input_tokens": 0,
+      "cost": 0.021784,
+      "timestamp": "2026-05-05T17:57:27.205908+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 813,
+      "output_tokens": 527,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.004581,
+      "timestamp": "2026-05-05T17:57:35.242150+00:00"
+    }
+  ],
+  "outcome": "complete",
+  "elapsed_seconds": 100.1,
+  "budget_dollars": 2.5,
+  "budget_exceeded": false
+}

@@ -112,8 +112,7 @@ def test_rules_implementation_from_tweedle_is_always() -> None:
     rules = dormouse_rules()
     for tweedle in ("tweedledee", "tweedledum"):
         assert (
-            rules.categorize(_u(act=SpeechAct.IMPLEMENTATION, speaker=tweedle))
-            is Engagement.ALWAYS
+            rules.categorize(_u(act=SpeechAct.IMPLEMENTATION, speaker=tweedle)) is Engagement.ALWAYS
         )
 
 
@@ -128,17 +127,13 @@ def test_rules_implementation_from_other_is_almost_never() -> None:
 def test_rules_ruling_from_queen_is_always() -> None:
     rules = dormouse_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.RULING, speaker="queen_of_hearts"))
-        is Engagement.ALWAYS
+        rules.categorize(_u(act=SpeechAct.RULING, speaker="queen_of_hearts")) is Engagement.ALWAYS
     )
 
 
 def test_rules_ruling_from_other_is_almost_never() -> None:
     rules = dormouse_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.RULING, speaker="dodo"))
-        is Engagement.ALMOST_NEVER
-    )
+    assert rules.categorize(_u(act=SpeechAct.RULING, speaker="dodo")) is Engagement.ALMOST_NEVER
 
 
 def test_rules_concern_with_production_words_is_always() -> None:
@@ -161,13 +156,9 @@ def test_rules_concern_without_production_words_is_almost_never() -> None:
 
 def test_rules_question_only_when_addressed_to_dormouse() -> None:
     rules = dormouse_rules()
+    assert rules.categorize(_u(act=SpeechAct.QUESTION, addressed=["dormouse"])) is Engagement.ALWAYS
     assert (
-        rules.categorize(_u(act=SpeechAct.QUESTION, addressed=["dormouse"]))
-        is Engagement.ALWAYS
-    )
-    assert (
-        rules.categorize(_u(act=SpeechAct.QUESTION, addressed="caucus"))
-        is Engagement.ALMOST_NEVER
+        rules.categorize(_u(act=SpeechAct.QUESTION, addressed="caucus")) is Engagement.ALMOST_NEVER
     )
 
 
@@ -181,10 +172,7 @@ def test_rules_proposal_from_cat_is_selective() -> None:
 
 def test_rules_proposal_from_other_is_almost_never() -> None:
     rules = dormouse_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="dodo"))
-        is Engagement.ALMOST_NEVER
-    )
+    assert rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="dodo")) is Engagement.ALMOST_NEVER
 
 
 def test_rules_test_scenario_from_hatter_is_selective() -> None:
@@ -198,8 +186,7 @@ def test_rules_test_scenario_from_hatter_is_selective() -> None:
 def test_rules_ticket_from_rabbit_is_selective() -> None:
     rules = dormouse_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.TICKET, speaker="white_rabbit"))
-        is Engagement.SELECTIVELY
+        rules.categorize(_u(act=SpeechAct.TICKET, speaker="white_rabbit")) is Engagement.SELECTIVELY
     )
 
 
@@ -211,10 +198,7 @@ def test_rules_deference_is_rare() -> None:
 def test_rules_story_is_almost_never() -> None:
     """The Dormouse rarely interacts with stories — Alice's domain."""
     rules = dormouse_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.STORY, speaker="alice"))
-        is Engagement.ALMOST_NEVER
-    )
+    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="alice")) is Engagement.ALMOST_NEVER
 
 
 def test_rules_directive_is_almost_never() -> None:
@@ -246,7 +230,7 @@ def test_parse_concern() -> None:
     text = (
         '```json\n{"decision": "concern", '
         '"body": "no observability hook on the new translation worker — '
-        'I can\'t diagnose if it fails"}\n```'
+        "I can't diagnose if it fails\"}\n```"
     )
     response = parse_dormouse_response(text)
     assert response.decision == "concern"
@@ -297,9 +281,7 @@ def test_parse_observation_with_multiple_observations() -> None:
 
 def test_parse_rejects_observation_decision_with_no_observations() -> None:
     with pytest.raises(DormouseResponseParseError):
-        parse_dormouse_response(
-            '{"decision": "observation", "body": "...", "observations": []}'
-        )
+        parse_dormouse_response('{"decision": "observation", "body": "...", "observations": []}')
 
 
 def test_parse_rejects_observation_with_empty_evidence() -> None:
@@ -381,9 +363,7 @@ async def test_deliberate_publishes_concern(tmp_path: Path) -> None:
     llm = _mock_llm(f"```json\n{json.dumps({'decision': 'concern', 'body': body})}\n```")
     dormouse = await _dormouse(tmp_path, llm=llm)
     trigger = _u(thread_id="t", body="implementation lands without metrics")
-    ctx = Context(
-        constitution=dormouse.identity.constitution_text, triggers=(trigger,)
-    )
+    ctx = Context(constitution=dormouse.identity.constitution_text, triggers=(trigger,))
 
     utterance = await dormouse.deliberate(ctx)
 
@@ -443,11 +423,15 @@ async def test_deliberate_includes_protocol_in_system_prompt(tmp_path: Path) -> 
 
     create_kwargs = dormouse.llm.client.messages.create.call_args.kwargs
     system_blocks = create_kwargs["system"]
-    assert system_blocks[0]["text"] == "C"
+    # Position 0 is the framework primer (shared across all agents)
+    assert "Wonderland — Framework Primer" in system_blocks[0]["text"]
     assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
-    assert "fenced JSON block" in system_blocks[1]["text"]
-    assert "Evidence is non-negotiable" in system_blocks[1]["text"]
+    # Position 1 is the per-agent constitution
+    assert system_blocks[1]["text"] == "C"
     assert system_blocks[1]["cache_control"] == {"type": "ephemeral"}
+    assert "fenced JSON block" in system_blocks[2]["text"]
+    assert "Evidence is non-negotiable" in system_blocks[2]["text"]
+    assert system_blocks[2]["cache_control"] == {"type": "ephemeral"}
 
 
 # ---------- end-to-end (mocked LLM) ----------

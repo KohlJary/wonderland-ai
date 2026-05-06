@@ -1,0 +1,303 @@
+Pre-seed:      /tmp/t38-multi-session already has .git — skipping seed copy
+Pre-session commit: tree clean, no baseline to capture
+==============================================================================
+T38 SESSION 2 — user-blocking ON TOP of Session 1's translation chat
+==============================================================================
+Project root:  /tmp/t38-multi-session
+Budget cap:    $3.00 hard
+Total timeout: 900s
+Directive:     Add user-blocking to the existing translation chat. THIS IS A CONTINUATION SESSION — the translation...
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M1: produce user stories + an architectural ADR + GDPR rulings
+  thread_id: scoping
+  roster:    ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.0000
+──────────────────────────────────────────────────────────────────────────────
+  M1[t=  0.00s] dodo               directive      →caucus Add user-blocking to the existing translation chat. THIS IS A CONTINUATION SESSION — the translation…
+  M1[t= 18.21s] queen_of_hearts    concern        →caucus I've read the directive and the prior thread artifacts (ADR-001, contract notes 001-008, reviews 001…
+  M1[t= 23.62s] alice              story          →caucus I've read the prior session's stories and the new directive. Blocking is a safety feature, and I'm g…
+  M1                             ↳ story: Block a user who is bothering me
+  M1                             ↳ story: See my list of blocked users
+  M1                             ↳ story: Know a blocked message didn't reach me
+  M1                             ↳ story: Unblock someone and resume contact
+  M1                             ↳ story: Blocking works across language pairs (fast-follow)
+  M1[t= 37.62s] queen_of_hearts    concern        →caucus Alice, your stories are well-grounded in real user needs and your confusion-flag on visibility seman…
+  M1[t= 84.28s] cheshire_cat       proposal       →caucus The blocking feature is additive to the existing message and conversation surface. I'm proposing a B…
+  M1                             ↳ adr: User blocking: additive model with silent blocking semantics
+  M1[t= 90.84s] alice              concern        →caucus I need to surface something about the blocking experience that the ADR's implementation detail raise…
+[cheshire_cat] deliberate() raised CatResponseParseError: CatResponse response was not valid JSON: Invalid control character at: line 3 column 1508 (char 1534) — treating as silence
+[queen_of_hearts] deliberate() raised QueenResponseParseError: QueenResponse response failed schema validation: 1 validation error for QueenResponse
+rulings.2.domain
+  Input should be 'authentication', 'authorization', 'secret-handling', 'data-handling', 'input-validation', 'logging-and-audit', 'dependencies', 'network', 'cryptography', 'privacy' or 'compliance' [type=enum, input_value='architecture', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum — treating as silence
+  M1[t=125.07s] cheshire_cat       concern        →caucus ADR-002 is sound architecture, but it rests on three data-governance decisions that the Queen has co…
+  M1[t=138.50s] queen_of_hearts    concern        →caucus I have read the full thread state: Alice's ten stories grounded in user need (five for blocking MVP,…
+  M1[t=181.59s] cheshire_cat       concern        →caucus The Queen's three blocking questions are well-formed and they expose three data-governance decisions…
+  M1[per-meeting cap] $0.4088 >= $0.40; ending meeting to preserve budget for downstream meetings
+
+  ── M1 END ── outcome=MEETING_BUDGET
+     elapsed:        181.6s
+     this meeting:   24 calls, $0.4088
+     running totals: 24 calls, $0.4088 / $3.00 cap
+     artifacts:      2 (story×5, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M2: decompose the ADR + stories into v1 tickets
+  thread_id: decomposition
+  roster:    ['cheshire_cat', 'dodo', 'white_rabbit']
+  seeds:     2 utterance(s)
+  cost so far before this meeting: $0.4088
+──────────────────────────────────────────────────────────────────────────────
+  M2[t=181.60s] cheshire_cat       proposal       →caucus The blocking feature is additive to the existing message and conversation surface. I'm proposing a B…
+  M2                             ↳ adr: User blocking: additive model with silent blocking semantics
+  M2[t=181.60s] alice              story          →caucus I've read the prior session's stories and the new directive. Blocking is a safety feature, and I'm g…
+  M2                             ↳ story: Block a user who is bothering me
+  M2                             ↳ story: See my list of blocked users
+  M2                             ↳ story: Know a blocked message didn't reach me
+  M2                             ↳ story: Unblock someone and resume contact
+  M2                             ↳ story: Blocking works across language pairs (fast-follow)
+  M2[t=181.60s] dodo               directive      →caucus Decomposition thread. CONTINUATION SESSION — your registries already hold session-1 ADRs (ADR-001: a…
+  M2[t=197.36s] white_rabbit       ticket         →caucus Reading the blocking stories against the existing ticket graph: blocking is additive to the message …
+  M2                             ↳ ticket: Block table schema and persistence layer
+  M2                             ↳ ticket: Blocking endpoints (POST/GET/DELETE /blocks with message-send gate)
+  M2                             ↳ ticket: Blocking integration test suite
+  M2[t=224.31s] cheshire_cat       concern        →caucus ADR-002 is solid and covers the blocking architecture thoroughly — the data model, the enforcement b…
+  M2[t=231.31s] white_rabbit       ticket         →caucus The Cat surfaced a real gap: ADR-002 names the blocking model but not the error contract when a bloc…
+  M2                             ↳ ticket: Extend ADR-002: blocked-sender error visibility contract
+  M2[t=242.25s] <thread_monitor> running → stuck
+  M2[t=242.25s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); silent 60.7s). The team has paused with open expectat…
+  M2[t=292.31s] <thread_monitor> running → quiescent
+  M2[t=292.31s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  M2[t=292.31s] <thread_monitor> running → complete
+  M2[t=292.31s] <complete>
+
+  ── M2 END ── outcome=COMPLETE
+     elapsed:        110.7s
+     this meeting:   15 calls, $0.1563
+     running totals: 39 calls, $0.5651 / $3.00 cap
+     artifacts:      4 (story×5, ticket×4, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M3: negotiate contracts the Tweedles will implement against
+  thread_id: contract-negotiation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     3 utterance(s)
+  cost so far before this meeting: $0.5651
+──────────────────────────────────────────────────────────────────────────────
+  M3[t=292.31s] cheshire_cat       proposal       →caucus The blocking feature is additive to the existing message and conversation surface. I'm proposing a B…
+  M3                             ↳ adr: User blocking: additive model with silent blocking semantics
+  M3[t=292.31s] cheshire_cat       proposal       →caucus The blocking feature is additive to the existing message and conversation surface. I'm proposing a B…
+  M3                             ↳ adr: User blocking: additive model with silent blocking semantics
+  M3[t=292.31s] white_rabbit       ticket         →caucus Reading the blocking stories against the existing ticket graph: blocking is additive to the message …
+  M3                             ↳ ticket: Block table schema and persistence layer
+  M3                             ↳ ticket: Blocking endpoints (POST/GET/DELETE /blocks with message-send gate)
+  M3                             ↳ ticket: Blocking integration test suite
+  M3[t=292.31s] dodo               directive      →caucus Contract negotiation thread. CONTINUATION SESSION — your registries hold session-1 contract notes (c…
+  M3[t=302.32s] <thread_monitor> running → quiescent
+  M3[t=302.32s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  M3[t=302.32s] <thread_monitor> running → complete
+  M3[t=302.32s] <complete>
+
+  ── M3 END ── outcome=COMPLETE
+     elapsed:        10.0s
+     this meeting:   11 calls, $0.0988
+     running totals: 50 calls, $0.6639 / $3.00 cap
+     artifacts:      3 (ticket×3, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M4: ship code honoring the agreed contracts
+  thread_id: implementation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     2 utterance(s)
+  cost so far before this meeting: $0.6639
+──────────────────────────────────────────────────────────────────────────────
+  M4[t=302.32s] cheshire_cat       proposal       →caucus The blocking feature is additive to the existing message and conversation surface. I'm proposing a B…
+  M4                             ↳ adr: User blocking: additive model with silent blocking semantics
+  M4[t=302.32s] cheshire_cat       proposal       →caucus The blocking feature is additive to the existing message and conversation surface. I'm proposing a B…
+  M4                             ↳ adr: User blocking: additive model with silent blocking semantics
+  M4[t=302.32s] dodo               directive      →caucus Implementation thread. The contract notes in your context are locked. Your move is `implementation`.
+  M4[t=345.84s] tweedledee         implementation →caucus Blocking seam is hot. The ADR proposes dual gates (send + list filter) but the contract timing is un…
+  M4                             ↳ implementation: Files written in tweedledee's frontend turn [side=frontend]
+  M4[t=353.09s] tweedledum         contract_note  →caucus (no body)
+  M4                             ↳ contract_note: Block enforcement at message send and list [operation=propose, state=proposed]
+  M4[t=362.38s] <thread_monitor> running → quiescent
+  M4[t=362.38s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  M4[t=362.38s] <thread_monitor> running → complete
+  M4[t=362.38s] <complete>
+
+  ── M4 END ── outcome=COMPLETE
+     elapsed:        60.1s
+     this meeting:   18 calls, $0.1651
+     running totals: 68 calls, $0.8290 / $3.00 cap
+     artifacts:      4 (adr×2, implementation×1, contract_note×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M5: Caterpillar reviews the shipped code; surface findings
+  thread_id: review
+  roster:    ['caterpillar', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     1 utterance(s)
+  cost so far before this meeting: $0.8290
+──────────────────────────────────────────────────────────────────────────────
+  M5[t=362.38s] tweedledee         implementation →caucus Blocking seam is hot. The ADR proposes dual gates (send + list filter) but the contract timing is un…
+  M5                             ↳ implementation: Files written in tweedledee's frontend turn [side=frontend]
+  M5[t=362.38s] dodo               directive      →caucus Review thread. CONTINUATION SESSION — Caterpillar's registry already holds review-001/002/003 from s…
+  M5[t=413.43s] <thread_monitor> running → quiescent
+  M5[t=413.43s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  M5[t=413.43s] <thread_monitor> running → complete
+  M5[t=413.43s] <complete>
+
+  ── M5 END ── outcome=COMPLETE
+     elapsed:        51.1s
+     this meeting:   25 calls, $0.2612
+     running totals: 93 calls, $1.0903 / $3.00 cap
+     artifacts:      1 (implementation×1)
+
+==============================================================================
+T38 SESSION 2 SUMMARY
+==============================================================================
+Total elapsed:  413.4s
+Total cost:     $1.0903  (cap $3.00)
+Total LLM calls: 93
+
+Per-agent token usage:
+  cheshire_cat       calls= 30 cost=$0.4261
+  tweedledum         calls= 24 cost=$0.2264
+  tweedledee         calls= 17 cost=$0.2135
+  queen_of_hearts    calls=  5 cost=$0.0863
+  caterpillar        calls= 13 cost=$0.0853
+  white_rabbit       calls=  2 cost=$0.0273
+  alice              calls=  2 cost=$0.0254
+
+Artifacts on disk:
+  stories/ (10 files)
+    story-001-exchange-messages-with-a-german-speaker.md
+    story-002-exchange-messages-with-a-japanese-speaker.md
+    story-003-see-who-i-m-talking-to-and-when.md
+    story-004-join-a-chat-as-a-second-user-fast-follow.md
+    story-005-know-my-messages-arrived-fast-follow.md
+    story-006-block-a-user-who-is-bothering-me.md
+    story-007-see-my-list-of-blocked-users.md
+    story-008-know-a-blocked-message-didn-t-reach-me.md
+    story-009-unblock-someone-and-resume-contact.md
+    story-010-blocking-works-across-language-pairs-fast-follow.md
+  architecture/ (2 files)
+    adr-001-translation-chat-data-model-persistence-translation-service-risk-and-user-identity.md
+    adr-002-user-blocking-additive-model-with-silent-blocking-semantics.md
+  tickets/ (9 files)
+    ticket-001-user-registration-and-auth-email-password-v1.md
+    ticket-002-schema-and-persistence-layer-postgresql-v1.md
+    ticket-003-translation-service-integration-api-client-contract.md
+    ticket-004-message-send-receive-pipeline-websocket-or-polling-v1.md
+    ticket-005-ui-scaffolding-and-message-render.md
+    ticket-006-block-table-schema-and-persistence-layer.md
+    ticket-007-blocking-endpoints-post-get-delete-blocks-with-message-send-gate.md
+    ticket-008-blocking-integration-test-suite.md
+    ticket-009-extend-adr-002-blocked-sender-error-visibility-contract.md
+  contract-notes/ (8 files)
+    contract-note-001-message-send-receive-and-translation-timing.md
+    contract-note-002-user-identity-and-language-pair-matching.md
+    contract-note-003-message-model-and-gdpr-deletion-semantics.md
+    contract-note-004-message-envelope-translation-contract.md
+    contract-note-005-authentication-user-identity-contract.md
+    contract-note-006-real-time-pipeline-contract-websocket-vs-polling.md
+    contract-note-007-user-blocking-and-message-gating.md
+    contract-note-008-block-enforcement-at-message-send-and-list.md
+
+Code shipped (project_root excluding .wonderland):
+  .git/COMMIT_EDITMSG (28 bytes)
+  .git/HEAD (21 bytes)
+  .git/config (151 bytes)
+  .git/description (73 bytes)
+  .git/hooks/applypatch-msg.sample (478 bytes)
+  .git/hooks/commit-msg.sample (896 bytes)
+  .git/hooks/fsmonitor-watchman.sample (4726 bytes)
+  .git/hooks/post-update.sample (189 bytes)
+  .git/hooks/pre-applypatch.sample (424 bytes)
+  .git/hooks/pre-commit.sample (1649 bytes)
+  .git/hooks/pre-merge-commit.sample (416 bytes)
+  .git/hooks/pre-push.sample (1374 bytes)
+  .git/hooks/pre-rebase.sample (4898 bytes)
+  .git/hooks/pre-receive.sample (544 bytes)
+  .git/hooks/prepare-commit-msg.sample (1492 bytes)
+  .git/hooks/push-to-checkout.sample (2783 bytes)
+  .git/hooks/sendemail-validate.sample (2308 bytes)
+  .git/hooks/update.sample (3650 bytes)
+  .git/index (2454 bytes)
+  .git/info/exclude (240 bytes)
+  .git/logs/HEAD (381 bytes)
+  .git/logs/refs/heads/main (381 bytes)
+  .git/objects/03/f4bb4022add0eac57f3f0d46d396a5b4ca331c (832 bytes)
+  .git/objects/04/26f7bb8e34ba8c9c2ef34a708c3afff97fe96b (347 bytes)
+  .git/objects/0d/2d971928f1f5b74bec70bbf1bebd9d99d12ad5 (3011 bytes)
+  .git/objects/15/d4a21c2846b797c2c974d29347984f3297d89e (112 bytes)
+  .git/objects/17/ee4c97aff4d59df64498cfcc72ea0dec2301a3 (91 bytes)
+  .git/objects/24/8fdf567337f081e5001f2a96a3e98b84625338 (200 bytes)
+  .git/objects/2d/73cbcdb9f68dac7485d5caeced3bc58e47377c (301 bytes)
+  .git/objects/39/dc57e5834ba13cb02a398f9cf08b7405b65e35 (745 bytes)
+  .git/objects/3f/1b5130e020f5fbddb91dc290b8668044b0d150 (204 bytes)
+  .git/objects/40/3c94fee515c0766e178648ab331f1eab8835b3 (478 bytes)
+  .git/objects/44/fed98554d3374713b483dc5e8369652e2eaa77 (148 bytes)
+  .git/objects/4c/63a5d5b0a4568e4c53dbd4f9a1c4457bd55393 (253 bytes)
+  .git/objects/55/d27da1e692c96fe1311b4fc6b9720d159d02cd (2898 bytes)
+  .git/objects/66/bca89d2357eafcf277057f169978d0f2e34e03 (186 bytes)
+  .git/objects/6c/7c5f3a9cad12ec162ce811df1e4baed8a6c52d (1154 bytes)
+  .git/objects/6e/9b7c469f4873f22b7f573f37c45e015669aefc (2134 bytes)
+  .git/objects/6f/f31c260ee1913c60dc0bb227856bd3c3c9382a (622 bytes)
+  .git/objects/77/f1cb05967c720712bfe824dce3f1183310c4ea (181 bytes)
+  .git/objects/86/9e08792810d3ef312f9f0f27bae9651c12361c (216 bytes)
+  .git/objects/8e/39784fba3ada8aa341d6bb8b31ee38158ebf03 (397 bytes)
+  .git/objects/90/1a88753b68ef46325ab1c876a63ae7c8409ac6 (220 bytes)
+  .git/objects/96/4d394f6f47393ff2219211762c38c55dcdf876 (91 bytes)
+  .git/objects/ab/d60bee05b8f7ff64eb2476c333aeec18c27160 (800 bytes)
+  .git/objects/af/f1bd57e6e222a4bdd0001d83bd42c4d5e27301 (365 bytes)
+  .git/objects/b0/409b7d05d05ac3a3c37e8f9d15d9ff286086b3 (175 bytes)
+  .git/objects/b0/48516999dcc0921b1f057ef4f134904eeed937 (254 bytes)
+  .git/objects/b2/edca7955a9ac3581eb0ed84bcf04f85418e9a7 (803 bytes)
+  .git/objects/bb/160a9af7d07313719d7b87fdb25c05c24cf34b (219 bytes)
+  .git/objects/c2/0ca747f5d08b32329a90d79ab910e4d4874f78 (175 bytes)
+  .git/objects/c9/cbf1ef9dc77980cc53e9c381fbb56a643efe5c (307 bytes)
+  .git/objects/c9/d7f62e5a66b6a4f7d3c3ae1d35123de52a00ff (122 bytes)
+  .git/objects/d9/f725e2ac17ab2354975bcfcc6966f6b1ea1f5f (86 bytes)
+  .git/objects/dd/1f646afd2684d27342535450a6b9329f4088fa (3404 bytes)
+  .git/objects/de/0596558886322fdff6e30df8c5edfa80313137 (173 bytes)
+  .git/objects/e3/2cfe3a13a3e5a7a15c5f48095e0dab4681d0b3 (608 bytes)
+  .git/objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391 (15 bytes)
+  .git/objects/e8/4615c168fb2f138cbea664240fb00c2f2a4b41 (190 bytes)
+  .git/objects/f1/6bcfede7cef7253d99dd962dfdec7e735ec4c8 (158 bytes)
+  .git/objects/f5/b3e38fbe90b8a97a98d771f266a5e214606df5 (203 bytes)
+  .git/refs/heads/main (41 bytes)
+  .gitignore (191 bytes)
+  README.md (3250 bytes)
+  frontend/index.html (300 bytes)
+  frontend/package.json (510 bytes)
+  frontend/src/App.tsx (1759 bytes)
+  frontend/src/api.ts (1072 bytes)
+  frontend/src/main.tsx (219 bytes)
+  frontend/tsconfig.json (508 bytes)
+  frontend/vite.config.ts (474 bytes)
+  pyproject.toml (612 bytes)
+  src/__init__.py (0 bytes)
+  src/backend/__init__.py (0 bytes)
+  src/backend/api/__init__.py (545 bytes)
+  src/backend/api/auth.py (8756 bytes)
+  src/backend/api/blocks.py (4230 bytes)
+  src/backend/api/health.py (267 bytes)
+  src/backend/api/messages.py (8826 bytes)
+  src/backend/db.py (1052 bytes)
+  src/backend/main.py (887 bytes)
+  src/backend/models.py (10606 bytes)
+  src/backend/utils/__init__.py (0 bytes)
+  src/backend/utils/auth.py (493 bytes)
+  tests/__init__.py (0 bytes)
+  tests/conftest.py (1591 bytes)
+  tests/test_health.py (207 bytes)
+  tests/test_messages.py (811 bytes)
+
+Final rosters:
+  scoping: ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts'] — produce user stories + an architectural ADR + GDPR rulings
+  decomposition: ['cheshire_cat', 'dodo', 'white_rabbit'] — decompose the ADR + stories into v1 tickets
+  contract-negotiation: ['dodo', 'tweedledee', 'tweedledum'] — negotiate contracts the Tweedles will implement against
+  implementation: ['dodo', 'tweedledee', 'tweedledum'] — ship code honoring the agreed contracts
+  review: ['caterpillar', 'dodo', 'tweedledee', 'tweedledum'] — Caterpillar reviews the shipped code; surface findings

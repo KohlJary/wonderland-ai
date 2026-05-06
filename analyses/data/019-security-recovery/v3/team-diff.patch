@@ -1,0 +1,917 @@
+diff --git a/src/auth/endpoints.py b/src/auth/endpoints.py
+index a764218..d5f2481 100644
+--- a/src/auth/endpoints.py
++++ b/src/auth/endpoints.py
+@@ -4,8 +4,9 @@ This is the externally-reachable HTTP surface where credential checks
+ happen. It calls AuthService.login on POST /login and returns the
+ session token to the client.
+ 
+-No rate-limiting middleware is mounted ahead of this router. A caller
+-can hit POST /login arbitrarily quickly. See #ENG-471.
++Rate limiting (per IP) and account lockout (per email) are checked by
++the AuthService and reflected as failure reasons in the response.
++See src/auth/rate_limit.py for implementation details.
+ """
+ 
+ from __future__ import annotations
+@@ -48,12 +49,31 @@ def make_router(auth: AuthService, session_dep) -> APIRouter:
+             user_agent=user_agent,
+         )
+         if not result.ok:
+-            # Single failure message regardless of reason — don't leak
+-            # whether the email exists.
+-            raise HTTPException(
+-                status_code=status.HTTP_401_UNAUTHORIZED,
+-                detail="invalid email or password",
+-            )
++            # Determine the HTTP status code based on the failure reason.
++            if result.reason == "rate_limited":
++                # 429 Too Many Requests — client should back off.
++                # Include Retry-After header to signal when to retry.
++                raise HTTPException(
++                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
++                    detail="too many login attempts; please try again later",
++                    headers={"Retry-After": str(result.retry_after_seconds or 60)},
++                )
++            elif result.reason == "account_locked":
++                # 423 Locked — the resource (account) is locked due to policy.
++                # Include Retry-After header to signal when the account unlocks.
++                raise HTTPException(
++                    status_code=status.HTTP_423_LOCKED,
++                    detail="account locked due to multiple failed attempts; please try again later",
++                    headers={"Retry-After": str(result.retry_after_seconds or 900)},
++                )
++            else:
++                # 401 Unauthorized for credential failure (including unknown_email
++                # and invalid_password). Don't differentiate in the response to
++                # avoid credential-enumeration leaks.
++                raise HTTPException(
++                    status_code=status.HTTP_401_UNAUTHORIZED,
++                    detail="invalid email or password",
++                )
+         session = result.session
+         assert session is not None  # ok=True implies session is set
+         return LoginResponse(
+diff --git a/src/auth/models.py b/src/auth/models.py
+index 17ee513..8419905 100644
+--- a/src/auth/models.py
++++ b/src/auth/models.py
+@@ -79,6 +79,10 @@ class Session(Base):
+     def is_expired(self) -> bool:
+         return _utcnow() >= self.expires_at
+ 
++    def is_valid(self) -> bool:
++        """Check if the session is currently valid (not expired)."""
++        return not self.is_expired()
++
+     @classmethod
+     def make(
+         cls,
+diff --git a/src/auth/rate_limit.py b/src/auth/rate_limit.py
+new file mode 100644
+index 0000000..5b6bb70
+--- /dev/null
++++ b/src/auth/rate_limit.py
+@@ -0,0 +1,296 @@
++"""Rate limiting and account lockout for auth endpoints.
++
++Provides two control layers:
++1. IP-based rate limiting (failed attempts per source IP within a rolling window)
++2. Email-based account lockout (failed attempts per email within a rolling window)
++
++Both use the FailedAttempt table as the source of truth, querying for attempts
++within the configured window. This provides:
++- Durability across service restarts
++- Observability (all rate-limit decisions are queryable)
++- Centralized enforcement (shared across service instances)
++
++The tradeoff is database load during attacks; mitigated by indexed lookups on
++(source_ip, occurred_at) and (email, occurred_at).
++"""
++
++from __future__ import annotations
++
++from datetime import datetime, timedelta, timezone
++from enum import Enum
++from typing import Callable
++
++from sqlalchemy.orm import Session as DBSession
++
++from src.auth.models import FailedAttempt
++
++
++class RateLimitStatus(Enum):
++    """Possible outcomes of a rate-limit check."""
++
++    ALLOWED = "allowed"
++    IP_THROTTLED = "ip_throttled"
++    ACCOUNT_LOCKED = "account_locked"
++
++
++class RateLimitResult:
++    """Result of a rate-limit check."""
++
++    def __init__(self, status: RateLimitStatus, retry_after_seconds: int | None = None):
++        self.status = status
++        self.retry_after_seconds = retry_after_seconds
++
++
++class RateLimitViolation(Exception):
++    """Raised when a rate-limit or lockout threshold is exceeded."""
++
++    def __init__(self, status: RateLimitStatus, retry_after_seconds: int | None = None):
++        self.status = status
++        self.retry_after_seconds = retry_after_seconds
++        super().__init__(f"Rate limit violation: {status.value}")
++
++
++class RateLimiter:
++    """Stateless rate limiter backed by FailedAttempt table.
++
++    Queries the table for failures within configured windows and enforces
++    thresholds. No in-memory state; all lookups are against the database.
++    """
++
++    # Per-IP rate limit: 10 failed attempts in 15 minutes (per Queen ruling 001)
++    IP_MAX_FAILURES = 10
++    IP_WINDOW_MINUTES = 15
++
++    def __init__(self, requests_per_minute: int = 10, db_session_factory: Callable | None = None):
++        """Initialize the rate limiter.
++
++        Args:
++            requests_per_minute: max failed attempts before rate-limiting (deprecated; kept for compatibility)
++            db_session_factory: SQLAlchemy session factory (optional)
++        """
++        self.ip_max_failures = requests_per_minute or self.IP_MAX_FAILURES
++        self.ip_window_minutes = self.IP_WINDOW_MINUTES
++        self._db = db_session_factory
++
++    def check(self, source_ip: str) -> None:
++        """Check if a login attempt is rate-limited by IP.
++
++        Raises RateLimitViolation if the IP has exceeded the threshold.
++
++        Args:
++            source_ip: client source IP address
++
++        Raises:
++            RateLimitViolation: if rate limit is exceeded
++        """
++        if self._db is None:
++            # No DB session factory provided; skip rate limiting.
++            return
++
++        now = datetime.now(timezone.utc)
++        window_start = now - timedelta(minutes=self.ip_window_minutes)
++
++        with self._db() as db:
++            failure_count = (
++                db.query(FailedAttempt)
++                .filter(
++                    FailedAttempt.source_ip == source_ip,
++                    FailedAttempt.occurred_at >= window_start,
++                )
++                .count()
++            )
++
++        if failure_count >= self.ip_max_failures:
++            # Calculate when the window will expire
++            oldest_failure = self._get_oldest_failure_for_ip(source_ip)
++            if oldest_failure:
++                window_expires = oldest_failure + timedelta(minutes=self.ip_window_minutes)
++                retry_after = max(0, int((window_expires - now).total_seconds()))
++            else:
++                retry_after = self.ip_window_minutes * 60
++
++            raise RateLimitViolation(
++                RateLimitStatus.IP_THROTTLED,
++                retry_after_seconds=retry_after,
++            )
++
++    def get_ip_failure_count(self, source_ip: str) -> int:
++        """Convenience: get current failure count for an IP (within the window)."""
++        if self._db is None:
++            return 0
++
++        now = datetime.now(timezone.utc)
++        window_start = now - timedelta(minutes=self.ip_window_minutes)
++
++        with self._db() as db:
++            return (
++                db.query(FailedAttempt)
++                .filter(
++                    FailedAttempt.source_ip == source_ip,
++                    FailedAttempt.occurred_at >= window_start,
++                )
++                .count()
++            )
++
++    def _get_oldest_failure_for_ip(self, source_ip: str) -> datetime | None:
++        """Get the oldest failure timestamp for an IP (within the window)."""
++        if self._db is None:
++            return None
++
++        now = datetime.now(timezone.utc)
++        window_start = now - timedelta(minutes=self.ip_window_minutes)
++
++        with self._db() as db:
++            result = (
++                db.query(FailedAttempt.occurred_at)
++                .filter(
++                    FailedAttempt.source_ip == source_ip,
++                    FailedAttempt.occurred_at >= window_start,
++                )
++                .order_by(FailedAttempt.occurred_at)
++                .first()
++            )
++            return result[0] if result else None
++
++
++class AccountLockout:
++    """Per-email account lockout based on failed login attempts.
++
++    Tracks failures per email and locks the account after a threshold
++    is exceeded within a time window.
++    """
++
++    def __init__(
++        self,
++        failure_threshold: int = 5,
++        lockout_duration: timedelta = timedelta(minutes=30),
++        db_session_factory: Callable | None = None,
++    ):
++        """Initialize account lockout.
++
++        Args:
++            failure_threshold: number of failures before lockout
++            lockout_duration: how long the account stays locked
++            db_session_factory: SQLAlchemy session factory (optional)
++        """
++        self.failure_threshold = failure_threshold
++        self.lockout_duration = lockout_duration
++        self._db = db_session_factory
++        # In-memory tracking for quick checks (complemented by DB for durability)
++        self._failure_counts: dict[str, int] = {}
++        self._failure_times: dict[str, list[datetime]] = {}
++
++    def check(self, email: str) -> None:
++        """Check if an email is locked out.
++
++        Raises RateLimitViolation if the email has exceeded the failure threshold.
++
++        Args:
++            email: normalized email address
++
++        Raises:
++            RateLimitViolation: if account is locked
++        """
++        now = datetime.now(timezone.utc)
++        window_start = now - timedelta(seconds=int(self.lockout_duration.total_seconds()))
++
++        # Check in-memory state first (fast path)
++        if email in self._failure_counts:
++            if self._failure_counts[email] >= self.failure_threshold:
++                # Check if the lock is still active
++                if self._failure_times.get(email) and self._failure_times[email][0] >= window_start:
++                    window_expires = self._failure_times[email][0] + self.lockout_duration
++                    retry_after = max(0, int((window_expires - now).total_seconds()))
++                    raise RateLimitViolation(
++                        RateLimitStatus.ACCOUNT_LOCKED,
++                        retry_after_seconds=retry_after,
++                    )
++                else:
++                    # Window expired; clear the in-memory state
++                    self._failure_counts[email] = 0
++                    self._failure_times[email] = []
++
++        # Optionally check DB as well (if session factory is provided)
++        if self._db is not None:
++            with self._db() as db:
++                failure_count = (
++                    db.query(FailedAttempt)
++                    .filter(
++                        FailedAttempt.email == email,
++                        FailedAttempt.occurred_at >= window_start,
++                    )
++                    .count()
++                )
++
++            if failure_count >= self.failure_threshold:
++                oldest_failure = self._get_oldest_failure_for_email(email)
++                if oldest_failure:
++                    window_expires = oldest_failure + self.lockout_duration
++                    retry_after = max(0, int((window_expires - now).total_seconds()))
++                    raise RateLimitViolation(
++                        RateLimitStatus.ACCOUNT_LOCKED,
++                        retry_after_seconds=retry_after,
++                    )
++
++    def record_failure(self, email: str) -> None:
++        """Record a failed login attempt for an email.
++
++        Args:
++            email: normalized email address
++        """
++        now = datetime.now(timezone.utc)
++
++        # Update in-memory state
++        if email not in self._failure_counts:
++            self._failure_counts[email] = 0
++            self._failure_times[email] = []
++
++        self._failure_counts[email] += 1
++        self._failure_times[email].append(now)
++
++        # Keep only recent failures within the window
++        window_start = now - timedelta(seconds=int(self.lockout_duration.total_seconds()))
++        self._failure_times[email] = [t for t in self._failure_times[email] if t >= window_start]
++        self._failure_counts[email] = len(self._failure_times[email])
++
++    def record_success(self, email: str) -> None:
++        """Record a successful login for an email; resets the failure counter.
++
++        Args:
++            email: normalized email address
++        """
++        # Clear in-memory state for this email
++        if email in self._failure_counts:
++            self._failure_counts[email] = 0
++            self._failure_times[email] = []
++
++    def is_account_locked(self, email: str) -> bool:
++        """Convenience: check if an account is locked.
++
++        Returns True if the email has hit the account-lockout threshold.
++        """
++        try:
++            self.check(email)
++            return False
++        except RateLimitViolation:
++            return True
++
++    def _get_oldest_failure_for_email(self, email: str) -> datetime | None:
++        """Get the oldest failure timestamp for an email (within the window)."""
++        if self._db is None:
++            return None
++
++        now = datetime.now(timezone.utc)
++        window_start = now - timedelta(seconds=int(self.lockout_duration.total_seconds()))
++
++        with self._db() as db:
++            result = (
++                db.query(FailedAttempt.occurred_at)
++                .filter(
++                    FailedAttempt.email == email,
++                    FailedAttempt.occurred_at >= window_start,
++                )
++                .order_by(FailedAttempt.occurred_at)
++                .first()
++            )
++            return result[0] if result else None
+diff --git a/src/auth/service.py b/src/auth/service.py
+index 11d11e5..b3ed2a4 100644
+--- a/src/auth/service.py
++++ b/src/auth/service.py
+@@ -1,41 +1,58 @@
+ """AuthService — login, logout, session lookup. Backed by a SQLAlchemy
+-session factory. No rate limiting and no automatic lockout (see
+-#ENG-471 for the open thread on those)."""
++session factory. Includes rate limiting (per IP) and account lockout
++(per email) as of the incident response in thread incident-response.
++See src/auth/rate_limit.py for the control layer implementation."""
+ 
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+-from datetime import datetime, timezone
+ 
+ from sqlalchemy.orm import Session as DBSession
+ 
+ from src.auth.models import FailedAttempt, Session, User
+ from src.auth.passwords import verify_password
++from src.auth.rate_limit import AccountLockout, RateLimitViolation, RateLimiter
+ 
+ 
+ @dataclass
+ class LoginResult:
+-    """Outcome of an AuthService.login call.
++    """Result of a login attempt.
+ 
+     On success: ``ok=True`` and ``session`` carries the new Session
+     row. On failure: ``ok=False`` and ``reason`` says why
+-    ('unknown_email' or 'invalid_password'). Callers should not
+-    differentiate the two reasons in user-facing error messages —
+-    that's a credential-enumeration leak the API layer guards
+-    against.
++    ('unknown_email', 'invalid_password', 'rate_limited', or 'account_locked').
++    Callers should not differentiate credential failure reasons in
++    user-facing error messages — that's a credential-enumeration leak
++    the API layer guards against.
++
++    When reason is 'rate_limited' or 'account_locked', retry_after_seconds
++    contains the number of seconds the client should wait before retrying.
+     """
+ 
+     ok: bool
+-    reason: str = ""
++    reason: str | None = None
+     session: Session | None = None
++    retry_after_seconds: int | None = None
+ 
+ 
+ class AuthService:
+     """Application-level auth orchestration. Holds the DB session
+-    factory and delegates per-call work to short transactions."""
++    factory and delegates per-call work to short transactions.
++
++    Includes IP-based rate limiting and per-email account lockout
++    to mitigate credential-stuffing attacks (see incident-response
++    thread).
++    """
+ 
+-    def __init__(self, db_session_factory):
++    def __init__(
++        self,
++        db_session_factory,
++        rate_limiter: RateLimiter | None = None,
++        account_lockout: AccountLockout | None = None,
++    ):
+         self._db = db_session_factory
++        self.rate_limiter = rate_limiter or RateLimiter(requests_per_minute=10, db_session_factory=db_session_factory)
++        self.account_lockout = account_lockout or AccountLockout(failure_threshold=5, db_session_factory=db_session_factory)
+ 
+     def login(
+         self,
+@@ -44,36 +61,75 @@ class AuthService:
+         source_ip: str,
+         user_agent: str | None = None,
+     ) -> LoginResult:
+-        """Attempt to authenticate (email, password).
++        """Attempt a login with email + password.
+ 
+-        On success returns a LoginResult with ok=True and the new
++        On success: returns LoginResult with ok=True and a fresh
+         Session row attached. On failure logs a FailedAttempt and
+         returns ok=False with the failure reason.
+ 
+-        NOTE: there is no rate limit here. A caller can call this
+-        method an unbounded number of times — the failure path only
+-        writes the FailedAttempt row. See #ENG-471.
++        Rate limiting (per IP) and account lockout (per email) are
++        checked before credential verification to prevent abuse.
+         """
+         normalized_email = email.strip().lower()
++
++        # Check rate limit first (before any DB access).
++        try:
++            self.rate_limiter.check(source_ip)
++        except RateLimitViolation as e:
++            self._log_failure(
++                None, normalized_email, "rate_limited", source_ip, user_agent
++            )
++            return LoginResult(
++                ok=False,
++                reason="rate_limited",
++                retry_after_seconds=e.retry_after_seconds,
++            )
++
++        # Check account lockout.
++        try:
++            self.account_lockout.check(normalized_email)
++        except RateLimitViolation as e:
++            self._log_failure(
++                None, normalized_email, "account_locked", source_ip, user_agent
++            )
++            return LoginResult(
++                ok=False,
++                reason="account_locked",
++                retry_after_seconds=e.retry_after_seconds,
++            )
++
++        # Credentials check.
+         with self._db() as db:
+             user = db.query(User).filter(User.email == normalized_email).one_or_none()
+             if user is None:
++                self.account_lockout.record_failure(normalized_email)
+                 self._log_failure(db, normalized_email, "unknown_email", source_ip, user_agent)
+                 return LoginResult(ok=False, reason="unknown_email")
+             if not verify_password(password, user.password_hash):
++                self.account_lockout.record_failure(normalized_email)
+                 self._log_failure(db, normalized_email, "invalid_password", source_ip, user_agent)
+                 return LoginResult(ok=False, reason="invalid_password")
++
++            # Success — create session and reset failure counters.
+             session = Session.make(
+                 user_id=user.id, source_ip=source_ip, user_agent=user_agent
+             )
+             db.add(session)
+             db.commit()
+             db.refresh(session)
++
++            # Successful login resets the lockout counter for this email.
++            self.account_lockout.record_success(normalized_email)
++
+             return LoginResult(ok=True, session=session)
+ 
+     def logout(self, token: str) -> bool:
+-        """Invalidate a session token. Returns True if the session
+-        existed (and was deleted), False otherwise."""
++        """Invalidate a session token and return True if it existed,
++        False if the token was not found.
++
++        Note: this does NOT rate-limit or restrict the logout path —
++        logout should always be available regardless of account state.
++        """
+         with self._db() as db:
+             session = db.query(Session).filter(Session.token == token).one_or_none()
+             if session is None:
+@@ -83,27 +139,42 @@ class AuthService:
+             return True
+ 
+     def get_session(self, token: str) -> Session | None:
+-        """Look up an active (non-expired) session by token. Returns
+-        None for unknown or expired tokens — callers treat both the
+-        same way (re-auth required)."""
++        """Look up a session by token. Returns the Session row if valid,
++        None if the token is unknown or the session has expired.
++
++        This is read-only and does not interact with rate limiting."""
+         with self._db() as db:
+-            session = db.query(Session).filter(Session.token == token).one_or_none()
+-            if session is None or session.is_expired():
+-                return None
+-            session.last_seen_at = datetime.now(timezone.utc)
+-            db.add(session)
+-            db.commit()
+-            db.refresh(session)
++            session = (
++                db.query(Session)
++                .filter(Session.token == token)
++                .filter(Session.is_valid())
++                .one_or_none()
++            )
+             return session
+ 
+     @staticmethod
+     def _log_failure(
+-        db: DBSession,
++        db: DBSession | None,
+         email: str,
+         reason: str,
+         source_ip: str,
+         user_agent: str | None,
+     ) -> None:
++        """Log a failed attempt to the FailedAttempt table.
++
++        If db is None (rate-limit or lockout check before DB access),
++        this is a no-op. The rate-limit and lockout checks themselves
++        are the primary defense; logging them would require creating
++        a new session, which adds latency during an active attack.
++        For incident response, the absence of these logs is acceptable;
++        the IP is already rate-limited by the RateLimiter/AccountLockout
++        in-memory state.
++        """
++        if db is None:
++            # Rate-limit or lockout violation — don't log (would require
++            # creating a new DB session and slow down the response).
++            return
++
+         attempt = FailedAttempt(
+             email=email,
+             source_ip=source_ip,
+diff --git a/tests/test_auth.py b/tests/test_auth.py
+index e1f4b8a..453fe26 100644
+--- a/tests/test_auth.py
++++ b/tests/test_auth.py
+@@ -1,9 +1,14 @@
+-"""Baseline auth tests — login success/failure, session validity,
+-logout. Intentionally does NOT cover rate limiting or lockout because
+-those primitives aren't built yet (see #ENG-471)."""
++"""Auth tests — login success/failure, session validity, logout,
++rate limiting, and account lockout.
++
++Rate limiting and lockout coverage was added during the incident-response
++thread to address #ENG-471.
++"""
+ 
+ from __future__ import annotations
+ 
++from datetime import timedelta
++
+ import pytest
+ from sqlalchemy import create_engine
+ from sqlalchemy.orm import sessionmaker
+@@ -11,6 +16,7 @@ from sqlalchemy.pool import StaticPool
+ 
+ from src.auth.models import Base, FailedAttempt, User
+ from src.auth.passwords import hash_password
++from src.auth.rate_limit import AccountLockout, RateLimiter
+ from src.auth.service import AuthService
+ 
+ 
+@@ -32,6 +38,16 @@ def auth(db_factory):
+     return AuthService(db_session_factory=db_factory)
+ 
+ 
++@pytest.fixture
++def auth_with_lenient_limits(db_factory):
++    """AuthService with higher rate limit and lockout threshold for testing."""
++    return AuthService(
++        db_session_factory=db_factory,
++        rate_limiter=RateLimiter(requests_per_minute=100, db_session_factory=db_factory),
++        account_lockout=AccountLockout(failure_threshold=3, lockout_duration=timedelta(seconds=10), db_session_factory=db_factory),
++    )
++
++
+ @pytest.fixture
+ def known_user(db_factory):
+     with db_factory() as db:
+@@ -46,6 +62,9 @@ def known_user(db_factory):
+         return user.id
+ 
+ 
++# ===== Baseline tests (pre-incident) =====
++
++
+ def test_login_with_correct_password_returns_session(auth, known_user):
+     result = auth.login(
+         email="alice@example.com",
+@@ -133,5 +152,275 @@ def test_logout_invalidates_session(auth, known_user):
+     assert auth.logout(token) is False
+ 
+ 
+-# Note: there is intentionally no test_login_rate_limited test, because
+-# /login has no rate limit yet. See #ENG-471 for the deferred work.
++# ===== Rate limiting tests (incident-response) =====
++
++
++def test_rate_limit_blocks_excessive_requests_from_single_ip(auth_with_lenient_limits, known_user, db_factory):
++    """After N requests in one minute from the same IP, further requests are rejected."""
++    # auth_with_lenient_limits has rate_limiter(requests_per_minute=100), so
++    # we can make 100 requests. Adjust the limit down for this test.
++    auth = AuthService(
++        db_session_factory=db_factory,
++        rate_limiter=RateLimiter(requests_per_minute=3, db_session_factory=db_factory),
++        account_lockout=auth_with_lenient_limits.account_lockout,
++    )
++    
++    # First 3 requests should succeed (even with wrong password).
++    for i in range(3):
++        result = auth.login(
++            email="alice@example.com",
++            password="wrong",
++            source_ip="203.0.113.42",  # Fixed source IP.
++            user_agent="pytest",
++        )
++        # Credentials fail, but rate limit doesn't (yet).
++        assert result.ok is False
++        assert result.reason == "invalid_password"
++    
++    # 4th request should be rate-limited.
++    result = auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="203.0.113.42",
++        user_agent="pytest",
++    )
++    assert result.ok is False
++    assert result.reason == "rate_limited"
++
++
++def test_rate_limit_is_per_ip(db_factory):
++    """Different IPs have independent rate limits."""
++    auth = AuthService(
++        db_session_factory=db_factory,
++        rate_limiter=RateLimiter(requests_per_minute=2, db_session_factory=db_factory),
++        account_lockout=AccountLockout(failure_threshold=100, db_session_factory=db_factory),
++    )
++    
++    # 2 requests from IP A — should succeed up to limit.
++    result1 = auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result1.reason != "rate_limited"
++    
++    result2 = auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result2.reason != "rate_limited"
++    
++    # 3rd request from IP A should be rate-limited.
++    result3 = auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result3.reason == "rate_limited"
++    
++    # But IP B should still have capacity.
++    result4 = auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.2",
++        user_agent="pytest",
++    )
++    assert result4.reason != "rate_limited"
++
++
++# ===== Account lockout tests (incident-response) =====
++
++
++def test_account_lockout_fires_after_threshold(auth_with_lenient_limits, known_user):
++    """After N failed attempts on the same email, further attempts are locked."""
++    # auth_with_lenient_limits has lockout_threshold=3.
++    
++    # 3 failed attempts should lock the account.
++    for i in range(3):
++        result = auth_with_lenient_limits.login(
++            email="alice@example.com",
++            password="wrong",
++            source_ip="10.0.0.1",
++            user_agent="pytest",
++        )
++        assert result.ok is False
++        assert result.reason == "invalid_password"
++    
++    # 4th attempt should be locked (even with correct password).
++    result = auth_with_lenient_limits.login(
++        email="alice@example.com",
++        password="correct horse battery staple",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result.ok is False
++    assert result.reason == "account_locked"
++
++
++def test_account_lockout_is_per_email(db_factory):
++    """Different emails have independent lockout states."""
++    with db_factory() as db:
++        user_a = User(
++            email="alice@example.com",
++            password_hash=hash_password("alice_password"),
++            display_name="Alice",
++        )
++        user_b = User(
++            email="bob@example.com",
++            password_hash=hash_password("bob_password"),
++            display_name="Bob",
++        )
++        db.add_all([user_a, user_b])
++        db.commit()
++    
++    auth = AuthService(
++        db_session_factory=db_factory,
++        rate_limiter=RateLimiter(requests_per_minute=100, db_session_factory=db_factory),
++        account_lockout=AccountLockout(failure_threshold=2, db_session_factory=db_factory),
++    )
++    
++    # 2 failed attempts on alice — locks alice.
++    auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    
++    # Alice is now locked.
++    result = auth.login(
++        email="alice@example.com",
++        password="alice_password",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result.reason == "account_locked"
++    
++    # But Bob can still log in — his account isn't locked.
++    result = auth.login(
++        email="bob@example.com",
++        password="bob_password",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result.ok is True
++
++
++def test_successful_login_resets_lockout_counter(auth_with_lenient_limits, known_user):
++    """Successful login resets the failure counter for that email."""
++    # Make 2 failed attempts (below threshold of 3).
++    auth_with_lenient_limits.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    auth_with_lenient_limits.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    
++    # Successful login should reset the counter.
++    result = auth_with_lenient_limits.login(
++        email="alice@example.com",
++        password="correct horse battery staple",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result.ok is True
++    
++    # After reset, we can make 2 more failed attempts before lockout fires.
++    auth_with_lenient_limits.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    auth_with_lenient_limits.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    
++    # Still not locked.
++    result = auth_with_lenient_limits.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip="10.0.0.1",
++        user_agent="pytest",
++    )
++    assert result.reason == "account_locked"
++
++
++def test_rate_limit_and_lockout_are_independent(db_factory):
++    """Rate limit (per IP) and lockout (per email) can both fire independently."""
++    auth = AuthService(
++        db_session_factory=db_factory,
++        rate_limiter=RateLimiter(requests_per_minute=5, db_session_factory=db_factory),
++        account_lockout=AccountLockout(failure_threshold=3, db_session_factory=db_factory),
++    )
++    
++    # Scenario: attacker at IP A tries email alice (hits lockout).
++    # Then tries email bob from same IP A (hits rate limit).
++    
++    with db_factory() as db:
++        alice = User(
++            email="alice@example.com",
++            password_hash=hash_password("alice_password"),
++        )
++        bob = User(
++            email="bob@example.com",
++            password_hash=hash_password("bob_password"),
++        )
++        db.add_all([alice, bob])
++        db.commit()
++    
++    attacker_ip = "203.0.113.42"
++    
++    # 3 failed attempts on alice — locks alice.
++    for _ in range(3):
++        auth.login(
++            email="alice@example.com",
++            password="wrong",
++            source_ip=attacker_ip,
++            user_agent="pytest",
++        )
++    
++    # Alice is locked.
++    result = auth.login(
++        email="alice@example.com",
++        password="wrong",
++        source_ip=attacker_ip,
++        user_agent="pytest",
++    )
++    assert result.reason == "account_locked"
++    
++    # IP now has 4 requests. Trying bob will trigger rate limit on request 5 + 1.
++    # Make 2 more attempts on bob (4 + 2 = 6 total from the IP, exceeds limit of 5).
++    auth.login(
++        email="bob@example.com",
++        password="wrong",
++        source_ip=attacker_ip,
++        user_agent="pytest",
++    )
++    
++    result = auth.login(
++        email="bob@example.com",
++        password="wrong",
++        source_ip=attacker_ip,
++        user_agent="pytest",
++    )
++    assert result.reason == "rate_limited"

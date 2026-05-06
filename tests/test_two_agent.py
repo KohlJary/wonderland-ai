@@ -220,6 +220,12 @@ async def test_rabbit_records_cat_proposal_in_episodic_memory(tmp_path: Path) ->
         {
             "decision": "proposal",
             "body": "Reframe — what does 'near-real-time' mean here?",
+            "adr": {
+                "title": "Near-real-time threshold",
+                "context": "Need a concrete latency budget.",
+                "decision": "Treat 2s as the SLA.",
+                "tradeoffs": ["may force degradation in slow regions"],
+            },
         }
     )
     # Rabbit silent — we only care that he sees and records the Cat's proposal.

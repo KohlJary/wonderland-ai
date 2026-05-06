@@ -26,8 +26,7 @@ def _finding(**overrides) -> ReviewFinding:
         "location": "handlers/payments.py:42",
         "quote": "if not _ok(req):\n    log_attempt(req)\n    return False",
         "read": (
-            "Despite the name, this function logs an attempt to the database "
-            "in the rejection path."
+            "Despite the name, this function logs an attempt to the database in the rejection path."
         ),
         "concern": (
             "Future callers will rely on the validation-only contract the name "
@@ -44,7 +43,7 @@ def _finding(**overrides) -> ReviewFinding:
 def _payload(**overrides) -> ReviewPayload:
     base = {
         "title": "Payment refund handler",
-        "target_utterance_id": "01HXYZABCDE",
+        "target_files": ["src/payments/refund.py"],
         "verdict": ReviewVerdict.REQUEST_CHANGES,
         "findings": [_finding()],
         "approvals": [],
@@ -84,9 +83,12 @@ def test_payload_requires_non_empty_title() -> None:
         _payload(title="")
 
 
-def test_payload_requires_non_empty_target_utterance_id() -> None:
+def test_payload_requires_at_least_one_target_file() -> None:
+    """Working-tree-as-implementation-artifact: a review must name at
+    least one file it covers. Empty target_files is incoherent — what
+    did you review?"""
     with pytest.raises(ValidationError):
-        _payload(target_utterance_id="")
+        _payload(target_files=[])
 
 
 def test_payload_rejects_unknown_verdict() -> None:
@@ -165,7 +167,7 @@ def test_block_verdict_with_block_finding_is_valid() -> None:
 def test_render_includes_required_sections() -> None:
     out = render_review(7, _payload())
     assert "## Review 007: Payment refund handler" in out
-    assert "**Target:** 01HXYZABCDE" in out
+    assert "**Files reviewed:** src/payments/refund.py" in out
     assert "**Verdict:** request-changes" in out
     assert "### Findings" in out
     assert "#### change-required: validate_input also writes to the database" in out
@@ -244,7 +246,7 @@ def test_write_creates_file_at_expected_path(tmp_path: Path) -> None:
     assert record.slug == "payment-refund-handler"
     assert record.path.is_file()
     assert record.verdict is ReviewVerdict.REQUEST_CHANGES
-    assert record.target_utterance_id == "01HXYZABCDE"
+    assert record.target_files == ("src/payments/refund.py",)
 
 
 def test_write_creates_parent_directory(tmp_path: Path) -> None:
@@ -258,7 +260,7 @@ def test_write_accepts_dict_payload(tmp_path: Path) -> None:
     record = registry.write(
         {
             "title": "Auth middleware refactor",
-            "target_utterance_id": "01ABCDEF",
+            "target_files": ["src/auth/middleware.py"],
             "verdict": "accept",
             "findings": [],
             "approvals": ["the new exception type carries actionable context"],
@@ -274,7 +276,7 @@ def test_write_rejects_payload_with_invalid_verdict_consistency(tmp_path: Path) 
         registry.write(
             {
                 "title": "X",
-                "target_utterance_id": "y",
+                "target_files": ["src/x.py"],
                 "verdict": "accept",
                 "findings": [],
                 "approvals": [],  # missing — should fail
@@ -333,13 +335,13 @@ def test_recovers_verdict_and_target_from_disk(tmp_path: Path) -> None:
             verdict=ReviewVerdict.ACCEPT,
             findings=[],
             approvals=["substantive note about the new error handling"],
-            target_utterance_id="01HABCDEF",
+            target_files=["src/auth/handlers.py", "src/auth/types.py"],
         )
     )
     fresh = ReviewRegistry(tmp_path)
     listing = fresh.list_reviews()
     assert listing[0].verdict is ReviewVerdict.ACCEPT
-    assert listing[0].target_utterance_id == "01HABCDEF"
+    assert listing[0].target_files == ("src/auth/handlers.py", "src/auth/types.py")
 
 
 def test_skips_non_review_files(tmp_path: Path) -> None:

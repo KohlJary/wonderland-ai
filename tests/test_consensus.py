@@ -192,16 +192,12 @@ async def test_guard_fires_when_three_distinct_domains_converge() -> None:
 
 async def test_guard_silent_when_bodies_diverge() -> None:
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.5
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.5)
     await guard.start()
     try:
         await bus.publish(_u(speaker="cheshire_cat", body="restructure the seam"))
         await bus.publish(_u(speaker="white_rabbit", body="add a third sprint"))
-        await bus.publish(
-            _u(speaker="queen_of_hearts", body="rotate every shared credential")
-        )
+        await bus.publish(_u(speaker="queen_of_hearts", body="rotate every shared credential"))
         await asyncio.sleep(0.1)
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(anext(guard.alerts()), timeout=0.2)
@@ -212,9 +208,7 @@ async def test_guard_silent_when_bodies_diverge() -> None:
 async def test_guard_silent_below_min_agents() -> None:
     """Two agents agreeing isn't synthetic consensus — even at high similarity."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
         await bus.publish(_u(speaker="cheshire_cat", body="add rate limiting now"))
@@ -230,9 +224,7 @@ async def test_guard_treats_tweedles_as_one_domain() -> None:
     """Both Tweedles share the implementation domain — three agreeing voices
     requires Cat + Rabbit + (one Tweedle), not Cat + Dee + Dum."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
         await bus.publish(_u(speaker="cheshire_cat", body="rate limiting now please"))
@@ -248,9 +240,7 @@ async def test_guard_treats_tweedles_as_one_domain() -> None:
 async def test_guard_silent_on_procedural_acts() -> None:
     """Acknowledgments and other procedural acts shouldn't count toward consensus."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.3, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.3, shingle_size=2)
     await guard.start()
     try:
         for speaker in ("cheshire_cat", "white_rabbit", "queen_of_hearts"):
@@ -272,9 +262,7 @@ async def test_guard_skips_unknown_speakers() -> None:
     """A speaker not in the domain map (e.g., a human operator stub) is
     silently excluded — we don't guess at their constitutional domain."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
         await bus.publish(_u(speaker="cheshire_cat", body="rate limiting now please"))
@@ -294,9 +282,7 @@ async def test_guard_groups_by_speech_act() -> None:
     """Two PROPOSALs and one CONCERN doesn't trigger — only same-act
     convergence counts."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.3, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.3, shingle_size=2)
     await guard.start()
     try:
         await bus.publish(
@@ -333,9 +319,7 @@ async def test_guard_groups_by_speech_act() -> None:
 async def test_guard_isolates_threads() -> None:
     """Convergence on thread A doesn't leak into thread B."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
         await bus.publish(
@@ -358,29 +342,19 @@ async def test_guard_suppresses_duplicate_alerts_for_same_agent_set() -> None:
     """Once we've alerted on (thread, act, agents), more same-set
     utterances shouldn't re-trigger."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
         await bus.publish(_u(speaker="cheshire_cat", body="rate limiting now please"))
         await bus.publish(_u(speaker="white_rabbit", body="rate limiting now please"))
-        await bus.publish(
-            _u(speaker="queen_of_hearts", body="rate limiting now please")
-        )
+        await bus.publish(_u(speaker="queen_of_hearts", body="rate limiting now please"))
         first = await asyncio.wait_for(anext(guard.alerts()), timeout=2.0)
         assert isinstance(first, ConsensusAlert)
 
         # Same trio talking again — shouldn't re-fire.
-        await bus.publish(
-            _u(speaker="cheshire_cat", body="rate limiting now please indeed")
-        )
-        await bus.publish(
-            _u(speaker="white_rabbit", body="rate limiting now please indeed")
-        )
-        await bus.publish(
-            _u(speaker="queen_of_hearts", body="rate limiting now please indeed")
-        )
+        await bus.publish(_u(speaker="cheshire_cat", body="rate limiting now please indeed"))
+        await bus.publish(_u(speaker="white_rabbit", body="rate limiting now please indeed"))
+        await bus.publish(_u(speaker="queen_of_hearts", body="rate limiting now please indeed"))
         await asyncio.sleep(0.1)
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(anext(guard.alerts()), timeout=0.2)
@@ -428,26 +402,14 @@ async def test_guard_window_trims_old_utterances() -> None:
     try:
         # Fill the window with three converging utterances on different acts
         # (so they don't trigger), then push three new same-act ones.
-        await bus.publish(
-            _u(speaker="cheshire_cat", body="x", act=SpeechAct.QUESTION)
-        )
-        await bus.publish(
-            _u(speaker="white_rabbit", body="y", act=SpeechAct.QUESTION)
-        )
-        await bus.publish(
-            _u(speaker="queen_of_hearts", body="z", act=SpeechAct.QUESTION)
-        )
+        await bus.publish(_u(speaker="cheshire_cat", body="x", act=SpeechAct.QUESTION))
+        await bus.publish(_u(speaker="white_rabbit", body="y", act=SpeechAct.QUESTION))
+        await bus.publish(_u(speaker="queen_of_hearts", body="z", act=SpeechAct.QUESTION))
         # The window now holds those three. New PROPOSAL utterances start
         # evicting them as they arrive.
-        await bus.publish(
-            _u(speaker="cheshire_cat", body="rate limiting now please")
-        )
-        await bus.publish(
-            _u(speaker="white_rabbit", body="rate limiting now please")
-        )
-        await bus.publish(
-            _u(speaker="queen_of_hearts", body="rate limiting now please")
-        )
+        await bus.publish(_u(speaker="cheshire_cat", body="rate limiting now please"))
+        await bus.publish(_u(speaker="white_rabbit", body="rate limiting now please"))
+        await bus.publish(_u(speaker="queen_of_hearts", body="rate limiting now please"))
         alert = await asyncio.wait_for(anext(guard.alerts()), timeout=2.0)
         assert isinstance(alert, ConsensusAlert)
     finally:
@@ -460,9 +422,7 @@ async def test_guard_window_trims_old_utterances() -> None:
 async def test_same_agent_speaking_twice_counts_once() -> None:
     """The Cat speaking twice doesn't artificially inflate the count."""
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
         await bus.publish(_u(speaker="cheshire_cat", body="rate limiting now please"))
@@ -480,24 +440,14 @@ async def test_same_agent_speaking_twice_counts_once() -> None:
 
 async def test_alert_includes_excerpt_of_each_body() -> None:
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
-        await bus.publish(
-            _u(speaker="cheshire_cat", body="rate limiting now please")
-        )
-        await bus.publish(
-            _u(speaker="white_rabbit", body="rate limiting now please")
-        )
-        await bus.publish(
-            _u(speaker="queen_of_hearts", body="rate limiting now please")
-        )
+        await bus.publish(_u(speaker="cheshire_cat", body="rate limiting now please"))
+        await bus.publish(_u(speaker="white_rabbit", body="rate limiting now please"))
+        await bus.publish(_u(speaker="queen_of_hearts", body="rate limiting now please"))
         alert = await asyncio.wait_for(anext(guard.alerts()), timeout=2.0)
-        assert all(
-            "rate limiting" in body for body in alert.sample_bodies
-        )
+        assert all("rate limiting" in body for body in alert.sample_bodies)
         assert "average pairwise similarity" in alert.reason
     finally:
         await guard.stop()
@@ -505,9 +455,7 @@ async def test_alert_includes_excerpt_of_each_body() -> None:
 
 async def test_alert_at_is_recent() -> None:
     bus = InMemoryCaucus()
-    guard = SyntheticConsensusGuard(
-        bus, min_agents=3, similarity_threshold=0.4, shingle_size=2
-    )
+    guard = SyntheticConsensusGuard(bus, min_agents=3, similarity_threshold=0.4, shingle_size=2)
     await guard.start()
     try:
         for speaker in ("cheshire_cat", "white_rabbit", "queen_of_hearts"):

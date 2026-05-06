@@ -1,0 +1,282 @@
+==============================================================================
+T36 FULL ENCHILADA — vague directive → working code via 5 meetings
+==============================================================================
+Project root:  /tmp/t36-enchilada-v14
+Budget cap:    $3.00 hard
+Total timeout: 900s
+Directive:     Build a translation-integrated chat application MVP. Two users in different language groups exchangi...
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M1: produce user stories + an architectural ADR + GDPR rulings
+  thread_id: scoping
+  roster:    ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.0000
+──────────────────────────────────────────────────────────────────────────────
+  M1[t=  0.00s] dodo               directive      →caucus Build a translation-integrated chat application MVP. Two users in different language groups exchangi…
+  M1[t=  7.25s] cheshire_cat       question       →caucus Before the team decomposes, let me surface what I'm reading in the directive: you've named two-langu…
+  M1[t=  8.48s] queen_of_hearts    concern        →caucus This directive lands in my domain because the initial scope description does not surface the data-ha…
+  M1[t= 16.98s] cheshire_cat       reframe        →caucus The Queen has surfaced three load-bearing decisions that the directive deferred — and she is right t…
+  M1[t= 24.94s] alice              story          →caucus (no body)
+  M1                             ↳ story: Monolingual user sends message across language boundary
+  M1                             ↳ story: Non-English speaker initiates conversation with English-only user
+  M1                             ↳ story: User receives translated message and wants to see the original
+  M1                             ↳ story: User mistakenly sends message to wrong conversation
+  M1                             ↳ story: User joins from EU and sees privacy/consent flow
+  M1                             ↳ story: User logs in from a second device
+  M1[t= 30.67s] queen_of_hearts    question       →caucus Alice, your stories surface user needs; they do not surface the data-handling assumptions the team w…
+  M1[t= 36.79s] cheshire_cat       proposal       →caucus (no body)
+  M1                             ↳ adr: Hub-model translation with session-scoped message lifecycle and explicit-consent lawful basis
+  M1[t= 42.27s] alice              concern        →caucus The Cat's hub model is sound architecturally, but I need to surface a user-experience tension it cre…
+  M1[t= 48.06s] cheshire_cat       concern        →caucus Alice has surfaced a real user-experience tension in the hub model that the ADR I shipped names as a…
+  M1[t= 67.31s] queen_of_hearts    ruling         →caucus The Cat's proposal is architecturally sound and GDPR-defensible. I am issuing three rulings — one ac…
+  M1                             ↳ ruling: Message lifecycle must be session-scoped with explicit user consent [severity=critical]
+  M1                             ↳ ruling: Third-party translation service requires data processor agreement [severity=high]
+  M1                             ↳ ruling: Authentication must support GDPR user rights exercise [severity=high]
+  M1[t= 72.99s] alice              concern        →caucus The Queen's rulings are compliance-load-bearing and I defer to her domain authority. But they surfac…
+  M1[t= 80.40s] queen_of_hearts    concern        →caucus Alice has surfaced a real tension between compliance and user experience. The tension is legitimate …
+  M1[t= 89.77s] cheshire_cat       concern        →caucus The Queen has decomposed the consent-architecture problem clearly: three distinct models, each with …
+  M1[t=120.12s] <thread_monitor> running → stuck
+  M1[t=120.12s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); silent 30.3s). The team has paused with open expectat…
+  M1[t=122.85s] queen_of_hearts    ruling         →caucus The Cat has correctly identified the architectural seams the consent model choice will expose. I am …
+  M1                             ↳ ruling: Consent state must be verifiable, auditable, and exercisable regardless of architecture [severity=high]
+  M1                             ↳ ruling: Jurisdiction detection must be verifiable and must not default silently [severity=high]
+  M1                             ↳ ruling: Message translation must not leak original content in logs or error states [severity=high]
+  M1[t=153.15s] <thread_monitor> running → quiescent
+  M1[t=153.15s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  M1[t=153.15s] <thread_monitor> running → complete
+  M1[t=153.15s] <complete>
+
+  ── M1 END ── outcome=COMPLETE
+     elapsed:        153.2s
+     this meeting:   16 calls, $0.1352
+     running totals: 16 calls, $0.1352 / $3.00 cap
+     artifacts:      4 (story×6, ruling×6, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M2: decompose the ADR + stories into v1 tickets
+  thread_id: decomposition
+  roster:    ['cheshire_cat', 'dodo', 'white_rabbit']
+  seeds:     2 utterance(s)
+  cost so far before this meeting: $0.1352
+──────────────────────────────────────────────────────────────────────────────
+  M2[t=153.16s] cheshire_cat       proposal       →caucus (no body)
+  M2                             ↳ adr: Hub-model translation with session-scoped message lifecycle and explicit-consent lawful basis
+  M2[t=153.16s] alice              story          →caucus (no body)
+  M2                             ↳ story: Monolingual user sends message across language boundary
+  M2                             ↳ story: Non-English speaker initiates conversation with English-only user
+  M2                             ↳ story: User receives translated message and wants to see the original
+  M2                             ↳ story: User mistakenly sends message to wrong conversation
+  M2                             ↳ story: User joins from EU and sees privacy/consent flow
+  M2                             ↳ story: User logs in from a second device
+  M2[t=153.16s] dodo               directive      →caucus Decomposition thread. The stories and ADR(s) in your context are settled — they were produced in a p…
+  M2[t=176.30s] white_rabbit       ticket         →caucus Decomposing the translation and consent stories against the hub-model ADR. V1 scope: cross-language …
+  M2                             ↳ ticket: Message contract: translation metadata and original-text carrier
+  M2                             ↳ ticket: Session initialization: language preference and consent-basis capture
+  M2                             ↳ ticket: Translation API gateway: session-scoped routing and provider dispatch
+  M2                             ↳ ticket: Frontend message display with original-text toggle
+  M2                             ↳ ticket: Frontend consent flow and language-preference form
+  M2                             ↳ ticket: Message enrichment on send and receive
+  M2[t=207.21s] <thread_monitor> running → quiescent
+  M2[t=207.21s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  M2[t=207.21s] <thread_monitor> running → complete
+  M2[t=207.21s] <complete>
+
+  ── M2 END ── outcome=COMPLETE
+     elapsed:        54.1s
+     this meeting:   4 calls, $0.0378
+     running totals: 20 calls, $0.1730 / $3.00 cap
+     artifacts:      3 (story×6, ticket×6, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M3: negotiate contracts the Tweedles will implement against
+  thread_id: contract-negotiation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     3 utterance(s)
+  cost so far before this meeting: $0.1730
+──────────────────────────────────────────────────────────────────────────────
+  M3[t=207.21s] cheshire_cat       proposal       →caucus (no body)
+  M3                             ↳ adr: Hub-model translation with session-scoped message lifecycle and explicit-consent lawful basis
+  M3[t=207.21s] cheshire_cat       proposal       →caucus (no body)
+  M3                             ↳ adr: Hub-model translation with session-scoped message lifecycle and explicit-consent lawful basis
+  M3[t=207.21s] white_rabbit       ticket         →caucus Decomposing the translation and consent stories against the hub-model ADR. V1 scope: cross-language …
+  M3                             ↳ ticket: Message contract: translation metadata and original-text carrier
+  M3                             ↳ ticket: Session initialization: language preference and consent-basis capture
+  M3                             ↳ ticket: Translation API gateway: session-scoped routing and provider dispatch
+  M3                             ↳ ticket: Frontend message display with original-text toggle
+  M3                             ↳ ticket: Frontend consent flow and language-preference form
+  M3                             ↳ ticket: Message enrichment on send and receive
+  M3[t=207.21s] dodo               directive      →caucus Contract negotiation thread. The ADR(s) and ticket in your context are settled — read them as locked…
+  M3[t=227.36s] tweedledum         contract_note  →caucus Proposing the message envelope contract. This is the load-bearing shape — everything else cascades f…
+  M3                             ↳ contract_note: Message envelope: original and translated text with metadata [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Session state contract: language preference and consent [operation=propose, state=proposed]
+  M3[t=255.26s] tweedledee         contract_note  →caucus Drafting load-bearing seams for translation MVP. Four contract notes below — I've filled in frontend…
+  M3                             ↳ contract_note: Message envelope: original + translated text + metadata [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Session state: language preference + consent status + audit trail [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Translation gateway behavior: session-scoped routing and consent gating [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Consent audit trail: verifiable, auditable, exercisable [operation=propose, state=proposed]
+  M3[t=271.30s] tweedledee         contract_note  →caucus Your 001 and 002 sketch solid backend architecture. Merging with my 003 and 004 — same surfaces, com…
+  M3                             ↳ contract_note: Message envelope: original and translated text with metadata [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Session state contract: language preference and consent [operation=respond, state=counterpart_assessed]
+  M3[t=292.24s] tweedledum         contract_note  →caucus (no body)
+  M3                             ↳ contract_note: Message envelope: original + translated text + metadata [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Session state: language preference + consent status + audit trail [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Translation gateway behavior: session-scoped routing and consent gating [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Consent audit trail: verifiable, auditable, exercisable [operation=respond, state=counterpart_assessed]
+  M3[t=315.40s] tweedledee         contract_note  →caucus All four assessment responses are sound and consistent. I'm marking 001–006 as agreed. The envelope …
+  M3                             ↳ contract_note: Message envelope: original and translated text with metadata [operation=mark_agreed, state=agreed]
+  M3                             ↳ contract_note: Session state contract: language preference and consent [operation=mark_agreed, state=agreed]
+  M3                             ↳ contract_note: Message envelope: original + translated text + metadata [operation=mark_agreed, state=agreed]
+  M3                             ↳ contract_note: Session state: language preference + consent status + audit trail [operation=mark_agreed, state=agreed]
+  M3[t=346.35s] <thread_monitor> running → quiescent
+  M3[t=346.35s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  M3[t=346.35s] <thread_monitor> running → complete
+  M3[t=346.35s] <complete>
+
+  ── M3 END ── outcome=COMPLETE
+     elapsed:        139.1s
+     this meeting:   31 calls, $0.2504
+     running totals: 51 calls, $0.4234 / $3.00 cap
+     artifacts:      8 (contract_note×16, ticket×6, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M4: ship code honoring the agreed contracts
+  thread_id: implementation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     3 utterance(s)
+  cost so far before this meeting: $0.4234
+──────────────────────────────────────────────────────────────────────────────
+  M4[t=346.35s] cheshire_cat       proposal       →caucus (no body)
+  M4                             ↳ adr: Hub-model translation with session-scoped message lifecycle and explicit-consent lawful basis
+  M4[t=346.35s] cheshire_cat       proposal       →caucus (no body)
+  M4                             ↳ adr: Hub-model translation with session-scoped message lifecycle and explicit-consent lawful basis
+  M4[t=346.35s] tweedledee         contract_note  →caucus All four assessment responses are sound and consistent. I'm marking 001–006 as agreed. The envelope …
+  M4                             ↳ contract_note: Message envelope: original and translated text with metadata [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Session state contract: language preference and consent [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Message envelope: original + translated text + metadata [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Session state: language preference + consent status + audit trail [operation=mark_agreed, state=agreed]
+  M4[t=346.35s] dodo               directive      →caucus Implementation thread. The contract notes in your context are locked — they were negotiated and agre…
+[tweedledee] deliberate() raised TweedleResponseParseError: no JSON block found in Tweedle response — treating as silence
+  M4[t=376.38s] <thread_monitor> running → quiescent
+  M4[t=376.38s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  M4[t=376.38s] <thread_monitor> running → complete
+  M4[t=376.38s] <complete>
+
+  ── M4 END ── outcome=COMPLETE
+     elapsed:        30.0s
+     this meeting:   11 calls, $0.0655
+     running totals: 62 calls, $0.4888 / $3.00 cap
+     artifacts:      3 (contract_note×4, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M5: Caterpillar reviews the shipped code; surface findings
+  thread_id: review
+  roster:    ['caterpillar', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.4888
+──────────────────────────────────────────────────────────────────────────────
+  M5[t=376.38s] dodo               directive      →caucus Review thread. Code was shipped in a prior implementation thread. Caterpillar: the working tree IS t…
+[tweedledee] deliberate() raised TweedleResponseParseError: Tweedle response failed schema validation: 1 validation error for TweedleResponse
+decision
+  Input should be 'implementation', 'contract_note', 'concern', 'question', 'deference', 'invite' or 'silence' [type=literal_error, input_value='review', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/literal_error — treating as silence
+  M5[t=404.95s] tweedledum         contract_note  →caucus Marked 001 and 002 agreed — your frontend assessments on 003 and 004 fully align. No surprises. Now …
+  M5                             ↳ contract_note: Message envelope: original and translated text with metadata [operation=mark_agreed, state=agreed]
+  M5                             ↳ contract_note: Session state contract: language preference and consent [operation=mark_agreed, state=agreed]
+  M5                             ↳ contract_note: Translation gateway behavior: session-scoped routing and consent gating [operation=respond, state=counterpart_assessed]
+  M5                             ↳ contract_note: Consent audit trail: verifiable, auditable, exercisable [operation=respond, state=counterpart_assessed]
+  M5[t=406.41s] <thread_monitor> running → quiescent
+  M5[t=406.41s] dodo               acknowledgment →caucus Thread review → complete. The team has gone quiet with no open expectations; the directive is settle…
+  M5[t=406.41s] <thread_monitor> running → complete
+  M5[t=406.41s] <complete>
+
+  ── M5 END ── outcome=COMPLETE
+     elapsed:        30.0s
+     this meeting:   6 calls, $0.0610
+     running totals: 68 calls, $0.5498 / $3.00 cap
+     artifacts:      1 (contract_note×4)
+
+==============================================================================
+T36 SUMMARY
+==============================================================================
+Total elapsed:  406.4s
+Total cost:     $0.5498  (cap $3.00)
+Total LLM calls: 68
+
+Per-agent token usage:
+  tweedledum         calls= 22 cost=$0.1990
+  tweedledee         calls= 26 cost=$0.1778
+  queen_of_hearts    calls=  5 cost=$0.0608
+  cheshire_cat       calls= 10 cost=$0.0602
+  alice              calls=  4 cost=$0.0277
+  white_rabbit       calls=  1 cost=$0.0243
+
+Artifacts on disk:
+  stories/ (6 files)
+    story-001-monolingual-user-sends-message-across-language-boundary.md
+    story-002-non-english-speaker-initiates-conversation-with-english-only-user.md
+    story-003-user-receives-translated-message-and-wants-to-see-the-original.md
+    story-004-user-mistakenly-sends-message-to-wrong-conversation.md
+    story-005-user-joins-from-eu-and-sees-privacy-consent-flow.md
+    story-006-user-logs-in-from-a-second-device.md
+  architecture/ (1 files)
+    adr-001-hub-model-translation-with-session-scoped-message-lifecycle-and-explicit-consent-lawful-basis.md
+  tickets/ (6 files)
+    ticket-001-message-contract-translation-metadata-and-original-text-carrier.md
+    ticket-002-session-initialization-language-preference-and-consent-basis-capture.md
+    ticket-003-translation-api-gateway-session-scoped-routing-and-provider-dispatch.md
+    ticket-004-frontend-message-display-with-original-text-toggle.md
+    ticket-005-frontend-consent-flow-and-language-preference-form.md
+    ticket-006-message-enrichment-on-send-and-receive.md
+  rulings/ (6 files)
+    ruling-001-message-lifecycle-must-be-session-scoped-with-explicit-user-consent.md
+    ruling-002-third-party-translation-service-requires-data-processor-agreement.md
+    ruling-003-authentication-must-support-gdpr-user-rights-exercise.md
+    ruling-004-consent-state-must-be-verifiable-auditable-and-exercisable-regardless-of-architecture.md
+    ruling-005-jurisdiction-detection-must-be-verifiable-and-must-not-default-silently.md
+    ruling-006-message-translation-must-not-leak-original-content-in-logs-or-error-states.md
+  contract-notes/ (6 files)
+    contract-note-001-message-envelope-original-and-translated-text-with-metadata.md
+    contract-note-002-session-state-contract-language-preference-and-consent.md
+    contract-note-003-message-envelope-original-translated-text-metadata.md
+    contract-note-004-session-state-language-preference-consent-status-audit-trail.md
+    contract-note-005-translation-gateway-behavior-session-scoped-routing-and-consent-gating.md
+    contract-note-006-consent-audit-trail-verifiable-auditable-exercisable.md
+
+Code shipped (project_root excluding .wonderland):
+  .git/COMMIT_EDITMSG (33 bytes)
+  .git/HEAD (21 bytes)
+  .git/config (151 bytes)
+  .git/description (73 bytes)
+  .git/hooks/applypatch-msg.sample (478 bytes)
+  .git/hooks/commit-msg.sample (896 bytes)
+  .git/hooks/fsmonitor-watchman.sample (4726 bytes)
+  .git/hooks/post-update.sample (189 bytes)
+  .git/hooks/pre-applypatch.sample (424 bytes)
+  .git/hooks/pre-commit.sample (1649 bytes)
+  .git/hooks/pre-merge-commit.sample (416 bytes)
+  .git/hooks/pre-push.sample (1374 bytes)
+  .git/hooks/pre-rebase.sample (4898 bytes)
+  .git/hooks/pre-receive.sample (544 bytes)
+  .git/hooks/prepare-commit-msg.sample (1492 bytes)
+  .git/hooks/push-to-checkout.sample (2783 bytes)
+  .git/hooks/sendemail-validate.sample (2308 bytes)
+  .git/hooks/update.sample (3650 bytes)
+  .git/index (286 bytes)
+  .git/info/exclude (240 bytes)
+  .git/logs/HEAD (187 bytes)
+  .git/logs/refs/heads/main (187 bytes)
+  .git/objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904 (15 bytes)
+  .git/objects/66/02bf9e5bcf4f678c76e5e0910983ccbf5d663c (147 bytes)
+  .git/objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391 (15 bytes)
+  .git/refs/heads/main (41 bytes)
+  .gitignore (123 bytes)
+  run.log (19283 bytes)
+  src/types/contract.ts (1640 bytes)
+
+Final rosters:
+  scoping: ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts'] — produce user stories + an architectural ADR + GDPR rulings
+  decomposition: ['cheshire_cat', 'dodo', 'white_rabbit'] — decompose the ADR + stories into v1 tickets
+  contract-negotiation: ['dodo', 'tweedledee', 'tweedledum'] — negotiate contracts the Tweedles will implement against
+  implementation: ['dodo', 'tweedledee', 'tweedledum'] — ship code honoring the agreed contracts
+  review: ['caterpillar', 'dodo', 'tweedledee', 'tweedledum'] — Caterpillar reviews the shipped code; surface findings

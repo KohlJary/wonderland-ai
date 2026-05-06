@@ -15,13 +15,11 @@ Hatter turn can produce multiple scenarios because edges cluster.
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.engagement import (
@@ -37,6 +35,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
+from wonderland.parsing import extract_and_validate
 from wonderland.test_scenario import TestScenarioPayload, TestScenarioRegistry
 from wonderland.utterance import (
     Artifact,
@@ -71,6 +70,8 @@ def mad_hatter_rules() -> EngagementRules:
     is_tweedle = any_of(speaker_is("tweedledee"), speaker_is("tweedledum"))
 
     return EngagementRules.of(
+        # ALWAYS — INVITE addressed to me always wakes me up (Block 2c)
+        always(SpeechAct.INVITE, condition=addressed_to(HATTER_NAME)),
         # ALWAYS
         always(SpeechAct.DIRECTIVE),
         always(SpeechAct.STORY, condition=speaker_is("alice")),
@@ -207,7 +208,33 @@ are genuinely funny; let that show. Hostility is a failure mode (§VIII)
 """
 
 
-_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_TOOLS_SECTION = """
+**Tools available.** You can call `read_file`, `list_files`, `grep`,
+and `write_file` to ground test scenarios in the actual code AND to
+ship real test files alongside your scenarios.
+
+- `read_file` and `grep`: read the implementation a Tweedle just shipped
+  before naming the scenarios it has to handle. A scenario that names
+  a specific function and a concrete input that breaks it is sharper
+  than a scenario named in the abstract.
+- `list_files`: see the existing test layout before adding new files.
+- `write_file`: write actual pytest files when a scenario is concrete
+  enough to express in code. Convention: tests under `tests/` mirror
+  the source path (`tests/test_foo.py` for `src/foo.py`). Each test
+  function name includes the failure mode in plain English (e.g.,
+  `test_handler_returns_timeout_when_translator_takes_too_long`).
+  Only write the test when you can make it fail meaningfully on a
+  bug; speculative tests for code that isn't shipped yet should
+  remain scenario-shaped (markdown).
+
+You do not write source code (the Tweedles' domain) or implementations
+of features (the Tweedles' too). Tests that exercise the Tweedles'
+implementations are your domain — that's the natural extension of the
+test scenario into executable form.
+"""
+
+
+_OUTPUT_PROTOCOL_WITH_TOOLS = _OUTPUT_PROTOCOL + _TOOLS_SECTION
 
 
 class HatterResponseParseError(ValueError):
@@ -215,25 +242,13 @@ class HatterResponseParseError(ValueError):
 
 
 def parse_hatter_response(text: str) -> HatterResponse:
-    """Extract the fenced JSON block from `text` and validate it."""
-    match = _JSON_BLOCK.search(text)
-    if match is None:
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise HatterResponseParseError("no JSON block found in Hatter response")
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise HatterResponseParseError(f"Hatter response was not valid JSON: {exc}") from exc
-    try:
-        return HatterResponse.model_validate(data)
-    except ValidationError as exc:
-        raise HatterResponseParseError(
-            f"Hatter response failed schema validation: {exc}"
-        ) from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``,
+    which handles fenced/bare/balanced-fallback extraction
+    uniformly across every agent.
+    """
+    return extract_and_validate(text, HatterResponse, HatterResponseParseError)
 
 
 # --------------------------------------------------------------------- #
@@ -250,6 +265,7 @@ class MadHatter(WonderlandAgent):
         bus: Caucus,
         llm: LLMClient | None = None,
         test_scenario_registry: TestScenarioRegistry | None = None,
+        tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(HATTER_NAME, root=constitutions_root)
@@ -259,6 +275,7 @@ class MadHatter(WonderlandAgent):
         )
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._test_scenario_registry = test_scenario_registry
+        self._tools = tools
 
     @property
     def test_scenario_registry(self) -> TestScenarioRegistry | None:
@@ -269,11 +286,19 @@ class MadHatter(WonderlandAgent):
             return None
 
         system, messages = context.to_llm_request()
-        # Output protocol cached alongside the constitution — both invariant per Hatter.
-        system.insert(1, CachedBlock(_OUTPUT_PROTOCOL))
+        # Output protocol cached alongside the constitution — both invariant per
+        # Hatter. With-tools variant when tools are wired so the LLM is told
+        # about the read/list/grep + write_file (for actual test files)
+        # capabilities.
+        protocol = _OUTPUT_PROTOCOL_WITH_TOOLS if self._tools is not None else _OUTPUT_PROTOCOL
+        system.insert(2, CachedBlock(protocol))
 
-        result = await self.llm.complete(system=system, messages=messages)
-        response = parse_hatter_response(result.text)
+        if self._tools is not None:
+            response_text = await self._complete_with_tools(system, messages)
+        else:
+            result = await self.llm.complete(system=system, messages=messages)
+            response_text = result.text
+        response = parse_hatter_response(response_text)
         if response.decision == "silence":
             return None
 

@@ -1,0 +1,235 @@
+==============================================================================
+T36 FULL ENCHILADA — vague directive → working code via 5 meetings
+==============================================================================
+Project root:  /tmp/t36-enchilada-v8
+Budget cap:    $3.00 hard
+Total timeout: 900s
+Directive:     Build a translation-integrated chat application MVP. Two users in different language groups exchangi...
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M1: produce user stories + an architectural ADR + GDPR rulings
+  thread_id: scoping
+  roster:    ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.0000
+──────────────────────────────────────────────────────────────────────────────
+  M1[t=  0.00s] dodo               directive      →caucus Build a translation-integrated chat application MVP. Two users in different language groups exchangi…
+  M1[t=  7.33s] cheshire_cat       question       →caucus Before the Rabbit decomposes the three-week load, I need to name the architectural hinge: where does…
+  M1[t= 11.39s] queen_of_hearts    concern        →caucus This directive surfaces regulatory scope immediately and correctly names GDPR as applicable. Before …
+  M1[t= 18.39s] cheshire_cat       reframe        →caucus The Queen has named the actual architectural hinge, and it runs perpendicular to the latency hinge I…
+  M1[t= 25.14s] alice              story          →caucus (no body)
+  M1                             ↳ story: Monolingual book club member joins a cross-language discussion
+  M1                             ↳ story: Polyglot moderator managing cross-language threads without context-switching
+  M1                             ↳ story: Deaf user accessing live captioning alongside translation
+  M1                             ↳ story: Teenager joining a mentorship chat in a language pair that doesn't exist yet
+  M1[t= 35.38s] queen_of_hearts    concern        →caucus Alice has surfaced four personas that sharpen the regulatory surface materially. Three of them carry…
+  M1[t= 56.56s] cheshire_cat       proposal       →caucus The Queen has reframed the architectural surface precisely. Her prior five clarifications are prereq…
+  M1                             ↳ adr: Erasure atomicity as load-bearing constraint
+  M1[t= 87.09s] <thread_monitor> running → stuck
+  M1[t= 87.09s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); silent 30.5s). The team has paused with open expectat…
+[queen_of_hearts] deliberate() raised QueenResponseParseError: no JSON block found in Queen response — treating as silence
+  M1[t=117.12s] <thread_monitor> running → quiescent
+  M1[t=117.12s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  M1[t=117.12s] <thread_monitor> running → complete
+  M1[t=117.12s] <complete>
+
+  ── M1 END ── outcome=COMPLETE
+     elapsed:        117.1s
+     this meeting:   11 calls, $0.1038
+     running totals: 11 calls, $0.1038 / $3.00 cap
+     artifacts:      2 (story×4, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M2: decompose the ADR + stories into v1 tickets
+  thread_id: decomposition
+  roster:    ['cheshire_cat', 'dodo', 'white_rabbit']
+  seeds:     2 utterance(s)
+  cost so far before this meeting: $0.1038
+──────────────────────────────────────────────────────────────────────────────
+  M2[t=117.12s] cheshire_cat       proposal       →caucus The Queen has reframed the architectural surface precisely. Her prior five clarifications are prereq…
+  M2                             ↳ adr: Erasure atomicity as load-bearing constraint
+  M2[t=117.12s] alice              story          →caucus (no body)
+  M2                             ↳ story: Monolingual book club member joins a cross-language discussion
+  M2                             ↳ story: Polyglot moderator managing cross-language threads without context-switching
+  M2                             ↳ story: Deaf user accessing live captioning alongside translation
+  M2                             ↳ story: Teenager joining a mentorship chat in a language pair that doesn't exist yet
+  M2[t=132.09s] white_rabbit       ticket         →caucus The Cat has named the architectural hinge. Before the Queen rules on compliance detail, I need to su…
+  M2                             ↳ ticket: Define data contract for message identity and user ownership (architectural prerequisite)
+  M2                             ↳ ticket: Define processor boundary abstraction and delete API contract (architectural prerequisite)
+  M2                             ↳ ticket: Define audit trail deletion semantics and immutability boundary (architectural prerequisite)
+  M2                             ↳ ticket: Queen's compliance ruling on erasure atomicity surface
+  M2[t=152.01s] white_rabbit       ticket         →caucus Alice has grounded the work in four concrete personas. Each story names a different architectural pr…
+  M2                             ↳ ticket: Implement synchronous translation processor with delete API
+  M2                             ↳ ticket: Implement captioning processor with delete API and live-stream latency
+  M2                             ↳ ticket: Implement message deletion orchestration across processors (erasure atomicity)
+  M2                             ↳ ticket: Implement UI affordance for moderator to switch context between languages without losing thread position
+  M2[t=182.18s] <thread_monitor> running → quiescent
+  M2[t=182.18s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  M2[t=182.18s] <thread_monitor> running → complete
+  M2[t=182.18s] <complete>
+
+  ── M2 END ── outcome=COMPLETE
+     elapsed:        65.1s
+     this meeting:   2 calls, $0.0335
+     running totals: 13 calls, $0.1374 / $3.00 cap
+     artifacts:      4 (ticket×8, story×4, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M3: negotiate contracts the Tweedles will implement against
+  thread_id: contract-negotiation
+  roster:    ['cheshire_cat', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     3 utterance(s)
+  cost so far before this meeting: $0.1374
+──────────────────────────────────────────────────────────────────────────────
+  M3[t=182.18s] cheshire_cat       proposal       →caucus The Queen has reframed the architectural surface precisely. Her prior five clarifications are prereq…
+  M3                             ↳ adr: Erasure atomicity as load-bearing constraint
+  M3[t=182.18s] cheshire_cat       proposal       →caucus The Queen has reframed the architectural surface precisely. Her prior five clarifications are prereq…
+  M3                             ↳ adr: Erasure atomicity as load-bearing constraint
+  M3[t=182.18s] white_rabbit       ticket         →caucus The Cat has named the architectural hinge. Before the Queen rules on compliance detail, I need to su…
+  M3                             ↳ ticket: Define data contract for message identity and user ownership (architectural prerequisite)
+  M3                             ↳ ticket: Define processor boundary abstraction and delete API contract (architectural prerequisite)
+  M3                             ↳ ticket: Define audit trail deletion semantics and immutability boundary (architectural prerequisite)
+  M3                             ↳ ticket: Queen's compliance ruling on erasure atomicity surface
+  M3[t=194.05s] tweedledum         concern        →caucus The Cat has named the load-bearing seam precisely: erasure atomicity. I see the architecture clearly…
+[cheshire_cat] deliberate() raised CatResponseParseError: Cat response failed schema validation: 1 validation error for CatResponse
+  Value error, CatResponse: decision='proposal' requires the `adr` field. A proposal without an ADR is prose, not an architectural commitment — the team has nothing to compose against. If you don't yet have a decision concrete enough to record, choose 'question' or 'reframe' instead. If you do, name the tradeoffs explicitly (mark uncertain ones with what would have to be true to settle them) and ship the ADR. [type=value_error, input_value={'decision': 'proposal', ...nst them.", 'adr': None}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error — treating as silence
+  M3[t=211.81s] tweedledum         contract_note  →caucus The Cat's erasure atomicity architecture constrains our processor boundary contract. I'm proposing t…
+  M3                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=propose, state=proposed]
+  M3[t=229.58s] tweedledum         question       →caucus Tweedledee: the processor boundary contract note (contract-note-001) is waiting for your frontend im…
+  M3[t=233.63s] tweedledee         concern        →caucus Tweedledum has identified the right hinge: the deletion-confirmation semantics are load-bearing for …
+  M3[t=258.47s] cheshire_cat       question       →caucus You've identified the right tension, but I want to reframe it slightly to surface what's actually un…
+  M3[t=285.78s] tweedledee         contract_note  →caucus Responding to contract-note-001 with frontend impact assessment. The deletion confirmation semantics…
+  M3                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=respond, state=counterpart_assessed]
+  M3[t=290.07s] tweedledum         contract_note  →caucus Tweedledee is right: the deletion semantics determine the contract shape, and the contract shape det…
+  M3                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=respond, state=counterpart_assessed]
+[tweedledee] deliberate() raised TweedleResponseParseError: no JSON block found in Tweedle response — treating as silence
+  M3[t=320.32s] <thread_monitor> running → quiescent
+  M3[t=320.32s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  M3[t=320.32s] <thread_monitor> running → complete
+  M3[t=320.32s] <complete>
+
+  ── M3 END ── outcome=COMPLETE
+     elapsed:        138.1s
+     this meeting:   65 calls, $0.4783
+     running totals: 78 calls, $0.6157 / $3.00 cap
+     artifacts:      6 (ticket×4, contract_note×3, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M4: ship code honoring the agreed contracts
+  thread_id: implementation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     5 utterance(s)
+  cost so far before this meeting: $0.6157
+──────────────────────────────────────────────────────────────────────────────
+  M4[t=320.32s] cheshire_cat       proposal       →caucus The Queen has reframed the architectural surface precisely. Her prior five clarifications are prereq…
+  M4                             ↳ adr: Erasure atomicity as load-bearing constraint
+  M4[t=320.32s] cheshire_cat       proposal       →caucus The Queen has reframed the architectural surface precisely. Her prior five clarifications are prereq…
+  M4                             ↳ adr: Erasure atomicity as load-bearing constraint
+  M4[t=320.32s] tweedledum         contract_note  →caucus The Cat's erasure atomicity architecture constrains our processor boundary contract. I'm proposing t…
+  M4                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=propose, state=proposed]
+  M4[t=320.32s] tweedledee         contract_note  →caucus Responding to contract-note-001 with frontend impact assessment. The deletion confirmation semantics…
+  M4                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=respond, state=counterpart_assessed]
+  M4[t=320.32s] tweedledum         contract_note  →caucus Tweedledee is right: the deletion semantics determine the contract shape, and the contract shape det…
+  M4                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=respond, state=counterpart_assessed]
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in Tweedle response — treating as silence
+  M4[t=330.46s] tweedledum         contract_note  →caucus Cat: I am reading your proposal against the erasure atomicity constraint. The processor boundary abs…
+  M4                             ↳ contract_note: Processor delete API contract [operation=propose, state=proposed]
+  M4[t=359.62s] tweedledee         contract_note  →caucus (no body)
+  M4                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=respond, state=counterpart_assessed]
+  M4[t=361.37s] <thread_monitor> running → quiescent
+  M4[t=361.37s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  M4[t=361.37s] <thread_monitor> running → complete
+  M4[t=361.37s] <complete>
+
+  ── M4 END ── outcome=COMPLETE
+     elapsed:        41.0s
+     this meeting:   12 calls, $0.0803
+     running totals: 90 calls, $0.6960 / $3.00 cap
+     artifacts:      7 (contract_note×5, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M5: Caterpillar reviews the shipped code; surface findings
+  thread_id: review
+  roster:    ['caterpillar', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.6960
+──────────────────────────────────────────────────────────────────────────────
+  M5[t=393.07s] tweedledum         contract_note  →caucus (no body)
+  M5                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=respond, state=counterpart_assessed]
+  M5[t=398.75s] tweedledee         contract_note  →caucus Committing to Option B (synchronous deletion). The ADR and ticket-007 have already decided this path…
+  M5                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=mark_agreed, state=agreed]
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in Tweedle response — treating as silence
+  M5[t=416.61s] tweedledee         contract_note  →caucus Processor delete API contract is well-scoped and matches the moderator deletion UX from contract-not…
+  M5                             ↳ contract_note: Processor delete API contract [operation=respond, state=counterpart_assessed]
+  M5[t=440.14s] tweedledum         contract_note  →caucus Responding to contract-note-002. The processor delete API determines what we can guarantee locally a…
+  M5                             ↳ contract_note: Processor delete API contract [operation=respond, state=counterpart_assessed]
+  M5[t=444.92s] tweedledee         contract_note  →caucus Cat's erasure-atomicity proposal confirms the load-bearing seam and reinforces the three architectur…
+  M5                             ↳ contract_note: Processor delete API contract [operation=respond, state=counterpart_assessed]
+  M5[t=457.39s] tweedledee         contract_note  →caucus Contract-note-001 (processor boundary + delete API synchronous semantics) is already agreed—that's s…
+  M5                             ↳ contract_note: Processor delete API contract [operation=respond, state=counterpart_assessed]
+  M5[t=459.73s] tweedledum         contract_note  →caucus Locking contract-note-002 with backend commitments on orchestration semantics, error handling, and s…
+  M5                             ↳ contract_note: Processor delete API contract [operation=respond, state=counterpart_assessed]
+  M5                             ↳ contract_note: Processor delete API contract [operation=respond, state=counterpart_assessed]
+  M5[t=472.35s] tweedledum         contract_note  →caucus Contract-note-002 is ready to lock. Both questions are answered in my backend impact assessment: (1)…
+  M5                             ↳ contract_note: Processor delete API contract [operation=mark_agreed, state=agreed]
+  M5[t=483.17s] tweedledum         question       →caucus Tweedledee, I'm reading contract-note-002 and both questions are answered and locked in the resoluti…
+  M5[t=502.47s] tweedledum         question       →caucus Tweedledee, I'm reading a discrepancy between what you're saying and what's on disk. Contract-note-0…
+  M5[t=511.05s] tweedledee         contract_note  →caucus Contract-note-001 is confirmed as the right moderator UX path. Synchronous, blocking deletion matche…
+  M5                             ↳ contract_note: Processor boundary abstraction and delete API contract [operation=mark_agreed, state=agreed]
+  M5                             ↳ contract_note: Processor delete API contract [operation=respond, state=counterpart_assessed]
+  M5[t=524.14s] tweedledum         contract_note  →caucus Tweedledee, your frontend assessment on contract-note-002 matches the backend impact section exactly…
+  M5                             ↳ contract_note: Processor delete API contract [operation=mark_agreed, state=agreed]
+  M5[per-meeting cap] $0.5313 >= $0.50; ending meeting to preserve budget for downstream meetings
+
+  ── M5 END ── outcome=MEETING_BUDGET
+     elapsed:        162.8s
+     this meeting:   76 calls, $0.5313
+     running totals: 166 calls, $1.2273 / $3.00 cap
+     artifacts:      10 (contract_note×12)
+
+==============================================================================
+T36 SUMMARY
+==============================================================================
+Total elapsed:  524.1s
+Total cost:     $1.2273  (cap $3.00)
+Total LLM calls: 166
+
+Per-agent token usage:
+  tweedledum         calls= 81 cost=$0.5340
+  tweedledee         calls= 65 cost=$0.4972
+  cheshire_cat       calls= 13 cost=$0.0926
+  queen_of_hearts    calls=  3 cost=$0.0480
+  white_rabbit       calls=  2 cost=$0.0335
+  alice              calls=  2 cost=$0.0220
+
+Artifacts on disk:
+  stories/ (4 files)
+    story-001-monolingual-book-club-member-joins-a-cross-language-discussion.md
+    story-002-polyglot-moderator-managing-cross-language-threads-without-context-switching.md
+    story-003-deaf-user-accessing-live-captioning-alongside-translation.md
+    story-004-teenager-joining-a-mentorship-chat-in-a-language-pair-that-doesn-t-exist-yet.md
+  architecture/ (1 files)
+    adr-001-erasure-atomicity-as-load-bearing-constraint.md
+  tickets/ (8 files)
+    ticket-001-define-data-contract-for-message-identity-and-user-ownership-architectural-prerequisite.md
+    ticket-002-define-processor-boundary-abstraction-and-delete-api-contract-architectural-prerequisite.md
+    ticket-003-define-audit-trail-deletion-semantics-and-immutability-boundary-architectural-prerequisite.md
+    ticket-004-queen-s-compliance-ruling-on-erasure-atomicity-surface.md
+    ticket-005-implement-synchronous-translation-processor-with-delete-api.md
+    ticket-006-implement-captioning-processor-with-delete-api-and-live-stream-latency.md
+    ticket-007-implement-message-deletion-orchestration-across-processors-erasure-atomicity.md
+    ticket-008-implement-ui-affordance-for-moderator-to-switch-context-between-languages-without-losing-thread-position.md
+  contract-notes/ (2 files)
+    contract-note-001-processor-boundary-abstraction-and-delete-api-contract.md
+    contract-note-002-processor-delete-api-contract.md
+
+Code shipped (project_root excluding .wonderland):
+  run.log (19298 bytes)
+
+Final rosters:
+  scoping: ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts'] — produce user stories + an architectural ADR + GDPR rulings
+  decomposition: ['cheshire_cat', 'dodo', 'white_rabbit'] — decompose the ADR + stories into v1 tickets
+  contract-negotiation: ['cheshire_cat', 'dodo', 'tweedledee', 'tweedledum'] — negotiate contracts the Tweedles will implement against
+  implementation: ['dodo', 'tweedledee', 'tweedledum'] — ship code honoring the agreed contracts
+  review: ['caterpillar', 'dodo', 'tweedledee', 'tweedledum'] — Caterpillar reviews the shipped code; surface findings

@@ -224,7 +224,10 @@ def test_write_accepts_dict_payload(tmp_path: Path) -> None:
             "citation": "CWE-798 Use of Hard-coded Credentials",
             "finding": "Active production credential checked into the repository at config/clients.py:14.",
             "required_remediation": "Rotate the credential; move to the secrets manager; remove from git history.",
-            "acceptance_criteria": ["the key is rotated at the provider", "the file no longer contains the key"],
+            "acceptance_criteria": [
+                "the key is rotated at the provider",
+                "the file no longer contains the key",
+            ],
         }
     )
     assert record.severity is RulingSeverity.CRITICAL

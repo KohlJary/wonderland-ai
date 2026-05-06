@@ -188,21 +188,15 @@ def _hatter(memory, bus, llm, root):
 
 
 def _caterpillar(memory, bus, llm, root):
-    return Caterpillar(
-        memory=memory, bus=bus, llm=llm, review_registry=ReviewRegistry(root)
-    )
+    return Caterpillar(memory=memory, bus=bus, llm=llm, review_registry=ReviewRegistry(root))
 
 
 def _queen(memory, bus, llm, root):
-    return QueenOfHearts(
-        memory=memory, bus=bus, llm=llm, ruling_registry=RulingRegistry(root)
-    )
+    return QueenOfHearts(memory=memory, bus=bus, llm=llm, ruling_registry=RulingRegistry(root))
 
 
 def _dormouse(memory, bus, llm, root):
-    return Dormouse(
-        memory=memory, bus=bus, llm=llm, observation_registry=ObservationRegistry(root)
-    )
+    return Dormouse(memory=memory, bus=bus, llm=llm, observation_registry=ObservationRegistry(root))
 
 
 def _dee(memory, bus, llm, root):
@@ -283,9 +277,7 @@ class RunResult:
     timed_out: bool = False
 
 
-async def run_one_agent(
-    agent_run: AgentRun, project_root: Path, *, timeout: float
-) -> RunResult:
+async def run_one_agent(agent_run: AgentRun, project_root: Path, *, timeout: float) -> RunResult:
     bus = InMemoryCaucus()
     memory = AgentMemory.for_project(project_root, agent_run.name)
     await memory.open()
@@ -313,7 +305,9 @@ async def run_one_agent(
             while response.speaker.name != agent_run.name:
                 response = await asyncio.wait_for(anext(observer), timeout=timeout)
             elapsed = time.monotonic() - start
-            return RunResult(name=agent_run.name, response=response, elapsed=elapsed, usage=usage_log)
+            return RunResult(
+                name=agent_run.name, response=response, elapsed=elapsed, usage=usage_log
+            )
         except TimeoutError:
             return RunResult(
                 name=agent_run.name,

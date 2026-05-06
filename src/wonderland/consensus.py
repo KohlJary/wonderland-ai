@@ -207,7 +207,11 @@ class SyntheticConsensusGuard:
 
         # Synchronous subscription per the T14 fix — bus publishes between
         # construction and iteration must not be lost.
-        self._iterator: AsyncIterator[Utterance] = self._bus.subscribe(agent_name)
+        # ConsensusGuard needs every utterance regardless of per-thread
+        # roster — convergence detection looks across all live threads.
+        self._iterator: AsyncIterator[Utterance] = self._bus.subscribe(
+            agent_name, bypass_roster=True
+        )
         self._threads: dict[str, _ThreadWindow] = {}
         self._alerts: asyncio.Queue[ConsensusAlert] = asyncio.Queue()
         self._consume_task: asyncio.Task[None] | None = None
@@ -273,15 +277,11 @@ class SyntheticConsensusGuard:
 
         return self._check_for_alert(info, u)
 
-    def _check_for_alert(
-        self, info: _ThreadWindow, latest: Utterance
-    ) -> ConsensusAlert | None:
+    def _check_for_alert(self, info: _ThreadWindow, latest: Utterance) -> ConsensusAlert | None:
         # Group recent utterances on this thread by speech_act, keeping the
         # *latest* utterance from each agent so an agent who spoke twice
         # contributes one position, not two.
-        same_act = [
-            u for u in info.recent if u.speech_act is latest.speech_act
-        ]
+        same_act = [u for u in info.recent if u.speech_act is latest.speech_act]
         latest_per_agent: dict[str, Utterance] = {}
         for u in same_act:
             latest_per_agent[u.speaker.name] = u
@@ -309,13 +309,10 @@ class SyntheticConsensusGuard:
         items = sorted(by_domain.items())  # stable ordering for sample_bodies
         domains = [d for d, _ in items]
         utterances = [u for _, u in items]
-        shingle_sets = [
-            shingles(u.content.body, size=self._shingle_size) for u in utterances
-        ]
+        shingle_sets = [shingles(u.content.body, size=self._shingle_size) for u in utterances]
 
         pair_scores = [
-            jaccard(shingle_sets[i], shingle_sets[j])
-            for i, j in combinations(range(len(items)), 2)
+            jaccard(shingle_sets[i], shingle_sets[j]) for i, j in combinations(range(len(items)), 2)
         ]
         if not pair_scores:
             return None

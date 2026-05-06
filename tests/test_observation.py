@@ -30,8 +30,7 @@ def _payload(**overrides) -> ObservationPayload:
             "between 14:23 and 14:31 UTC, affecting approximately 380 requests."
         ),
         "affected_scope": (
-            "translation-service in eu-west-1; primarily the message-translate "
-            "endpoint."
+            "translation-service in eu-west-1; primarily the message-translate endpoint."
         ),
         "evidence": [
             "https://grafana.internal/d/translation/overview?from=14:00&to=15:00",

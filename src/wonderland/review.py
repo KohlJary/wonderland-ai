@@ -117,8 +117,14 @@ class ReviewPayload(BaseModel):
     title: str = Field(min_length=1)
     """Short human-readable summary, e.g. ``"Payment refund handler"``.
     Becomes the slug when persisted."""
-    target_utterance_id: str = Field(min_length=1)
-    """The implementation utterance this review is of."""
+    target_files: list[str] = Field(min_length=1)
+    """The files this review covers (paths relative to project root).
+
+    Working-tree-as-implementation-artifact (analysis 016 followup +
+    analysis 018): the reviewer reads ``git_status`` / ``git_diff`` to
+    find what shipped, then names the files this review is about. The
+    review can cover one file or several; ``findings`` use file:line
+    locations that should be a subset of ``target_files``."""
     verdict: ReviewVerdict
     findings: list[ReviewFinding] = Field(default_factory=list)
     approvals: list[str] = Field(default_factory=list)
@@ -163,7 +169,7 @@ class ReviewRecord:
     slug: str
     title: str
     verdict: ReviewVerdict
-    target_utterance_id: str
+    target_files: tuple[str, ...]
     path: Path
 
     def read(self) -> str:
@@ -179,7 +185,7 @@ def render_review(number: int, payload: ReviewPayload) -> str:
     lines: list[str] = [
         f"## Review {number:03d}: {payload.title}",
         "",
-        f"**Target:** {payload.target_utterance_id}",
+        f"**Files reviewed:** {', '.join(payload.target_files)}",
         f"**Verdict:** {payload.verdict.value}",
         "",
     ]
@@ -280,9 +286,7 @@ class ReviewRegistry:
 
     def write(self, payload: ReviewPayload | dict) -> ReviewRecord:
         validated = (
-            payload
-            if isinstance(payload, ReviewPayload)
-            else ReviewPayload.model_validate(payload)
+            payload if isinstance(payload, ReviewPayload) else ReviewPayload.model_validate(payload)
         )
 
         number = self.next_number()
@@ -298,7 +302,7 @@ class ReviewRegistry:
             slug=slug,
             title=validated.title,
             verdict=validated.verdict,
-            target_utterance_id=validated.target_utterance_id,
+            target_files=tuple(validated.target_files),
             path=full_path,
         )
 
@@ -313,28 +317,30 @@ class ReviewRegistry:
             return None
         number = int(match.group(1))
         slug = match.group(2)
-        title, verdict, target = ReviewRegistry._read_header(path, fallback_title=slug)
+        title, verdict, target_files = ReviewRegistry._read_header(
+            path, fallback_title=slug
+        )
         return ReviewRecord(
             number=number,
             slug=slug,
             title=title,
             verdict=verdict,
-            target_utterance_id=target,
+            target_files=target_files,
             path=path,
         )
 
     @staticmethod
     def _read_header(
         path: Path, *, fallback_title: str
-    ) -> tuple[str, ReviewVerdict, str]:
+    ) -> tuple[str, ReviewVerdict, tuple[str, ...]]:
         title = fallback_title
         verdict = ReviewVerdict.ACCEPT  # safe default if the file is malformed
-        target = ""
+        target_files: tuple[str, ...] = ()
         try:
             with path.open(encoding="utf-8") as f:
                 lines = [f.readline() for _ in range(8)]
         except OSError:
-            return title, verdict, target
+            return title, verdict, target_files
 
         for line in lines:
             stripped = line.strip()
@@ -344,9 +350,13 @@ class ReviewRegistry:
                 value = stripped.removeprefix("**Verdict:**").strip()
                 with contextlib.suppress(ValueError):
                     verdict = ReviewVerdict(value)
-            if stripped.startswith("**Target:**"):
-                target = stripped.removeprefix("**Target:**").strip()
-        return title, verdict, target
+            if stripped.startswith("**Files reviewed:**"):
+                raw = stripped.removeprefix("**Files reviewed:**").strip()
+                if raw:
+                    target_files = tuple(
+                        item.strip() for item in raw.split(",") if item.strip()
+                    )
+        return title, verdict, target_files
 
 
 __all__ = [

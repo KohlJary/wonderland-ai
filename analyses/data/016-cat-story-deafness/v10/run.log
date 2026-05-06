@@ -1,0 +1,298 @@
+==============================================================================
+T36 FULL ENCHILADA — vague directive → working code via 5 meetings
+==============================================================================
+Project root:  /tmp/t36-enchilada-v10
+Budget cap:    $3.00 hard
+Total timeout: 900s
+Directive:     Build a translation-integrated chat application MVP. Two users in different language groups exchangi...
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M1: produce user stories + an architectural ADR + GDPR rulings
+  thread_id: scoping
+  roster:    ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.0000
+──────────────────────────────────────────────────────────────────────────────
+  M1[t=  0.00s] dodo               directive      →caucus Build a translation-integrated chat application MVP. Two users in different language groups exchangi…
+  M1[t=  5.76s] cheshire_cat       question       →caucus Before we scope this, I need to surface what's actually being decided in the architecture. The direc…
+  M1[t=  8.89s] queen_of_hearts    concern        →caucus Before scoping proceeds, the directive carries regulatory and data-handling implications that requir…
+  M1[t= 16.11s] cheshire_cat       reframe        →caucus The Queen has named the actual constraint. Let me reframe what we're deciding.
+  M1[t= 22.56s] alice              story          →caucus (no body)
+  M1                             ↳ story: Monolingual book club member exchanges messages with German-speaking friend
+  M1                             ↳ story: Polyglot moderator manages cross-language thread without drowning
+  M1                             ↳ story: Japanese speaker enters German-English book club without English as fallback
+  M1                             ↳ story: New user understands how to authenticate without friction
+  M1[t= 30.65s] queen_of_hearts    concern        →caucus Alice's stories surface user needs without naming the data-handling implications those needs carry. …
+  M1[t= 36.04s] cheshire_cat       proposal       →caucus (no body)
+  M1                             ↳ adr: Translation processing location and data residency model under GDPR
+  M1[t= 54.17s] cheshire_cat       reframe        →caucus The Queen is asking a question that looks regulatory but is actually architectural. She's right abou…
+  M1[t= 56.19s] queen_of_hearts    ruling         →caucus The Cat has made the architectural decision explicit, and I can now rule on it. The proposal is acce…
+  M1                             ↳ ruling: Translation processing must not transit untranslated message content through third-party APIs [severity=critical]
+  M1                             ↳ ruling: Message retention policy must be explicit and enforced [severity=high]
+  M1                             ↳ ruling: Authentication must use encrypted transport and hashed password storage [severity=high]
+  M1[t= 60.73s] alice              concern        →caucus The Queen's ruling on third-party API transit just forelosed a path I didn't know was closed. Her am…
+  M1[t= 65.52s] cheshire_cat       concern        →caucus The Queen has ruled, and her three rulings are load-bearing. I need to surface what they mean for th…
+  M1[t= 66.56s] queen_of_hearts    concern        →caucus Alice is surfacing a load-bearing UX consequence of my rulings, and she is correct to do so. The thi…
+  M1[t= 71.78s] queen_of_hearts    concern        →caucus The Cat has surfaced a scope-critical dependency that requires clarification before the Rabbit can d…
+  M1[t= 81.74s] cheshire_cat       concern        →caucus The Queen has surfaced a real scope-binding ambiguity, but I want to surface what's actually at stak…
+  M1[t=112.11s] <thread_monitor> running → stuck
+  M1[t=112.11s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); silent 30.4s). The team has paused with open expectat…
+  M1[t=142.14s] <thread_monitor> running → quiescent
+  M1[t=142.14s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  M1[t=142.14s] <thread_monitor> running → complete
+  M1[t=142.14s] <complete>
+
+  ── M1 END ── outcome=COMPLETE
+     elapsed:        142.1s
+     this meeting:   18 calls, $0.1328
+     running totals: 18 calls, $0.1328 / $3.00 cap
+     artifacts:      3 (story×4, ruling×3, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M2: decompose the ADR + stories into v1 tickets
+  thread_id: decomposition
+  roster:    ['cheshire_cat', 'dodo', 'white_rabbit']
+  seeds:     2 utterance(s)
+  cost so far before this meeting: $0.1328
+──────────────────────────────────────────────────────────────────────────────
+  M2[t=142.14s] cheshire_cat       proposal       →caucus (no body)
+  M2                             ↳ adr: Translation processing location and data residency model under GDPR
+  M2[t=142.14s] alice              story          →caucus (no body)
+  M2                             ↳ story: Monolingual book club member exchanges messages with German-speaking friend
+  M2                             ↳ story: Polyglot moderator manages cross-language thread without drowning
+  M2                             ↳ story: Japanese speaker enters German-English book club without English as fallback
+  M2                             ↳ story: New user understands how to authenticate without friction
+[white_rabbit] deliberate() raised RabbitResponseParseError: Rabbit response failed schema validation: 1 validation error for RabbitResponse
+  Value error, RabbitResponse: decision='ticket' requires at least one ticket in `tickets`. Choose a different decision (concern/question/etc.) or include the tickets you intended to issue. [type=value_error, input_value={'decision': 'ticket', 'b...is set.", 'tickets': []}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error — treating as silence
+  M2[t=167.19s] white_rabbit       ticket         →caucus Four stories in; they decompose cleanly into a translation layer + auth flow. I'm seeing the Cat's A…
+  M2                             ↳ ticket: Implement authentication without friction for new users
+  M2                             ↳ ticket: Build translation processing backend with GDPR-compliant residency handling
+  M2                             ↳ ticket: Monolingual user receives translated messages from German-speaking friend
+  M2                             ↳ ticket: Polyglot moderator can manage multi-language thread without context drowning
+  M2                             ↳ ticket: Japanese speaker can join German-English book club without English as fallback
+  M2                             ↳ ticket: Offline message queue for polyglot threads (fast-follow)
+  M2[t=175.90s] cheshire_cat       proposal       →caucus Reading the four stories together, I see a cumulative picture that points to a specific architectura…
+  M2                             ↳ adr: Translation service: bilingual hub vs. polyglot mesh
+  M2[t=181.10s] white_rabbit       concern        →caucus The Cat has surfaced a real architectural decision that changes what we're ticketing and how. I need…
+  M2[t=211.21s] <thread_monitor> running → stuck
+  M2[t=211.21s] dodo               nudge          →caucus Thread decomposition → stuck (1 open expectation(s); silent 30.1s). The team has paused with open ex…
+  M2[t=241.24s] <thread_monitor> running → quiescent
+  M2[t=241.24s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  M2[t=241.24s] <thread_monitor> running → complete
+  M2[t=241.24s] <complete>
+
+  ── M2 END ── outcome=COMPLETE
+     elapsed:        99.1s
+     this meeting:   9 calls, $0.0597
+     running totals: 27 calls, $0.1925 / $3.00 cap
+     artifacts:      4 (ticket×6, story×4, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M3: negotiate contracts the Tweedles will implement against
+  thread_id: contract-negotiation
+  roster:    ['cheshire_cat', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     4 utterance(s)
+  cost so far before this meeting: $0.1925
+──────────────────────────────────────────────────────────────────────────────
+  M3[t=241.24s] cheshire_cat       proposal       →caucus (no body)
+  M3                             ↳ adr: Translation processing location and data residency model under GDPR
+  M3[t=241.24s] cheshire_cat       proposal       →caucus (no body)
+  M3                             ↳ adr: Translation processing location and data residency model under GDPR
+  M3[t=241.24s] cheshire_cat       proposal       →caucus Reading the four stories together, I see a cumulative picture that points to a specific architectura…
+  M3                             ↳ adr: Translation service: bilingual hub vs. polyglot mesh
+  M3[t=241.24s] white_rabbit       ticket         →caucus Four stories in; they decompose cleanly into a translation layer + auth flow. I'm seeing the Cat's A…
+  M3                             ↳ ticket: Implement authentication without friction for new users
+  M3                             ↳ ticket: Build translation processing backend with GDPR-compliant residency handling
+  M3                             ↳ ticket: Monolingual user receives translated messages from German-speaking friend
+  M3                             ↳ ticket: Polyglot moderator can manage multi-language thread without context drowning
+  M3                             ↳ ticket: Japanese speaker can join German-English book club without English as fallback
+  M3                             ↳ ticket: Offline message queue for polyglot threads (fast-follow)
+  M3[t=253.85s] tweedledee         question       →caucus ADR-001 and ADR-002 surface two architectural choices that determine my contract with Tweedledum. Be…
+  M3[t=258.95s] tweedledum         concern        →caucus ADR-002 defers the hub vs. mesh decision with the framing 'the team must decide before implementatio…
+  M3[t=276.52s] tweedledee         concern        →caucus ADR-001 clarifies immutability and residency — that answers my re-translation question (it's not a t…
+  M3[t=282.70s] cheshire_cat       proposal       →caucus Tweedledum surfaces a real blocking constraint: ADR-002 defers the hub/mesh choice, but story-003 (Y…
+  M3                             ↳ adr: Translation service architecture: commit to polyglot mesh model
+[cheshire_cat] deliberate() raised CatResponseParseError: no JSON block found in Cat response — treating as silence
+  M3[t=295.71s] tweedledee         concern        →caucus ADR-001 and ADR-002 together have clarified the blocking points. ADR-001 answers my re-translation q…
+  M3[t=301.81s] tweedledum         question       →caucus Cat's proposal on data residency helps on the processor question, but I'm still blocked on ticket-00…
+  M3[t=309.86s] tweedledee         contract_note  →caucus ADR-003 commits to polyglot mesh. This changes the contract between us: the message envelope shape m…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=propose, state=proposed]
+  M3[t=310.77s] cheshire_cat       deference      →caucus ADR-003 resolves the deferral in ADR-002: the architecture is committed to polyglot mesh. Story-003 …
+  M3[t=313.42s] tweedledum         concern        →caucus Cat's ADR-003 correctly names the hub/mesh decision as architectural and load-bearing. Good. But Twe…
+  M3[t=318.81s] cheshire_cat       concern        →caucus You're right that the deferral has reached its useful boundary. I've read ADR-002 and ADR-003 togeth…
+  M3[t=321.99s] tweedledee         contract_note  →caucus ADR-003 commits to polyglot mesh, which resolves the blocking architectural decision. This shifts th…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=propose, state=proposed]
+  M3[t=337.33s] tweedledee         concern        →caucus ADR-003 closes the blocking decision: polyglot mesh is the committed architecture. This resolves the…
+  M3[t=352.13s] tweedledee         question       →caucus Both architectural decisions are now made by the Cat and standing:
+  M3[t=357.11s] tweedledee         question       →caucus Cat's deference confirms ADR-003 as binding and closes the architectural uncertainty. This clears th…
+  M3[t=364.04s] tweedledee         concern        →caucus ADR-003 resolves the architecture at the level of abstraction I can operate at: polyglot mesh is the…
+  M3[t=392.75s] tweedledum         contract_note  →caucus (no body)
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=respond, state=counterpart_assessed]
+  M3[t=413.37s] tweedledee         contract_note  →caucus Tweedledum: your response to contract-note-001 is concrete and workable. The JSONB envelope shape wi…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=respond, state=counterpart_assessed]
+  M3[t=422.02s] tweedledum         question       →caucus Three concrete answers to unblock the contract:
+  M3[t=432.60s] tweedledum         concern        →caucus Tweedledee is naming the blocking constraint correctly. ADR-002 defers the hub vs. mesh decision, bu…
+  M3[t=439.15s] cheshire_cat       concern        →caucus Tweedledum names the load-bearing constraint precisely. The deferral in ADR-002 has reached the boun…
+  M3[t=442.65s] tweedledee         contract_note  →caucus Tweedledum: your responses lock both contracts. The JSONB envelope shape with per-language status su…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=mark_agreed, state=agreed]
+  M3[t=448.35s] tweedledum         contract_note  →caucus Cat's ADR-003 closes the hub/mesh decision: polyglot mesh is architecturally committed. This unlocks…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=respond, state=counterpart_assessed]
+  M3[t=450.62s] tweedledee         concern        →caucus Tweedledum names a real blocking constraint and I agree with his analysis. ADR-002's deferral was co…
+  M3[t=459.53s] tweedledum         contract_note  →caucus Tweedledee: I'm locking the message envelope contract based on the architectural commits we have in …
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=mark_agreed, state=agreed]
+  M3[t=462.74s] tweedledee         contract_note  →caucus Tweedledum: your responses lock both contracts. The JSONB envelope with per-language status substatu…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=mark_agreed, state=agreed]
+  M3[t=467.39s] tweedledum         contract_note  →caucus Tweedledee: contract-note-001 is concrete and I can respond. ADR-001 (third-party, DeepL under DPA) …
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=respond, state=counterpart_assessed]
+  M3[t=477.58s] tweedledum         contract_note  →caucus ADR-003 commits to polyglot mesh and closes the blocking architectural decision. I'm responding to c…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=respond, state=counterpart_assessed]
+  M3[t=479.36s] tweedledee         implementation →caucus (no body)
+  M3                             ↳ implementation: Polyglot message list with per-language translation rendering [side=frontend]
+  M3[t=487.84s] tweedledee         contract_note  →caucus Tweedledum: your response to contract-note-001 is concrete and resolves the envelope shape. The even…
+  M3                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M3[per-meeting cap] $0.8002 >= $0.80; ending meeting to preserve budget for downstream meetings
+
+  ── M3 END ── outcome=MEETING_BUDGET
+     elapsed:        246.6s
+     this meeting:   85 calls, $0.8002
+     running totals: 112 calls, $0.9927 / $3.00 cap
+     artifacts:      17 (contract_note×16, ticket×6, adr×4, implementation×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M4: ship code honoring the agreed contracts
+  thread_id: implementation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     7 utterance(s)
+  cost so far before this meeting: $0.9927
+──────────────────────────────────────────────────────────────────────────────
+  M4[t=487.84s] cheshire_cat       proposal       →caucus (no body)
+  M4                             ↳ adr: Translation processing location and data residency model under GDPR
+  M4[t=487.84s] cheshire_cat       proposal       →caucus (no body)
+  M4                             ↳ adr: Translation processing location and data residency model under GDPR
+  M4[t=487.84s] cheshire_cat       proposal       →caucus Reading the four stories together, I see a cumulative picture that points to a specific architectura…
+  M4                             ↳ adr: Translation service: bilingual hub vs. polyglot mesh
+  M4[t=487.84s] tweedledee         contract_note  →caucus Tweedledum: your responses lock both contracts. The JSONB envelope shape with per-language status su…
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=mark_agreed, state=agreed]
+  M4[t=487.84s] tweedledum         contract_note  →caucus Tweedledee: I'm locking the message envelope contract based on the architectural commits we have in …
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=mark_agreed, state=agreed]
+  M4[t=487.84s] tweedledee         contract_note  →caucus Tweedledum: your responses lock both contracts. The JSONB envelope with per-language status substatu…
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=mark_agreed, state=agreed]
+  M4[t=487.84s] tweedledee         contract_note  →caucus Tweedledum: your response to contract-note-001 is concrete and resolves the envelope shape. The even…
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M4[t=487.84s] dodo               directive      →caucus Implementation thread. The contract notes in your context are locked — they were negotiated and agre…
+  M4[t=504.05s] tweedledee         contract_note  →caucus Tweedledum: your backend impact on contract-note-001 is clear and locks the envelope shape. The even…
+  M4                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=respond, state=counterpart_assessed]
+  M4[t=508.90s] tweedledum         concern        →caucus Tweedledee: contract-note-001 and 002 are already locked on disk (001 marked counterpart_assessed wi…
+  M4[t=518.52s] <thread_monitor> running → quiescent
+  M4[t=518.52s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  M4[t=518.52s] <thread_monitor> running → complete
+  M4[t=518.52s] <complete>
+
+  ── M4 END ── outcome=COMPLETE
+     elapsed:        30.7s
+     this meeting:   13 calls, $0.1192
+     running totals: 125 calls, $1.1118 / $3.00 cap
+     artifacts:      8 (contract_note×8, adr×3)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M5: Caterpillar reviews the shipped code; surface findings
+  thread_id: review
+  roster:    ['caterpillar', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     1 utterance(s)
+  cost so far before this meeting: $1.1118
+──────────────────────────────────────────────────────────────────────────────
+  M5[t=518.52s] tweedledee         implementation →caucus (no body)
+  M5                             ↳ implementation: Polyglot message list with per-language translation rendering [side=frontend]
+  M5[t=519.67s] tweedledum         concern        →caucus Tweedledee: I'm reading your message and seeing a pattern that I need to name directly, because it's…
+  M5[t=523.50s] tweedledee         concern        →caucus ADR-001 commits to server-side translation with plaintext visibility (messages decrypt → translate o…
+  M5[t=536.71s] cheshire_cat       concern        →caucus You're both right, and you're talking past each other. Tweedledum: the three original questions (ser…
+  M5[t=536.95s] caterpillar        question       →caucus I've read your implementation approach for the polyglot message list. The work is well-scoped and yo…
+  M5[t=540.54s] tweedledum         concern        →caucus Tweedledee: I need to be direct about a pattern that's emerged, because it's a failure mode I'm expl…
+  M5[t=542.04s] tweedledee         invite         →[queen_of_hearts] ADR-001 is now on the table and it commits to server-side translation, which means plaintext transit…
+  M5[t=547.17s] cheshire_cat       concern        →caucus Tweedledum is naming a real and load-bearing pattern. You've surfaced the same three contract questi…
+  M5[t=550.97s] tweedledee         concern        →caucus The Cat is right that the hub-vs-mesh decision drives everything downstream. My prior concern about …
+  M5[t=551.50s] tweedledum         concern        →caucus Tweedledee: I need to name what I'm reading in your latest message, because it's the exact pattern I…
+  M5[t=558.44s] queen_of_hearts    ruling         →caucus ADR-001 commits to a plaintext-to-external-processor flow. This creates a specific, material transpa…
+  M5                             ↳ ruling: Encryption claim scope must match processing reality [severity=high]
+  M5                             ↳ ruling: Encryption terminology must not drift during implementation [severity=medium]
+  M5[t=562.57s] queen_of_hearts    concern        →caucus You are holding implementation correctly. The transparency obligation is real and material—Sofia mus…
+  M5[t=565.81s] cheshire_cat       concern        →caucus Tweedledum, you are reading a pattern correctly, but I need to intervene on the interpretation.
+  M5[t=567.57s] <thread_monitor> running → stuck
+  M5[t=567.57s] dodo               nudge          →caucus Thread review → stuck (1 open expectation(s); silent 30.6s). The team has paused with open expectati…
+[tweedledee] deliberate() raised TweedleResponseParseError: no JSON block found in Tweedle response — treating as silence
+  M5[t=579.86s] tweedledum         concern        →caucus Tweedledee: you're right. Both contracts are locked on disk. I'm the one who's been circling—surfaci…
+  M5[t=586.25s] tweedledee         concern        →caucus Tweedledum: you're correct. I've been circling on contracts already marked as agreed. Contract-note-…
+  M5[t=592.35s] tweedledum         contract_note  →caucus Both contract notes are now locked. Your query-contract clarification (load only the languages the u…
+  M5                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility [operation=mark_agreed, state=agreed]
+  M5                             ↳ contract_note: Message envelope for polyglot mesh: translation visibility and precomputation strategy [operation=mark_agreed, state=agreed]
+  M5[per-meeting cap] $0.5855 >= $0.50; ending meeting to preserve budget for downstream meetings
+
+  ── M5 END ── outcome=MEETING_BUDGET
+     elapsed:        73.8s
+     this meeting:   59 calls, $0.5855
+     running totals: 184 calls, $1.6973 / $3.00 cap
+     artifacts:      3 (ruling×2, contract_note×2, implementation×1)
+
+==============================================================================
+T36 SUMMARY
+==============================================================================
+Total elapsed:  592.3s
+Total cost:     $1.6973  (cap $3.00)
+Total LLM calls: 184
+
+Per-agent token usage:
+  tweedledee         calls= 75 cost=$0.6762
+  tweedledum         calls= 47 cost=$0.5836
+  cheshire_cat       calls= 42 cost=$0.2869
+  queen_of_hearts    calls=  7 cost=$0.0689
+  caterpillar        calls=  7 cost=$0.0296
+  white_rabbit       calls=  3 cost=$0.0292
+  alice              calls=  3 cost=$0.0230
+
+Artifacts on disk:
+  stories/ (4 files)
+    story-001-monolingual-book-club-member-exchanges-messages-with-german-speaking-friend.md
+    story-002-polyglot-moderator-manages-cross-language-thread-without-drowning.md
+    story-003-japanese-speaker-enters-german-english-book-club-without-english-as-fallback.md
+    story-004-new-user-understands-how-to-authenticate-without-friction.md
+  architecture/ (3 files)
+    adr-001-translation-processing-location-and-data-residency-model-under-gdpr.md
+    adr-002-translation-service-bilingual-hub-vs-polyglot-mesh.md
+    adr-003-translation-service-architecture-commit-to-polyglot-mesh-model.md
+  tickets/ (6 files)
+    ticket-001-implement-authentication-without-friction-for-new-users.md
+    ticket-002-build-translation-processing-backend-with-gdpr-compliant-residency-handling.md
+    ticket-003-monolingual-user-receives-translated-messages-from-german-speaking-friend.md
+    ticket-004-polyglot-moderator-can-manage-multi-language-thread-without-context-drowning.md
+    ticket-005-japanese-speaker-can-join-german-english-book-club-without-english-as-fallback.md
+    ticket-006-offline-message-queue-for-polyglot-threads-fast-follow.md
+  rulings/ (5 files)
+    ruling-001-translation-processing-must-not-transit-untranslated-message-content-through-third-party-apis.md
+    ruling-002-message-retention-policy-must-be-explicit-and-enforced.md
+    ruling-003-authentication-must-use-encrypted-transport-and-hashed-password-storage.md
+    ruling-004-encryption-claim-scope-must-match-processing-reality.md
+    ruling-005-encryption-terminology-must-not-drift-during-implementation.md
+  implementations/ (1 files)
+    implementation-001-polyglot-message-list-with-per-language-translation-rendering.md
+  contract-notes/ (2 files)
+    contract-note-001-message-envelope-for-polyglot-mesh-translation-visibility.md
+    contract-note-002-message-envelope-for-polyglot-mesh-translation-visibility-and-precomputation-strategy.md
+
+Code shipped (project_root excluding .wonderland):
+  run.log (27326 bytes)
+
+Final rosters:
+  scoping: ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts'] — produce user stories + an architectural ADR + GDPR rulings
+  decomposition: ['cheshire_cat', 'dodo', 'white_rabbit'] — decompose the ADR + stories into v1 tickets
+  contract-negotiation: ['cheshire_cat', 'dodo', 'tweedledee', 'tweedledum'] — negotiate contracts the Tweedles will implement against
+  implementation: ['dodo', 'queen_of_hearts', 'tweedledee', 'tweedledum'] — ship code honoring the agreed contracts
+  review: ['caterpillar', 'dodo', 'tweedledee', 'tweedledum'] — Caterpillar reviews the shipped code; surface findings

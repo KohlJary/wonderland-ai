@@ -1,0 +1,301 @@
+diff --git a/src/backend/api/__init__.py b/src/backend/api/__init__.py
+index 869e087..12148e5 100644
+--- a/src/backend/api/__init__.py
++++ b/src/backend/api/__init__.py
+@@ -5,8 +5,10 @@ from fastapi import APIRouter
+ from src.backend.api.health import router as health_router
+ from src.backend.api.auth import router as auth_router
+ from src.backend.api.messages import router as messages_router
++from src.backend.api.blocks import router as blocks_router
+ 
+ api_router = APIRouter()
+ api_router.include_router(health_router)
+ api_router.include_router(auth_router)
+ api_router.include_router(messages_router, prefix="/api")
++api_router.include_router(blocks_router, prefix="/api")
+diff --git a/src/backend/api/blocks.py b/src/backend/api/blocks.py
+new file mode 100644
+index 0000000..cbc3178
+--- /dev/null
++++ b/src/backend/api/blocks.py
+@@ -0,0 +1,131 @@
++"""User blocking endpoints: POST /api/blocks/{user_id} (create), GET /api/blocks (list), DELETE /api/blocks/{user_id} (unblock).
++
++Per ADR: blocks are unidirectional, enforced at message send + list, soft blocking (no 404 exposure).
++"""
++
++from __future__ import annotations
++
++from fastapi import APIRouter, Depends, HTTPException, status
++from pydantic import BaseModel
++from sqlalchemy.orm import Session
++
++from src.backend.api.auth import get_current_user
++from src.backend.db import get_db
++from src.backend.models import Block, User
++
++router = APIRouter(prefix="/blocks", tags=["blocks"])
++
++
++class BlockResponse(BaseModel):
++    """Response for block operations."""
++
++    block_id: str
++    blocker_id: str
++    blocked_id: str
++    created_at: str
++
++    class Config:
++        from_attributes = True
++
++
++@router.post("/{blocked_user_id}", response_model=BlockResponse, status_code=status.HTTP_201_CREATED)
++def create_block(
++    blocked_user_id: str,
++    authorization: str | None = None,
++    db: Session = Depends(get_db),
++) -> BlockResponse:
++    """Create a block: the authenticated user blocks another user.
++    
++    Per ADR: blocking is unidirectional (only blocker can unblock).
++    Blocked user cannot send messages to conversations with the blocker.
++    
++    **Invariants enforced:**
++    - blocker_id != blocked_id (cannot block yourself)
++    - (blocker_id, blocked_id) unique constraint (prevent duplicate blocks)
++    - both users must exist
++    """
++    blocker = get_current_user(authorization=authorization, db=db)
++
++    # Validate that blocked_user exists
++    blocked_user = db.query(User).filter(User.id == blocked_user_id).first()
++    if not blocked_user:
++        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User to block not found")
++
++    # Cannot block yourself
++    if str(blocker.id) == blocked_user_id:
++        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot block yourself")
++
++    # Check if already blocked (idempotent: return 200 if already blocked)
++    existing = db.query(Block).filter(
++        Block.blocker_id == blocker.id,
++        Block.blocked_id == blocked_user_id,
++    ).first()
++
++    if existing:
++        return BlockResponse(
++            block_id=str(existing.id),
++            blocker_id=str(existing.blocker_id),
++            blocked_id=str(existing.blocked_id),
++            created_at=existing.created_at.isoformat() if existing.created_at else None,
++        )
++
++    # Create block
++    block = Block(blocker_id=blocker.id, blocked_id=blocked_user_id)
++    db.add(block)
++    db.commit()
++    db.refresh(block)
++
++    return BlockResponse(
++        block_id=str(block.id),
++        blocker_id=str(block.blocker_id),
++        blocked_id=str(block.blocked_id),
++        created_at=block.created_at.isoformat() if block.created_at else None,
++    )
++
++
++@router.get("", response_model=list[BlockResponse])
++def list_blocks(
++    authorization: str | None = None,
++    db: Session = Depends(get_db),
++) -> list[BlockResponse]:
++    """List all users blocked by the authenticated user.
++    
++    Returns the blocks created by the current user (where they are the blocker).
++    """
++    blocker = get_current_user(authorization=authorization, db=db)
++
++    blocks = db.query(Block).filter(Block.blocker_id == blocker.id).all()
++
++    return [
++        BlockResponse(
++            block_id=str(b.id),
++            blocker_id=str(b.blocker_id),
++            blocked_id=str(b.blocked_id),
++            created_at=b.created_at.isoformat() if b.created_at else None,
++        )
++        for b in blocks
++    ]
++
++
++@router.delete("/{blocked_user_id}", status_code=status.HTTP_204_NO_CONTENT)
++def unblock(
++    blocked_user_id: str,
++    authorization: str | None = None,
++    db: Session = Depends(get_db),
++) -> None:
++    """Unblock a user: the authenticated user removes a block.
++    
++    Per ADR: unblocking is unidirectional (only blocker can unblock).
++    Idempotent: unblocking a user who is not blocked returns 204 OK.
++    """
++    blocker = get_current_user(authorization=authorization, db=db)
++
++    # Find the block
++    block = db.query(Block).filter(
++        Block.blocker_id == blocker.id,
++        Block.blocked_id == blocked_user_id,
++    ).first()
++
++    if block:
++        db.delete(block)
++        db.commit()
+diff --git a/src/backend/api/messages.py b/src/backend/api/messages.py
+index 0d2d971..537646b 100644
+--- a/src/backend/api/messages.py
++++ b/src/backend/api/messages.py
+@@ -1,6 +1,7 @@
+ """Chat message endpoints: POST /api/messages (send), GET /api/chats/{chat_id}/messages (list), DELETE /api/messages/{message_id}.
+ 
+ Per contracts 001-004: async translation, soft-delete semantics, WebSocket for real-time.
++Block enforcement: message send blocked if recipient has blocked sender; list filters blocked senders.
+ This module defines the HTTP REST API; WebSocket handling is separate (see ws.py).
+ """
+ 
+@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
+ from src.backend.api.auth import get_current_user
+ from src.backend.db import get_db
+ from src.backend.models import (
++    Block,
+     Conversation,
+     LanguageEnum,
+     Message,
+@@ -66,6 +68,9 @@ def send_message(
+     
+     Per contract 004: message returns with translation_status='pending' and
+     translated_text=null initially. Translation is async; caller gets update event.
++    
++    **Block enforcement:** if the other user in the conversation has blocked the sender,
++    return 403 'you are blocked by this user'.
+     """
+     user = get_current_user(authorization=authorization, db=db)
+     
+@@ -81,6 +86,18 @@ def send_message(
+     if user.id not in (conv.user_1_id, conv.user_2_id):
+         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this conversation")
+     
++    # Determine the other user in the conversation
++    other_user_id = conv.user_2_id if user.id == conv.user_1_id else conv.user_1_id
++    
++    # Block check: has the other user blocked the sender?
++    is_blocked = db.query(Block).filter(
++        Block.blocker_id == other_user_id,
++        Block.blocked_id == user.id,
++    ).first() is not None
++    
++    if is_blocked:
++        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are blocked by this user")
++    
+     # Create message with pending translation status
+     message = Message(
+         conversation_id=conversation_id,
+@@ -127,6 +144,9 @@ def list_messages(
+     
+     Per contract 003: deleted messages (deleted_at IS NOT NULL) never appear.
+     Results ordered by created_at ascending.
++    
++    **Block enforcement:** filter out messages from users who have blocked the requesting user.
++    Per ADR: silent blocking semantics — conversation persists, blocked messages filtered.
+     """
+     user = get_current_user(authorization=authorization, db=db)
+     
+@@ -148,6 +168,13 @@ def list_messages(
+         Message.deleted_at.is_(None),
+     )
+     
++    # Block filter: exclude messages from users who have blocked the requesting user.
++    # Join to blocks table: where blocker_id matches message sender and blocked_id is the requesting user.
++    query = query.outerjoin(
++        Block,
++        (Block.blocker_id == Message.sender_id) & (Block.blocked_id == user.id),
++    ).filter(Block.id.is_(None))  # Keep only messages where no matching block exists
++    
+     if since:
+         try:
+             since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+diff --git a/src/backend/models.py b/src/backend/models.py
+index 55d27da..e3863f6 100644
+--- a/src/backend/models.py
++++ b/src/backend/models.py
+@@ -5,6 +5,7 @@ Models:
+ - Session: opaque session tokens with expiry
+ - Conversation: two-user pairing with language pair
+ - Message: message content, translation status, soft-delete
++- Block: user blocking with unidirectional control
+ """
+ 
+ from __future__ import annotations
+@@ -69,6 +70,18 @@ class User(Base):
+         cascade="all, delete-orphan",
+     )
+     messages = relationship("Message", foreign_keys="Message.sender_id", back_populates="sender")
++    blocks_as_blocker = relationship(
++        "Block",
++        foreign_keys="Block.blocker_id",
++        back_populates="blocker",
++        cascade="all, delete-orphan",
++    )
++    blocks_as_blocked = relationship(
++        "Block",
++        foreign_keys="Block.blocked_id",
++        back_populates="blocked",
++        cascade="all, delete-orphan",
++    )
+ 
+     def to_dict(self) -> dict:
+         """Serialize to JSON (excludes password_hash and deleted_at)."""
+@@ -204,3 +217,44 @@ class Message(Base):
+             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+             **({"sender_name": sender_name} if include_sender_name and sender_name else {}),
+         }
++
++
++class Block(Base):
++    """User blocking with unidirectional control.
++    
++    Invariants:
++    - blocker_id != blocked_id (user cannot block themselves)
++    - (blocker_id, blocked_id) is unique (per-pair uniqueness; prevents duplicate blocks)
++    - blocker_id and blocked_id are valid User references (ForeignKey)
++    - created_at is immutable; tracking when the block was created
++    - Only the blocker can create or delete a Block; the blocked party cannot modify it
++    
++    Semantics:
++    - When user A blocks user B, B cannot send messages to conversations with A
++    - When user A lists messages in a conversation, messages from users who blocked A are filtered out
++    - Hard-delete on User account deletion (via cascade on delete of associated user)
++    """
++
++    __tablename__ = "blocks"
++
++    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
++    blocker_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
++    blocked_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++
++    __table_args__ = (
++        UniqueConstraint("blocker_id", "blocked_id", name="uq_block_pair"),
++    )
++
++    # Relationships
++    blocker = relationship("User", foreign_keys=[blocker_id], back_populates="blocks_as_blocker")
++    blocked = relationship("User", foreign_keys=[blocked_id], back_populates="blocks_as_blocked")
++
++    def to_dict(self) -> dict:
++        """Serialize to JSON."""
++        return {
++            "block_id": str(self.id),
++            "blocker_id": str(self.blocker_id),
++            "blocked_id": str(self.blocked_id),
++            "created_at": self.created_at.isoformat() if self.created_at else None,
++        }

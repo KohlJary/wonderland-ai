@@ -32,20 +32,44 @@ import asyncio
 import contextlib
 import json
 import re
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, ValidationError
 
 from wonderland.llm import CachedBlock, Message, SystemPart
-from wonderland.utterance import Utterance
+from wonderland.primer import FRAMEWORK_PRIMER
+from wonderland.utterance import SpeechAct, Utterance
 
 if TYPE_CHECKING:
     from wonderland.caucus import Caucus
     from wonderland.identity import Identity
     from wonderland.llm import LLMClient
     from wonderland.memory import AgentMemory
+
+
+class AgentState(StrEnum):
+    """Per-agent activity state for turn-based quiescence detection.
+
+    The ThreadMonitor reads these to decide whether a meeting can quiesce
+    — a thread is quiescent iff every member is IDLE. This replaces the
+    wall-clock model where bus silence stood in for agent inactivity
+    (and missed slow tool loops + LLM calls in flight, see analysis 022).
+
+    States:
+    - IDLE: gather_triggers blocked, waiting for a turn signal. Truly silent.
+    - AWAITING_RESPONSE: in deliberate() / LLM call in flight. No bus output yet.
+    - IN_TOOL_LOOP: between LLM calls inside _complete_with_tools, executing tools.
+
+    The wall-clock timer remains as a safety net for hung LLM calls
+    (agent stuck in AWAITING_RESPONSE without state reset).
+    """
+
+    IDLE = "idle"
+    AWAITING_RESPONSE = "awaiting_response"
+    IN_TOOL_LOOP = "in_tool_loop"
 
 
 @dataclass(frozen=True)
@@ -61,30 +85,90 @@ class Context:
     relationships: str = ""
     current_thread: str = ""
     triggers: tuple[Utterance, ...] = field(default_factory=tuple)
+    engagement_state: str = ""
+    """Pre-trigger annotation: factual snapshot of what's been said and
+    shipped on the current thread (own turns + own artifacts + team
+    artifacts). Lets the agent's protocol's "by your Nth turn ship X"
+    rules see deterministic data instead of inferring from the history
+    transcript prose. Empty string when no thread context is available
+    (no triggers, fresh agent)."""
 
     def to_llm_request(self) -> tuple[list[SystemPart], list[Message]]:
         """Convert this context into ``LLMClient.complete()`` arguments.
 
-        Constitution and relationships become cached system prefixes (the
-        invariant + slow-changing layers). Current thread and triggers go
-        into the uncached tail. Triggers are joined into a single user
-        message — when the trigger set is multiple utterances the agent
-        sees them as a batched stimulus.
+        Layered prompt structure (each cached layer creates a cache
+        breakpoint):
+
+        - **Framework primer** — invariant per-call AND across agents.
+          Cast list, speech-act vocabulary, engagement grades, artifact
+          schemas, conflict-resolution table. The same content for every
+          agent so the cache write happens once across the team's first-
+          call activity. Per the T32 cache diagnostic in P6, this layer
+          also pushes every agent's combined cached prefix above Haiku
+          4.5's full-cache threshold (~7000 tokens) — without it,
+          smaller-constitution agents (Cat, Alice) sat below the
+          threshold and didn't cache at all.
+        - **Constitution** — invariant per-agent (loaded once).
+        - **Relationships** — slow-changing per-agent (the per-other-
+          agent notes for the speakers in the current trigger set).
+        - **Current thread** — fast-changing (history transcript). NOT
+          cached; the per-call delta lives here.
+        - **Triggers** — per-turn. In the user message, not the system
+          blocks.
         """
-        system: list[SystemPart] = [CachedBlock(self.constitution)]
+        system: list[SystemPart] = [
+            CachedBlock(FRAMEWORK_PRIMER),
+            CachedBlock(self.constitution),
+        ]
         if self.relationships:
             system.append(CachedBlock(self.relationships))
         if self.current_thread:
             system.append(self.current_thread)
 
         trigger_text = "\n\n".join(_format_utterance(u) for u in self.triggers)
-        messages: list[Message] = [{"role": "user", "content": trigger_text or "(no trigger)"}]
+        # Engagement state goes BEFORE the trigger in the user message
+        # so the LLM reads it first. Factual data (counts), not
+        # prescription — the protocol decides what to do with it.
+        body_parts: list[str] = []
+        if self.engagement_state:
+            body_parts.append(self.engagement_state)
+        body_parts.append(trigger_text or "(no trigger)")
+        messages: list[Message] = [{"role": "user", "content": "\n\n".join(body_parts)}]
         return system, messages
 
 
 def format_utterance(u: Utterance) -> str:
-    """Render one utterance as a labeled text block for prompt inclusion."""
-    return f"[{u.speaker.name} — {u.speech_act.value}]\n{u.content.body}"
+    """Render one utterance as a labeled text block for prompt inclusion.
+
+    Includes a brief artifact appendix when artifacts are attached, so
+    downstream readers can reference the canonical slug / number /
+    state of an artifact a previous speaker landed. Without this,
+    follow-up agents (e.g., a Tweedle responding to a sibling's
+    Contract Note) have no way to learn the slug they need to
+    reference, and the LLM either fabricates one or skips the
+    response.
+    """
+    head = f"[{u.speaker.name} — {u.speech_act.value}]\n{u.content.body}"
+    if not u.content.artifacts:
+        return head
+    bits: list[str] = []
+    for artifact in u.content.artifacts:
+        payload = artifact.payload
+        slug = payload.get("slug", "")
+        title = payload.get("title", "")
+        state = payload.get("state", "")
+        op = payload.get("operation", "")
+        parts = [artifact.kind]
+        if slug:
+            parts.append(f"slug={slug}")
+        if title:
+            parts.append(f'"{title}"')
+        if op:
+            parts.append(f"operation={op}")
+        if state:
+            parts.append(f"state={state}")
+        bits.append(" ".join(parts))
+    return f"{head}\n\n(artifacts: {'; '.join(bits)})"
 
 
 def format_transcript(utterances: Iterable[Utterance]) -> str:
@@ -263,6 +347,50 @@ class WonderlandAgent:
         self.bus = bus
         self.llm = llm
         self.pending: asyncio.Queue[Utterance] = asyncio.Queue()
+        # Hard budget gate. None = no cap (current default for direct
+        # agent construction). Runner.setup wires this for every agent
+        # so the speak loop refuses to spend once the team is over the
+        # cap. Per analysis 011: a soft cap (which only emits a warning
+        # event) failed during T36 — the team blew past $3 by 86%
+        # because each agent had in-flight calls when the cap fired
+        # and the auto-respond re-triggered everyone for another round.
+        # The hard gate is enforced inside speak() so no LLM call
+        # happens for an over-budget turn.
+        self._budget_ok: Callable[[], bool] | None = None
+        # Optional ThreadRoster reference for INVITE handling (Block 2c).
+        # When set, the agent's speak() can mutate the roster on INVITE
+        # publish so the named invitees join the meeting before the
+        # invite reaches the bus. None = no roster wiring = INVITE
+        # publishes through normally but doesn't change membership.
+        self._roster = None  # type: ignore[var-annotated]
+        # Optional Tools reference for tool-use deliberation. When set,
+        # subclasses' deliberate() can call _complete_with_tools to run
+        # the read/write/list/grep tool-use loop. Set via set_tools or
+        # the subclass constructor. None = no tools = single-shot
+        # complete() (the original behavior).
+        self._tools = None  # type: ignore[var-annotated]
+        # Optional callback for the late-publish stop-gap. When set, the
+        # speak loop calls handler(utterance) before publish; if the
+        # handler returns True, the utterance is suppressed (the target
+        # thread closed before this deliberation finished). The Runner
+        # installs this; agents constructed directly leave it None.
+        self._late_publish_handler = None  # type: ignore[var-annotated]
+        # Populated by _complete_with_tools each time write_file is
+        # successfully called inside the tools loop. Subclasses inspect
+        # it after parsing to coerce the bus utterance when the LLM
+        # writes files but picks a non-implementation decision (the
+        # working tree is the artifact, the bus utterance is the
+        # team's record of what happened).
+        self._last_write_file_paths: list[str] = []
+        # Turn-based quiescence support (analysis 022 follow-up). The
+        # speak() loop and tool loop call _set_state to mark the agent's
+        # current activity; the Runner installs a state-change handler
+        # that funnels updates to the ThreadMonitor. Quiescence becomes
+        # "all members IDLE" rather than "no bus events for N seconds".
+        self._state: AgentState = AgentState.IDLE
+        self._state_change_handler: (
+            Callable[[str, AgentState, AgentState], None] | None
+        ) = None
         # Register the bus subscription at construction time, *not* inside
         # listen()'s async body. Caucus implementations register the
         # subscriber queue synchronously when subscribe() is called; the
@@ -296,6 +424,17 @@ class WonderlandAgent:
         async for utterance in self._bus_iterator:
             if utterance.speaker.name == self.identity.name:
                 continue
+            # Seeds (Runner.convene re-publishing prior-thread artifacts)
+            # are context, not engagement triggers. Record them so they
+            # appear in compose_context's thread history — otherwise the
+            # LLM sees a meeting with no prior context and protests "I
+            # can't see the locked stories/ADRs you're referring to."
+            # Engagement still short-circuits via is_seed in
+            # EngagementRules.categorize, so seeds don't queue for
+            # deliberate(); they just become readable history.
+            if utterance.is_seed:
+                await self.memory.record(utterance)
+                continue
             if self.should_engage(utterance):
                 await self.memory.record(utterance)
                 await self.pending.put(utterance)
@@ -327,6 +466,7 @@ class WonderlandAgent:
         """
         thread_text = ""
         relationships_text = ""
+        engagement_state = ""
         if triggers:
             thread_id = triggers[0].thread_id
             history = await self.memory.query_by_thread(thread_id)
@@ -340,12 +480,76 @@ class WonderlandAgent:
             speaker_names.discard(self.identity.name)
             relationships_text = self.memory.relational.for_speakers(sorted(speaker_names))
 
+            engagement_state = self._build_engagement_state(thread_id, history)
+
         return Context(
             constitution=self.identity.constitution_text,
             relationships=relationships_text,
             current_thread=thread_text,
             triggers=tuple(triggers),
+            engagement_state=engagement_state,
         )
+
+    def _build_engagement_state(
+        self, thread_id: str, history: list[Utterance]
+    ) -> str:
+        """Compute factual counts for the engagement-state annotation.
+
+        Reads the thread history (already queried by compose_context) and
+        emits a concise summary the LLM can act on without re-deriving:
+        - this agent's prior turn count + speech-act breakdown
+        - this agent's artifacts shipped (count by kind)
+        - team-wide artifacts shipped (count by kind, includes own)
+
+        Format kept terse so it doesn't dominate the user message —
+        the trigger and thread-history transcript still carry the
+        narrative.
+        """
+        from collections import Counter
+
+        own_name = self.identity.name
+        # Fresh = utterances emitted in THIS thread; seeded = utterances
+        # re-published by Runner.convene from a prior thread. Surface
+        # them separately so the agent can tell "we already have these
+        # contracts (seeded)" from "I've shipped this much in this
+        # thread (fresh)" — without that split, an agent reading the
+        # engagement state thinks seeded artifacts are their own
+        # current-thread work.
+        fresh = [u for u in history if not u.is_seed]
+        seeded = [u for u in history if u.is_seed]
+
+        own_turns = [u for u in fresh if u.speaker.name == own_name]
+        own_acts = Counter(u.speech_act.value for u in own_turns)
+        own_artifacts = Counter(
+            a.kind for u in own_turns for a in u.content.artifacts
+        )
+        team_artifacts = Counter(
+            a.kind for u in fresh for a in u.content.artifacts
+        )
+        seeded_artifacts = Counter(
+            a.kind for u in seeded for a in u.content.artifacts
+        )
+
+        def _fmt_counter(c: Counter) -> str:
+            if not c:
+                return "none"
+            return ", ".join(f"{k}×{v}" for k, v in sorted(c.items(), key=lambda kv: -kv[1]))
+
+        lines = [f"[engagement state on thread {thread_id!r}]"]
+        if own_turns:
+            lines.append(
+                f"your prior turns on this thread: {len(own_turns)} ({_fmt_counter(own_acts)})"
+            )
+        else:
+            lines.append("your prior turns on this thread: 0")
+        lines.append(f"your artifacts shipped on this thread: {_fmt_counter(own_artifacts)}")
+        lines.append(f"team artifacts shipped on this thread: {_fmt_counter(team_artifacts)}")
+        if seeded_artifacts:
+            lines.append(
+                f"context from prior threads (seeded): {_fmt_counter(seeded_artifacts)}"
+            )
+        lines.append("[end engagement state]")
+        return "\n".join(lines)
 
     async def deliberate(self, context: Context) -> Utterance | None:
         """Decide what to say. Return ``None`` for silence.
@@ -355,6 +559,199 @@ class WonderlandAgent:
         produce an Utterance.
         """
         return None
+
+    def set_roster(self, roster) -> None:  # type: ignore[no-untyped-def]
+        """Wire (or clear) a ThreadRoster reference. When set, an INVITE
+        utterance the agent emits adds the named addressed_to agents to
+        the thread's roster *before* publish, so the bus delivers the
+        invite to the new members. None = no roster wiring.
+        """
+        self._roster = roster
+
+    def set_tools(self, tools) -> None:  # type: ignore[no-untyped-def]
+        """Wire (or clear) a Tools reference. When set, subclasses' deliberate()
+        can call _complete_with_tools to run the read/write/list/grep
+        tool-use loop. None = no tools = single-shot complete() (the
+        original behavior).
+        """
+        self._tools = tools
+
+    def set_state_change_handler(
+        self,
+        handler,  # type: ignore[no-untyped-def]
+    ) -> None:
+        """Wire (or clear) the agent-state change handler.
+
+        ``handler(agent_name, from_state, to_state)`` is called by
+        ``_set_state`` on every transition. The Runner installs this so
+        the ThreadMonitor can detect quiescence based on actual agent
+        activity rather than wall-clock bus silence.
+        """
+        self._state_change_handler = handler
+
+    def _set_state(self, new_state: AgentState) -> None:
+        """Update the agent's activity state and notify any handler.
+
+        No-op if the state is unchanged (avoids handler spam from the
+        tool loop re-entering AWAITING_RESPONSE on each iteration when
+        already there). Handler exceptions are swallowed — a buggy
+        monitor must not kill the speak loop.
+        """
+        if new_state is self._state:
+            return
+        old = self._state
+        self._state = new_state
+        if self._state_change_handler is not None:
+            try:
+                self._state_change_handler(self.identity.name, old, new_state)
+            except Exception as exc:
+                import sys
+
+                print(
+                    f"[{self.identity.name}] state-change handler raised "
+                    f"{type(exc).__name__}: {exc} — ignoring",
+                    file=sys.stderr,
+                )
+
+    def set_late_publish_handler(
+        self,
+        handler,  # type: ignore[no-untyped-def]
+    ) -> None:
+        """Wire (or clear) the late-publish handler.
+
+        ``handler(utterance) -> bool`` is called by ``speak()`` right
+        before publishing. If it returns ``True``, the utterance is
+        suppressed (the framework treats it as a "late" deliberation
+        whose target thread already closed) — speak() skips publish and
+        memory.record. If ``False`` (default behavior when no handler
+        is wired), publish proceeds normally.
+
+        The Runner installs this so it can detect the slow-deliberation-
+        crosses-meeting-boundaries pattern surfaced in T36 v17/v18 and
+        roadmap 29497820. This is a stop-gap until the big Dodo
+        meeting-orchestration rework lands.
+        """
+        self._late_publish_handler = handler
+
+    @property
+    def tools(self):  # type: ignore[no-untyped-def]
+        return self._tools
+
+    async def _complete_with_tools(
+        self,
+        system: list,  # type: ignore[type-arg]
+        messages: list,  # type: ignore[type-arg]
+        max_tool_iterations: int = 20,
+    ) -> str:
+        """Tool-use loop. Calls the LLM with tools=[...]; if the response
+        is a tool_use, executes the tools, appends results, calls again.
+        Returns the final text response when the LLM stops requesting tools.
+
+        ``max_tool_iterations`` caps the loop to prevent runaway tool use
+        on a malformed prompt. Subclasses' protocols ask for a final
+        JSON response; if the LLM iterates past the cap without producing
+        one, this returns "" so the parser raises and the speak loop
+        treats it as silence.
+
+        Bumped from 10 → 20 in T38 Session 2 diagnostics: continuation-
+        session Tweedles legitimately needed more reads (read existing
+        models.py + messages.py + users.py + schemas.py + tests + git_diff
+        to understand what already shipped) before designing the diff.
+        At 10 iterations they'd exhaust on read_file calls and never
+        emit the final JSON. Risk of feedback loops is low — the
+        toolset (read/write/list/grep/git_status/git_diff) is local-
+        only with no network / process-spawning paths.
+
+        Side effect: ``self._last_write_file_paths`` is reset at entry
+        and populated as ``write_file`` tool calls succeed. Subclasses
+        can read it after parsing to coerce decisions when the LLM
+        writes files but picks a non-implementation utterance.
+        """
+        assert self._tools is not None, "set_tools must have been called"
+        assert self.llm is not None
+        self._last_write_file_paths = []
+        tool_defs = self._tools.tool_definitions()
+
+        # Working copy of messages we'll extend with assistant + tool_result
+        # turns. The caller's `messages` is preserved.
+        loop_messages = list(messages)
+
+        for _ in range(max_tool_iterations):
+            # Flip back to AWAITING_RESPONSE before each LLM call. On the
+            # first iteration this is a no-op (speak() already set us
+            # there); on subsequent iterations we're transitioning back
+            # from IN_TOOL_LOOP. _set_state is no-op on no-change so the
+            # diagnostic distinction is clean.
+            self._set_state(AgentState.AWAITING_RESPONSE)
+            result = await self.llm.complete(
+                system=system,
+                messages=loop_messages,
+                tools=tool_defs,
+            )
+            stop_reason = result.stop_reason
+            content_blocks = result.raw.content if result.raw is not None else []
+
+            if stop_reason != "tool_use":
+                return result.text
+
+            # About to execute tools — mark state so the monitor sees
+            # us as still active even though we're not making LLM calls.
+            self._set_state(AgentState.IN_TOOL_LOOP)
+            # Extract tool_use blocks; build tool_result blocks for each.
+            assistant_blocks: list[dict] = []
+            tool_results: list[dict] = []
+            for block in content_blocks:
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    assistant_blocks.append({"type": "text", "text": block.text})
+                elif btype == "tool_use":
+                    assistant_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": dict(block.input) if block.input else {},
+                        }
+                    )
+                    try:
+                        tool_input = dict(block.input) if block.input else {}
+                        tool_output = self._tools.execute(block.name, tool_input)
+                        if block.name == "write_file":
+                            path = tool_input.get("path")
+                            if isinstance(path, str):
+                                self._last_write_file_paths.append(path)
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": tool_output,
+                            }
+                        )
+                    except Exception as exc:  # ToolError + anything else
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": f"error: {exc}",
+                                "is_error": True,
+                            }
+                        )
+
+            loop_messages.append({"role": "assistant", "content": assistant_blocks})
+            loop_messages.append({"role": "user", "content": tool_results})
+
+        return ""
+
+    def set_budget_guard(self, guard: Callable[[], bool] | None) -> None:
+        """Wire (or clear) the hard budget gate. ``guard()`` returns True
+        when the agent is allowed to spend on a deliberate() call. Called
+        before context composition so an over-budget turn pays nothing.
+
+        The Runner installs this for every agent during setup. Direct
+        agent construction (tests, demos) leaves it unset; with no
+        guard, the cap behaves as before this change (no enforcement).
+        """
+        self._budget_ok = guard
 
     async def speak(self) -> None:
         """Pull triggers, deliberate, publish + record on output.
@@ -367,26 +764,79 @@ class WonderlandAgent:
         """
         while True:
             triggers = await self.gather_triggers()
-            context = await self.compose_context(triggers)
-            try:
-                utterance = await self.deliberate(context)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                # Drop this turn, keep the loop alive for the next trigger.
-                # Logged via stderr so the failure is visible without
-                # forcing every consumer to wire a logger.
-                import sys
-
-                print(
-                    f"[{self.identity.name}] deliberate() raised "
-                    f"{type(exc).__name__}: {exc} — treating as silence",
-                    file=sys.stderr,
-                )
+            # Hard budget gate. If the team is over the cap, drop this
+            # turn before we incur any LLM cost. The trigger is already
+            # consumed from `pending`, so the queue doesn't grow; we
+            # just don't deliberate. The Runner emits the
+            # `budget_exceeded` event once when the cap is first
+            # crossed, so the user sees the cause; subsequent silenced
+            # turns are intentional.
+            if self._budget_ok is not None and not self._budget_ok():
                 continue
-            if utterance is not None:
-                await self.bus.publish(utterance)
-                await self.memory.record(utterance)
+            # Mark active before any LLM cost is incurred. The finally
+            # block restores IDLE on every exit path (publish, silence,
+            # exception, late-publish suppression) so the ThreadMonitor
+            # reliably sees the agent become idle exactly once per turn.
+            self._set_state(AgentState.AWAITING_RESPONSE)
+            try:
+                context = await self.compose_context(triggers)
+                try:
+                    utterance = await self.deliberate(context)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # Drop this turn, keep the loop alive for the next trigger.
+                    # Logged via stderr so the failure is visible without
+                    # forcing every consumer to wire a logger.
+                    import sys
+
+                    print(
+                        f"[{self.identity.name}] deliberate() raised "
+                        f"{type(exc).__name__}: {exc} — treating as silence",
+                        file=sys.stderr,
+                    )
+                    continue
+                if utterance is not None:
+                    # Late-publish stop-gap (roadmap 29497820): if a slow
+                    # deliberation finished after its target thread closed,
+                    # suppress the utterance rather than silently publishing
+                    # into a settled thread. Without this, T36 v17/v18 had
+                    # contract_notes landing on already-closed threads —
+                    # the bus accepted them but the meeting capture had
+                    # moved on, so the work was lost from the team's view.
+                    if self._late_publish_handler is not None and self._late_publish_handler(
+                        utterance
+                    ):
+                        continue
+                    # Block 2c: INVITE handling. When the agent emits an
+                    # INVITE addressed to specific other agents, add those
+                    # agents to the thread's roster *before* publishing,
+                    # so the bus delivers the invite (and all subsequent
+                    # thread utterances) to them. Without this, the
+                    # invitees aren't in the roster yet, so the bus
+                    # filters them out and they never see the invite.
+                    self._apply_invite_if_any(utterance)
+                    await self.bus.publish(utterance)
+                    await self.memory.record(utterance)
+            finally:
+                self._set_state(AgentState.IDLE)
+
+    def _apply_invite_if_any(self, utterance: Utterance) -> None:
+        """If ``utterance`` is an INVITE with addressed_to agents, add
+        them to the roster (no-op if no roster wired or thread is open).
+        """
+        if utterance.speech_act is not SpeechAct.INVITE:
+            return
+        if self._roster is None:
+            return
+        if self._roster.is_open(utterance.thread_id):
+            # Open threads include everyone already; nothing to add.
+            return
+        addressed = utterance.addressed_to
+        if not isinstance(addressed, list):
+            return
+        for invitee in addressed:
+            self._roster.add_member(utterance.thread_id, invitee.name)
 
     # ------------------------------------------------------------------ #
     # Lifecycle

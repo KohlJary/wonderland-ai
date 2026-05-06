@@ -114,16 +114,26 @@ def test_format_transcript_preserves_order() -> None:
 
 
 def test_context_to_llm_request_caches_constitution() -> None:
+    from wonderland.primer import FRAMEWORK_PRIMER
+
     ctx = Context(constitution="You are X.")
     system, messages = ctx.to_llm_request()
-    assert system == [CachedBlock("You are X.")]
+    # Position 0 is the framework primer (shared across all agents); position 1
+    # is the per-agent constitution. Per the T32 cache fix in P6.
+    assert system == [
+        CachedBlock(FRAMEWORK_PRIMER),
+        CachedBlock("You are X."),
+    ]
     assert messages == [{"role": "user", "content": "(no trigger)"}]
 
 
 def test_context_to_llm_request_caches_relationships_when_present() -> None:
+    from wonderland.primer import FRAMEWORK_PRIMER
+
     ctx = Context(constitution="You are X.", relationships="Tweedles overengineer.")
     system, _ = ctx.to_llm_request()
     assert system == [
+        CachedBlock(FRAMEWORK_PRIMER),
         CachedBlock("You are X."),
         CachedBlock("Tweedles overengineer."),
     ]
@@ -137,8 +147,9 @@ def test_context_to_llm_request_appends_uncached_thread() -> None:
     )
     system, _ = ctx.to_llm_request()
     assert system[-1] == "thread snapshot"  # plain str, no cache marker
-    assert isinstance(system[0], CachedBlock)
-    assert isinstance(system[1], CachedBlock)
+    # Primer + constitution + relationships are all cached blocks before the thread
+    assert all(isinstance(s, CachedBlock) for s in system[:-1])
+    assert len(system) == 4  # primer, constitution, relationships, thread
 
 
 def test_context_to_llm_request_formats_triggers_into_user_message() -> None:

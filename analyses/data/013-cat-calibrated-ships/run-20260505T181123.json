@@ -1,0 +1,188 @@
+{
+  "run_id": "20260505T181123",
+  "model": "claude-haiku-4-5-20251001",
+  "pricing_per_mtok": {
+    "input": 1.0,
+    "output": 5.0,
+    "cache_write_5m": 1.25,
+    "cache_read": 0.1
+  },
+  "total_cost": 0.130213,
+  "total_calls": 16,
+  "per_agent": {
+    "queen_of_hearts": {
+      "calls": 6,
+      "input_tokens": 17174,
+      "output_tokens": 3959,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 68004,
+      "cost": 0.0437694
+    },
+    "cheshire_cat": {
+      "calls": 8,
+      "input_tokens": 30769,
+      "output_tokens": 5154,
+      "cache_creation_input_tokens": 7224,
+      "cache_read_input_tokens": 50568,
+      "cost": 0.0706258
+    },
+    "alice": {
+      "calls": 2,
+      "input_tokens": 1162,
+      "output_tokens": 2640,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14562,
+      "cost": 0.0158182
+    }
+  },
+  "entries": [
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 118,
+      "output_tokens": 209,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.002296,
+      "timestamp": "2026-05-05T18:11:28.035138+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 118,
+      "output_tokens": 444,
+      "cache_creation_input_tokens": 7224,
+      "cache_read_input_tokens": 0,
+      "cost": 0.011368,
+      "timestamp": "2026-05-05T18:11:33.879586+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 725,
+      "output_tokens": 1019,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.006542,
+      "timestamp": "2026-05-05T18:11:47.648877+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 118,
+      "output_tokens": 2329,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7281,
+      "cost": 0.012491,
+      "timestamp": "2026-05-05T18:11:51.153039+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 1044,
+      "output_tokens": 311,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7281,
+      "cost": 0.003327,
+      "timestamp": "2026-05-05T18:11:56.064209+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 983,
+      "output_tokens": 611,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.005171,
+      "timestamp": "2026-05-05T18:11:56.991740+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1695,
+      "output_tokens": 508,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.004957,
+      "timestamp": "2026-05-05T18:12:03.702405+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 2766,
+      "output_tokens": 460,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.005788,
+      "timestamp": "2026-05-05T18:12:10.384618+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 2115,
+      "output_tokens": 992,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.008208,
+      "timestamp": "2026-05-05T18:12:11.000897+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 3067,
+      "output_tokens": 566,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.00703,
+      "timestamp": "2026-05-05T18:12:19.680348+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 4154,
+      "output_tokens": 716,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.008456,
+      "timestamp": "2026-05-05T18:12:20.794209+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 5375,
+      "output_tokens": 939,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.010792,
+      "timestamp": "2026-05-05T18:12:33.928274+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 4501,
+      "output_tokens": 923,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.010249,
+      "timestamp": "2026-05-05T18:12:47.555216+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 7157,
+      "output_tokens": 1049,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.013124,
+      "timestamp": "2026-05-05T18:13:01.219122+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 6390,
+      "output_tokens": 658,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11334,
+      "cost": 0.010813,
+      "timestamp": "2026-05-05T18:13:09.990445+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 8779,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7224,
+      "cost": 0.009596,
+      "timestamp": "2026-05-05T18:13:11.935063+00:00"
+    }
+  ],
+  "outcome": "complete",
+  "elapsed_seconds": 167.18,
+  "budget_dollars": 1.5,
+  "budget_exceeded": false
+}

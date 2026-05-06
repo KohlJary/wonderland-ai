@@ -32,11 +32,13 @@ def test_substantive_and_procedural_partition_the_enum() -> None:
 
 
 def test_substantive_count_matches_spec() -> None:
-    assert len(SUBSTANTIVE_ACTS) == 13
+    # 13 from WONDERLAND_SPEC §6 + contract_note added in P6.T35.
+    assert len(SUBSTANTIVE_ACTS) == 14
 
 
 def test_procedural_count_matches_spec() -> None:
-    assert len(PROCEDURAL_ACTS) == 4
+    # 4 from WONDERLAND_SPEC §6 + invite added in P6 Block 2c.
+    assert len(PROCEDURAL_ACTS) == 5
 
 
 @pytest.mark.parametrize(

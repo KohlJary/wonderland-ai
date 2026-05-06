@@ -267,9 +267,7 @@ class TestScenarioRegistry:
         )
 
     @staticmethod
-    def _title_and_severity_from_file(
-        path: Path, *, fallback_title: str
-    ) -> tuple[str, Severity]:
+    def _title_and_severity_from_file(path: Path, *, fallback_title: str) -> tuple[str, Severity]:
         title = fallback_title
         severity = Severity.CURIOSITY  # safe default if the file is malformed
         try:

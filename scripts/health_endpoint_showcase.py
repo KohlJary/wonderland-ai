@@ -50,7 +50,7 @@ DEFAULT_DIRECTIVE = (
     "Add a GET /health endpoint to our Phoenix web app. It will be polled "
     "every 5 seconds by our Kubernetes liveness probe — no other consumers "
     "in v1, no auth, no dependency checks. Return HTTP 200 with the JSON "
-    "body {\"status\":\"ok\"} whenever the app is up. Ship as the next "
+    'body {"status":"ok"} whenever the app is up. Ship as the next '
     "deploy."
 )
 DEFAULT_TIMEOUT_S = 180.0
@@ -113,6 +113,7 @@ async def run_showcase(
     def usage_cb(name: str):
         def _cb(u: TokenUsage) -> None:
             usage[name].append(u)
+
         return _cb
 
     bus = InMemoryCaucus()
@@ -224,8 +225,7 @@ async def run_showcase(
                 file=sys.stderr,
             )
             print(
-                f"  Last observed state: "
-                f"{monitor.thread_state(thread_id).value}",
+                f"  Last observed state: {monitor.thread_state(thread_id).value}",
                 file=sys.stderr,
             )
             exit_code = 1

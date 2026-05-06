@@ -1,0 +1,37 @@
+==============================================================================
+Live buzz-in smoke test
+==============================================================================
+Project root: /tmp/buzz-in
+Roster:       tweedledee, tweedledum (+ dodo, auto-added)
+NOT in room:  cheshire_cat, alice, white_rabbit, mad_hatter,
+              caterpillar, queen_of_hearts, dormouse
+Budget:       $0.50 hard cap
+
+[t=  0.00s] cheshire_cat       proposal       →caucus We have a half-finished proposal lying around: build an event-sourced
+[t=  9.05s] tweedledee         invite         →[cheshire_cat] The Cat's proposal surfaces real architectural questions but they're not resolved enough for the Tweedles to lock a contract. Before Tweedle…
+[t= 14.57s] cheshire_cat       question       →caucus The Tweedles have hit a real architectural frontier — three questions that sound like implementation but aren't. Before they can lock a cont…
+[t= 14.65s] tweedledum         invite         →[cheshire_cat] Cat, we need you back in the room. You've surfaced real architectural questions that we can't resolve at the seam. Specific blockers from my…
+[t= 25.53s] cheshire_cat       reframe        →caucus You've correctly identified that these three questions collapse separate domains. Before we can resolve them together, we need to separate t…
+[t= 46.04s] <thread_monitor>   running → quiescent
+[t= 46.04s] dodo               acknowledgment →caucus Thread ambig-meeting → complete. The team has gone quiet with no open expectations; the directive is settled.
+[t= 46.05s] <thread_monitor>   running → complete
+[t= 46.05s] <complete>           thread settled cleanly
+
+--- Summary ---
+Elapsed:        46.0s
+Total cost:     $0.0803
+LLM calls:      10
+
+Speech acts:
+  invite             2
+  proposal           1
+  question           1
+  reframe            1
+  acknowledgment     1
+
+=== BUZZ-IN OUTCOMES ===
+INVITEs issued:        2
+  tweedledee → cheshire_cat
+  tweedledum → cheshire_cat
+Cat engaged in meeting: True
+Final roster (ambig-meeting): ['cheshire_cat', 'dodo', 'tweedledee', 'tweedledum']
