@@ -1,0 +1,26 @@
+name: smoke
+description: |
+  One-meeting smoke-test workflow. Alice produces a single user
+  story from the directive, then quiesces. Used to verify the
+  workflow loader + runner integration without spending much.
+
+  Typical cost: ~$0.10 / ~30 seconds. Use this for "did I break
+  the substrate?" sanity checks; use canonical for actual feature
+  work.
+
+version: 1
+
+defaults:
+  budget_dollars: 0.50
+  timeout_seconds: 180.0
+  quiescence_seconds: 60.0
+
+meetings:
+  - id: scoping
+    label: M1
+    goal: produce a user story from the directive
+    roster: [alice]
+    meeting_budget: 0.20
+    # convenor_directive omitted: entry meeting, runtime fills with
+    # the user's directive
+    seeds: []

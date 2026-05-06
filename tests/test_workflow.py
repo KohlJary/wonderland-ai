@@ -203,10 +203,20 @@ class TestLoader:
 # ---------------------------------------------------------------------------
 
 
-class TestCanonical:
+@pytest.mark.parametrize("workflow_name", list_workflows())
+class TestBundledWorkflowIntegrity:
+    """Integrity invariants every bundled workflow must satisfy.
+
+    Parameterized over every YAML in closet/workflows/, so adding a
+    new workflow file automatically adds new test runs. Catches the
+    common mistakes (duplicate ids, dangling seed references,
+    missing budgets, budget sum over cap) at unit-test time rather
+    than at the cost of a live run.
+    """
+
     @pytest.fixture
-    def wf(self):
-        return load_workflow("canonical")
+    def wf(self, workflow_name):
+        return load_workflow(workflow_name)
 
     def test_meeting_ids_are_unique(self, wf):
         ids = [m.id for m in wf.meetings]
@@ -251,6 +261,31 @@ class TestCanonical:
             f"but global cap is ${global_cap:.2f}"
         )
 
+    def test_meetings_form_an_ordered_chain(self, wf):
+        # Every non-entry meeting either seeds from at least one prior
+        # meeting OR has no seeds (rare but valid — purely directive-driven).
+        # The point is: no meeting accidentally references a meeting that
+        # never appears in this workflow.
+        all_ids = {m.id for m in wf.meetings}
+        for meeting in wf.meetings:
+            for seed in meeting.seeds:
+                if seed.from_meeting != "any":
+                    assert seed.from_meeting in all_ids, (
+                        f"meeting {meeting.id!r} seeds from "
+                        f"{seed.from_meeting!r} which doesn't exist in this "
+                        f"workflow (members: {sorted(all_ids)})"
+                    )
+
+
+class TestCanonicalSpecifics:
+    """Tests for the canonical workflow's particular shape — these
+    invariants are about *the canonical 5-meeting sequence* and
+    don't generalize to other workflows."""
+
+    @pytest.fixture
+    def wf(self):
+        return load_workflow("canonical")
+
     def test_review_meeting_seeds_from_implementation(self, wf):
         review = wf.meeting_by_id("review")
         assert review is not None
@@ -274,6 +309,42 @@ class TestCanonical:
         assert contract_seed is not None
         assert contract_seed.where == {"state": "agreed"}
         assert contract_seed.fallback == "any"
+
+
+class TestTDDSpecifics:
+    """Tests for the TDD workflow's particular shape — what makes it
+    different from canonical."""
+
+    @pytest.fixture
+    def wf(self):
+        return load_workflow("tdd")
+
+    def test_inserts_test_scenarios_meeting_between_contracts_and_impl(self, wf):
+        ids = [m.id for m in wf.meetings]
+        assert "test-scenarios" in ids
+        assert ids.index("test-scenarios") == ids.index("contract-negotiation") + 1
+        assert ids.index("implementation") == ids.index("test-scenarios") + 1
+
+    def test_test_scenarios_meeting_includes_hatter(self, wf):
+        ts = wf.meeting_by_id("test-scenarios")
+        assert ts is not None
+        assert "mad_hatter" in ts.roster
+
+    def test_implementation_seeds_from_test_scenarios(self, wf):
+        # The thing that makes this TDD: implementation reads Hatter's
+        # tests as the closure criterion.
+        impl = wf.meeting_by_id("implementation")
+        assert impl is not None
+        assert any(
+            s.from_meeting == "test-scenarios" and "test_scenario" in s.kinds
+            for s in impl.seeds
+        ), "implementation should seed from test_scenarios"
+
+    def test_has_more_meetings_than_canonical(self, wf):
+        canonical = load_workflow("canonical")
+        assert len(wf.meetings) > len(canonical.meetings), (
+            "TDD workflow should add at least one meeting vs canonical"
+        )
 
 
 # ---------------------------------------------------------------------------
