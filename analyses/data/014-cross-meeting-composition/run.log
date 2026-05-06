@@ -1,0 +1,82 @@
+==============================================================================
+Cross-meeting follow-on test: Block 2b simulated by hand
+==============================================================================
+Project root: /tmp/contract-followon
+Roster:       tweedledee, tweedledum, cheshire_cat (+ dodo)
+Goal:         produce Contract Note for WebSocket state management
+Budget:       $1.00 hard cap
+
+--- Dance ---
+[t=  0.00s] cheshire_cat       proposal       The architecture for the translation chat MVP. Three forces in tension:
+                             ↳ adr: Third-Party Translation Service with Synchronous On-Read Model
+[t=  6.93s] tweedledum         concern        The Cat's proposal is sound on the architecture — on-read translation keeps the GDPR surface minimal and the 2-second SLA with graceful degr…
+[t=  9.38s] tweedledee         contract_note  The Cat's proposal settles the persistence model (originals only, translate on read) and the 2s SLA graceful-degradation strategy. I'm readi…
+                             ↳ contract_note: Translation Status Signal Shape [operation=propose, state=proposed]
+[t= 13.47s] cheshire_cat       concern        Tweedledum has surfaced three load-bearing backend implications that the proposal does not yet fully specify. These are not objections to th…
+[t= 18.01s] tweedledum         contract_note  Tweedledee's contract note is well-scoped — the translation-status signal shape is exactly the seam we need to lock down before implementati…
+                             ↳ contract_note: Translation Status Signal Shape [operation=respond, state=counterpart_assessed]
+[t= 26.91s] tweedledee         contract_note  Tweedledum's concern surfaces three load-bearing implications the Cat's proposal didn't fully spec. I'm opening contract notes on two of the…
+                             ↳ contract_note: Translation SLA Fallback Behavior [operation=propose, state=proposed]
+                             ↳ contract_note: Translation Caching Strategy and GDPR Surface [operation=propose, state=proposed]
+                             ↳ contract_note: WebSocket Statefulness: Sticky Sessions vs. Shared Cache [operation=propose, state=proposed]
+[t= 40.54s] tweedledum         contract_note  Tweedledee has opened three contract notes on load-bearing implications—SLA fallback, caching strategy, and WebSocket statefulness. I'm resp…
+                             ↳ contract_note: Translation SLA Fallback Behavior [operation=respond, state=counterpart_assessed]
+                             ↳ contract_note: Translation Caching Strategy and GDPR Surface [operation=respond, state=counterpart_assessed]
+                             ↳ contract_note: WebSocket Statefulness: Sticky Sessions vs. Shared Cache [operation=respond, state=counterpart_assessed]
+[t= 44.30s] tweedledee         contract_note  Tweedledum's response surfaces the two hard contract questions: what the frontend does with a translation timeout, and whether cached transl…
+                             ↳ contract_note: Translation Status Signal Shape [operation=mark_agreed, state=agreed]
+                             ↳ contract_note: Translation SLA Fallback Behavior [operation=respond, state=counterpart_assessed]
+                             ↳ contract_note: Translation Caching Strategy and GDPR Surface [operation=respond, state=counterpart_assessed]
+                             ↳ contract_note: WebSocket Message Envelope Extension for Translation Status [operation=propose, state=proposed]
+[t= 54.42s] tweedledee         contract_note  Tweedledum's response on all three seams is solid. The failure_reason enum gives the frontend the granularity we need to show the right stat…
+                             ↳ contract_note: Translation SLA Fallback Behavior [operation=mark_agreed, state=agreed]
+                             ↳ contract_note: Translation Caching Strategy and GDPR Surface [operation=mark_agreed, state=agreed]
+                             ↳ contract_note: WebSocket Statefulness: Sticky Sessions vs. Shared Cache [operation=mark_agreed, state=agreed]
+                             ↳ contract_note: WebSocket Message Envelope Extension for Translation Status [operation=mark_agreed, state=agreed]
+[tweedledum] deliberate() raised TweedleResponseParseError: Tweedle response failed schema validation: 3 validation errors for TweedleResponse
+contract_notes.0
+  Value error, TweedleContractNoteAction(mark_agreed) requires resolution — name what got agreed / why the escalation / why the deferral. [type=value_error, input_value={'operation': 'mark_agree...ut as non-error state)'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+contract_notes.1
+  Value error, TweedleContractNoteAction(mark_agreed) requires resolution — name what got agreed / why the escalation / why the deferral. [type=value_error, input_value={'operation': 'mark_agree...d cache, GDPR-bounded)'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+contract_notes.2
+  Value error, TweedleContractNoteAction(mark_agreed) requires resolution — name what got agreed / why the escalation / why the deferral. [type=value_error, input_value={'operation': 'mark_agree...less service topology)'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error — treating as silence
+[tweedledum] deliberate() raised TweedleResponseParseError: Tweedle response failed schema validation: 4 validation errors for TweedleResponse
+contract_notes.0
+  Value error, TweedleContractNoteAction(mark_agreed) requires contract_version — the locked version both sides accept. [type=value_error, input_value={'operation': 'mark_agree...d renders accordingly.'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+contract_notes.1
+  Value error, TweedleContractNoteAction(mark_agreed) requires contract_version — the locked version both sides accept. [type=value_error, input_value={'operation': 'mark_agree... GDPR surface minimal.'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+contract_notes.2
+  Value error, TweedleContractNoteAction(mark_agreed) requires contract_version — the locked version both sides accept. [type=value_error, input_value={'operation': 'mark_agree...ity needed on backend.'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+contract_notes.3
+  Value error, TweedleContractNoteAction(mark_agreed) requires contract_version — the locked version both sides accept. [type=value_error, input_value={'operation': 'mark_agree...d: contract is locked.'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error — treating as silence
+[t= 85.09s] <thread_monitor>   running → quiescent (no open expectations; silent 30.7s)
+[t= 85.09s] dodo               acknowledgment Thread main → complete. The team has gone quiet with no open expectations; the directive is settled.
+[t= 85.09s] <thread_monitor>   running → complete (acknowledgment of completion)
+[t= 85.09s] <complete>           thread settled cleanly
+
+--- Summary ---
+Elapsed:        85.1s
+Total cost:     $0.0997
+LLM calls:      10
+
+Speech acts:
+  contract_note      6
+  concern            2
+  proposal           1
+  acknowledgment     1
+
+Artifacts on disk:
+  contract_note      16
+  adr                1
+
+Per-agent token usage:
+  tweedledum         calls=  5 in=   8159 out=  4148 cost=$0.0498
+  tweedledee         calls=  4 in=   5078 out=  4513 cost=$0.0467
+  cheshire_cat       calls=  1 in=    363 out=   430 cost=$0.0032

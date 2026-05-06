@@ -126,12 +126,31 @@ def test_cat_rules_concern_engages_when_architectural_keyword_present() -> None:
     assert rules.categorize(not_architectural) is Engagement.ALMOST_NEVER
 
 
-def test_cat_rules_story_engages_when_architectural_primitive_surfaces() -> None:
+def test_cat_rules_story_engages_on_every_alice_story() -> None:
+    """Cat wakes on every Alice story regardless of body keywords; the
+    deliberate() step decides whether the cumulative picture warrants
+    synthesizing an ADR. The previous keyword filter (real-time,
+    multi-tenant, etc.) made Cat structurally deaf to user-shaped
+    stories, leaving the architectural picture un-synthesized."""
     rules = cheshire_cat_rules()
-    rt = _u(act=SpeechAct.STORY, body="Users need real-time updates.")
-    plain = _u(act=SpeechAct.STORY, body="Users want to set a profile photo.")
-    assert rules.categorize(rt) is Engagement.SELECTIVELY
-    assert rules.categorize(plain) is Engagement.ALMOST_NEVER
+    plain_alice = _u(
+        act=SpeechAct.STORY,
+        speaker="alice",
+        body="Users want to set a profile photo.",
+    )
+    arch_alice = _u(
+        act=SpeechAct.STORY,
+        speaker="alice",
+        body="Users need real-time updates.",
+    )
+    not_alice = _u(
+        act=SpeechAct.STORY,
+        speaker="white_rabbit",
+        body="Users need real-time updates.",
+    )
+    assert rules.categorize(plain_alice) is Engagement.SELECTIVELY
+    assert rules.categorize(arch_alice) is Engagement.SELECTIVELY
+    assert rules.categorize(not_alice) is Engagement.ALMOST_NEVER
 
 
 def test_cat_rules_implementation_engages_selectively() -> None:
@@ -154,16 +173,29 @@ def test_cat_rules_deference_is_skipped() -> None:
 
 
 def test_parse_cat_response_extracts_fenced_json() -> None:
+    # Per the post_init validator: decision='proposal' requires the adr
+    # field. This test verifies the fence-extraction itself; the proposal
+    # carries a minimal valid ADR.
     text = """The Cat considers the trigger.
 
 ```json
-{"decision": "proposal", "body": "Use Redis."}
+{
+  "decision": "proposal",
+  "body": "Use Redis.",
+  "adr": {
+    "title": "Use Redis",
+    "context": "Need a bus.",
+    "decision": "Use Redis.",
+    "tradeoffs": ["familiar ops"]
+  }
+}
 ```
 
 That is all."""
     response = parse_cat_response(text)
     assert response.decision == "proposal"
     assert response.body == "Use Redis."
+    assert response.adr is not None
 
 
 def test_parse_cat_response_accepts_unfenced_json() -> None:
@@ -201,9 +233,7 @@ def test_parse_cat_response_silence_omits_body() -> None:
 
 def test_parse_cat_response_silence_coerces_explicit_nulls() -> None:
     """Live Haiku 4.5 sometimes emits explicit nulls instead of omitting fields."""
-    response = parse_cat_response(
-        '{"decision": "silence", "body": null, "adr": null}'
-    )
+    response = parse_cat_response('{"decision": "silence", "body": null, "adr": null}')
     assert response.decision == "silence"
     assert response.body == ""
     assert response.adr is None
@@ -273,8 +303,19 @@ async def test_deliberate_returns_none_on_silence(tmp_path: Path) -> None:
 
 
 async def test_deliberate_produces_proposal_utterance(tmp_path: Path) -> None:
+    # Per the post_init validator: a proposal must include an ADR.
     body = "What would have to be true for the choice to matter?"
-    llm = _mock_llm(json.dumps({"decision": "proposal", "body": body}).join(["```json\n", "\n```"]))
+    payload = {
+        "decision": "proposal",
+        "body": body,
+        "adr": {
+            "title": "Pick X over Y",
+            "context": "X and Y are interchangeable in v1.",
+            "decision": "Pick X.",
+            "tradeoffs": ["familiar ops"],
+        },
+    }
+    llm = _mock_llm(f"```json\n{json.dumps(payload)}\n```")
     cat = await _cat(tmp_path, llm=llm)
     trigger = _u(thread_id="t", body="we should use X or Y")
     ctx = Context(constitution=cat.identity.constitution_text, triggers=(trigger,))
@@ -355,10 +396,14 @@ async def test_deliberate_includes_protocol_in_system_prompt(tmp_path: Path) -> 
     create_kwargs = cat.llm.client.messages.create.call_args.kwargs
     system_blocks = create_kwargs["system"]
     # Constitution first, protocol second, both cached
-    assert system_blocks[0]["text"] == "C"
+    # Position 0 is the framework primer (shared across all agents)
+    assert "Wonderland — Framework Primer" in system_blocks[0]["text"]
     assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
-    assert "fenced JSON block" in system_blocks[1]["text"]
+    # Position 1 is the per-agent constitution
+    assert system_blocks[1]["text"] == "C"
     assert system_blocks[1]["cache_control"] == {"type": "ephemeral"}
+    assert "fenced JSON block" in system_blocks[2]["text"]
+    assert system_blocks[2]["cache_control"] == {"type": "ephemeral"}
 
 
 # ---------- end-to-end (mocked LLM) ----------

@@ -1,0 +1,1 @@
+23edf1b seed: fullstack-fastapi-react baseline (T38 Session 1)

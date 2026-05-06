@@ -40,12 +40,15 @@ class SpeechAct(StrEnum):
     OBSERVATION = "observation"
     REFRAME = "reframe"
     DEFERENCE = "deference"
+    CONTRACT_NOTE = "contract_note"
 
     # Procedural — issued primarily by the Dodo
     NUDGE = "nudge"
     COMPOSITION = "composition"
     ESCALATION = "escalation"
     ACKNOWLEDGMENT = "acknowledgment"
+    # Procedural — any agent can issue (roster mutation, Block 2c)
+    INVITE = "invite"
 
 
 SUBSTANTIVE_ACTS: frozenset[SpeechAct] = frozenset(
@@ -63,6 +66,7 @@ SUBSTANTIVE_ACTS: frozenset[SpeechAct] = frozenset(
         SpeechAct.OBSERVATION,
         SpeechAct.REFRAME,
         SpeechAct.DEFERENCE,
+        SpeechAct.CONTRACT_NOTE,
     }
 )
 
@@ -72,6 +76,7 @@ PROCEDURAL_ACTS: frozenset[SpeechAct] = frozenset(
         SpeechAct.COMPOSITION,
         SpeechAct.ESCALATION,
         SpeechAct.ACKNOWLEDGMENT,
+        SpeechAct.INVITE,
     }
 )
 
@@ -155,3 +160,12 @@ class Utterance(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     stance: Stance = Stance.IN_CHARACTER
     affect: AffectVector = Field(default_factory=AffectVector)
+
+    is_seed: bool = False
+    """True when this utterance was published as a seed by Runner.convene
+    rather than emitted as a fresh turn in the current thread. Seeds are
+    context (visible in thread history, counted in engagement-state
+    annotations) but not engagement triggers — agents should *see* them
+    without reacting as if they were just spoken. Engagement rules
+    short-circuit to ALMOST_NEVER for seeded utterances; deliberate()
+    still has the body and any artifacts in its prompt window."""

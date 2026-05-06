@@ -306,7 +306,7 @@ async def run_demo() -> int:
     print(f"  Strongly-convergent: {strong_count} alert(s)  (expected 1)")
     print(f"  Weakly-convergent:   {weak_count} alert(s)  (expected 0 at default threshold)")
     print()
-    expected = (neg_count == 0 and strong_count == 1 and weak_count == 0)
+    expected = neg_count == 0 and strong_count == 1 and weak_count == 0
     if expected:
         print("  Guard behaved as expected across all three postures.")
         return 0

@@ -6,9 +6,10 @@
       "description": "Python 3.12+ project with src/wonderland layout. uv for envs. ruff for lint/format. pytest. Pre-commit optional for now.",
       "priority": "P1",
       "item_type": "chore",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:15.957336",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "b7d59904-594c-4314-b2a5-22ab0504476f",
@@ -16,9 +17,10 @@
       "description": "Pydantic model for Utterance per WONDERLAND_SPEC \u00a74: id (ULID), thread_id, parent_id, speaker, addressed_to, speech_act, content (body+artifacts), references, timestamp, confidence, stance, affect. SpeechAct enum. AgentIdentity, Stance, AffectVector subtypes.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:16.044160",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "70d7e4e1-aca0-4601-a45f-7b12de992bce",
@@ -26,9 +28,10 @@
       "description": "Identity dataclass: name, version, constitution (from constitutions/<name>.md), interests (speech_act subscription set), engagement_policy hook. Loader parses YAML/markdown frontmatter from constitutions/.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:16.129391",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "b6d8c20b-1fe7-4720-893a-29faa367e5b7",
@@ -36,9 +39,10 @@
       "description": "Caucus class wrapping Redis Streams. publish(utterance), subscribe(interests) -> async iterator. Per-thread consumer groups. Replay support for debugging. Local in-memory fake for tests.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:16.211910",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "df140697-f84a-4958-b917-ec13375924a0",
@@ -46,9 +50,10 @@
       "description": "Per-agent SQLite at <project_root>/.wonderland/memory/<agent>/episodic.sqlite. Schema: utterances observed/produced, indexed by thread_id and timestamp. Query by thread/topic/other-agent.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:16.292586",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "9c25e87c-bdcc-4c78-9d1e-16afc0e90070",
@@ -56,9 +61,10 @@
       "description": "Thin wrapper around anthropic SDK. Default model claude-haiku-4-5-20251001. Cache_control on the constitution + relational memory layers of composed context. Token accounting hook for budget telemetry.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:16.374059",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "e7dfa848-6a96-4764-b113-f0b624bee26f",
@@ -66,9 +72,10 @@
       "description": "Per WONDERLAND_SPEC \u00a75: identity, memory, bus, listen()/speak() loop. should_engage hook delegating to identity.engagement_policy. compose_context(triggers) producing layered prompt. deliberate(context) calling LLM. Sometimes returns None (silence is valid).",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:31.178695",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "4f9dafa2-fba3-466b-8ade-6b6bbdd87920",
@@ -76,9 +83,10 @@
       "description": "compose_context assembles: [CONSTITUTION]+[RELATIONSHIPS]+[CURRENT THREAD]+[TRIGGER]+[YOUR MOVE]. Constitution and relationships are the cache prefix. Returns Anthropic messages format with cache_control breakpoints.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:31.258871",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "5185d347-5db9-40c8-bd62-59043a2cfe92",
@@ -86,9 +94,10 @@
       "description": "engagement_policy(utterance, memory) -> bool. Heuristic pass first (cheap; speech_act in interests, addressed_to match, thread_state). Optional LLM tiebreak only when heuristic is uncertain. Per-agent overrides in constitution metadata.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:31.338389",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "347c0c53-8b03-44ac-9bf7-bfef11816737",
@@ -96,9 +105,10 @@
       "description": "Concrete WonderlandAgent for the Cat. Loads constitutions/cheshire_cat.md. ADR writer artifact handler (writes to .wonderland/architecture/adr-NNN.md). End-to-end test: directive -> Cat produces proposal -> ADR file appears.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:31.420258",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "aac7f570-7fba-4e28-a41b-8938d0ca3812",
@@ -106,9 +116,10 @@
       "description": "Service that takes an ADR artifact from a Cat proposal and writes it to .wonderland/architecture/adr-NNN-<slug>.md with auto-incrementing N. Validates Tradeoffs section is present (the grin is non-optional).",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:31.501021",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "9371a743-26b0-48ac-8fae-942393655887",
@@ -116,9 +127,10 @@
       "description": "Per-agent semantic store: distilled beliefs about codebase, domain, other agents. Compaction job runs between threads. Markdown-backed for legibility, SQLite index for queries.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:53.561949",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "339db74a-c82a-4ce9-95d8-dcc530a53390",
@@ -126,9 +138,10 @@
       "description": "Per-agent relational notes keyed by other-agent name. The Caterpillar's notes on Tweedledee differ from his notes on Tweedledum. Used as part of cache prefix in compose_context.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:53.645400",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "44c9966a-a2f7-4ed5-8f8c-eb16d7ebe0d3",
@@ -136,9 +149,10 @@
       "description": "Concrete WonderlandAgent for the Rabbit. Loads constitutions/white_rabbit.md. Ticket artifact handler (writes tickets \u2014 format TBD by his constitution). Engagement: directive, story, proposal touching scope, concern about timeline.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:53.724775",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "14a38060-02f6-4c09-9d65-7a62eb1bad8d",
@@ -146,9 +160,10 @@
       "description": "Test scenario: Dodo issues directive -> Rabbit decomposes into tickets -> Cat issues reframe on architecturally-implicating ticket -> Rabbit revises. Verify role boundaries hold (no Cat-tickets, no Rabbit-ADRs).",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:53.804652",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "35fec414-dcd8-40f8-9422-0aaab5eb80c3",
@@ -156,9 +171,10 @@
       "description": "Per WONDERLAND_SPEC \u00a78: 'compaction is itself an agent behavior.' Hook that asks each agent to reflect-and-distill between threads, in-character. Hatter's reflections are nonlinear, Caterpillar's are slow/categorical.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:44:53.885064",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "4d8a19b4-e5b3-411f-a78a-03a77b1c5261",
@@ -166,9 +182,10 @@
       "description": "Per WONDERLAND_SPEC \u00a76. publish(directive), observe(thread_id) yielding thread state. Loads constitutions/dodo.md. Doesn't direct \u2014 watches.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:20.068481",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "732f68a2-100e-4927-89a7-10613778f1cb",
@@ -176,9 +193,10 @@
       "description": "Detect 'phase done' as relevant agents stopping publishing on a thread. Heuristic: no new utterances for N seconds AND all engaged agents have issued at least one terminal speech_act (deference, observation closing concern, etc.). Tunable per-thread.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:20.155335",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "de2eebde-4a19-4d62-af0d-0147ba08cbef",
@@ -186,9 +204,10 @@
       "description": "Stuck: a thread has open questions/concerns with no answer for too long. Deadlock: two or more agents disagreeing in a tight loop, no path to resolution. Triggers Dodo intervention or human escalation per spec \u00a77.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:20.240011",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "02f43054-0e8f-4552-a84f-8d20ceca929d",
@@ -196,9 +215,10 @@
       "description": "Per WONDERLAND_SPEC \u00a77. Each speech_act has an owning domain. Dodo (or composer) resolves cross-agent conflict by domain owner; dissent is recorded as a structured artifact attached to the resolution. Multi-domain composition path for genuine spans.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:20.325631",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "39a41906-d12d-4c2d-9816-c1aacd84b739",
@@ -206,9 +226,10 @@
       "description": "When Dodo declares deadlock: emit structured escalation with directive, conflicting proposals, suggested resolution, explicit decision-question. Human reply is recorded as a directive-with-reasoning that future threads inherit as precedent.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:20.408826",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "4896a36d-66dd-40a2-9b01-07f53cc478b0",
@@ -216,9 +237,10 @@
       "description": "End-to-end small directive per WONDERLAND_SPEC \u00a710. Add a /health endpoint to a Phoenix app. Full loop: Dodo directive -> Alice/Rabbit/Cat/Tweedles/Hatter all visible. Recorded transcript. ~2 min runtime target.",
       "priority": "P1",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:20.490817",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "3d323867-4100-4537-84b1-8103ec33b686",
@@ -226,9 +248,10 @@
       "description": "Bootstrap .wonderland/ in a target project: create directory layout, copy stub configs, register Redis stream prefixes for the project. Mirrors 'daedalus init' pattern.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:20.570693",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "a24f4425-e16f-41e2-88f3-010505e0c8fa",
@@ -236,9 +259,10 @@
       "description": "Concrete WonderlandAgent for Alice. User-story generation from inhabited personas. Engagement: directive, ticket if user-impact unclear, proposal if user-need at stake.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.263203",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "729fc868-fbbf-4235-9a1c-14fc4d33a0d6",
@@ -246,9 +270,10 @@
       "description": "Concrete WonderlandAgent for the Hatter. Test-scenario generation. Sideways thinking. Engagement: nearly everything (per his constitution); selectively interjects.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.345861",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "a73d25a9-2c2c-44ae-b347-0dd1d6b9ede7",
@@ -256,9 +281,10 @@
       "description": "Concrete WonderlandAgent for the Caterpillar. Code review on every implementation. Differentiated relational notes per Tweedle. Speech act: review.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.433481",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "de42c270-fdcc-4ff5-8976-e5369d7f6fed",
@@ -266,9 +292,10 @@
       "description": "Concrete WonderlandAgent for the Queen. Security and compliance ruling. Engagement triggered when she 'smells blood' \u2014 credentials, auth, data residency, injection vectors.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.517148",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "0cd8d3f0-832a-4f31-8f62-9717eb3f39d9",
@@ -276,9 +303,10 @@
       "description": "Concrete WonderlandAgent for the Dormouse. SRE/observability. Mostly silent; wakes on production-implicating events. Owns dashboard/alert/runbook artifacts.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.600921",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "503d40c3-ad41-4e44-a399-aa015aa1b8be",
@@ -286,9 +314,10 @@
       "description": "Concrete WonderlandAgent. Frontend implementation. Argues with Tweedledum via OpenAPI/contract speech acts.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.691385",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "1912c2a3-9bcc-4dbd-a501-25201307f84c",
@@ -296,9 +325,10 @@
       "description": "Concrete WonderlandAgent. Backend implementation. Counterpart to Tweedledee. Argues constantly; healthy by design.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.775925",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "320fdfea-05d3-4bf0-8464-fc5d28073ceb",
@@ -306,9 +336,10 @@
       "description": "Per WONDERLAND_SPEC \u00a77. Detect when an agent who would normally raise a concern softens or omits it under perceived deadline pressure. Constitutional-level guard plus bus-level audit (compare current dissent rate to historical baseline).",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.860484",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "c7c8d4a4-c749-4f53-8710-62f4d96879a6",
@@ -316,9 +347,10 @@
       "description": "Each character produces characteristic artifacts: tickets (Rabbit), ADRs (Cat), test scenarios (Hatter), reviews (Caterpillar), rulings (Queen), runbooks (Dormouse), implementations (Tweedles). Each handler validates shape and writes to .wonderland/.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:45:40.943128",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "75b74948-dc2c-4e7e-9266-46d356f26f5e",
@@ -326,9 +358,10 @@
       "description": "Headline showcase per WONDERLAND_SPEC \u00a710. End-to-end translation-integrated chat app. Hatter finds a real bug. Cat redirects a Tweedle's overengineering. Recorded transcript with annotations.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:46:00.254210",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "292ea917-21d3-4bdb-a329-cba0157bf802",
@@ -336,9 +369,10 @@
       "description": "Failure case showcase per \u00a710. Queen catches security issue late, work is undone, Rabbit re-plans. Demonstrates real software entropy is handled, not papered over.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:46:00.340211",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "38d6b7ba-aaf9-49f4-a465-bcd020001d1d",
@@ -346,9 +380,10 @@
       "description": "Long-running thread across multiple sessions. Same agents, same memory, picking up where left off. Demonstrates persistence is doing real work \u2014 not theatrical.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "in_progress",
       "created_at": "2026-05-04T20:46:00.420925",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "19c13c2d-2c0f-4120-a4e8-b0c6bbe3af5a",
@@ -376,9 +411,10 @@
       "description": "Per WONDERLAND_SPEC \u00a711 mitigation. Track tokens per agent per thread. Alert on runaway loops. Dashboard for per-directive cost so we can confirm engagement_policy is actually saving inference.",
       "priority": "P2",
       "item_type": "feature",
-      "status": "backlog",
+      "status": "done",
       "created_at": "2026-05-04T20:46:00.665930",
-      "created_by": "daedalus"
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
     },
     {
       "id": "460b5ea9-3db7-4e89-b701-4690e6438988",
@@ -388,6 +424,230 @@
       "item_type": "task",
       "status": "backlog",
       "created_at": "2026-05-04T22:29:48.150963",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "a15aa497-7faf-4819-8762-c8f76c3072a1",
+      "title": "Cost-benefit analysis: Haiku 3.5 vs Haiku 4.5 for low-stakes calls",
+      "description": "Haiku 4.5 ($1.00/MTok in, $5.00/MTok out) is the default per the project's small-model thesis (project_haiku_thesis). Haiku 3.5 is $0.80/MTok in / $4.00/MTok out \u2014 20% cheaper across the board. For high-frequency, structurally-bounded calls the older model may be sufficient. Candidates worth assessing per-call:\n\n- **Engagement-gate decisions**: currently the \u00a7III rules are pure code (no LLM); but a future hybrid where a cheap model does an initial 'should I engage?' pass before the per-character protocol fires would offload most of the silence-choice cost to Haiku 3.5.\n- **Compaction**: between-thread reflection per WONDERLAND_SPEC \u00a78. Less time-pressured, mostly summarization of an existing transcript \u2014 quality bar is lower than per-turn deliberation.\n- **Conflict-domain classification**: T19's domain-routing in the composition flow is a structured 'what domain is this?' classification, naturally fits a smaller model.\n- **Procedural utterance generation**: the Dodo's nudge/acknowledgment templates are currently mechanical; if/when they go LLM-shaped, Haiku 3.5 is probably enough.\n\nThis is sibling work to roadmap item 460b5ea9 (Haiku-no-cache vs Sonnet-with-cache). Both fold into a per-call model-selection design where each agent's deliberate() can route to a different model based on the call's character. Run after P6's T34 telemetry lands so we have real per-call cost data to reason against.\n\nMethodology: pick 2-3 candidate call sites (engagement-gate first, compaction second), run each with both 3.5 and 4.5, measure: (a) cost delta per call, (b) decision-quality delta (does 3.5 produce noticeably worse silence/non-silence calls? noticeably worse compaction summaries?). The thesis question parallel to the main one: identity-native + cheap-model is the same kind of bet as identity-native + small-model. Test it with data, not opinion.",
+      "priority": "P3",
+      "item_type": "task",
+      "status": "backlog",
+      "created_at": "2026-05-05T13:12:04.779029",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "aa65d2d7-17be-498a-bc14-44d1347aedb9",
+      "title": "Hard budget cap: refuse new agent turns once budget exceeded",
+      "description": "Smoke test ran $0.59 against $0.30 budget \u2014 2x overshoot. Budget cap is currently soft: many in-flight LLM calls return after the threshold trips, and the team continues working on the relayed directive until timeout. Hard cap requires gating WonderlandAgent.run() loops on Telemetry.total_cost > budget_dollars. Invasive change \u2014 touches every agent. Defer until after at least one showcase ships so we have more cost-overshoot data points.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-05T15:32:37.961098",
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
+    },
+    {
+      "id": "ac3c6dc5-ad9a-4da8-a5c9-c195cc4be3e2",
+      "title": "Distinguish budget-exceeded brief from polite-deadlock brief in Dodo.escalate_deadlock",
+      "description": "Smoke test surfaced this: when budget exceeded triggers _escalate_via_runner, the brief still says 'Thread has been STUCK (budget exceeded: $0.31 > $0.30)'. The parenthetical reason is right but the leading STUCK framing is wrong \u2014 there's no nudge ladder in this case, no polite deadlock pattern to surface. Two options: (a) add a budget_exceeded_brief() variant in Dodo, or (b) parameterize escalate_deadlock to dispatch on reason kind. Small fix, clear scope.",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-05T15:32:48.197179",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "313b3f52-83ad-43b5-a790-823d66cf5f48",
+      "title": "Tune framework primer to reduce procedural-caution chattiness",
+      "description": "Smoke test data (cli-smoke run 20260505T152816, 90s, 10 agents): 47 of 54 visible utterances were question (27) or concern (20). Only 7 substantive artifacts produced; 1 nudge fired. Same 'before I X, I need Y from Z' pattern from analyses 006/007 in different clothes \u2014 agents are very procedurally cautious about acting. Three primer candidates likely amplifying: (a) \u00a7II lines 124-127 frames concern/question as conversation-starting moves with 'Choose deliberately' priming high-stakes preamble; (b) \u00a7VIII lines 307-308 has 'surface what only you can surface' getting vivid framing while silence guidance is three words; (c) \u00a7I cast table lists 'characteristic move' as present-active verb for each agent, priming demonstration of the move. Also worth investigating: \u00a7VII failure-modes summary may induce performative compensation. Test approach: A/B same directive with current primer vs. trimmed primer (sequence: trim \u00a7II commentary first as least invasive, measure question/concern ratio). Need to preserve T32's cache-padding effect \u2014 primer can shrink as long as combined prefix stays above 7000 tokens.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-05T15:34:43.570161",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "956032a5-b181-4cb9-8f64-bc756c2a29e3",
+      "title": "Per-agent allowed speech acts surfaced in primer",
+      "description": "T36 surfaced 5 different agents (Caterpillar, Rabbit, Hatter, Tweedledee, Dormouse) trying to use Dodo-only speech acts (composition, nudge, acknowledgment) \u2014 each rejected at parse time, dropped to silence, ate substantive moves. Cause: framework primer \u00a7II lists ALL speech acts without per-agent restriction; LLM doesn't see each agent's per-Response Literal. Fix shape: parameterize FRAMEWORK_PRIMER with the agent's allowed substantive acts, OR add a per-agent allowed-acts callout in each agent's output protocol. Small, surgical. Eliminates ~6 dropped substantive moves per full-cast run.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-05T16:37:47.529363",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "e3ba32ac-3603-483b-9dfd-ddec1582a96a",
+      "title": "Cat / Rabbit calibration: ship the artifact rather than re-clarifying",
+      "description": "T36 surfaced load-bearing failure: Cat made 30 LLM calls / $0.94, shipped 0 ADRs (1 'proposal' speech act with prose, no artifact). Rabbit made 27 calls / $0.80, shipped 0 tickets. Both got stuck choosing concern/question instead of committing to their characteristic artifact. The Cat's \u00a7VIII (false certainty / refusing to commit / speaking to be present) showed up in real form. Possibly a new constitutional clause: 'after N turns of clarification on a topic in your domain, the next move is to commit even with confidence intervals.' Constitutions are text and can be tuned. Critical because without Cat ADRs and Rabbit tickets, the downstream Tweedles never reach the point where tool integration would matter.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-05T16:37:58.553578",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "64e5dc47-b7a1-4c26-aafd-c67f36338025",
+      "title": "Queen process-policing instead of substantive ruling",
+      "description": "T36 surfaced: Queen shipped 3 rulings, all about team process ('architectural decision must precede X', 'decision-ownership must be visible'), zero security/compliance rulings on the actual surface (GDPR data retention, prompt injection, deletion-vs-chat-history conflict \u2014 all explicitly in the directive and Hatter's scenarios). Possibly a new \u00a7VIII clause: 'process-policing as substitute for substantive ruling when the substantive answer requires architectural context the Cat hasn't shipped.' Related to but distinct from the Cat-shipping issue \u2014 Queen had the information and chose process-meta over substance.",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-05T16:38:07.981610",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "f099fe8d-33c1-4619-a925-a4d2d292616e",
+      "title": "LLMClient backoff/retry on RateLimitError",
+      "description": "T36 hit Anthropic 1M-tok/min org rate limit 40 times in 5 minutes (Queen 9, Dormouse 7, Caterpillar 7, Hatter 5, Cat 5, Rabbit 3, Tweedledum 3, Alice 1). Each hit dropped to silence \u2014 hard to disentangle 'agent chose silence' from 'agent rate-limited into silence' in the transcript. Add backoff + retry in LLMClient.complete on 429s. Useful regardless of multi-agent concurrency since any high-volume scenario will hit this.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-05T16:38:16.632787",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "8465d919-2e9f-4ae1-8bf1-25571c475287",
+      "title": "Dodo decides kickoff meeting roster autonomously from directive content",
+      "description": "Per the roster-architecture rollout (P6.T36 prep): initial implementation has the directive author specify the kickoff roster (option 1a), which is the simpler shape. The longer-term version (1b) is the Dodo reading the directive and deciding which agents to convene \u2014 e.g., 'this directive has GDPR + architectural questions \u2192 convene Alice + Cat + Queen for scoping, schedule Tweedles + Rabbit for after the ADR ships'. Adds one LLM call upfront but matches how a real PM/orchestrator works. Wait until 1a is in production and we have data on how often the directive author gets the roster wrong before building 1b.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-05T16:48:12.859144",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "b50df6af-8be2-4076-8bd8-c40d3746a64f",
+      "title": "Caterpillar maintains shared project memory (codex)",
+      "description": "Per Kohl's framing during Block 2c: have Caterpillar maintain a markdown overview at .wonderland/codex.md (or similar) \u2014 a living 'what's actually built vs pending' document that all agents can consult. Solves three problems: (1) agents retreading worn ground (proposing things already built), (2) honesty about completion state (pending vs done), (3) shared situational awareness across meetings without each agent having to re-derive from episodic memory. Caterpillar is the natural maintainer because reviews surface the actual implementation surface, and he's already a 'read slowly' character. Design questions: (a) when does Caterpillar update \u2014 after each review? On a schedule? When a new file lands? (b) Schema \u2014 what sections (modules / contracts shipped / open ADRs / known gaps)? (c) How do other agents consume \u2014 auto-included in context like the framework primer? (d) Calibration to keep Caterpillar maintaining the codex from becoming PM. This wants tool integration for Caterpillar (which is now in flight) as a prerequisite \u2014 he needs read_file + write_file at minimum. Worth doing AFTER the full T36 enchilada test so the codex schema is informed by what an actual multi-meeting flow produces.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-05T20:22:02.708165",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "b2422ae8-b55b-4724-91dc-658401b9bc0d",
+      "title": "Revisit Cat STORY filter + Rabbit ADR framing bias",
+      "description": "Cat's STORY engagement is filter-deaf: cheshire_cat.py:119 selectively engages on STORY only when body matches {real-time, multi-tenant, offline, cross-language}. Stories about user roles (polyglot moderator, deaf user, GDPR trust) don't trip the filter, so Cat never synthesizes an ADR from the cumulative story picture \u2014 he waits for an architectural-keyword story or a concern/question with architectural smell.\n\nRabbit (white_rabbit.py:106) engages always on Alice stories, but his ticket vocabulary refracts through whatever ADR is in context. Same stories produce processor-boundary tickets when ADR present (v8) vs user-flow tickets when ADR absent (v9).\n\nStakes: T36 enchilada v9 showed this is load-bearing. When Cat doesn't ship an ADR in M1 (coin-flip behavior \u2014 v7/v9 silent, v8 shipped), the whole pipeline collapses: M3 Tweedles see no architectural anchor and return silence (2 calls, 0 contracts). M4/M5 starve. Cat's STORY filter determines whether the arc functions end-to-end.\n\nOpen questions: (1) broaden architectural_primitive_in_story vocabulary, or (2) add a separate selectively(STORY) rule that fires when N stories accumulate without an ADR, or (3) lift the synthesis responsibility into a different agent move. Whichever fix, the principle is: an ADR synthesizing across multiple user stories is a real architectural move and the framework currently can't make it.",
+      "priority": "P2",
+      "item_type": "research",
+      "status": "backlog",
+      "created_at": "2026-05-06T00:12:29.845104",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "ee7221bb-6b3d-4c73-b651-447ea2a512e1",
+      "title": "Wire git identity (user.email, user.name) through wonderland config",
+      "description": "_ensure_git_repo() in src/wonderland/runner.py currently hardcodes `user.email=wonderland@local` and `user.name=Wonderland Runner` via `git config` (local scope) so the empty initial commit succeeds on systems without a global git config. These should flow through wonderland's config layer (the same JSON used for API keys, model overrides, etc.) so projects can attribute wonderland-generated commits to a specific identity (e.g., `Wonderland on behalf of <user>`).\n\nSurfaced during analysis 016 followup when adding the git_status/git_diff tool surface for Caterpillar reviews.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-06T15:31:37.955362",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "2ab6809c-e619-45fe-8185-6daf094fabe4",
+      "title": "Revisit ignoring .wonderland/ in generated repos",
+      "description": "_ensure_git_repo() in src/wonderland/runner.py writes a default .gitignore that excludes .wonderland/ from version control. Reasoning: registry writes (memory sqlite, telemetry, stories/adr/contract markdown) would otherwise pollute git_status / git_diff and bury the actual code changes the Caterpillar reviews.\n\nBut: a side-benefit of being mostly markdown-document-based is that artifacts CAN be version-controlled \u2014 stories, ADRs, contract notes, rulings, reviews are all .md files. Versioning those alongside code would give the team a real audit trail (git blame on the ADR; git log on the contract). Episodic memory sqlite would still need to be ignored (binary, frequently-changed), and telemetry json is per-run noise. So the right rule is probably: ignore .wonderland/{memory,telemetry}/ but track .wonderland/{stories,architecture,tickets,contract-notes,rulings,implementations,reviews}/.\n\nSide question: does Caterpillar reading prior ADRs/contracts via git history change his review behavior? Probably yes.",
+      "priority": "P3",
+      "item_type": "research",
+      "status": "backlog",
+      "created_at": "2026-05-06T15:35:20.752649",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "29497820-7da4-4642-a05a-541ef5d6a16f",
+      "title": "Dodo as dynamic meeting orchestrator (big rework)",
+      "description": "Substrate redesign making Dodo the dynamic orchestrator of meeting chains, not just the convener-of-already-set-up meetings.\n\nScope:\n- Dynamic meeting chains: Dodo decides what meeting comes next based on what the prior meeting shipped (M1 produced stories+ADR \u2192 M2 needs Rabbit + the ADR/stories as seeds, with a decomposition directive). Today this is hard-coded in the test scripts.\n- Per-agent deliberation tracking: Dodo subscribes to a 'deliberation_started' / 'deliberation_finished' signal and holds the meeting open while expected responses are pending. Replaces the fixed-quantum quiescence threshold.\n- Late-deliberation handling: when a slow deliberation completes after its trigger's thread closed, route the utterance to the currently-active thread or a 'lost-utterance' bucket rather than silently publishing into a closed thread.\n- Escalation interleaving: Dodo can pause a meeting to escalate to a human and resume cleanly when the human responds (relevant for T37 security recovery).\n\nOrigin: T36 enchilada v17 had Tweedle tools-loop deliberations take >30s; M3 quiesced before responses landed; contract_notes published into a closed thread and were lost from capture. Workaround: bumped quiescence_seconds from 30 to 60 in the script (helps but doesn't solve \u2014 some deliberations take >60s too).\n\nStop-gap done as separate small slice: late-deliberation detection + warning + lost-utterance registry, so silent-data-loss can't happen mid-diagnosis. Stop-gap is a Runner-side substrate fix, not Dodo work; the big Dodo rework supersedes it eventually.\n\nDon't start the big rework until T37 reveals what its meeting shape actually needs from dynamic orchestration \u2014 the security-recovery showcase will surface requirements (escalation interleaving, conflict ladder, non-linear meeting chains) that should inform the design.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-06T17:29:12.318435",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "f0e4afea-be01-4053-a219-963fdc5b9350",
+      "title": "Scaffolding-as-feature: project-skeleton templates",
+      "description": "Real engineers don't argue about which test framework to use on day 1 \u2014 they `cookiecutter`, they `create-react-app`, they `django-admin startproject`. The Wonderland team should make the choices that *matter* (architecture, contracts, behavior, what to ship) and inherit the choices that don't (project structure, build config, test runner, basic HTTP framework, DB connection scaffolding). Generating boilerplate via LLM calls is expensive AND wasteful AND introduces variability where there shouldn't be any.\n\nOriginated from T37 v3 \u2192 T38 planning: T37 surfaced that pre-seeding a real codebase dramatically improves output quality (analysis 019). T38 needs a fullstack skeleton so Session 1 builds features ON TOP of a known foundation; Session 2/3 can then meaningfully reference what got built in Session 1 because the foundation shape is stable across runs.\n\nMinimum-viable shape:\n  src/wonderland/templates/\n    fullstack-fastapi-react/    # backend + frontend (T38)\n    python-fastapi-sqlite/      # backend-only\n    react-vite-typescript/      # frontend-only\n    python-cli/                 # click + pytest\n\nSurface:\n  - `wonderland scaffold <project_root> --template <name>` CLI\n  - `wonderland.scaffold.lay_down_template(...)` programmatic\n  - Optional `template=` kwarg on `Runner.make_full_cast`\n\nThe T37 seed pattern (analyses/data/019-security-recovery-seed/, the showcase script's _commit_seed_baseline helper) is the prototype. Promotion to first-class is mostly: factor out the copy + git-init logic, add a few canonical templates, wire the CLI/Runner.\n\nStart with the fullstack template (T38 needs it). Other templates can land as showcases need them; no need to speculate.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-06T19:00:53.114872",
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
+    },
+    {
+      "id": "0aab0178-4e77-4757-820a-0d1151133f40",
+      "title": "Local-model router for substrate calls (Ollama)",
+      "description": "Route rote, non-identity-bearing LLM calls to a local Ollama instance to keep development costs down. Anthropic stays the default for any call that produces an Utterance (identity-bearing); local handles substrate.\n\nCandidate call sites (in rough leverage order):\n1. Inter-thread compaction (Cat's reflection on closed threads \u2192 memory entries). High volume, fixed schema, no Utterance produced.\n2. Tool-result digestion (read_file / git_diff / list_files outputs pre-summarized before they ride into the next agent call). Cuts input tokens dramatically.\n3. Synthetic-consensus guard observations (judge-style call against the \u00a711 anti-pattern).\n4. Test-scenario expansion (Hatter's per-scenario fleshing once skeletons exist).\n\nNOT candidates: any agent's main response (constitutions encode behavior the local model wasn't trained on \u2014 routing them defeats the thesis), engagement decisions (constitutional), and ANY call inside P7 eval runs.\n\nImplementation shape:\n- New ModelRouter with strategies keyed by call-site enum (COMPACTION, TOOL_DIGEST, JUDGE, AGENT_RESPONSE, etc.).\n- Feature-flagged via env var (WONDERLAND_LOCAL_ROUTER=1 or per-site flags); default off.\n- Local model config slot in ~/.config/wonderland/config.json alongside the Anthropic block (base_url, model name, timeout).\n- Hard requirement: P7 eval harness MUST refuse to start if local router is on, to keep the comparison clean.\n\nHardware target: Kohl's 4070Ti Super (16GB VRAM) \u2014 fits Qwen2.5-Coder 14B Q4, Llama 3.1 8B Q8, or Mistral Small 22B Q4.\n\nRisks: model parity (Ollama models follow instructions differently than Haiku \u2014 substrate calls may need provider-specific prompts), hallucination on substrate calls poisoning the bus, more debugging surface. Mitigation: opt-in per call site, validate outputs against the same pydantic schemas Anthropic responses use, fall back to Anthropic on validation failure.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-06T20:02:20.146484",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "98ec46b0-4750-4f26-83fc-55f700bb2496",
+      "title": "Split max_tool_iterations: read tools don't increment counter",
+      "description": "Currently `max_tool_iterations` (in `agent._complete_with_tools`) is a flat cap on ALL tool calls \u2014 read_file, list_files, git_status, git_diff, write_file all count equally. This conflates two different kinds of risk:\n\n- Write tools (write_file): real side effects. Capping iterations is genuinely protective against runaway writes.\n- Read tools (read_file, list_files, git_status, git_diff): pure lookups. The risk is cost, not correctness, and `budget_dollars` is already the right backstop for that.\n\nThe pathology: a continuation Tweedle on a 30-file codebase (e.g. Session 2 of T38) burns 12 read iterations on exploration before designing \u2014 leaving only 8 write iterations for shipping. Greenfield Tweedles don't pay this tax because they have nothing to read; they go straight to writing. The cap penalizes the more disciplined behavior (read existing code first) over the less disciplined one (just start writing).\n\nCleanest fix: exclude pure-read tools from the iteration counter entirely. Counter becomes 'operations with side effects.' Budget cap handles read-runaway via $.\n\nImplementation:\n- Define READ_ONLY_TOOLS = {'read_file', 'list_files', 'git_status', 'git_diff'} in agent.py\n- In `_complete_with_tools`, only increment iteration counter when the tool name is NOT in READ_ONLY_TOOLS\n- Keep max_tool_iterations default at 20 (consequential moves only); reads bounded by budget cap\n\nWhy no second cap: avoids another knob to tune (we already have iter cap + budget + per-meeting cap + quiescence timeout); semantically cleaner.\n\nValidation: re-run T38 Session 2 after this change; expect Tweedles to read existing files freely AND ship code, where pre-fix they hit iter exhaustion mid-exploration in analysis 020. Will be visible as a comparison point in analysis 022 territory.\n\nDefer until after analyses 021 ships \u2014 don't change substrate mid-test.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-06T20:06:17.865541",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "903e6137-61c9-436d-a7e9-0b12c5a2c512",
+      "title": "Consolidate contract-negotiation + implementation into one meeting",
+      "description": "Merge M3 (contract-negotiation) and M4 (implementation) in the canonical T36/T38-shaped sequence into a single 'design-and-ship' meeting. The Tweedles already do this work as one continuous flow \u2014 the M3/M4 split is an a priori boundary the system keeps voting against.\n\nEvidence (from analysis 020 and the analysis 021 territory T38 Session 1 re-run):\n- M3 produces state=proposed contracts, then Tweedles immediately start implementation in turn 2 (write_file via tools)\n- M3 quiesces and closes mid-tool-loop; the resulting implementation utterance is suppressed as late-publish\n- Backend code lands on disk (write_file is a side-effect that completes regardless), but the implementation utterance is lost\n- M4 then opens with no fresh signal because Tweedles already 'moved past' M3 \u2014 M4 ships zero implementation utterances and closes empty\n\nWhat separation was supposed to give us:\n- Frozen-seam checkpoint: 'contracts agreed, now implement' \u2014 never actually reached in practice; per-meeting budget caps fire first\n- No-tools vs tools-on tool surface \u2014 never enforced (Tweedles have write_file in both meetings)\n- Cross-meeting composition test point \u2014 already covered by ADR (M1) \u2192 tickets (M2) handoff\n\nWhat consolidation gives us:\n- No meeting-boundary leak (the bug class disappears)\n- Matches actual engineering work (design-the-seam-while-shipping is one thought)\n- Tweedledee's restraint becomes visible (waits for backend Tweedle in same meeting instead of waiting across closed meetings)\n- Simpler budget math (one ~$1.80 cap instead of two awkwardly-handed-off caps)\n\nWhat's preserved:\n- contract_note artifacts with proposed/agreed states (state transition lives at artifact level, not meeting level)\n- Future sessions still read agreed contracts from registry\n- Caterpillar's M5 review surface unchanged (reviews diff against HEAD; doesn't care which meeting produced it)\n\nImplementation: script change, not framework change. Edit the canonical T36/T38 templates to use a single 'design-and-ship' meeting between decomposition and review. Quiescence/budget tuned for the longer meeting (need turn-based quiescence \u2014 separate roadmap item \u2014 for this to be safe). Framework still supports separated M3/M4 if some other use case wants it.\n\nValidation target: T38 re-run produces frontend AND backend code, contracts at state=agreed in the registry, no late-publish suppressions, M5 review on the full diff.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-06T20:14:04.502488",
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
+    },
+    {
+      "id": "22eef6fd-ec80-43d4-a544-dcfc02723837",
+      "title": "Turn-based quiescence detection (replace wall-clock)",
+      "description": "Replace wall-clock quiescence detection with turn-based per-agent state tracking. Agents are turn-based entities; using elapsed-since-last-event to decide 'the team is done' is a category error that we've been band-aiding with ever-growing timeouts (30s \u2192 60s \u2192 would need 120s for tool turns \u2192 180s for chained tool loops \u2192 still race-prone).\n\nThe Runner already knows all the state internally \u2014 it's literally awaiting the agents' coroutines. It just doesn't expose this state to the thread monitor, which falls back to wall-clock because that's all it can see.\n\nPer-agent state machine the thread monitor should track:\n- IDLE \u2014 received an utterance, engagement rule said no, no pending work\n- ENGAGED_PENDING \u2014 engagement rule fired, awaiting first LLM call\n- IN_TOOL_LOOP \u2014 _complete_with_tools is currently iterating\n- AWAITING_RESPONSE \u2014 LLM call in flight, no tools yet\n- COMPLETING \u2014 LLM responded, finalizing artifact synthesis + publish\n\nThread quiescence = |agents not in IDLE| == 0 AND a tiny settling window (~2-5s wall-clock, just to catch the race where an agent's engagement decision is mid-flight). \n\nWall-clock survives in two narrower, semantically-distinct roles:\n1. Settling window (2-5s after last state transition)\n2. Stuck-detection TIMEOUT (not quiescence). 'Team finished' vs 'team hung' are different terminations and should be distinct events on the bus.\n\nImplementation:\n- New AgentState enum + per-agent state map on Runner (or a dedicated AgentMonitor)\n- Hooks at: utterance-received \u2192 engagement-decided \u2192 llm-call-start \u2192 tool-loop-enter \u2192 tool-loop-exit \u2192 publish-complete\n- ThreadMonitor subscribes to AgentMonitor state-change events instead of polling for new bus events\n- New event kinds: 'agent_engaged', 'agent_idle', 'agent_in_tool_loop'\n- The existing 'quiescent' state transition becomes derived: emit when all agents IDLE for >settling-window\n- New 'stuck' state transition: emit when any agent has been in non-IDLE for >stuck-timeout (default 5min)\n\nComposes with the M3+M4 consolidation: combined meeting + turn-based quiescence = meeting stays open exactly as long as anyone is doing work, closes the moment the team is genuinely done. No more late-publish suppressions, no more mid-turn closures.\n\nTouches: src/wonderland/runner.py (thread monitor, the convene/events loop), src/wonderland/agent.py (state-change hooks at tool-loop entry/exit), and the script-side render_event for the new event kinds.\n\nValidation: T38 re-run after this lands should show zero late-publish suppressions and zero meetings closing while a Tweedle is mid-tool-loop.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-06T20:14:17.772210",
+      "created_by": "daedalus",
+      "status_changed_at": "2026-05-06T17:19:26.824750"
+    },
+    {
+      "id": "84821543-74c3-4218-806b-06fa355db94d",
+      "title": "Daedalus-as-agent: Claude Code as Wonderland implementation backend",
+      "description": "Bridge Wonderland and Daedalus into one development platform. Allow Wonderland's Runner to delegate certain agent turns (initially the Tweedles for implementation work) to a local Claude Code session instead of the Anthropic API.\n\nMotivation:\n- User holds a Claude Max subscription (unlimited usage within rate limits) \u2014 implementation work via API burns tokens that are 'free' via Max\n- Daedalus already has filesystem + git tooling, makes implementation work natural\n- Positions Wonderland as the design committee and Daedalus as the IC: different cognitive modes for different work types\n- Tweedles are the natural handoff point \u2014 they're the implementation pair, and Daedalus is already a builder/craftsman\n\nOpen design questions (to resolve when this work is picked up):\n- Identity tension: Tweedles have constitutions with characteristic asymmetry (Tweedledum eager-implementer / Tweedledee restraint-first). Does Daedalus play the character authentically, or is the Tweedle costume just an interface for shipping code?\n- This explicitly violates the haiku_thesis (small model + strong constitution) for the agent role being played \u2014 only acceptable as a development-time accelerator, not as the production architecture\n- IPC channel: how does the Runner signal a turn to Claude Code? File-based handoff? Local socket? MCP? CLI subprocess?\n- Which agents are eligible: just Tweedles (implementation) or also Caterpillar (review)? Probably not Alice/Cat/Queen \u2014 their value is character-driven judgment, less suited to Daedalus's role\n- Composition with the Ollama router (0aab0178): both are 'route some calls elsewhere' \u2014 share infrastructure?\n\nThis is the long-term cohesion vision, not urgent. File for when Wonderland is more stable and the cost-of-API-development becomes the binding constraint.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-06T20:52:14.036039",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "611378d9-f97b-47ef-9b4a-cafa5ba44c0a",
+      "title": "Parse-error retry: one LLM re-prompt before treating as silence",
+      "description": "When deliberate() raises a *ResponseParseError (Queen/Tweedles/Cat/etc. all have their own variant), the speak loop currently catches it and treats the turn as silence \u2014 see the 'treating as silence' stderr message. The turn is lost: the LLM produced a substantive response, our parser couldn't read it, the agent stays silent, the bus moves on without their input.\n\nRecurring failure mode across analyses 020, 021, 022. Cost in 022's M1: ~120s of dead wall-clock time on a single Queen parse error (this softens with turn-based quiescence in commit 305d3b2 but the lost turn itself remains).\n\nProposed fix: one retry on parse error before falling back to silence. The retry prompt feeds the original prompt PLUS the malformed response PLUS a one-line directive ('your previous response was malformed JSON; respond again with valid JSON matching the schema'). If the retry also fails, fall back to silence (current behavior). Costs at most one additional LLM call per parse error; recovers the turn the substantial majority of the time.\n\nImplementation surface:\n- Each agent's deliberate() has its own parse step that raises a ResponseParseError. Either:\n  (a) Add retry logic in each agent's deliberate (per-character), OR\n  (b) Add a shared retry helper in agent.py that wraps a parse-and-retry pattern, OR\n  (c) Add the retry at the speak() loop level \u2014 catch ResponseParseError, re-call deliberate with a hint\n  Option (b) feels cleanest: a _complete_with_retry helper alongside _complete_with_tools.\n\n- Cap retries at 1 by default. More than that risks runaway cost on a genuinely malformed prompt.\n\n- Track retry count in telemetry so we can measure how often retries succeed vs fail.\n\n- Consider whether the brace-balanced JSON fallback in parsing.py already handles some cases \u2014 there may be overlap. Ensure the retry only fires when the fallback also failed.\n\nComposition with existing fixes:\n- Turn-based quiescence (305d3b2) reduces the *cost* of parse errors (no 60s wall-clock tax) but doesn't recover the lost turn. This item recovers the turn.\n- Consolidation (script-level, no commit) reduces the surface area where lost turns matter (fewer meeting boundaries). Doesn't address parse errors directly.\n\nThis is the third leg of closing the 'Tweedles don't ship' bug class \u2014 quiescence + parse retry + consolidation together should make the runs reliable.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-06T21:12:47.828416",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "c664d71b-4c44-46a5-988a-bf03e7fe04cb",
+      "title": "Turn-based quiescence: race between agent IDLE and pending trigger",
+      "description": "Residual issue from the turn-based quiescence rework (305d3b2). When an agent has multiple triggers queued, there's a race window between processing turn N and picking up trigger N+1:\n\n  1. Agent finishes deliberating turn N, publishes utterance, enters speak()'s finally block\n  2. Agent's _set_state(IDLE) fires\n  3. Monitor sees all members IDLE, fires QUIESCENT\n  4. Dodo emits acknowledgment, thread transitions to COMPLETE\n  5. Agent's speak() loops back to gather_triggers, picks up queued trigger N+1\n  6. Agent enters AWAITING_RESPONSE, deliberates, tries to publish \u2014 late-publish suppression fires\n\nObserved in analysis 023's runs: 2-3 events per run, typically Tweedles responding to each other's contract proposals after M3 closed. The lost utterances are usually 'extras' (ancillary commentary) rather than load-bearing artifacts.\n\nFix candidates:\n- (a) speak()'s finally only sets IDLE when self.pending.empty(). Avoids the race in the common case (multiple triggers queued mid-turn).\n- (b) listen()'s should_engage path sets state AWAITING_RESPONSE when it puts on pending \u2014 declares engagement before speak() picks up.\n- (c) Both. Defense in depth.\n\nRecommendation: start with (a) \u2014 minimal change, addresses the common case. If late-publish events persist, add (b).\n\nCost of leaving unfixed: a few utterances per run get lost. Per the working-tree-as-implementation-artifact framing, code shipping is what matters, not utterance preservation. Polish item, not load-bearing.",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-06T22:18:04.688531",
       "created_by": "daedalus"
     }
   ],

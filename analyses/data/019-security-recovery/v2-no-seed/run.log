@@ -1,0 +1,239 @@
+==============================================================================
+T37 SECURITY RECOVERY SHOWCASE — credential-stuffing incident
+==============================================================================
+Project root:  /tmp/t37-recovery-v2
+Roster:        full cast (Queen, Dormouse, Cat, Tweedles, Hatter, Caterpillar, Alice, Rabbit, Dodo)
+Budget cap:    $3.00 hard
+Timeout:       480s (8min, T37 acceptance)
+Quiescence:    60s
+
+[t=  0.00s] dormouse           observation    INCIDENT — credential-stuffing pattern in progress. Production telemetry shows an anomalous auth-failure spike from source_ip=203.0.113.42 i…
+                             ↳ observation: Anomalous auth-failure spike from single IP — possible credential stuffing in progress [severity=sev1]
+[t=  0.00s] dodo               directive      Security incident response thread. The Dormouse just published an observation indicating a credential-stuffing attack in progress (severity=…
+[t= 13.11s] white_rabbit       ticket         Incident response requires immediate ticketing. The Queen will rule on mitigation shape; the Tweedles will ship it; the Caterpillar will rev…
+                             ↳ ticket: Implement rate-limiting on /login endpoint per Queen ruling
+                             ↳ ticket: Update /login lockout UX for already-locked-out users
+                             ↳ ticket: Audit logging for auth failure events and lockouts
+[t= 14.04s] cheshire_cat       question       Before the Queen rules on rate-limit shape and the Tweedles ship the mitigation, we need clarity on the visibility surface. The credential-s…
+[t= 14.34s] tweedledee         question       The Queen's ruling on rate-limit shape, lockout threshold adjustment, and breach-notification obligations just arrived on the bus — I'm stan…
+[t= 18.63s] alice              story          I'm inhabiting the locked-out users first. 47 people just got denied access to accounts they own, mid-session or mid-task. I need to underst…
+                             ↳ story: Locked-out user sees clear, actionable error and knows what to do
+                             ↳ story: Affected user can regain access without waiting forever or jumping through chaos
+                             ↳ story: User locked out can unlock without support friction if they own the account
+[t= 19.07s] white_rabbit       concern        The Cat is right to surface this before mitigation ships, and it is a scope question for the incident response. The Tweedles cannot finalize…
+[t= 26.71s] mad_hatter         test_scenario  Credential-stuffing scenarios to catch this attack-class going forward. The immediate mitigation stops this instance; these scenarios surfac…
+                             ↳ test_scenario: High-volume login attempts from single IP across distinct usernames triggers rate-limit before lockout threshold is crossed [severity=breakage]
+                             ↳ test_scenario: Successful credential-stuffing attempt against subset of accounts reveals what data was exposed in the upstream breach [severity=silent-wrongness]
+                             ↳ test_scenario: Attacker rotates User-Agent strings to bypass any rate-limit keyed only on IP+User-Agent combo [severity=degradation]
+                             ↳ test_scenario: Legitimate user from office network (shared IP) is collateral-locked during credential-stuffing attack originating from adjacent network segment [severity=degradation]
+                             ↳ test_scenario: Monitoring detects the next credential-stuffing variant before Dormouse telemetry spike reaches severity=high [severity=curiosity]
+[t= 29.62s] dormouse           concern        The Hatter's scenarios are well-placed, but scenario #2 surfaces a gap in our current understanding that blocks Tweedledum's implementation …
+[t= 31.40s] cheshire_cat       proposal       The three stories Alice has just published surface a critical architectural surface that didn't exist until the mitigation stories arrived: …
+                             ↳ adr: Decouple unlock authorization from initial authentication
+[t= 33.10s] queen_of_hearts    ruling         Credential-stuffing attack is in progress. Immediate mitigation is ship-blocking critical. The Dormouse's observation is precise; the threat…
+                             ↳ ruling: Rate-limit /login endpoint to halt credential-stuffing attack [severity=critical]
+                             ↳ ruling: Investigate whether any of the 4,127 attempted credentials succeeded; rule on GDPR breach notification if yes [severity=critical]
+                             ↳ ruling: Extend user-account lockout window from 5 failed attempts to 10, effective immediately [severity=high]
+[tweedledee] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+[t= 35.38s] dormouse           concern        The Cat has surfaced the critical load-bearing seam: unlock authorization. Before the Tweedles ship the lockout UX (ticket slug=update-login…
+[t= 38.31s] white_rabbit       ticket         Alice's stories surface the user-facing surface of the incident response. Three personas, three acceptance criteria — all v1, all blocking o…
+                             ↳ ticket: Display clear, actionable error to rate-limited users attempting login
+                             ↳ ticket: Implement account unlock workflow for rate-limited users (email + link or SMS)
+                             ↳ ticket: Add 'Unlock Account' CTA to login page for locked-out users who know their credentials
+[t= 41.71s] dormouse           observation    (no body)
+                             ↳ observation: Credential-stuffing attack halted; 47 accounts locked, 0 confirmed successful breaches [severity=sev2]
+[t= 42.03s] alice              story          The Hatter has surfaced five failure modes that real users will encounter — not in this attack, but in the next one, or in edge cases of thi…
+                             ↳ story: Legitimate user on shared IP discovers they are collateral-locked during attack
+                             ↳ story: User discovers their password was in the leaked list but they weren't on the attack path
+[t= 47.15s] dormouse           concern        Rabbit's decomposition is sound, but the unlock-workflow tickets (slug=implement-account-unlock-workflow-for-rate-limited-users-email-link-o…
+[t= 49.22s] cheshire_cat       concern        I've read the auth_service.py and the Queen's ruling, and I need to surface a critical architectural gap that blocks the Tweedles' implement…
+[t= 57.28s] dormouse           concern        The Cat's architectural reading is precise and exposes the load-bearing seam the Rabbit's tickets were blocked on. The answer to 'does succe…
+[t= 58.72s] tweedledum         implementation Incident-response rate-limiting and lockout enforcement. Shipped auth_service.py (core logic, audit trail, IP rate-limit + account lockout s…
+                             ↳ implementation: Incident-response rate-limiting and lockout enforcement
+[t= 59.61s] alice              concern        The Cat is surfacing a real architectural dependency — account-recovery primitives are the load-bearing seam for Alice's stories to work. Bu…
+[t= 60.78s] white_rabbit       ticket         The Hatter's scenarios surface the monitoring and detection gaps that will matter when the next attack variant arrives. I'm decomposing the …
+                             ↳ ticket: Monitoring: Detect high-volume login attempts from single IP across distinct usernames
+                             ↳ ticket: Monitoring: Detect User-Agent rotation as a rate-limit bypass signal
+                             ↳ ticket: Analysis: Collateral-damage risk from rate-limit on legitimate users sharing IP pools (office networks, ISP-assigned ranges)
+                             ↳ ticket: Monitoring: Generalized detection for credential-stuffing attack variants (beyond IP-based patterns)
+[t= 65.96s] alice              concern        The Queen has ruled on three immediate mitigations, and the Tweedles have shipped rate-limiting and lockout enforcement. But I'm seeing a ga…
+[t= 67.07s] queen_of_hearts    ruling         Credential-stuffing attack is active and ongoing. The Dormouse's telemetry is precise; the threat is immediate. I am ruling on the operation…
+                             ↳ ruling: Rate-limit /login endpoint to halt ongoing credential-stuffing attack [severity=critical]
+                             ↳ ruling: Investigate successful credential-stuffing attempts; rule on GDPR breach notification if confirmed [severity=high]
+                             ↳ ruling: Account lockout threshold extended from 5 to 10 failed attempts, effective immediately [severity=medium]
+[mad_hatter] deliberate() raised HatterResponseParseError: no JSON block found in HatterResponse response — treating as silence
+[t= 70.07s] cheshire_cat       proposal       The Hatter's scenario #2 — 'successful credential-stuffing attempt reveals what data was exposed' — depends on having a session audit trail.…
+                             ↳ adr: Add minimal session audit layer for incident-response visibility
+[t= 70.28s] tweedledee         question       I'm ready to ship the lockout-error UX per Alice's stories and the Queen's rulings. Three critical contract questions before I build:
+[t= 73.79s] alice              concern        The Rabbit has decomposed the user-facing surface into tickets, and the dependency ordering is clear. But I'm seeing a gap in what 'regain a…
+[t= 73.81s] dormouse           observation    Rate-limit and lockout enforcement shipped; telemetry confirms operational baseline. Three critical observability gaps blocking production c…
+                             ↳ observation: Rate-limit and lockout enforcement live; baseline telemetry nominal [severity=sev2]
+                             ↳ observation: Session audit trail: no observability hooks deployed [severity=sev2]
+                             ↳ observation: Session-access audit format: not yet specified; Queen's 72-hour deadline at risk [severity=sev2]
+[t= 77.96s] tweedledum         contract_note  The rate-limit implementation sets the contract shape on the /login endpoint and error surfaces. This note formalizes that shape for negotia…
+                             ↳ contract_note: Login endpoint rate-limit and lockout contract
+[t= 78.40s] white_rabbit       ticket         The Cat's ADR surfaces the load-bearing seam — unlock authorization cannot reuse the password that just failed, and the codebase has no reco…
+                             ↳ ticket: Implement account-recovery primitive: validate email ownership for unlock authorization
+                             ↳ ticket: Rate-limit account-unlock attempts to prevent unlock-path abuse during or after attack
+[t= 80.54s] dormouse           observation    (no body)
+                             ↳ observation: Session audit layer observability hooks not deployed; Queen's 72-hour deadline at risk [severity=sev2]
+[t= 83.45s] alice              story          The Dormouse just confirmed what the team built holds: the rate-limit stopped the attack before any credentials succeeded. The 47 locked-out…
+                             ↳ story: Locked-out user regains access quickly after rate-limit is lifted
+[t= 86.49s] dormouse           concern        Alice has surfaced a critical timing gap between the Queen's breach-investigation timeline and the user-facing recovery flow. The Queen's ru…
+[t= 92.32s] cheshire_cat       concern        The code Tweedledum shipped assumes session audit visibility exists (line 132: session_token placeholder, no audit log integration). ADR-002…
+[t= 92.39s] alice              concern        Tweedledum has shipped the rate-limit and lockout enforcement, which halts the attack. But I'm seeing a critical gap between what shipped an…
+[t= 95.90s] white_rabbit       ticket         The Queen has ruled on the attack-surface mitigation: rate-limit the /login endpoint, investigate breach scope, extend the lockout window. T…
+                             ↳ ticket: Extend user account lockout threshold from 5 to 10 failed attempts, effective immediately
+                             ↳ ticket: Implement rate-limiting on /login endpoint per Queen ruling
+                             ↳ ticket: Investigate whether any of the 4,127 attempted credentials succeeded; parse audit trail for successful logins
+[t= 95.94s] queen_of_hearts    ruling         Three secondary rulings on the locked-out user surface. Alice's stories are well-grounded in user reality; the acceptance criteria expose wh…
+                             ↳ ruling: Locked-out users must receive clear, actionable error messaging immediately [severity=critical]
+                             ↳ ruling: Account unlock must be available to legitimate account owners within 5 minutes of attempting unlock [severity=critical]
+                             ↳ ruling: Unlock must not be possible for attackers with the breached password [severity=critical]
+[t= 99.72s] dormouse           observation    (no body)
+                             ↳ observation: Credential-stuffing attack halted; rate-limit and lockout enforcement operational [severity=sev1]
+                             ↳ observation: Session audit layer deployed; observability instrumentation incomplete [severity=sev2]
+                             ↳ observation: Queen's breach-investigation deadline: audit parsing requires manual instrumentation [severity=sev2]
+[t=101.90s] mad_hatter         test_scenario  Five scenarios to catch the unlock-flow failure modes before they bite real locked-out users. The first two are breakage-class — if these fa…
+                             ↳ test_scenario: User enters correct unlock email, clicks token link, token is already expired because we issued it too early in the flow [severity=breakage]
+                             ↳ test_scenario: User successfully unlocks account; logs back in with the same password that is still on the breached-credentials list [severity=silent-wrongness]
+                             ↳ test_scenario: Email-based unlock works fine; SMS-based unlock backup fails due to Twilio quota exhaustion under the spike of unlock requests [severity=degradation]
+                             ↳ test_scenario: User receives unlock email while still in the middle of filling out a support ticket requesting unlock via customer service [severity=degradation]
+                             ↳ test_scenario: An attacker with the breached-credentials list attempts to unlock a stolen account using the same email recovery mechanism that legitimate users use, timing the unlock to be just after the account is locked out [severity=curiosity]
+[t=105.63s] dormouse           observation    (no body)
+                             ↳ observation: Session audit layer deployed; observability hooks incomplete [severity=sev2]
+[t=106.55s] white_rabbit       ticket         The Dormouse's concern surfaces the exact dependency sequencing that's blocking the unlock UX tickets. The architectural decision (which rec…
+                             ↳ ticket: Resolve account-recovery primitive availability and threat-model requirements
+[caterpillar] deliberate() raised CaterpillarResponseParseError: CaterpillarResponse response was not valid JSON: Expecting property name enclosed in double quotes: line 1 column 2 (char 1) — treating as silence
+[t=111.80s] alice              story          The Rabbit has decomposed the durable monitoring work into fast-follow tickets, and I need to inhabit the personas who will live with these …
+                             ↳ story: Legitimate office worker discovers they are rate-limited during credential-stuffing attack originating from adjacent network segment
+                             ↳ story: Security team investigates post-incident whether the rate-limit was overly broad or correctly scoped
+                             ↳ story: User discovers post-incident that their password was in the upstream breach list, even though they were never attacked during this incident
+[t=112.86s] dormouse           concern        The Cat is correct: ADR-002 (session audit layer) is the critical path, not a follow-on. ADR-001 (unlock authorization) depends on it. But I…
+[tweedledee] deliberate() raised KeyError: "No Contract Note with slug 'auth-error-response-format'" — treating as silence
+[t=115.78s] cheshire_cat       concern        The Dormouse has made explicit what the Tweedles' implementation reveals implicitly: account-recovery primitives (email token generation, SM…
+[t=117.26s] alice              concern        The Queen's ruling surfaces the load-bearing dependency I've been seeing across the last four turns: unlock authorization cannot reuse the c…
+[t=119.21s] dormouse           concern        Alice is correct. The rate-limit and lockout enforcement halts the attack; the audit trail gives the Queen the evidence she needs to investi…
+[t=124.07s] white_rabbit       ticket         Alice has surfaced two persona-driven stories that expose gaps in the current mitigation scope. Both are real user harms that will manifest …
+                             ↳ ticket: Provide unlock path for collateral-locked users on shared corporate IPs
+                             ↳ ticket: Proactive breach-notification UX: user discovers their password was in leaked list post-authentication
+[t=125.68s] alice              concern        The Cat's proposal surfaces a critical architectural dependency, and I need to flag what happens to the user stories if this minimal session…
+[t=132.95s] cheshire_cat       reframe        The Dormouse's confirmation that zero credentials succeeded fundamentally changes the architectural shape of the remaining incident-response…
+[t=134.36s] alice              concern        The Dormouse is right about the observability gaps, but I'm seeing a deeper sequencing problem that blocks both the observability *and* the …
+[t=135.66s] white_rabbit       concern        Dormouse is correct to surface this as blocking — the unlock-workflow tickets cannot finalize their acceptance criteria without architectura…
+[queen_of_hearts] deliberate() raised QueenResponseParseError: QueenResponse response failed schema validation: 1 validation error for QueenResponse
+rulings.2.domain
+  Input should be 'authentication', 'authorization', 'secret-handling', 'data-handling', 'input-validation', 'logging-and-audit', 'dependencies', 'network', 'cryptography', 'privacy' or 'compliance' [type=enum, input_value='compliance-gdpr', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum — treating as silence
+[t=139.07s] tweedledee         contract_note  (no body)
+                             ↳ contract_note: Account recovery and unlock authorization
+[t=145.16s] alice              concern        I've been inhabiting the locked-out users for seven turns now, and I need to surface what I'm seeing: the team is shipping pieces that don't…
+[t=146.75s] mad_hatter         test_scenario  The unlock flow has five load-bearing seams. Two are architectural (blocked until the Cat's visibility questions are resolved); three are im…
+                             ↳ test_scenario: Attacker with breached password attempts to unlock a stolen account just after the legitimate owner discovers the lockout [severity=breakage]
+                             ↳ test_scenario: User requests unlock, email with token arrives, user clicks token link, token is already expired because the token TTL is shorter than the email delivery time [severity=degradation]
+                             ↳ test_scenario: Legitimate user on a shared corporate network IP is collateral-locked; support is unreachable; self-service unlock requires account email but user cannot access email from the locked network due to proxy/firewall rules [severity=degradation]
+                             ↳ test_scenario: Multiple failed unlock attempts from the same IP eventually trigger another rate-limit, preventing the user from trying again until the rate-limit resets [severity=degradation]
+                             ↳ test_scenario: Unlock endpoint receives a burst of requests at the 5-minute mark post-attack when the automatic lockout TTL expires and legitimate users start retrying login (second wave of legitimate traffic) on top of unlock requests arriving [severity=curiosity]
+[t=149.13s] white_rabbit       ticket         The Cat has named the load-bearing architectural seam: post-login access is currently immediate and unscoped, which makes the Queen's ruling…
+                             ↳ ticket: Implement minimal session audit layer for incident-response visibility
+                             ↳ ticket: Specify session-audit log format for breach investigation
+[t=157.15s] alice              concern        I need to surface what I'm observing about the shape of the artifacts on this thread and what that shape means for the locked-out users I'm …
+[tweedledee] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+[t=166.13s] white_rabbit       ticket         The Dormouse has surfaced the observability precondition that blocks the session layer from shipping safely. The session audit is not just a…
+                             ↳ ticket: Specify session-audit log format for breach investigation and GDPR compliance
+                             ↳ ticket: Specify session-telemetry observability hooks required for production incident response
+                             ↳ ticket: Confirm session-layer architecture can accommodate both audit logging and observability hooks without performance degradation
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+[t=169.91s] tweedledee         question       On your contract note 'login-endpoint-rate-limit-and-lockout-contract': I need clarity on two surfaces before I finalize the error UX.
+[t=170.19s] dormouse           observation    (no body)
+                             ↳ observation: Incident-response tickets decomposed and sequenced; rate-limit critical path identified [severity=informational]
+[t=171.16s] caterpillar        review         I've read the rate-limit and lockout enforcement code. The incident observation confirms it halted the attack; the state machines are correc…
+                             ↳ review: Incident-response rate-limiting and lockout enforcement
+[t=173.56s] mad_hatter         concern        I've read the auth_service.py and http_middleware.py. The Cat's question surfaces the exact load-bearing seam the code exposes. There are no…
+[t=175.86s] queen_of_hearts    ruling         Credential-stuffing attack is operationally halted. Rate-limit is holding; lockout enforcement is working; audit trail is recording session …
+                             ↳ ruling: Rate-limit and lockout thresholds must be monitored actively; passive rate-limit enforcement is insufficient [severity=high]
+                             ↳ ruling: Post-incident threat-model update is mandatory; current threat model did not account for credential-stuffing attack class [severity=high]
+                             ↳ ruling: Incident response is not complete until unlock primitives are deployed and tested; currently-deployed rate-limit is halting the attack but leaving locked-out users without self-service recovery [severity=high]
+[t=176.68s] cheshire_cat       proposal       Alice's two new stories surface architectural gaps that need clarification before the unlock work can ship. Story 005 (Yuki, post-incident p…
+                             ↳ adr: Reduce rate-limit collateral damage via multi-factor threshold
+[t=180.30s] alice              story          The Queen has just ruled on three load-bearing surfaces: error messaging, unlock-timing SLA, and attack resistance. These are acceptance cri…
+                             ↳ story: Locked-out user sees clear, actionable error and knows exactly what to do next
+                             ↳ story: Locked-out user unlocks their account and regains access within their 5-minute SLA
+                             ↳ story: Attacker with the breached password cannot use the unlock flow to regain access to stolen accounts
+[t=181.23s] dormouse           observation    (no body)
+                             ↳ observation: Incident-response critical path: unlock primitive remains unspecified; user-facing mitigation timeline at risk [severity=sev2]
+[t=189.03s] white_rabbit       ticket         Tweedledum has shipped the rate-limit and lockout logic. The implementation is operationally sound — the attack is halted. But the tickets d…
+                             ↳ ticket: BLOCKING: Queen decides account-recovery primitive for unlock authorization
+                             ↳ ticket: BLOCKING: Dormouse specifies session-audit and session-telemetry observability hooks
+                             ↳ ticket: BLOCKING: Cat confirms session-layer architecture fits Queen's audit requirement + Dormouse's observability requirement + incident-response timeline
+[t=189.99s] cheshire_cat       concern        The Dormouse is correct that ADR-002 (minimal session-audit layer) has become critical-path with your ruling 011 — incident response is not …
+[t=194.36s] dormouse           observation    (no body)
+                             ↳ observation: Incident-response critical path blocked; unlock primitive decision pending [severity=sev1]
+                             ↳ observation: Session-audit observability hooks incomplete; Dormouse cannot verify session behavior in production [severity=sev2]
+[t=197.67s] dormouse           concern        The codebase has no account-recovery primitives (email-token generation, SMS send, security-question validation) deployed. ADR-001 and the Q…
+[t=198.86s] alice              concern        I've published nine concerns on this thread across fourteen turns. The team is shipping pieces faster than I can inhabit the user experience…
+[t=200.64s] dormouse           question       Alice's question is precise and load-bearing. I need to read the codebase directly to answer what account-recovery primitives exist today. L…
+[t=201.15s] alice              deference      The Rabbit's decomposition is clear and the decision-gating is sound. These two tickets name the user-harm tradeoffs that the team must reso…
+[t=201.99s] caterpillar        concern        My prior review (review-001) flagged a blocking issue that remains unresolved: the `_validate_credentials` function in auth_service.py (line…
+[t=206.57s] cheshire_cat       concern        The Dormouse has surfaced the critical load-bearing constraint that ADR-002 assumes but has not yet named explicitly: the session layer must…
+[t=211.33s] queen_of_hearts    ruling         The credential-stuffing attack is operationally contained. Rate-limit and lockout enforcement are holding. But the team is at a critical seq…
+                             ↳ ruling: Email-token-based account unlock is the selected recovery primitive for incident response [severity=critical]
+                             ↳ ruling: Session-audit log format specified for breach investigation and observability [severity=critical]
+                             ↳ ruling: Unlock-UX must deliver <10-minute regain-access path without support escalation [severity=high]
+[t=211.57s] white_rabbit       ticket         Queen's ruling is clear and immediate: rate-limit ships now, breach investigation proceeds in parallel, lockout threshold extends immediatel…
+                             ↳ ticket: Extend account lockout threshold from 5 to 10 failed attempts (hotfix, ship immediately)
+                             ↳ ticket: Implement rate-limiting on /login endpoint per Queen's ruling (critical path)
+                             ↳ ticket: Investigate breach scope: parse rate-limit audit logs for successful credential attempts (Queen's ruling 2)
+[t=211.94s] mad_hatter         test_scenario  Three scenarios to catch the unlock-flow failure modes before they bite real locked-out users under production load. The first is breakage-c…
+                             ↳ test_scenario: User requests unlock, receives valid token/code via email or SMS, enters token but unlock endpoint returns 'token invalid' even though token matches what was sent [severity=breakage]
+                             ↳ test_scenario: Unlock flow succeeds, user regains access, logs in with original password, later discovers that password was on the breached-credentials list but the unlock flow did not flag this or force a password change [severity=silent-wrongness]
+                             ↳ test_scenario: Email-based unlock flow sends token via email, legitimate user on a corporate network with strict email-filtering rules receives the email 30 minutes late, by which time the token has expired (10-minute TTL), user cannot unlock [severity=degradation]
+[t=213.23s] <budget>             EXCEEDED $3.01
+
+==============================================================================
+T37 ACCEPTANCE SUMMARY
+==============================================================================
+Elapsed:       213.2s  (limit: 480s)
+Total cost:    $3.0093  (cap: $3.00)
+LLM calls:     225
+
+Acceptance criteria:
+  [PASS] Queen ≥1 critical-severity ruling   (got 8)
+  [PASS] Tweedles ≥1 implementation           (got 1)
+  [PASS] Caterpillar ≥1 review                (got 1)
+  [PASS] Hatter ≥1 test_scenario              (got 18)
+  [PASS] Within 8min                          (213.2s)
+  [FAIL] Under $3 cost                        ($3.0093)
+
+Speech acts:
+  concern            27
+  ticket             11
+  observation        9
+  question           5
+  story              5
+  ruling             5
+  test_scenario      4
+  proposal           3
+  contract_note      2
+  directive          1
+  implementation     1
+  reframe            1
+  review             1
+  deference          1
+
+Artifacts shipped:
+  ticket             29
+  test_scenario      18
+  ruling             15
+  observation        14
+  story              12
+  adr                3
+  contract_note      2
+  implementation     1
+  review             1
+
+Files on disk under project_root (excluding .git, .wonderland, run.log):
+  auth_service.py (10268 bytes)
+  http_middleware.py (9141 bytes)
+
+Late-publish: none — every deliberation finished within the meeting boundary.

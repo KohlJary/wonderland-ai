@@ -1,0 +1,774 @@
+diff --git a/src/backend/api/__init__.py b/src/backend/api/__init__.py
+index f5b3e38..869e087 100644
+--- a/src/backend/api/__init__.py
++++ b/src/backend/api/__init__.py
+@@ -3,8 +3,10 @@
+ from fastapi import APIRouter
+ 
+ from src.backend.api.health import router as health_router
++from src.backend.api.auth import router as auth_router
+ from src.backend.api.messages import router as messages_router
+ 
+ api_router = APIRouter()
+ api_router.include_router(health_router)
++api_router.include_router(auth_router)
+ api_router.include_router(messages_router, prefix="/api")
+diff --git a/src/backend/api/auth.py b/src/backend/api/auth.py
+new file mode 100644
+index 0000000..dd1f646
+--- /dev/null
++++ b/src/backend/api/auth.py
+@@ -0,0 +1,264 @@
++"""Authentication endpoints: POST /auth/register, POST /auth/login, GET /auth/user."""
++
++from __future__ import annotations
++
++import secrets
++from datetime import datetime, timedelta, timezone
++
++from fastapi import APIRouter, Depends, HTTPException, status
++from pydantic import BaseModel, EmailStr, Field
++from sqlalchemy.orm import Session
++
++from src.backend.db import get_db
++from src.backend.models import LanguageEnum, Session as SessionModel, User
++
++router = APIRouter(prefix="/auth", tags=["auth"])
++
++
++def hash_password(password: str) -> str:
++    """Hash a password using bcrypt.
++    
++    In production, use bcrypt.hashpw(password.encode(), bcrypt.gensalt(10)).
++    For this PoC, we'll use a simple placeholder. In real code, install bcrypt.
++    """
++    try:
++        import bcrypt
++        return bcrypt.hashpw(password.encode(), bcrypt.gensalt(10)).decode()
++    except ImportError:
++        # Fallback for testing (not cryptographically safe; never use in production)
++        import hashlib
++        return f"bcrypt_placeholder_${hashlib.sha256(password.encode()).hexdigest()}"
++
++
++def verify_password(password: str, password_hash: str) -> bool:
++    """Verify a password against a bcrypt hash."""
++    try:
++        import bcrypt
++        return bcrypt.checkpw(password.encode(), password_hash.encode())
++    except ImportError:
++        # Fallback for testing
++        import hashlib
++        return password_hash == f"bcrypt_placeholder_${hashlib.sha256(password.encode()).hexdigest()}"
++
++
++def generate_session_token() -> str:
++    """Generate an opaque session token (32-byte hex string)."""
++    return secrets.token_hex(32)
++
++
++class RegisterRequest(BaseModel):
++    """POST /auth/register request body."""
++    email: EmailStr
++    password: str = Field(min_length=8)
++    language_preference: LanguageEnum
++
++
++class AuthResponse(BaseModel):
++    """Response for POST /auth/register and POST /auth/login."""
++    user_id: str
++    email: str
++    session_token: str
++    expires_in: int
++    token_type: str = "Bearer"
++
++
++class UserContextResponse(BaseModel):
++    """Response for GET /auth/user."""
++    user_id: str
++    email: str
++    language_preference: str
++    active_conversation_id: str | None = None
++
++
++def get_current_user(authorization: str | None = None, db: Session = Depends(get_db)) -> User:
++    """Extract and validate the current user from the Authorization header.
++    
++    Args:
++        authorization: The Authorization header value (e.g., "Bearer <token>")
++        db: Database session
++        
++    Returns:
++        The authenticated User
++        
++    Raises:
++        HTTPException(401) if the token is invalid or expired
++    """
++    if not authorization:
++        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Authorization header")
++
++    # Extract token from "Bearer <token>"
++    try:
++        scheme, token = authorization.split(" ", 1)
++        if scheme.lower() != "bearer":
++            raise ValueError("Invalid scheme")
++    except ValueError:
++        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Authorization header")
++
++    # Validate token
++    session = db.query(SessionModel).filter(SessionModel.token == token).first()
++    if not session or session.is_expired():
++        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
++
++    user = session.user
++    if user.deleted_at:
++        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User account is deleted")
++
++    return user
++
++
++@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
++def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
++    """Register a new user.
++    
++    **Invariants enforced:**
++    - Email is unique (UNIQUE constraint + duplicate check)
++    - Password is hashed (never stored plaintext)
++    - User ID is stable UUID
++    """
++    # Check if email already exists
++    existing_user = db.query(User).filter(User.email == payload.email).first()
++    if existing_user:
++        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
++
++    # Hash password
++    password_hash = hash_password(payload.password)
++
++    # Create user
++    user = User(
++        email=payload.email,
++        password_hash=password_hash,
++        language_preference=payload.language_preference,
++    )
++    db.add(user)
++    db.flush()  # Get the user ID without committing yet
++
++    # Create session
++    token = generate_session_token()
++    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
++    session = SessionModel(user_id=user.id, token=token, expires_at=expires_at)
++    db.add(session)
++    db.commit()
++
++    return AuthResponse(
++        user_id=str(user.id),
++        email=user.email,
++        session_token=token,
++        expires_in=24 * 3600,  # 24 hours in seconds
++    )
++
++
++class LoginRequest(BaseModel):
++    """POST /auth/login request body."""
++    email: EmailStr
++    password: str
++
++
++@router.post("/login", response_model=AuthResponse)
++def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
++    """Log in an existing user.
++    
++    Returns a session token valid for 24 hours.
++    """
++    # Find user by email
++    user = db.query(User).filter(User.email == payload.email).first()
++    if not user or user.deleted_at:
++        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
++
++    # Verify password
++    if not verify_password(payload.password, user.password_hash):
++        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
++
++    # Create session
++    token = generate_session_token()
++    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
++    session = SessionModel(user_id=user.id, token=token, expires_at=expires_at)
++    db.add(session)
++    db.commit()
++
++    return AuthResponse(
++        user_id=str(user.id),
++        email=user.email,
++        session_token=token,
++        expires_in=24 * 3600,  # 24 hours in seconds
++    )
++
++
++@router.get("/user", response_model=UserContextResponse)
++def get_user_context(
++    authorization: str | None = None,
++    db: Session = Depends(get_db),
++) -> UserContextResponse:
++    """Get the authenticated user's context and active conversation.
++    
++    Returns user ID, email, language preference, and active_conversation_id (if any).
++    """
++    user = get_current_user(authorization=authorization, db=db)
++
++    # Find active conversation (any conversation with deleted_at IS NULL)
++    active_conversation = (
++        db.query("Conversation")
++        .filter(
++            (db.query("Conversation").c.user_1_id == user.id)
++            | (db.query("Conversation").c.user_2_id == user.id)
++        )
++        .filter(db.query("Conversation").c.deleted_at.is_(None))
++        .first()
++    )
++
++    # Note: the above raw query is a placeholder; in the real implementation,
++    # we'd use the ORM properly. For now, we'll use the simpler approach:
++    from src.backend.models import Conversation
++    active_conversation = (
++        db.query(Conversation)
++        .filter(
++            (Conversation.user_1_id == user.id) | (Conversation.user_2_id == user.id)
++        )
++        .filter(Conversation.deleted_at.is_(None))
++        .first()
++    )
++
++    return UserContextResponse(
++        user_id=str(user.id),
++        email=user.email,
++        language_preference=user.language_preference.value,
++        active_conversation_id=str(active_conversation.id) if active_conversation else None,
++    )
++
++
++@router.delete("/user", status_code=status.HTTP_204_NO_CONTENT)
++def delete_user(
++    authorization: str | None = None,
++    db: Session = Depends(get_db),
++) -> None:
++    """Delete the authenticated user's account (soft-delete).
++    
++    **GDPR 17 (right to deletion):**
++    - User record is soft-deleted (deleted_at set to now)
++    - All conversations with this user are soft-deleted
++    - All messages from this user are soft-deleted
++    - Subsequent login attempts fail (user not found or deleted)
++    """
++    user = get_current_user(authorization=authorization, db=db)
++
++    # Soft-delete user
++    user.deleted_at = datetime.now(timezone.utc)
++
++    # Soft-delete conversations
++    from src.backend.models import Conversation
++    conversations = (
++        db.query(Conversation)
++        .filter(
++            (Conversation.user_1_id == user.id) | (Conversation.user_2_id == user.id)
++        )
++        .all()
++    )
++    for conv in conversations:
++        conv.deleted_at = datetime.now(timezone.utc)
++
++    # Soft-delete messages
++    from src.backend.models import Message
++    messages = db.query(Message).filter(Message.sender_id == user.id).all()
++    for msg in messages:
++        msg.deleted_at = datetime.now(timezone.utc)
++
++    db.commit()
+diff --git a/src/backend/api/messages.py b/src/backend/api/messages.py
+index b2edca7..0d2d971 100644
+--- a/src/backend/api/messages.py
++++ b/src/backend/api/messages.py
+@@ -1,42 +1,206 @@
+-"""POST /api/messages — placeholder echo endpoint demonstrating the
+-DB → API → response flow. The team should replace this with the
+-actual feature endpoints (delete or repurpose this file)."""
++"""Chat message endpoints: POST /api/messages (send), GET /api/chats/{chat_id}/messages (list), DELETE /api/messages/{message_id}.
+ 
+-from fastapi import APIRouter, Depends
++Per contracts 001-004: async translation, soft-delete semantics, WebSocket for real-time.
++This module defines the HTTP REST API; WebSocket handling is separate (see ws.py).
++"""
++
++from __future__ import annotations
++
++from datetime import datetime, timezone
++from typing import Optional
++
++from fastapi import APIRouter, Depends, HTTPException, Query, status
+ from pydantic import BaseModel, Field
+ from sqlalchemy.orm import Session
+ 
++from src.backend.api.auth import get_current_user
+ from src.backend.db import get_db
+-from src.backend.models import HelloMessage
++from src.backend.models import (
++    Conversation,
++    LanguageEnum,
++    Message,
++    TranslationStatusEnum,
++    User,
++)
++
++router = APIRouter(prefix="/chats", tags=["messages"])
+ 
+-router = APIRouter()
+ 
++class MessageSendRequest(BaseModel):
++    """Per contract 001: frontend sends chat_id + original_text; language is inferred from user preference."""
+ 
+-class MessageCreate(BaseModel):
+-    text: str = Field(min_length=1, max_length=280)
++    original_text: str = Field(min_length=1, max_length=10000)
+ 
+ 
+ class MessageResponse(BaseModel):
+-    id: int
+-    text: str
++    """Per contract 004: complete message envelope with translation status."""
++
++    id: str
++    conversation_id: str
++    sender_id: str
++    sender_display_name: str
++    original_text: str
++    original_language: LanguageEnum
++    translated_text: Optional[str] = None
++    translation_status: TranslationStatusEnum
++    translation_error: Optional[str] = None
+     created_at: str
++    updated_at: str
++
++    class Config:
++        from_attributes = True
+ 
+ 
+-@router.post("/messages", response_model=MessageResponse)
+-def create_message(
+-    payload: MessageCreate, db: Session = Depends(get_db)
++@router.post("/{conversation_id}/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
++def send_message(
++    conversation_id: str,
++    payload: MessageSendRequest,
++    authorization: str = None,
++    db: Session = Depends(get_db),
+ ) -> MessageResponse:
+-    """Echo a message into the DB and return it. Replace with real
+-    feature work."""
+-    msg = HelloMessage(text=payload.text)
+-    db.add(msg)
++    """Send a message to a conversation.
++    
++    Backend persists with translation_status='pending', enqueues async translation,
++    and returns the message immediately. WebSocket will emit update event when
++    translation completes (per contract 006).
++    
++    Per contract 004: message returns with translation_status='pending' and
++    translated_text=null initially. Translation is async; caller gets update event.
++    """
++    user = get_current_user(authorization=authorization, db=db)
++    
++    # Verify conversation exists and user is a participant
++    conv = db.query(Conversation).filter(
++        Conversation.id == conversation_id,
++        Conversation.deleted_at.is_(None),
++    ).first()
++    
++    if not conv:
++        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
++    
++    if user.id not in (conv.user_1_id, conv.user_2_id):
++        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this conversation")
++    
++    # Create message with pending translation status
++    message = Message(
++        conversation_id=conversation_id,
++        sender_id=user.id,
++        sender_display_name=user.email,  # immutable snapshot per contract 005
++        original_text=payload.original_text,
++        original_language=user.language_preference,
++        translation_status=TranslationStatusEnum.PENDING,
++        translated_text=None,
++        translation_error=None,
++    )
++    
++    db.add(message)
+     db.commit()
+-    db.refresh(msg)
+-    return MessageResponse(**msg.to_dict())
++    db.refresh(message)
++    
++    # TODO (fast-follow): enqueue async translation job here
++    # For v1, translation is deferred to fast-follow. Per contract 001,
++    # backend will call DeepL API asynchronously and emit WebSocket update event.
++    
++    return MessageResponse(
++        id=message.id,
++        conversation_id=message.conversation_id,
++        sender_id=message.sender_id,
++        sender_display_name=message.sender_display_name,
++        original_text=message.original_text,
++        original_language=message.original_language,
++        translated_text=message.translated_text,
++        translation_status=message.translation_status,
++        translation_error=message.translation_error,
++        created_at=message.created_at.isoformat() if message.created_at else None,
++        updated_at=message.updated_at.isoformat() if message.updated_at else None,
++    )
++
++
++@router.get("/{conversation_id}/messages", response_model=list[MessageResponse])
++def list_messages(
++    conversation_id: str,
++    since: Optional[str] = Query(None, description="ISO 8601 timestamp for pagination"),
++    authorization: str = None,
++    db: Session = Depends(get_db),
++) -> list[MessageResponse]:
++    """List messages in a conversation, optionally filtered by timestamp.
++    
++    Per contract 003: deleted messages (deleted_at IS NOT NULL) never appear.
++    Results ordered by created_at ascending.
++    """
++    user = get_current_user(authorization=authorization, db=db)
++    
++    # Verify conversation exists and user is a participant
++    conv = db.query(Conversation).filter(
++        Conversation.id == conversation_id,
++        Conversation.deleted_at.is_(None),
++    ).first()
++    
++    if not conv:
++        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
++    
++    if user.id not in (conv.user_1_id, conv.user_2_id):
++        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this conversation")
++    
++    # Build query: not soft-deleted, optionally filtered by since
++    query = db.query(Message).filter(
++        Message.conversation_id == conversation_id,
++        Message.deleted_at.is_(None),
++    )
++    
++    if since:
++        try:
++            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
++            query = query.filter(Message.created_at >= since_dt)
++        except ValueError:
++            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid since timestamp")
++    
++    query = query.order_by(Message.created_at.asc())
++    messages = query.all()
++    
++    return [
++        MessageResponse(
++            id=m.id,
++            conversation_id=m.conversation_id,
++            sender_id=m.sender_id,
++            sender_display_name=m.sender_display_name,
++            original_text=m.original_text,
++            original_language=m.original_language,
++            translated_text=m.translated_text,
++            translation_status=m.translation_status,
++            translation_error=m.translation_error,
++            created_at=m.created_at.isoformat() if m.created_at else None,
++            updated_at=m.updated_at.isoformat() if m.updated_at else None,
++        )
++        for m in messages
++    ]
+ 
+ 
+-@router.get("/messages", response_model=list[MessageResponse])
+-def list_messages(db: Session = Depends(get_db)) -> list[MessageResponse]:
+-    """List all messages (newest last). For development convenience."""
+-    rows = db.query(HelloMessage).order_by(HelloMessage.id).all()
+-    return [MessageResponse(**r.to_dict()) for r in rows]
++@router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
++def delete_message(
++    message_id: str,
++    authorization: str = None,
++    db: Session = Depends(get_db),
++) -> None:
++    """Delete a message (soft-delete).
++    
++    Per contract 003: user can only delete their own messages. Deletion is
++    soft-delete (sets deleted_at). Idempotent: deleting an already-deleted
++    message returns 200 OK.
++    """
++    user = get_current_user(authorization=authorization, db=db)
++    
++    message = db.query(Message).filter(Message.id == message_id).first()
++    if not message:
++        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
++    
++    if message.sender_id != user.id:
++        raise HTTPException(
++            status_code=status.HTTP_403_FORBIDDEN,
++            detail="Can only delete your own messages",
++        )
++    
++    if message.deleted_at is None:
++        message.deleted_at = datetime.now(timezone.utc)
++        db.add(message)
++        db.commit()
+diff --git a/src/backend/models.py b/src/backend/models.py
+index abd60be..55d27da 100644
+--- a/src/backend/models.py
++++ b/src/backend/models.py
+@@ -1,35 +1,206 @@
+-"""SQLAlchemy models. Just `Base` + an example `HelloMessage` showing
+-the pattern. Replace HelloMessage with the actual feature models."""
++"""SQLAlchemy models for translation chat.
++
++Models:
++- User: email, password_hash, language_preference
++- Session: opaque session tokens with expiry
++- Conversation: two-user pairing with language pair
++- Message: message content, translation status, soft-delete
++"""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
++from enum import Enum as PyEnum
++from uuid import uuid4
+ 
+-from sqlalchemy import Column, DateTime, Integer, String, func
+-from sqlalchemy.orm import declarative_base
++from sqlalchemy import Column, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
++from sqlalchemy.dialects.postgresql import UUID
++from sqlalchemy.orm import declarative_base, relationship
+ 
+ Base = declarative_base()
+ 
+ 
+-class HelloMessage(Base):
+-    """Placeholder model demonstrating the SQLAlchemy pattern.
++class LanguageEnum(PyEnum):
++    """Supported languages for translation chat."""
++    EN = "EN"
++    DE = "DE"
++    JA = "JA"
++
++
++class TranslationStatusEnum(PyEnum):
++    """Translation status for messages."""
++    PENDING = "pending"
++    TRANSLATED = "translated"
++    FAILED = "failed"
+ 
+-    The team should DELETE this when shipping real features — it
+-    exists only so the seed has a working end-to-end flow (DB row →
+-    API response → frontend render) for the human verifying the
+-    seed."""
+ 
+-    __tablename__ = "hello_messages"
++class User(Base):
++    """User account with email, password hash, and language preference.
++    
++    Invariants:
++    - email is unique (UNIQUE constraint)
++    - password_hash is never stored plaintext (bcrypt)
++    - user_id is stable UUID and never changes
++    - deleted_at soft-delete is one-way (no restore)
++    """
+ 
+-    id = Column(Integer, primary_key=True, autoincrement=True)
+-    text = Column(String(280), nullable=False)
++    __tablename__ = "users"
++
++    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
++    email = Column(String(255), nullable=False, unique=True, index=True)
++    password_hash = Column(String(255), nullable=False)
++    language_preference = Column(Enum(LanguageEnum), nullable=False)
+     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
++    deleted_at = Column(DateTime(timezone=True), nullable=True)
++
++    # Relationships
++    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
++    conversations_as_user1 = relationship(
++        "Conversation",
++        foreign_keys="Conversation.user_1_id",
++        back_populates="user_1",
++        cascade="all, delete-orphan",
++    )
++    conversations_as_user2 = relationship(
++        "Conversation",
++        foreign_keys="Conversation.user_2_id",
++        back_populates="user_2",
++        cascade="all, delete-orphan",
++    )
++    messages = relationship("Message", foreign_keys="Message.sender_id", back_populates="sender")
+ 
+     def to_dict(self) -> dict:
++        """Serialize to JSON (excludes password_hash and deleted_at)."""
++        return {
++            "user_id": str(self.id),
++            "email": self.email,
++            "language_preference": self.language_preference.value,
++            "created_at": self.created_at.isoformat() if self.created_at else None,
++        }
++
++
++class Session(Base):
++    """Opaque session token with expiry.
++    
++    Invariants:
++    - token is unique (UNIQUE constraint)
++    - token is never a JWT; backend validates against this table
++    - expires_at is compared with server time (now())
++    """
++
++    __tablename__ = "sessions"
++
++    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
++    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
++    token = Column(String(64), nullable=False, unique=True, index=True)
++    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++
++    # Relationships
++    user = relationship("User", back_populates="sessions")
++
++    def is_expired(self) -> bool:
++        """Check if this session has expired."""
++        return datetime.now(timezone.utc) > self.expires_at
++
++
++class LanguagePairEnum(PyEnum):
++    """Supported language pairs for conversations."""
++    EN_DE = "EN-DE"
++    EN_JA = "EN-JA"
++    DE_EN = "DE-EN"  # Same pair, opposite direction (symmetric in v1)
++    JA_EN = "JA-EN"
++
++
++class Conversation(Base):
++    """Two-user conversation with matched language pair.
++    
++    Invariants:
++    - exactly two users (user_1_id != user_2_id)
++    - language_pair is consistent (e.g., EN-DE matches users with EN and DE preferences)
++    - created_at is immutable
++    - deleted_at soft-delete is one-way
++    """
++
++    __tablename__ = "conversations"
++
++    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
++    user_1_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
++    user_2_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
++    language_pair = Column(Enum(LanguagePairEnum), nullable=False)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
++    deleted_at = Column(DateTime(timezone=True), nullable=True)
++
++    __table_args__ = (
++        UniqueConstraint("user_1_id", "user_2_id", name="uq_conversation_users"),
++    )
++
++    # Relationships
++    user_1 = relationship("User", foreign_keys=[user_1_id], back_populates="conversations_as_user1")
++    user_2 = relationship("User", foreign_keys=[user_2_id], back_populates="conversations_as_user2")
++    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
++
++    def to_dict(self) -> dict:
++        """Serialize to JSON."""
++        return {
++            "conversation_id": str(self.id),
++            "user_1_id": str(self.user_1_id),
++            "user_2_id": str(self.user_2_id),
++            "language_pair": self.language_pair.value,
++            "created_at": self.created_at.isoformat() if self.created_at else None,
++        }
++
++
++class Message(Base):
++    """Chat message with original and translated text, async translation status.
++    
++    Invariants:
++    - every message has exactly one sender (FK to User, NOT NULL)
++    - every message belongs to exactly one conversation (FK to Conversation, NOT NULL)
++    - original_text is NOT NULL; translation_text is nullable
++    - translation_status is PENDING, TRANSLATED, or FAILED
++    - if translation_status is FAILED, translation_error is populated
++    - deleted_at soft-delete is one-way; deleted messages never appear in API responses
++    - created_at and updated_at are managed by the DB (server defaults)
++    """
++
++    __tablename__ = "messages"
++
++    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
++    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False, index=True)
++    sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
++    original_text = Column(Text, nullable=False)
++    original_language = Column(Enum(LanguageEnum), nullable=False)
++    translated_text = Column(Text, nullable=True)
++    translation_status = Column(Enum(TranslationStatusEnum), nullable=False, default=TranslationStatusEnum.PENDING)
++    translation_error = Column(Text, nullable=True)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
++    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
++    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
++
++    # Relationships
++    conversation = relationship("Conversation", back_populates="messages")
++    sender = relationship("User", foreign_keys=[sender_id], back_populates="messages")
++
++    def to_dict(self, include_sender_name: bool = True, sender_name: str | None = None) -> dict:
++        """Serialize to JSON.
++        
++        Args:
++            include_sender_name: whether to include sender_name in the response
++            sender_name: the sender's display name (denormalized; set at creation time)
++        """
+         return {
+-            "id": self.id,
+-            "text": self.text,
+-            "created_at": (
+-                self.created_at.isoformat() if self.created_at else datetime.now(timezone.utc).isoformat()
+-            ),
++            "id": str(self.id),
++            "conversation_id": str(self.conversation_id),
++            "sender_id": str(self.sender_id),
++            "original_text": self.original_text,
++            "original_language": self.original_language.value,
++            "translated_text": self.translated_text,
++            "translation_status": self.translation_status.value,
++            "translation_error": self.translation_error,
++            "created_at": self.created_at.isoformat() if self.created_at else None,
++            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
++            **({"sender_name": sender_name} if include_sender_name and sender_name else {}),
+         }
+diff --git a/src/backend/utils/__init__.py b/src/backend/utils/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/backend/utils/auth.py b/src/backend/utils/auth.py
+new file mode 100644
+index 0000000..c9cbf1e
+--- /dev/null
++++ b/src/backend/utils/auth.py
+@@ -0,0 +1,16 @@
++"""Password hashing utilities using bcrypt."""
++
++from __future__ import annotations
++
++import bcrypt
++
++
++def hash_password(password: str) -> str:
++    """Hash plaintext password with bcrypt (cost factor 10)."""
++    salt = bcrypt.gensalt(rounds=10)
++    return bcrypt.hashpw(password.encode(), salt).decode()
++
++
++def verify_password(password: str, password_hash: str) -> bool:
++    """Verify plaintext password against bcrypt hash."""
++    return bcrypt.checkpw(password.encode(), password_hash.encode())

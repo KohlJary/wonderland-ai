@@ -1,0 +1,302 @@
+==============================================================================
+T36 FULL ENCHILADA — vague directive → working code via 5 meetings
+==============================================================================
+Project root:  /tmp/t36-enchilada-v16
+Budget cap:    $3.00 hard
+Total timeout: 900s
+Directive:     Build a translation-integrated chat application MVP. Two users in different language groups exchangi...
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M1: produce user stories + an architectural ADR + GDPR rulings
+  thread_id: scoping
+  roster:    ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.0000
+──────────────────────────────────────────────────────────────────────────────
+  M1[t=  0.00s] dodo               directive      →caucus Build a translation-integrated chat application MVP. Two users in different language groups exchangi…
+  M1[t=  3.68s] cheshire_cat       question       →caucus Before we scope, I need to understand the load-bearing seam you've named. Are we optimizing for: (a)…
+  M1[t=  3.81s] queen_of_hearts    concern        →caucus The directive's scope is shippable in three weeks, but the compliance surface is substantial and und…
+  M1[t= 28.24s] alice              story          →caucus (no body)
+  M1                             ↳ story: Monolingual book club member joins a cross-language discussion
+  M1                             ↳ story: English-only speaker joins a multilingual group chat
+  M1                             ↳ story: Deaf user reads live-captioned cross-language conversation
+  M1                             ↳ story: Polyglot moderator manages a group chat in three languages
+  M1                             ↳ story: User checks that translation happened correctly before relying on it
+  M1[t= 35.52s] queen_of_hearts    concern        →caucus Alice's stories surface three data-handling implications that require explicit decision before imple…
+  M1[t= 54.52s] cheshire_cat       proposal       →caucus The five stories Alice has written form a coherent architectural picture, and they surface something…
+  M1                             ↳ adr: Translation as unit-level transformation, not stream-level transport
+  M1[t= 60.48s] alice              concern        →caucus The Cat's ADR is architecturally sound and I see why it surfaces the real load-bearing seam. But I w…
+  M1[t= 61.53s] queen_of_hearts    concern        →caucus The Cat's architectural proposal is sound, but it contains a GDPR compliance assumption that require…
+  M1[t= 73.61s] cheshire_cat       concern        →caucus The Queen has surfaced the right questions, and they are yours to own. My ADR left three data-handli…
+  M1[t= 82.83s] queen_of_hearts    concern        →caucus The Cat has correctly identified the three data-handling intents that must be clarified before I can…
+  M1[t= 84.23s] cheshire_cat       concern        →caucus Alice has surfaced something real and I want to name it clearly: the ADR I shipped treats Sophie's a…
+  M1[t= 94.94s] cheshire_cat       deference      →caucus The Queen has surfaced a real compliance tension that my ADR left implicit. The architectural decisi…
+[queen_of_hearts] deliberate() raised QueenResponseParseError: QueenResponse response failed schema validation: 1 validation error for QueenResponse
+  Value error, QueenResponse: decision='ruling' requires at least one ruling in `rulings`. Choose a different decision (concern/question/etc.) or include the rulings you intended to issue. [type=value_error, input_value={'decision': 'ruling', 'b...plicit.", 'rulings': []}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error — treating as silence
+  M1[t=125.13s] <thread_monitor> running → stuck
+  M1[t=125.13s] dodo               nudge          →caucus Thread scoping → stuck (2 open expectation(s); silent 30.2s). The team has paused with open expectat…
+  M1[t=155.16s] <thread_monitor> running → quiescent
+  M1[t=155.16s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  M1[t=155.16s] <thread_monitor> running → complete
+  M1[t=155.16s] <complete>
+
+  ── M1 END ── outcome=COMPLETE
+     elapsed:        155.2s
+     this meeting:   21 calls, $0.1570
+     running totals: 21 calls, $0.1570 / $3.00 cap
+     artifacts:      2 (story×5, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M2: decompose the ADR + stories into v1 tickets
+  thread_id: decomposition
+  roster:    ['cheshire_cat', 'dodo', 'white_rabbit']
+  seeds:     2 utterance(s)
+  cost so far before this meeting: $0.1570
+──────────────────────────────────────────────────────────────────────────────
+  M2[t=155.16s] cheshire_cat       proposal       →caucus The five stories Alice has written form a coherent architectural picture, and they surface something…
+  M2                             ↳ adr: Translation as unit-level transformation, not stream-level transport
+  M2[t=155.16s] alice              story          →caucus (no body)
+  M2                             ↳ story: Monolingual book club member joins a cross-language discussion
+  M2                             ↳ story: English-only speaker joins a multilingual group chat
+  M2                             ↳ story: Deaf user reads live-captioned cross-language conversation
+  M2                             ↳ story: Polyglot moderator manages a group chat in three languages
+  M2                             ↳ story: User checks that translation happened correctly before relying on it
+  M2[t=155.16s] dodo               directive      →caucus Decomposition thread. The stories and ADR(s) in your context are settled — they were produced in a p…
+  M2[t=178.95s] white_rabbit       ticket         →caucus ADR is clean; stories are coherent. Decomposing into v1 scope: two-direction translation service wit…
+  M2                             ↳ ticket: Design and implement message schema with original+translation unit storage
+  M2                             ↳ ticket: Implement streaming translate-on-send service
+  M2                             ↳ ticket: Build dual-display message UI: original + translation side-by-side with hide-original toggle
+  M2                             ↳ ticket: Integration test: end-to-end message send → translate → display flow
+  M2[t=209.21s] <thread_monitor> running → quiescent
+  M2[t=209.21s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  M2[t=209.21s] <thread_monitor> running → complete
+  M2[t=209.21s] <complete>
+
+  ── M2 END ── outcome=COMPLETE
+     elapsed:        54.1s
+     this meeting:   5 calls, $0.0415
+     running totals: 26 calls, $0.1985 / $3.00 cap
+     artifacts:      3 (story×5, ticket×4, adr×1)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M3: negotiate contracts the Tweedles will implement against
+  thread_id: contract-negotiation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     3 utterance(s)
+  cost so far before this meeting: $0.1985
+──────────────────────────────────────────────────────────────────────────────
+  M3[t=209.21s] cheshire_cat       proposal       →caucus The five stories Alice has written form a coherent architectural picture, and they surface something…
+  M3                             ↳ adr: Translation as unit-level transformation, not stream-level transport
+  M3[t=209.21s] cheshire_cat       proposal       →caucus The five stories Alice has written form a coherent architectural picture, and they surface something…
+  M3                             ↳ adr: Translation as unit-level transformation, not stream-level transport
+  M3[t=209.21s] white_rabbit       ticket         →caucus ADR is clean; stories are coherent. Decomposing into v1 scope: two-direction translation service wit…
+  M3                             ↳ ticket: Design and implement message schema with original+translation unit storage
+  M3                             ↳ ticket: Implement streaming translate-on-send service
+  M3                             ↳ ticket: Build dual-display message UI: original + translation side-by-side with hide-original toggle
+  M3                             ↳ ticket: Integration test: end-to-end message send → translate → display flow
+  M3[t=209.21s] dodo               directive      →caucus Contract negotiation thread. The ADR(s) and ticket in your context are settled — read them as locked…
+  M3[t=231.93s] tweedledee         contract_note  →caucus Drafting load-bearing contract seams for v1 translation feature. Three contracts: message envelope (…
+  M3                             ↳ contract_note: Message envelope: original + translation as unit [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Message display contract: what frontend receives in message list [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=propose, state=proposed]
+  M3[t=252.99s] tweedledum         contract_note  →caucus (no body)
+  M3                             ↳ contract_note: Message schema and persistence model [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Translation service interface and streaming contract [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=propose, state=proposed]
+  M3                             ↳ contract_note: Message read/display contract (fetch message with original + translation) [operation=propose, state=proposed]
+  M3[t=282.20s] tweedledum         contract_note  →caucus Reading your four contract drafts. Frontend-side is clear; backend impact assessment follows. Three …
+  M3                             ↳ contract_note: Message envelope: original + translation as unit [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Message display contract: what frontend receives in message list [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=respond, state=counterpart_assessed]
+  M3[t=297.54s] tweedledee         contract_note  →caucus Reading your four backend proposals. They align well with my four frontend drafts. Composing respons…
+  M3                             ↳ contract_note: Message envelope: original + translation as unit [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Message display contract: what frontend receives in message list [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Translation service interface and streaming contract [operation=respond, state=counterpart_assessed]
+  M3[t=312.90s] tweedledee         contract_note  →caucus (no body)
+  M3                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=respond, state=counterpart_assessed]
+  M3                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=respond, state=counterpart_assessed]
+  M3[t=343.35s] <thread_monitor> running → quiescent
+  M3[t=343.35s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  M3[t=343.35s] <thread_monitor> running → complete
+  M3[t=343.35s] <complete>
+
+  ── M3 END ── outcome=COMPLETE
+     elapsed:        134.1s
+     this meeting:   27 calls, $0.2509
+     running totals: 53 calls, $0.4494 / $3.00 cap
+     artifacts:      8 (contract_note×21, ticket×4, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M4: ship code honoring the agreed contracts
+  thread_id: implementation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     7 utterance(s)
+  cost so far before this meeting: $0.4494
+──────────────────────────────────────────────────────────────────────────────
+  M4[t=343.35s] cheshire_cat       proposal       →caucus The five stories Alice has written form a coherent architectural picture, and they surface something…
+  M4                             ↳ adr: Translation as unit-level transformation, not stream-level transport
+  M4[t=343.35s] cheshire_cat       proposal       →caucus The five stories Alice has written form a coherent architectural picture, and they surface something…
+  M4                             ↳ adr: Translation as unit-level transformation, not stream-level transport
+  M4[t=343.35s] tweedledee         contract_note  →caucus Drafting load-bearing contract seams for v1 translation feature. Three contracts: message envelope (…
+  M4                             ↳ contract_note: Message envelope: original + translation as unit [operation=propose, state=proposed]
+  M4                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=propose, state=proposed]
+  M4                             ↳ contract_note: Message display contract: what frontend receives in message list [operation=propose, state=proposed]
+  M4                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=propose, state=proposed]
+  M4[t=343.35s] tweedledum         contract_note  →caucus (no body)
+  M4                             ↳ contract_note: Message schema and persistence model [operation=propose, state=proposed]
+  M4                             ↳ contract_note: Translation service interface and streaming contract [operation=propose, state=proposed]
+  M4                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=propose, state=proposed]
+  M4                             ↳ contract_note: Message read/display contract (fetch message with original + translation) [operation=propose, state=proposed]
+  M4[t=343.35s] tweedledum         contract_note  →caucus Reading your four contract drafts. Frontend-side is clear; backend impact assessment follows. Three …
+  M4                             ↳ contract_note: Message envelope: original + translation as unit [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Message display contract: what frontend receives in message list [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=respond, state=counterpart_assessed]
+  M4[t=343.35s] tweedledee         contract_note  →caucus Reading your four backend proposals. They align well with my four frontend drafts. Composing respons…
+  M4                             ↳ contract_note: Message envelope: original + translation as unit [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Message display contract: what frontend receives in message list [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Translation service interface and streaming contract [operation=respond, state=counterpart_assessed]
+  M4[t=343.35s] tweedledee         contract_note  →caucus (no body)
+  M4                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=respond, state=counterpart_assessed]
+  M4                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=respond, state=counterpart_assessed]
+  M4[t=343.35s] dodo               directive      →caucus Implementation thread. The contract notes in your context are locked — they were negotiated and agre…
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+  M4[t=372.91s] tweedledum         contract_note  →caucus Reading your responses to 002, 004, 007. All three compose cleanly with my backend assessments. The …
+  M4                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=mark_agreed, state=agreed]
+  M4                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=mark_agreed, state=agreed]
+  M4[t=373.38s] <thread_monitor> running → quiescent
+  M4[t=373.38s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  M4[t=373.38s] <thread_monitor> running → complete
+  M4[t=373.38s] <complete>
+
+  ── M4 END ── outcome=COMPLETE
+     elapsed:        30.0s
+     this meeting:   14 calls, $0.1145
+     running totals: 67 calls, $0.5639 / $3.00 cap
+     artifacts:      8 (contract_note×24, adr×2)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M5: Caterpillar reviews the shipped code; surface findings
+  thread_id: review
+  roster:    ['caterpillar', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.5639
+──────────────────────────────────────────────────────────────────────────────
+  M5[t=373.38s] dodo               directive      →caucus Review thread. Code was shipped in a prior implementation thread. Caterpillar: the working tree IS t…
+  M5[t=390.03s] caterpillar        deference      →caucus The Dodo's directive asks me to review code shipped in the prior implementation thread (M4). Examini…
+[tweedledee] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+  M5[t=420.43s] <thread_monitor> running → stuck
+  M5[t=420.43s] dodo               nudge          →caucus Thread review → stuck (1 open expectation(s); silent 30.4s). The team has paused with open expectati…
+  M5[t=424.33s] tweedledee         contract_note  →caucus All three seams compose cleanly. Confirming the three critical contracts are now agreed: json-lines …
+  M5                             ↳ contract_note: Translate-on-send API: streaming service contract [operation=mark_agreed, state=agreed]
+  M5                             ↳ contract_note: Message storage endpoint contract (save-after-translate) [operation=mark_agreed, state=agreed]
+  M5                             ↳ contract_note: Error recovery and retry: translation failure handling [operation=mark_agreed, state=agreed]
+[tweedledum] deliberate() raised TweedleResponseParseError: no JSON block found in TweedleResponse response — treating as silence
+  M5[t=450.46s] <thread_monitor> running → quiescent
+  M5[t=450.46s] dodo               acknowledgment →caucus Thread review → complete. The team has gone quiet with no open expectations; the directive is settle…
+  M5[t=450.46s] <thread_monitor> running → complete
+  M5[t=450.46s] <complete>
+
+  ── M5 END ── outcome=COMPLETE
+     elapsed:        77.1s
+     this meeting:   33 calls, $0.3660
+     running totals: 100 calls, $0.9299 / $3.00 cap
+     artifacts:      1 (contract_note×3)
+
+==============================================================================
+T36 SUMMARY
+==============================================================================
+Total elapsed:  450.5s
+Total cost:     $0.9299  (cap $3.00)
+Total LLM calls: 100
+
+Per-agent token usage:
+  tweedledee         calls= 32 cost=$0.3469
+  tweedledum         calls= 36 cost=$0.3410
+  cheshire_cat       calls= 18 cost=$0.1114
+  caterpillar        calls=  6 cost=$0.0435
+  queen_of_hearts    calls=  5 cost=$0.0381
+  alice              calls=  2 cost=$0.0252
+  white_rabbit       calls=  1 cost=$0.0238
+
+Artifacts on disk:
+  stories/ (5 files)
+    story-001-monolingual-book-club-member-joins-a-cross-language-discussion.md
+    story-002-english-only-speaker-joins-a-multilingual-group-chat.md
+    story-003-deaf-user-reads-live-captioned-cross-language-conversation.md
+    story-004-polyglot-moderator-manages-a-group-chat-in-three-languages.md
+    story-005-user-checks-that-translation-happened-correctly-before-relying-on-it.md
+  architecture/ (1 files)
+    adr-001-translation-as-unit-level-transformation-not-stream-level-transport.md
+  tickets/ (4 files)
+    ticket-001-design-and-implement-message-schema-with-original-translation-unit-storage.md
+    ticket-002-implement-streaming-translate-on-send-service.md
+    ticket-003-build-dual-display-message-ui-original-translation-side-by-side-with-hide-original-toggle.md
+    ticket-004-integration-test-end-to-end-message-send-translate-display-flow.md
+  contract-notes/ (8 files)
+    contract-note-001-message-envelope-original-translation-as-unit.md
+    contract-note-002-translate-on-send-api-streaming-service-contract.md
+    contract-note-003-message-display-contract-what-frontend-receives-in-message-list.md
+    contract-note-004-error-recovery-and-retry-translation-failure-handling.md
+    contract-note-005-message-schema-and-persistence-model.md
+    contract-note-006-translation-service-interface-and-streaming-contract.md
+    contract-note-007-message-storage-endpoint-contract-save-after-translate.md
+    contract-note-008-message-read-display-contract-fetch-message-with-original-translation.md
+
+Code shipped (project_root excluding .wonderland):
+  .git/COMMIT_EDITMSG (33 bytes)
+  .git/HEAD (21 bytes)
+  .git/config (151 bytes)
+  .git/description (73 bytes)
+  .git/hooks/applypatch-msg.sample (478 bytes)
+  .git/hooks/commit-msg.sample (896 bytes)
+  .git/hooks/fsmonitor-watchman.sample (4726 bytes)
+  .git/hooks/post-update.sample (189 bytes)
+  .git/hooks/pre-applypatch.sample (424 bytes)
+  .git/hooks/pre-commit.sample (1649 bytes)
+  .git/hooks/pre-merge-commit.sample (416 bytes)
+  .git/hooks/pre-push.sample (1374 bytes)
+  .git/hooks/pre-rebase.sample (4898 bytes)
+  .git/hooks/pre-receive.sample (544 bytes)
+  .git/hooks/prepare-commit-msg.sample (1492 bytes)
+  .git/hooks/push-to-checkout.sample (2783 bytes)
+  .git/hooks/sendemail-validate.sample (2308 bytes)
+  .git/hooks/update.sample (3650 bytes)
+  .git/index (1022 bytes)
+  .git/info/exclude (240 bytes)
+  .git/logs/HEAD (187 bytes)
+  .git/logs/refs/heads/main (187 bytes)
+  .git/objects/4b/825dc642cb6eb9a060e54bf8d69288fbee4904 (15 bytes)
+  .git/objects/e6/9de29bb2d1d6434b8b29ae775ad8c2e48c5391 (15 bytes)
+  .git/objects/f2/7cb60df85a3acfb2c0195d120e36c8dd3f7ae1 (147 bytes)
+  .git/refs/heads/main (41 bytes)
+  .gitignore (123 bytes)
+  migrations/001_create_messages_table.sql (2402 bytes)
+  run.log (22925 bytes)
+  src/__init__.py (0 bytes)
+  src/api.py (9146 bytes)
+  src/components/MessageDisplay.tsx (9335 bytes)
+  src/hooks/useMessageList.ts (7117 bytes)
+  src/models.py (6898 bytes)
+  src/types/message.ts (6132 bytes)
+  tests/__init__.py (0 bytes)
+  tests/test_message_schema.py (10654 bytes)
+
+Final rosters:
+  scoping: ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts'] — produce user stories + an architectural ADR + GDPR rulings
+  decomposition: ['cheshire_cat', 'dodo', 'white_rabbit'] — decompose the ADR + stories into v1 tickets
+  contract-negotiation: ['dodo', 'tweedledee', 'tweedledum'] — negotiate contracts the Tweedles will implement against
+  implementation: ['dodo', 'tweedledee', 'tweedledum'] — ship code honoring the agreed contracts
+  review: ['caterpillar', 'dodo', 'tweedledee', 'tweedledum'] — Caterpillar reviews the shipped code; surface findings

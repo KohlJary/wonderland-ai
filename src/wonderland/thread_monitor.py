@@ -44,10 +44,12 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from wonderland.agent import AgentState
 from wonderland.utterance import SpeechAct, Utterance
 
 if TYPE_CHECKING:
     from wonderland.caucus import Caucus
+    from wonderland.roster import ThreadRoster
 
 
 _EXPECTATION_ACTS: frozenset[SpeechAct] = frozenset(
@@ -107,21 +109,38 @@ class ThreadMonitor:
         self,
         bus: Caucus,
         *,
-        quiescence_seconds: float = 30.0,
+        roster: ThreadRoster | None = None,
+        quiescence_seconds: float = 300.0,
         check_interval: float = 1.0,
         deadlock_after_nudges: int = 2,
         agent_name: str = "thread_monitor",
     ) -> None:
         self._bus = bus
+        self._roster = roster
+        # Wall-clock quiescence is now a SAFETY NET, not the primary
+        # detector. Default raised to 300s to catch hung LLM calls
+        # without triggering on normal-but-slow tool loops. Turn-based
+        # detection (via record_agent_state) fires the moment all
+        # members go IDLE — much faster and correct by construction.
+        # When roster is None (no agent-state plumbing), wall-clock
+        # remains the only mechanism — back-compat preserved.
         self._quiescence_seconds = quiescence_seconds
         self._check_interval = check_interval
         self._deadlock_after_nudges = deadlock_after_nudges
         self._agent_name = agent_name
 
         self._threads: dict[str, ThreadInfo] = {}
+        # Per-agent activity state for turn-based quiescence (see
+        # analysis 022). Updated via record_agent_state, which the
+        # Runner wires into each agent's state-change handler.
+        self._agent_states: dict[str, AgentState] = {}
         # Subscribe synchronously per the WonderlandAgent fix from T14 — bus
         # publishes between construction and iteration must not be lost.
-        self._iterator: AsyncIterator[Utterance] = self._bus.subscribe(agent_name)
+        # ThreadMonitor needs to see every utterance regardless of
+        # per-thread roster (it tracks state across all live threads).
+        self._iterator: AsyncIterator[Utterance] = self._bus.subscribe(
+            agent_name, bypass_roster=True
+        )
         self._transitions: asyncio.Queue[ThreadStateChange] = asyncio.Queue()
         self._consume_task: asyncio.Task[None] | None = None
         self._timer_task: asyncio.Task[None] | None = None
@@ -149,6 +168,104 @@ class ThreadMonitor:
         """
         info = self._threads.setdefault(thread_id, ThreadInfo(thread_id=thread_id))
         info.nudge_count += 1
+
+    def record_agent_state(
+        self,
+        agent_name: str,
+        new_state: AgentState,
+    ) -> None:
+        """Update an agent's activity state and re-check quiescence on
+        threads where they are a member.
+
+        The Runner installs this as the state-change handler on every
+        agent. When an agent transitions to IDLE, every thread they
+        belong to may become quiescent — we check by asking the roster
+        for membership and inspecting all members' states.
+
+        No-op when no roster was wired (back-compat: ThreadMonitor falls
+        back to wall-clock-only detection).
+        """
+        previous = self._agent_states.get(agent_name, AgentState.IDLE)
+        if new_state is previous:
+            return
+        self._agent_states[agent_name] = new_state
+        if self._roster is None:
+            return
+        # Only IDLE transitions can OPEN the door to quiescence.
+        # Non-IDLE transitions guarantee the thread is non-quiescent,
+        # but the existing _record() path already keeps state RUNNING
+        # whenever a member produced an utterance, so we don't need to
+        # actively unwind here.
+        if new_state is not AgentState.IDLE:
+            return
+        for thread_id in self._roster.threads():
+            if agent_name not in self._roster.members(thread_id):
+                continue
+            change = self._check_state_after_idle_transition(thread_id)
+            if change is not None:
+                self._transitions.put_nowait(change)
+
+    def _all_members_idle(self, thread_id: str) -> bool:
+        """True iff every member of the thread's roster is IDLE.
+
+        An unknown agent (no recorded state) is treated as IDLE — they
+        either haven't started (still waiting for a turn) or never
+        engaged with this thread.
+        """
+        if self._roster is None:
+            return False
+        members = self._roster.members(thread_id)
+        if not members:
+            return False
+        for member in members:
+            state = self._agent_states.get(member, AgentState.IDLE)
+            if state is not AgentState.IDLE:
+                return False
+        return True
+
+    def _check_state_after_idle_transition(
+        self, thread_id: str
+    ) -> ThreadStateChange | None:
+        """Quiescence check fired by an agent going IDLE. Returns a
+        transition if the thread should change state, else None.
+
+        Mirrors the wall-clock _check_state_after_silence logic but
+        keyed on agent state rather than elapsed time. STUCK still
+        gates on open expectations (per the spec); the only difference
+        is *when* we check (immediately on idle, not after N seconds).
+        """
+        info = self._threads.get(thread_id)
+        if info is None or info.state in (
+            ThreadState.COMPLETE,
+            ThreadState.ABANDONED,
+        ):
+            return None
+        if not self._all_members_idle(thread_id):
+            return None
+        if info.open_expectations:
+            if (
+                info.state is ThreadState.STUCK
+                and info.nudge_count >= self._deadlock_after_nudges
+            ):
+                return self._transition(
+                    info,
+                    ThreadState.DEADLOCKED,
+                    f"{info.nudge_count} nudges, still {len(info.open_expectations)} open",
+                )
+            if info.state is not ThreadState.STUCK:
+                return self._transition(
+                    info,
+                    ThreadState.STUCK,
+                    f"{len(info.open_expectations)} open expectation(s); all members idle",
+                )
+            return None
+        if info.state is not ThreadState.QUIESCENT:
+            return self._transition(
+                info,
+                ThreadState.QUIESCENT,
+                "no open expectations; all members idle",
+            )
+        return None
 
     # ------------------------------------------------------------------ #
     # Lifecycle

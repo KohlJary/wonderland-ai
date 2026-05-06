@@ -24,13 +24,11 @@ it.
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, field_validator
 
 from wonderland.adr import ADRPayload, ADRRegistry
 from wonderland.agent import Context, WonderlandAgent, format_utterance
@@ -43,9 +41,11 @@ from wonderland.engagement import (
     make_engagement_policy,
     rarely,
     selectively,
+    speaker_is,
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock, SystemPart
+from wonderland.parsing import extract_and_validate
 from wonderland.utterance import (
     Artifact,
     SpeechAct,
@@ -97,25 +97,24 @@ def cheshire_cat_rules() -> EngagementRules:
         "contract",
         "primitive",
     )
-    architectural_primitive_in_story = body_contains_any(
-        "real-time",
-        "real time",
-        "multi-tenant",
-        "multi-tenancy",
-        "offline",
-        "cross-language",
-        "cross language",
-    )
-
     return EngagementRules.of(
-        # ALWAYS
+        # ALWAYS — INVITE addressed to me always wakes me up (Block 2c)
+        always(SpeechAct.INVITE, condition=addressed_to(CAT_NAME)),
         always(SpeechAct.DIRECTIVE),
         always(SpeechAct.PROPOSAL),
         always(SpeechAct.QUESTION, condition=addressed_to(CAT_NAME)),
         always(SpeechAct.CONCERN, condition=architectural_concern_smell),
         always(SpeechAct.TICKET, condition=architectural_smell),
         # SELECTIVELY — engage broadly; the LLM judges further inside deliberate()
-        selectively(SpeechAct.STORY, condition=architectural_primitive_in_story),
+        # Wake on every Alice story; deliberate() decides whether the
+        # cumulative picture warrants synthesis. The keyword filter we
+        # used to have here (real-time, multi-tenant, etc.) made Cat
+        # systematically deaf to user-shaped stories without
+        # architectural vocabulary, which left the architectural picture
+        # un-synthesized when stories accumulated. Engagement state
+        # already shows team artifact counts; the protocol guides Cat
+        # to synthesize when stories pile up without an ADR.
+        selectively(SpeechAct.STORY, condition=speaker_is("alice")),
         selectively(SpeechAct.IMPLEMENTATION),
         selectively(SpeechAct.TEST_SCENARIO),
         selectively(SpeechAct.REVIEW),
@@ -148,6 +147,25 @@ class CatResponse(BaseModel):
         # (especially on `silence`). Coerce to default.
         return "" if v is None else v
 
+    def model_post_init(self, _context: object) -> None:  # type: ignore[override]
+        # Per the calibrated "ship the provisional ADR" guidance in §VI/§VIII:
+        # a `proposal` decision MUST carry the ADR payload. Half-shipping —
+        # decision=proposal with adr=None — is the failure mode the
+        # calibration was designed to prevent (it leaves prose on the bus
+        # but no artifact for the team to compose against). The schema
+        # rejection forces the Cat to either include the ADR or pick a
+        # different decision (concern/question/reframe).
+        if self.decision == "proposal" and self.adr is None:
+            raise ValueError(
+                "CatResponse: decision='proposal' requires the `adr` field. "
+                "A proposal without an ADR is prose, not an architectural "
+                "commitment — the team has nothing to compose against. If "
+                "you don't yet have a decision concrete enough to record, "
+                "choose 'question' or 'reframe' instead. If you do, name "
+                "the tradeoffs explicitly (mark uncertain ones with what "
+                "would have to be true to settle them) and ship the ADR."
+            )
+
 
 _OUTPUT_PROTOCOL = """\
 You will respond with exactly one fenced JSON block. No prose outside the block.
@@ -175,13 +193,90 @@ on this thread and you have nothing new to add — choose silence. Your
 silence after a thread is settled is itself information: it tells the
 team the architecture stands.
 
+**Read the [engagement state] block in your user message — it has
+factual counts that drive the shipping rule.** Specifically: your
+prior turn count + speech-act breakdown, your artifacts shipped on
+this thread, and team artifacts shipped on this thread. The shipping
+rule has THREE preconditions, all required:
+
+1. Your prior turns on this thread is ≥ 1 with at least one
+   `question`/`concern`/`reframe` (visible in the engagement state).
+2. The team has added substantive context (a story, a ruling, another
+   agent's concern, etc. — visible in team artifacts and in the thread
+   transcript).
+3. **Your `adr` artifact count for this thread is 0** for this
+   specific architectural surface. If the engagement state shows you
+   have already shipped one or more ADRs on this topic, the topic is
+   settled — your move is silence (or a `concern` if something has
+   genuinely changed), not another ADR.
+
+When all three hold, the next move is `proposal` with `adr` populated
+— not another clarification. The schema rejects `decision: "proposal"`
+without `adr`; that is a feature. If you can't fill the ADR, your
+decision is `concern` or `question`, not "proposal-as-prose."
+
+Provisional ADRs ARE valid. Mark `Status: Proposed`. Name uncertain
+tradeoffs in the form "X is open; would settle if we knew Y." A
+provisional ADR with named open tradeoffs is the architecture; the
+team can compose against it and revise as the questions get answered.
+Refusing to commit until everything is resolved misunderstands what
+the artifact is for, and is just as costly as false certainty.
+
+But equally: don't ship redundant ADRs. One ADR per architectural
+decision. If the surface is genuinely new (a different decision
+implied by the thread's evolution), that warrants a new ADR. If
+it's the same surface in different words, it doesn't.
+
+**Synthesize across the cumulative story picture.** You receive every
+Alice story, not just the ones with architectural keywords in the
+body. A single user story rarely warrants an ADR — it's one user
+flow, one slice of need. But when several stories accumulate (the
+engagement state's `story×N` count for the thread tells you N), the
+collective shape is itself architectural information. Multiple user
+roles, multiple data flows, multiple trust surfaces — they imply
+seams the team will have to pick. If the engagement state shows
+`team artifacts: story×3` (or more) and `adr×0` on this thread,
+the cumulative picture has been deferred and the team will drift
+into implementation without an architectural anchor. That is a
+load-bearing moment for you: read the stories together, name the
+seam(s) they collectively imply, and ship a provisional ADR. The
+reader should be able to see how the stories produced the seam,
+and the Tweedles should have something concrete to negotiate
+contracts against. Without this synthesis, M3 contract negotiation
+collapses (the pair has no architectural anchor) and the rest of
+the work starves.
+
 Speak in your own voice — measured, slightly oblique, precise. The
-reframing question is your characteristic move; do not fabricate
-certainty.
+reframing question is one characteristic move; the well-formed
+provisional ADR is another. Do not fabricate certainty; do not perform
+deferral either.
 """
 
 
-_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_TOOLS_SECTION = """
+**Tools available.** You can call `read_file`, `list_files`, and
+`grep` to ground architectural decisions in the actual code. Use them
+when:
+
+- You need to know whether a primitive already exists before proposing
+  a new one (`grep` first, propose second).
+- You're reframing a question that depends on what's actually
+  implemented (`list_files` to see the shape; `read_file` to confirm).
+- A `concern` or `reframe` would be sharper if you cite the file and
+  line where the seam lives.
+
+`write_file` is also available, but you do not write source code —
+that is the Tweedles' domain. Your characteristic artifact is the ADR,
+which the framework persists for you when you choose `decision:
+"proposal"` with the `adr` field populated. If you find yourself
+wanting to `write_file`, you are crossing into implementation; that
+should be a `concern` to the Tweedles instead. The one legitimate
+write is to your own documentation under `architecture/` — and even
+that is what the ADR field already does. When in doubt, don't write.
+"""
+
+
+_OUTPUT_PROTOCOL_WITH_TOOLS = _OUTPUT_PROTOCOL + _TOOLS_SECTION
 
 
 class CatResponseParseError(ValueError):
@@ -189,24 +284,13 @@ class CatResponseParseError(ValueError):
 
 
 def parse_cat_response(text: str) -> CatResponse:
-    """Extract the fenced JSON block from `text` and validate it."""
-    match = _JSON_BLOCK.search(text)
-    if match is None:
-        # Tolerate the LLM omitting the fence and just emitting JSON
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise CatResponseParseError("no JSON block found in Cat response")
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise CatResponseParseError(f"Cat response was not valid JSON: {exc}") from exc
-    try:
-        return CatResponse.model_validate(data)
-    except ValidationError as exc:
-        raise CatResponseParseError(f"Cat response failed schema validation: {exc}") from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``,
+    which handles fenced/bare/balanced-fallback extraction
+    uniformly across every agent.
+    """
+    return extract_and_validate(text, CatResponse, CatResponseParseError)
 
 
 # --------------------------------------------------------------------- #
@@ -223,6 +307,7 @@ class CheshireCat(WonderlandAgent):
         bus: Caucus,
         llm: LLMClient | None = None,
         adr_registry: ADRRegistry | None = None,
+        tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(CAT_NAME, root=constitutions_root)
@@ -232,6 +317,7 @@ class CheshireCat(WonderlandAgent):
         )
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._adr_registry = adr_registry
+        self._tools = tools  # base attribute, set here so deliberate sees it
 
     @property
     def adr_registry(self) -> ADRRegistry | None:
@@ -243,11 +329,17 @@ class CheshireCat(WonderlandAgent):
 
         system, messages = context.to_llm_request()
         # Insert the output protocol right after the constitution. Both are
-        # invariant per Cat → both cached as a single prefix.
-        system.insert(1, CachedBlock(_OUTPUT_PROTOCOL))
+        # invariant per Cat → both cached as a single prefix. With-tools
+        # variant when tools are wired so the LLM is told about them.
+        protocol = _OUTPUT_PROTOCOL_WITH_TOOLS if self._tools is not None else _OUTPUT_PROTOCOL
+        system.insert(2, CachedBlock(protocol))
 
-        result = await self.llm.complete(system=system, messages=messages)
-        response = parse_cat_response(result.text)
+        if self._tools is not None:
+            response_text = await self._complete_with_tools(system, messages)
+        else:
+            result = await self.llm.complete(system=system, messages=messages)
+            response_text = result.text
+        response = parse_cat_response(response_text)
         if response.decision == "silence":
             return None
 

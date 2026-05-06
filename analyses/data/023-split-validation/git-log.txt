@@ -1,0 +1,2 @@
+921c720 session 1: translation chat
+695f967 seed: fullstack-fastapi-react baseline (T38 Session 1)

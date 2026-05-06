@@ -168,9 +168,7 @@ def test_parse_silence() -> None:
 
 def test_parse_silence_coerces_explicit_nulls() -> None:
     """Live Haiku 4.5 sometimes emits explicit nulls instead of omitting fields."""
-    response = parse_rabbit_response(
-        '{"decision": "silence", "body": null, "tickets": null}'
-    )
+    response = parse_rabbit_response('{"decision": "silence", "body": null, "tickets": null}')
     assert response.decision == "silence"
     assert response.body == ""
     assert response.tickets == []
@@ -366,10 +364,14 @@ async def test_deliberate_includes_protocol_in_system_prompt(tmp_path: Path) -> 
 
     create_kwargs = rabbit.llm.client.messages.create.call_args.kwargs
     system_blocks = create_kwargs["system"]
-    assert system_blocks[0]["text"] == "C"
+    # Position 0 is the framework primer (shared across all agents)
+    assert "Wonderland — Framework Primer" in system_blocks[0]["text"]
     assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
-    assert "fenced JSON block" in system_blocks[1]["text"]
+    # Position 1 is the per-agent constitution
+    assert system_blocks[1]["text"] == "C"
     assert system_blocks[1]["cache_control"] == {"type": "ephemeral"}
+    assert "fenced JSON block" in system_blocks[2]["text"]
+    assert system_blocks[2]["cache_control"] == {"type": "ephemeral"}
 
 
 # ---------- end-to-end (mocked LLM) ----------

@@ -127,6 +127,13 @@ from wonderland.consensus import (
     SyntheticConsensusGuard,
     default_agent_domains,
 )
+from wonderland.contract_note import (
+    ContractNotePayload,
+    ContractNoteRecord,
+    ContractNoteRegistry,
+    ContractNoteState,
+    render_contract_note,
+)
 from wonderland.engagement import (
     Engagement,
     EngagementRule,
@@ -289,6 +296,10 @@ __all__ = [
     "ConstitutionHeader",
     "ConstitutionParseError",
     "Context",
+    "ContractNotePayload",
+    "ContractNoteRecord",
+    "ContractNoteRegistry",
+    "ContractNoteState",
     "Dissent",
     "DissentSchema",
     "Dodo",
@@ -414,6 +425,7 @@ __all__ = [
     "queen_of_hearts_rules",
     "rarely",
     "render_adr",
+    "render_contract_note",
     "render_escalation",
     "render_implementation",
     "render_observation",

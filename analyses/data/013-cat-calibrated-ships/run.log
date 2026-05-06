@@ -1,0 +1,65 @@
+==============================================================================
+Wonderland — Translation Chat MVP showcase (T36, full cast via Runner)
+==============================================================================
+Project root: /tmp/cat-calibrated-v2
+Budget cap:   $1.50
+Timeout:      240s
+Roster:       alice, cheshire_cat, queen_of_hearts (+ dodo, auto-added)
+Goal:         produce an ADR for the translation message envelope
+Directive:    Build a translation-integrated chat application MVP. Two users in different language groups exchanging short messages with near-real-time translation. EU consumer scope (GDPR applies). Target: shippable v1 in three weeks. Initial scope: text-only messages, two-language pairs at launch (English ↔ German, English ↔ Japanese), no message edit, no message delete, basic auth. Looking for the team to scope, decompose, and identify the ship-blocking decisions.
+
+--- Dance ---
+[t=  0.00s] dodo               directive      Build a translation-integrated chat application MVP. Two users in different language groups exchanging short messages with near-real-time tr…
+[t=  4.45s] queen_of_hearts    concern        This directive lands in my domain immediately. Three GDPR-material facts require surfacing before architecture or ticketing begins: (1) mess…
+[t= 10.29s] cheshire_cat       question       Before we scope, I need to surface what's actually being decided here, because I'm seeing at least three distinct architectural surfaces tha…
+[t= 24.06s] cheshire_cat       proposal       The Queen has named the load-bearing constraints; I can now propose the architectural surface. Three decisions in sequence, each gating the …
+                             ↳ adr: Third-Party Translation Service with Synchronous On-Read Model
+[t= 27.57s] alice              story          
+                             ↳ story: Monolingual German speaker connects with English-speaking penpal
+                             ↳ story: Japanese speaker exchanges short casual messages with English friend
+                             ↳ story: User realizes they sent a message with a typo or wrong tone before translation happened
+                             ↳ story: User in different timezone checks the conversation the next day
+                             ↳ story: User receives a message and the translation is clearly wrong or nonsensical
+                             ↳ story: User deletes the app and returns — their conversation history is still there
+[t= 32.48s] alice              concern        The Cat's architecture is sound and I understand the gating logic. But I need to surface something before we lock it: synchronous translatio…
+[t= 33.40s] queen_of_hearts    concern        The Cat has named the three architectural decisions correctly and the tradeoff surface is clear. I have two concerns before the architecture…
+[t= 40.11s] cheshire_cat       reframe        Alice has surfaced a real tension the ADR buried in a tradeoff without naming what it costs in user experience. The architectural decision w…
+[t= 46.80s] cheshire_cat       concern        The Queen has surfaced two critical details that need explicit naming in the architecture before we proceed. I want to acknowledge them clea…
+[t= 47.41s] queen_of_hearts    concern        Alice has surfaced six stories that expose tensions between the Cat's architecture and the user experience. Three of these stories have dire…
+[t= 56.09s] queen_of_hearts    concern        Alice has surfaced a load-bearing tension between the Cat's synchronous translation model and actual user experience under service degradati…
+[t= 57.21s] cheshire_cat       reframe        The Queen has surfaced three story-level tensions that expose an implicit architectural decision I need to name explicitly: what is the scop…
+[t= 70.34s] cheshire_cat       concern        The Queen has named the sequencing correctly, and I want to add a structural observation: we are at a threshold where the architecture canno…
+[t= 83.97s] queen_of_hearts    concern        The Cat has named the critical structural gap correctly. The synchronous translation model rests on an untested assumption about translator …
+[t= 97.63s] cheshire_cat       concern        The Queen has named three material constraints on the spike that I had left implicit, and they are load-bearing. I want to acknowledge them …
+[t=106.40s] queen_of_hearts    concern        The Cat has correctly incorporated my three constraints and revised the spike specification to make them explicit gates rather than implicit…
+[t=137.14s] <thread_monitor>   running → stuck  (1 open expectation(s); silent 30.7s)
+[t=137.14s] dodo               nudge          Thread main → stuck (1 open expectation(s); silent 30.7s). The team has paused with open expectations; if commitments are pending informatio…
+[t=167.17s] <thread_monitor>   running → quiescent  (no open expectations; silent 30.0s)
+[t=167.17s] dodo               acknowledgment Thread main → complete. The team has gone quiet with no open expectations; the directive is settled.
+[t=167.17s] <thread_monitor>   running → complete  (acknowledgment of completion)
+[t=167.17s] <complete>         thread settled cleanly
+
+--- Summary ---
+Elapsed:        167.2s
+Total cost:     $0.1302  (cap $1.50)
+LLM calls:      16
+Telemetry path: .wonderland/telemetry/run-20260505T181123.json
+
+Speech acts:
+  concern            10
+  reframe            2
+  directive          1
+  question           1
+  proposal           1
+  story              1
+  nudge              1
+  acknowledgment     1
+
+Artifacts on disk:
+  story              6
+  adr                1
+
+Per-agent token usage:
+  cheshire_cat       calls=  8 in=  30769 out=  5154 cache_r=  50568 cost=$0.0706
+  queen_of_hearts    calls=  6 in=  17174 out=  3959 cache_r=  68004 cost=$0.0438
+  alice              calls=  2 in=   1162 out=  2640 cache_r=  14562 cost=$0.0158

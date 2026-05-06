@@ -1,0 +1,3 @@
+dd1c42f session 2: user blocking (backend only — frontend Tweedle no-op'd)
+248fdf5 session 1: translation chat
+77f1cb0 seed: fullstack-fastapi-react baseline (T38 Session 1)

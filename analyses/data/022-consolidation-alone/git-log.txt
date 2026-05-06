@@ -1,0 +1,2 @@
+63a6f9b session 1: translation chat
+09036a4 seed: fullstack-fastapi-react baseline (T38 Session 1)

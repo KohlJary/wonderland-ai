@@ -1,0 +1,8 @@
+ src/backend/api/__init__.py   |   4 +
+ src/backend/api/auth.py       | 264 ++++++++++++++++++++++++++++++++++++++++++
+ src/backend/api/blocks.py     | 131 +++++++++++++++++++++
+ src/backend/api/messages.py   | 239 ++++++++++++++++++++++++++++++++++----
+ src/backend/models.py         | 261 ++++++++++++++++++++++++++++++++++++++---
+ src/backend/utils/__init__.py |   0
+ src/backend/utils/auth.py     |  16 +++
+ 7 files changed, 873 insertions(+), 42 deletions(-)

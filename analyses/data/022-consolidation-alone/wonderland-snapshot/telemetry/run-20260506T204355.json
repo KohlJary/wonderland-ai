@@ -1,0 +1,1615 @@
+{
+  "run_id": "20260506T204355",
+  "model": "claude-haiku-4-5-20251001",
+  "pricing_per_mtok": {
+    "input": 1.0,
+    "output": 5.0,
+    "cache_write_5m": 1.25,
+    "cache_read": 0.1
+  },
+  "total_cost": 1.118234,
+  "total_calls": 171,
+  "per_agent": {
+    "cheshire_cat": {
+      "calls": 19,
+      "input_tokens": 39551,
+      "output_tokens": 9519,
+      "cache_creation_input_tokens": 31018,
+      "cache_read_input_tokens": 175111,
+      "cost": 0.1434296
+    },
+    "queen_of_hearts": {
+      "calls": 5,
+      "input_tokens": 14674,
+      "output_tokens": 4151,
+      "cache_creation_input_tokens": 11765,
+      "cache_read_input_tokens": 47060,
+      "cost": 0.054841249999999994
+    },
+    "alice": {
+      "calls": 2,
+      "input_tokens": 2257,
+      "output_tokens": 2567,
+      "cache_creation_input_tokens": 7712,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.025503199999999997
+    },
+    "white_rabbit": {
+      "calls": 1,
+      "input_tokens": 1884,
+      "output_tokens": 3454,
+      "cache_creation_input_tokens": 9150,
+      "cache_read_input_tokens": 0,
+      "cost": 0.0305915
+    },
+    "tweedledee": {
+      "calls": 64,
+      "input_tokens": 95431,
+      "output_tokens": 20007,
+      "cache_creation_input_tokens": 77500,
+      "cache_read_input_tokens": 1062038,
+      "cost": 0.39854480000000003
+    },
+    "tweedledum": {
+      "calls": 54,
+      "input_tokens": 77070,
+      "output_tokens": 19172,
+      "cache_creation_input_tokens": 63324,
+      "cache_read_input_tokens": 964201,
+      "cost": 0.34850509999999996
+    },
+    "caterpillar": {
+      "calls": 26,
+      "input_tokens": 26037,
+      "output_tokens": 4825,
+      "cache_creation_input_tokens": 27101,
+      "cache_read_input_tokens": 327803,
+      "cost": 0.11681855
+    }
+  },
+  "entries": [
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 584,
+      "output_tokens": 195,
+      "cache_creation_input_tokens": 9421,
+      "cache_read_input_tokens": 0,
+      "cost": 0.013335,
+      "timestamp": "2026-05-06T20:43:58.082222+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 2136,
+      "output_tokens": 107,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.003613,
+      "timestamp": "2026-05-06T20:44:00.568805+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1770,
+      "output_tokens": 141,
+      "cache_creation_input_tokens": 582,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.004145,
+      "timestamp": "2026-05-06T20:44:02.049331+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1026,
+      "output_tokens": 147,
+      "cache_creation_input_tokens": 1480,
+      "cache_read_input_tokens": 10071,
+      "cost": 0.004618,
+      "timestamp": "2026-05-06T20:44:04.092061+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 267,
+      "output_tokens": 445,
+      "cache_creation_input_tokens": 11765,
+      "cache_read_input_tokens": 0,
+      "cost": 0.017198,
+      "timestamp": "2026-05-06T20:44:06.193709+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1541,
+      "output_tokens": 562,
+      "cache_creation_input_tokens": 149,
+      "cache_read_input_tokens": 11618,
+      "cost": 0.005699,
+      "timestamp": "2026-05-06T20:44:13.274173+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1498,
+      "output_tokens": 226,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.00357,
+      "timestamp": "2026-05-06T20:44:15.351550+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1621,
+      "output_tokens": 160,
+      "cache_creation_input_tokens": 1495,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.005232,
+      "timestamp": "2026-05-06T20:44:17.206466+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 267,
+      "output_tokens": 2235,
+      "cache_creation_input_tokens": 7712,
+      "cache_read_input_tokens": 0,
+      "cost": 0.021082,
+      "timestamp": "2026-05-06T20:44:22.193757+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 965,
+      "output_tokens": 216,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11765,
+      "cost": 0.003222,
+      "timestamp": "2026-05-06T20:44:25.927814+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 2748,
+      "output_tokens": 680,
+      "cache_creation_input_tokens": 1495,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.008959,
+      "timestamp": "2026-05-06T20:44:27.570670+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 2611,
+      "output_tokens": 263,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.004868,
+      "timestamp": "2026-05-06T20:44:29.808543+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1639,
+      "output_tokens": 86,
+      "cache_creation_input_tokens": 2608,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.006271,
+      "timestamp": "2026-05-06T20:44:32.266691+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 1900,
+      "output_tokens": 368,
+      "cache_creation_input_tokens": 2608,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.007942,
+      "timestamp": "2026-05-06T20:44:34.496976+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 2743,
+      "output_tokens": 3168,
+      "cache_creation_input_tokens": 1554,
+      "cache_read_input_tokens": 12107,
+      "cost": 0.021736,
+      "timestamp": "2026-05-06T20:45:11.784271+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 4055,
+      "output_tokens": 81,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.005402,
+      "timestamp": "2026-05-06T20:45:13.851682+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 259,
+      "output_tokens": 366,
+      "cache_creation_input_tokens": 4052,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.008096,
+      "timestamp": "2026-05-06T20:45:16.182942+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 1990,
+      "output_tokens": 332,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.004421,
+      "timestamp": "2026-05-06T20:45:17.402809+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 2595,
+      "output_tokens": 552,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11765,
+      "cost": 0.006531,
+      "timestamp": "2026-05-06T20:45:19.977900+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 2732,
+      "output_tokens": 1355,
+      "cache_creation_input_tokens": 4052,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.015514,
+      "timestamp": "2026-05-06T20:45:33.205416+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 5695,
+      "output_tokens": 788,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.010577,
+      "timestamp": "2026-05-06T20:45:44.516578+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 4230,
+      "output_tokens": 1689,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11765,
+      "cost": 0.013851,
+      "timestamp": "2026-05-06T20:45:55.018222+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 6617,
+      "output_tokens": 1249,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 11765,
+      "cost": 0.014038,
+      "timestamp": "2026-05-06T20:46:11.335623+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 764,
+      "output_tokens": 120,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.002306,
+      "timestamp": "2026-05-06T20:47:59.486667+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 382,
+      "output_tokens": 442,
+      "cache_creation_input_tokens": 761,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.004485,
+      "timestamp": "2026-05-06T20:48:01.816169+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 3847,
+      "output_tokens": 264,
+      "cache_creation_input_tokens": 761,
+      "cache_read_input_tokens": 9421,
+      "cost": 0.00706,
+      "timestamp": "2026-05-06T20:48:06.673500+00:00"
+    },
+    {
+      "agent": "white_rabbit",
+      "input_tokens": 1884,
+      "output_tokens": 3454,
+      "cache_creation_input_tokens": 9150,
+      "cache_read_input_tokens": 0,
+      "cost": 0.030592,
+      "timestamp": "2026-05-06T20:48:24.781134+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4087,
+      "output_tokens": 74,
+      "cache_creation_input_tokens": 10151,
+      "cache_read_input_tokens": 4844,
+      "cost": 0.01763,
+      "timestamp": "2026-05-06T20:49:26.648049+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 4087,
+      "output_tokens": 73,
+      "cache_creation_input_tokens": 10556,
+      "cache_read_input_tokens": 4844,
+      "cost": 0.018131,
+      "timestamp": "2026-05-06T20:49:26.790424+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 106,
+      "output_tokens": 174,
+      "cache_creation_input_tokens": 4084,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.007581,
+      "timestamp": "2026-05-06T20:49:28.292080+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 114,
+      "output_tokens": 139,
+      "cache_creation_input_tokens": 4084,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.007454,
+      "timestamp": "2026-05-06T20:49:29.300352+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 501,
+      "output_tokens": 324,
+      "cache_creation_input_tokens": 4084,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.008726,
+      "timestamp": "2026-05-06T20:49:30.597308+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 403,
+      "output_tokens": 119,
+      "cache_creation_input_tokens": 4084,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.007643,
+      "timestamp": "2026-05-06T20:49:30.851857+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 697,
+      "output_tokens": 229,
+      "cache_creation_input_tokens": 41,
+      "cache_read_input_tokens": 19551,
+      "cost": 0.003848,
+      "timestamp": "2026-05-06T20:49:32.405055+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2572,
+      "output_tokens": 166,
+      "cache_creation_input_tokens": 426,
+      "cache_read_input_tokens": 19147,
+      "cost": 0.005849,
+      "timestamp": "2026-05-06T20:49:32.688403+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2605,
+      "output_tokens": 159,
+      "cache_creation_input_tokens": 226,
+      "cache_read_input_tokens": 19654,
+      "cost": 0.005648,
+      "timestamp": "2026-05-06T20:49:34.058788+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3395,
+      "output_tokens": 153,
+      "cache_creation_input_tokens": 325,
+      "cache_read_input_tokens": 19957,
+      "cost": 0.006562,
+      "timestamp": "2026-05-06T20:49:35.629693+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2365,
+      "output_tokens": 115,
+      "cache_creation_input_tokens": 2095,
+      "cache_read_input_tokens": 20383,
+      "cost": 0.007597,
+      "timestamp": "2026-05-06T20:49:37.007098+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1644,
+      "output_tokens": 61,
+      "cache_creation_input_tokens": 1121,
+      "cache_read_input_tokens": 22549,
+      "cost": 0.005605,
+      "timestamp": "2026-05-06T20:49:38.218846+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 641,
+      "output_tokens": 217,
+      "cache_creation_input_tokens": 1095,
+      "cache_read_input_tokens": 23741,
+      "cost": 0.005469,
+      "timestamp": "2026-05-06T20:49:40.397816+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1696,
+      "output_tokens": 4096,
+      "cache_creation_input_tokens": 2495,
+      "cache_read_input_tokens": 19643,
+      "cost": 0.027259,
+      "timestamp": "2026-05-06T20:50:07.270527+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1471,
+      "output_tokens": 3608,
+      "cache_creation_input_tokens": 398,
+      "cache_read_input_tokens": 24909,
+      "cost": 0.022499,
+      "timestamp": "2026-05-06T20:50:10.658562+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 4354,
+      "output_tokens": 136,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.006574,
+      "timestamp": "2026-05-06T20:50:12.378776+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4354,
+      "output_tokens": 92,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.006314,
+      "timestamp": "2026-05-06T20:50:12.634545+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 224,
+      "output_tokens": 64,
+      "cache_creation_input_tokens": 4351,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.007523,
+      "timestamp": "2026-05-06T20:50:13.771391+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 140,
+      "output_tokens": 67,
+      "cache_creation_input_tokens": 4351,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.007413,
+      "timestamp": "2026-05-06T20:50:13.916711+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 330,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 4351,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.007604,
+      "timestamp": "2026-05-06T20:50:14.777191+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 249,
+      "output_tokens": 74,
+      "cache_creation_input_tokens": 4351,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.007557,
+      "timestamp": "2026-05-06T20:50:15.514813+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 364,
+      "output_tokens": 436,
+      "cache_creation_input_tokens": 127,
+      "cache_read_input_tokens": 19841,
+      "cost": 0.004687,
+      "timestamp": "2026-05-06T20:50:17.121909+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2764,
+      "output_tokens": 1007,
+      "cache_creation_input_tokens": 45,
+      "cache_read_input_tokens": 20030,
+      "cost": 0.009858,
+      "timestamp": "2026-05-06T20:50:28.714289+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 381,
+      "output_tokens": 473,
+      "cache_creation_input_tokens": 48,
+      "cache_read_input_tokens": 19432,
+      "cost": 0.004749,
+      "timestamp": "2026-05-06T20:50:28.897543+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3401,
+      "output_tokens": 315,
+      "cache_creation_input_tokens": 45,
+      "cache_read_input_tokens": 19544,
+      "cost": 0.006987,
+      "timestamp": "2026-05-06T20:50:33.192779+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3545,
+      "output_tokens": 192,
+      "cache_creation_input_tokens": 195,
+      "cache_read_input_tokens": 19660,
+      "cost": 0.006715,
+      "timestamp": "2026-05-06T20:50:35.032574+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1755,
+      "output_tokens": 3535,
+      "cache_creation_input_tokens": 2980,
+      "cache_read_input_tokens": 20003,
+      "cost": 0.025155,
+      "timestamp": "2026-05-06T20:51:11.115037+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4928,
+      "output_tokens": 729,
+      "cache_creation_input_tokens": 135,
+      "cache_read_input_tokens": 23258,
+      "cost": 0.011068,
+      "timestamp": "2026-05-06T20:51:18.809591+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4369,
+      "output_tokens": 766,
+      "cache_creation_input_tokens": 1276,
+      "cache_read_input_tokens": 23455,
+      "cost": 0.012139,
+      "timestamp": "2026-05-06T20:51:26.707677+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 491,
+      "output_tokens": 66,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.002361,
+      "timestamp": "2026-05-06T20:51:30.532986+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 491,
+      "output_tokens": 56,
+      "cache_creation_input_tokens": 7253,
+      "cache_read_input_tokens": 4844,
+      "cost": 0.010322,
+      "timestamp": "2026-05-06T20:51:30.663722+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 79,
+      "output_tokens": 32,
+      "cache_creation_input_tokens": 489,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.00206,
+      "timestamp": "2026-05-06T20:51:31.607187+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 147,
+      "output_tokens": 213,
+      "cache_creation_input_tokens": 489,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.003363,
+      "timestamp": "2026-05-06T20:51:33.998017+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1593,
+      "output_tokens": 822,
+      "cache_creation_input_tokens": 51,
+      "cache_read_input_tokens": 28264,
+      "cost": 0.008593,
+      "timestamp": "2026-05-06T20:51:35.797877+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4543,
+      "output_tokens": 113,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.006608,
+      "timestamp": "2026-05-06T20:51:37.359645+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 199,
+      "output_tokens": 60,
+      "cache_creation_input_tokens": 4540,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.007674,
+      "timestamp": "2026-05-06T20:51:38.574548+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 297,
+      "output_tokens": 55,
+      "cache_creation_input_tokens": 4540,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.007747,
+      "timestamp": "2026-05-06T20:51:39.497506+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 202,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 123,
+      "cache_read_input_tokens": 19604,
+      "cost": 0.002611,
+      "timestamp": "2026-05-06T20:51:40.498165+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 354,
+      "output_tokens": 418,
+      "cache_creation_input_tokens": 41,
+      "cache_read_input_tokens": 19785,
+      "cost": 0.004474,
+      "timestamp": "2026-05-06T20:51:43.214761+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3806,
+      "output_tokens": 881,
+      "cache_creation_input_tokens": 97,
+      "cache_read_input_tokens": 19826,
+      "cost": 0.010315,
+      "timestamp": "2026-05-06T20:51:53.224855+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 563,
+      "output_tokens": 53,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.002328,
+      "timestamp": "2026-05-06T20:51:54.219841+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 77,
+      "output_tokens": 92,
+      "cache_creation_input_tokens": 560,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.002736,
+      "timestamp": "2026-05-06T20:51:55.578669+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 207,
+      "output_tokens": 177,
+      "cache_creation_input_tokens": 560,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.003291,
+      "timestamp": "2026-05-06T20:51:57.097962+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1417,
+      "output_tokens": 293,
+      "cache_creation_input_tokens": 25,
+      "cache_read_input_tokens": 15602,
+      "cost": 0.004473,
+      "timestamp": "2026-05-06T20:52:01.686613+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 670,
+      "output_tokens": 52,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.002429,
+      "timestamp": "2026-05-06T20:52:02.759740+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 670,
+      "output_tokens": 53,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.002475,
+      "timestamp": "2026-05-06T20:52:02.911852+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 75,
+      "output_tokens": 72,
+      "cache_creation_input_tokens": 667,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.002809,
+      "timestamp": "2026-05-06T20:52:04.136804+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 76,
+      "output_tokens": 117,
+      "cache_creation_input_tokens": 667,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.002994,
+      "timestamp": "2026-05-06T20:52:04.357655+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 185,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 667,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.002904,
+      "timestamp": "2026-05-06T20:52:05.186508+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 220,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 667,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.002868,
+      "timestamp": "2026-05-06T20:52:05.898658+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 250,
+      "output_tokens": 73,
+      "cache_creation_input_tokens": 25,
+      "cache_read_input_tokens": 15708,
+      "cost": 0.002217,
+      "timestamp": "2026-05-06T20:52:06.901964+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 222,
+      "output_tokens": 84,
+      "cache_creation_input_tokens": 29,
+      "cache_read_input_tokens": 15847,
+      "cost": 0.002263,
+      "timestamp": "2026-05-06T20:52:08.241188+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 205,
+      "output_tokens": 252,
+      "cache_creation_input_tokens": 23,
+      "cache_read_input_tokens": 16114,
+      "cost": 0.003105,
+      "timestamp": "2026-05-06T20:52:08.563871+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 396,
+      "output_tokens": 75,
+      "cache_creation_input_tokens": 41,
+      "cache_read_input_tokens": 15937,
+      "cost": 0.002416,
+      "timestamp": "2026-05-06T20:52:10.226739+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 555,
+      "output_tokens": 88,
+      "cache_creation_input_tokens": 45,
+      "cache_read_input_tokens": 16048,
+      "cost": 0.002656,
+      "timestamp": "2026-05-06T20:52:11.352040+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 392,
+      "output_tokens": 70,
+      "cache_creation_input_tokens": 195,
+      "cache_read_input_tokens": 16174,
+      "cost": 0.002603,
+      "timestamp": "2026-05-06T20:52:12.768143+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 209,
+      "output_tokens": 61,
+      "cache_creation_input_tokens": 202,
+      "cache_read_input_tokens": 16441,
+      "cost": 0.002411,
+      "timestamp": "2026-05-06T20:52:13.930438+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 200,
+      "output_tokens": 55,
+      "cache_creation_input_tokens": 28,
+      "cache_read_input_tokens": 16728,
+      "cost": 0.002183,
+      "timestamp": "2026-05-06T20:52:16.434517+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 199,
+      "output_tokens": 357,
+      "cache_creation_input_tokens": 24,
+      "cache_read_input_tokens": 16823,
+      "cost": 0.003696,
+      "timestamp": "2026-05-06T20:52:23.416351+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 644,
+      "output_tokens": 54,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.002124,
+      "timestamp": "2026-05-06T20:52:24.482564+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 906,
+      "output_tokens": 142,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.003116,
+      "timestamp": "2026-05-06T20:52:24.945834+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 902,
+      "output_tokens": 52,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.002702,
+      "timestamp": "2026-05-06T20:52:25.646507+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 276,
+      "output_tokens": 112,
+      "cache_creation_input_tokens": 903,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.003464,
+      "timestamp": "2026-05-06T20:52:26.348753+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 76,
+      "output_tokens": 96,
+      "cache_creation_input_tokens": 899,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.00322,
+      "timestamp": "2026-05-06T20:52:26.835515+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 78,
+      "output_tokens": 294,
+      "cache_creation_input_tokens": 641,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.003559,
+      "timestamp": "2026-05-06T20:52:28.377189+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 280,
+      "output_tokens": 169,
+      "cache_creation_input_tokens": 899,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.003789,
+      "timestamp": "2026-05-06T20:52:28.873010+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1376,
+      "output_tokens": 195,
+      "cache_creation_input_tokens": 903,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.004979,
+      "timestamp": "2026-05-06T20:52:29.136273+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1978,
+      "output_tokens": 147,
+      "cache_creation_input_tokens": 207,
+      "cache_read_input_tokens": 15960,
+      "cost": 0.004568,
+      "timestamp": "2026-05-06T20:52:31.049765+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1170,
+      "output_tokens": 186,
+      "cache_creation_input_tokens": 1028,
+      "cache_read_input_tokens": 16239,
+      "cost": 0.005009,
+      "timestamp": "2026-05-06T20:52:32.825278+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1393,
+      "output_tokens": 355,
+      "cache_creation_input_tokens": 25,
+      "cache_read_input_tokens": 16345,
+      "cost": 0.004834,
+      "timestamp": "2026-05-06T20:52:45.250012+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1726,
+      "output_tokens": 468,
+      "cache_creation_input_tokens": 800,
+      "cache_read_input_tokens": 17338,
+      "cost": 0.0068,
+      "timestamp": "2026-05-06T20:52:45.284629+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1455,
+      "output_tokens": 83,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.003369,
+      "timestamp": "2026-05-06T20:52:46.560495+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 973,
+      "output_tokens": 101,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.002688,
+      "timestamp": "2026-05-06T20:52:46.661071+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1455,
+      "output_tokens": 97,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.00348,
+      "timestamp": "2026-05-06T20:52:46.888119+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 128,
+      "output_tokens": 173,
+      "cache_creation_input_tokens": 1452,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.004308,
+      "timestamp": "2026-05-06T20:52:48.097394+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 202,
+      "output_tokens": 188,
+      "cache_creation_input_tokens": 970,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.003564,
+      "timestamp": "2026-05-06T20:52:48.335719+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 202,
+      "output_tokens": 162,
+      "cache_creation_input_tokens": 1452,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.004367,
+      "timestamp": "2026-05-06T20:52:48.411166+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 765,
+      "output_tokens": 230,
+      "cache_creation_input_tokens": 1452,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.005229,
+      "timestamp": "2026-05-06T20:52:50.412234+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 852,
+      "output_tokens": 303,
+      "cache_creation_input_tokens": 1452,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.005722,
+      "timestamp": "2026-05-06T20:52:50.466550+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3772,
+      "output_tokens": 110,
+      "cache_creation_input_tokens": 142,
+      "cache_read_input_tokens": 16905,
+      "cost": 0.00619,
+      "timestamp": "2026-05-06T20:52:51.886926+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2776,
+      "output_tokens": 157,
+      "cache_creation_input_tokens": 45,
+      "cache_read_input_tokens": 16524,
+      "cost": 0.00527,
+      "timestamp": "2026-05-06T20:52:52.012213+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3315,
+      "output_tokens": 55,
+      "cache_creation_input_tokens": 570,
+      "cache_read_input_tokens": 17127,
+      "cost": 0.006015,
+      "timestamp": "2026-05-06T20:52:52.785199+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3348,
+      "output_tokens": 85,
+      "cache_creation_input_tokens": 543,
+      "cache_read_input_tokens": 16662,
+      "cost": 0.006118,
+      "timestamp": "2026-05-06T20:52:53.315018+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 1456,
+      "output_tokens": 348,
+      "cache_creation_input_tokens": 970,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.005618,
+      "timestamp": "2026-05-06T20:52:54.292051+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 304,
+      "output_tokens": 141,
+      "cache_creation_input_tokens": 3011,
+      "cache_read_input_tokens": 17801,
+      "cost": 0.006553,
+      "timestamp": "2026-05-06T20:52:54.350812+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 1537,
+      "output_tokens": 190,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.003697,
+      "timestamp": "2026-05-06T20:52:56.042909+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 719,
+      "output_tokens": 74,
+      "cache_creation_input_tokens": 1534,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.004216,
+      "timestamp": "2026-05-06T20:52:57.445533+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 985,
+      "output_tokens": 227,
+      "cache_creation_input_tokens": 1534,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.005247,
+      "timestamp": "2026-05-06T20:52:59.011826+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1379,
+      "output_tokens": 513,
+      "cache_creation_input_tokens": 2039,
+      "cache_read_input_tokens": 17299,
+      "cost": 0.008223,
+      "timestamp": "2026-05-06T20:53:01.156237+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 938,
+      "output_tokens": 488,
+      "cache_creation_input_tokens": 125,
+      "cache_read_input_tokens": 20880,
+      "cost": 0.005622,
+      "timestamp": "2026-05-06T20:53:02.225068+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1957,
+      "output_tokens": 185,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.004381,
+      "timestamp": "2026-05-06T20:53:05.565000+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1957,
+      "output_tokens": 324,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.005117,
+      "timestamp": "2026-05-06T20:53:06.754846+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 2396,
+      "output_tokens": 505,
+      "cache_creation_input_tokens": 648,
+      "cache_read_input_tokens": 13695,
+      "cost": 0.0071,
+      "timestamp": "2026-05-06T20:53:07.131437+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2423,
+      "output_tokens": 121,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.004527,
+      "timestamp": "2026-05-06T20:53:08.395165+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 2277,
+      "output_tokens": 90,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.003937,
+      "timestamp": "2026-05-06T20:53:08.422982+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 191,
+      "output_tokens": 77,
+      "cache_creation_input_tokens": 2274,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.004628,
+      "timestamp": "2026-05-06T20:53:09.687274+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2878,
+      "output_tokens": 166,
+      "cache_creation_input_tokens": 2420,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.008233,
+      "timestamp": "2026-05-06T20:53:10.905990+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 310,
+      "output_tokens": 146,
+      "cache_creation_input_tokens": 2274,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.005092,
+      "timestamp": "2026-05-06T20:53:11.147102+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 702,
+      "output_tokens": 163,
+      "cache_creation_input_tokens": 135,
+      "cache_read_input_tokens": 14420,
+      "cost": 0.003128,
+      "timestamp": "2026-05-06T20:53:12.558571+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4107,
+      "output_tokens": 299,
+      "cache_creation_input_tokens": 2420,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.010127,
+      "timestamp": "2026-05-06T20:53:15.184825+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2423,
+      "output_tokens": 861,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.008268,
+      "timestamp": "2026-05-06T20:53:16.426718+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2788,
+      "output_tokens": 164,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.005107,
+      "timestamp": "2026-05-06T20:53:18.962006+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2794,
+      "output_tokens": 291,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.005789,
+      "timestamp": "2026-05-06T20:53:20.095321+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 2197,
+      "output_tokens": 463,
+      "cache_creation_input_tokens": 45,
+      "cache_read_input_tokens": 14630,
+      "cost": 0.006031,
+      "timestamp": "2026-05-06T20:53:20.110003+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 2550,
+      "output_tokens": 54,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.00403,
+      "timestamp": "2026-05-06T20:53:21.666157+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3035,
+      "output_tokens": 104,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.005054,
+      "timestamp": "2026-05-06T20:53:22.977598+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 78,
+      "output_tokens": 97,
+      "cache_creation_input_tokens": 2547,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.004956,
+      "timestamp": "2026-05-06T20:53:23.672483+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 154,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 3032,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.005788,
+      "timestamp": "2026-05-06T20:53:24.237372+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 271,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 3032,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.005856,
+      "timestamp": "2026-05-06T20:53:25.095533+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 194,
+      "output_tokens": 111,
+      "cache_creation_input_tokens": 2547,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.005142,
+      "timestamp": "2026-05-06T20:53:25.143240+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3053,
+      "output_tokens": 87,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.005028,
+      "timestamp": "2026-05-06T20:53:25.319089+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 270,
+      "output_tokens": 68,
+      "cache_creation_input_tokens": 25,
+      "cache_read_input_tokens": 14692,
+      "cost": 0.00211,
+      "timestamp": "2026-05-06T20:53:26.361514+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 401,
+      "output_tokens": 77,
+      "cache_creation_input_tokens": 49,
+      "cache_read_input_tokens": 18125,
+      "cost": 0.00266,
+      "timestamp": "2026-05-06T20:53:26.808692+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 242,
+      "output_tokens": 55,
+      "cache_creation_input_tokens": 23,
+      "cache_read_input_tokens": 14811,
+      "cost": 0.002027,
+      "timestamp": "2026-05-06T20:53:27.201251+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 169,
+      "output_tokens": 149,
+      "cache_creation_input_tokens": 3050,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.006266,
+      "timestamp": "2026-05-06T20:53:27.429848+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 197,
+      "output_tokens": 57,
+      "cache_creation_input_tokens": 41,
+      "cache_read_input_tokens": 14942,
+      "cost": 0.002027,
+      "timestamp": "2026-05-06T20:53:28.666099+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 484,
+      "output_tokens": 204,
+      "cache_creation_input_tokens": 3050,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.006856,
+      "timestamp": "2026-05-06T20:53:29.375334+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 206,
+      "output_tokens": 132,
+      "cache_creation_input_tokens": 24,
+      "cache_read_input_tokens": 15048,
+      "cost": 0.002401,
+      "timestamp": "2026-05-06T20:53:30.069960+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 585,
+      "output_tokens": 449,
+      "cache_creation_input_tokens": 51,
+      "cache_read_input_tokens": 18241,
+      "cost": 0.004718,
+      "timestamp": "2026-05-06T20:53:32.925398+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 866,
+      "output_tokens": 414,
+      "cache_creation_input_tokens": 104,
+      "cache_read_input_tokens": 15072,
+      "cost": 0.004573,
+      "timestamp": "2026-05-06T20:53:36.472887+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1595,
+      "output_tokens": 1714,
+      "cache_creation_input_tokens": 100,
+      "cache_read_input_tokens": 18512,
+      "cost": 0.012141,
+      "timestamp": "2026-05-06T20:53:41.016291+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3085,
+      "output_tokens": 1093,
+      "cache_creation_input_tokens": 206,
+      "cache_read_input_tokens": 18721,
+      "cost": 0.01068,
+      "timestamp": "2026-05-06T20:53:49.375521+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2933,
+      "output_tokens": 774,
+      "cache_creation_input_tokens": 1199,
+      "cache_read_input_tokens": 19001,
+      "cost": 0.010202,
+      "timestamp": "2026-05-06T20:53:55.054366+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1930,
+      "output_tokens": 72,
+      "cache_creation_input_tokens": 1209,
+      "cache_read_input_tokens": 20796,
+      "cost": 0.005881,
+      "timestamp": "2026-05-06T20:53:56.105042+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1156,
+      "output_tokens": 61,
+      "cache_creation_input_tokens": 31,
+      "cache_read_input_tokens": 23096,
+      "cost": 0.003809,
+      "timestamp": "2026-05-06T20:53:57.051806+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 517,
+      "output_tokens": 195,
+      "cache_creation_input_tokens": 31,
+      "cache_read_input_tokens": 23898,
+      "cost": 0.003921,
+      "timestamp": "2026-05-06T20:53:58.740906+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 391,
+      "output_tokens": 81,
+      "cache_creation_input_tokens": 279,
+      "cache_read_input_tokens": 23998,
+      "cost": 0.003545,
+      "timestamp": "2026-05-06T20:54:00.013056+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3402,
+      "output_tokens": 88,
+      "cache_creation_input_tokens": 163,
+      "cache_read_input_tokens": 24277,
+      "cost": 0.006473,
+      "timestamp": "2026-05-06T20:54:01.838809+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3486,
+      "output_tokens": 151,
+      "cache_creation_input_tokens": 222,
+      "cache_read_input_tokens": 24440,
+      "cost": 0.006962,
+      "timestamp": "2026-05-06T20:54:03.118656+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1183,
+      "output_tokens": 2870,
+      "cache_creation_input_tokens": 3133,
+      "cache_read_input_tokens": 24702,
+      "cost": 0.021919,
+      "timestamp": "2026-05-06T20:54:26.172602+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3486,
+      "output_tokens": 83,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.005441,
+      "timestamp": "2026-05-06T20:54:27.570420+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 3026,
+      "output_tokens": 75,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.004611,
+      "timestamp": "2026-05-06T20:54:27.578551+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3478,
+      "output_tokens": 79,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.005373,
+      "timestamp": "2026-05-06T20:54:27.725726+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 121,
+      "output_tokens": 64,
+      "cache_creation_input_tokens": 3483,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.006335,
+      "timestamp": "2026-05-06T20:54:28.713456+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 137,
+      "output_tokens": 50,
+      "cache_creation_input_tokens": 3475,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.00623,
+      "timestamp": "2026-05-06T20:54:28.781860+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 233,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 3483,
+      "cache_read_input_tokens": 15400,
+      "cost": 0.006422,
+      "timestamp": "2026-05-06T20:54:29.622860+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 396,
+      "output_tokens": 77,
+      "cache_creation_input_tokens": 37,
+      "cache_read_input_tokens": 18960,
+      "cost": 0.002723,
+      "timestamp": "2026-05-06T20:54:31.553796+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3186,
+      "output_tokens": 194,
+      "cache_creation_input_tokens": 3475,
+      "cache_read_input_tokens": 14995,
+      "cost": 0.009999,
+      "timestamp": "2026-05-06T20:54:31.756088+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3280,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 58,
+      "cache_read_input_tokens": 18543,
+      "cost": 0.005522,
+      "timestamp": "2026-05-06T20:54:32.886425+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 342,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 3002,
+      "cache_read_input_tokens": 18648,
+      "cost": 0.006254,
+      "timestamp": "2026-05-06T20:54:34.247752+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 658,
+      "output_tokens": 473,
+      "cache_creation_input_tokens": 51,
+      "cache_read_input_tokens": 19059,
+      "cost": 0.004993,
+      "timestamp": "2026-05-06T20:54:34.817264+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 395,
+      "output_tokens": 183,
+      "cache_creation_input_tokens": 33,
+      "cache_read_input_tokens": 21841,
+      "cost": 0.003535,
+      "timestamp": "2026-05-06T20:54:35.926632+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 898,
+      "output_tokens": 73,
+      "cache_creation_input_tokens": 277,
+      "cache_read_input_tokens": 19110,
+      "cost": 0.00352,
+      "timestamp": "2026-05-06T20:54:36.572084+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 3171,
+      "output_tokens": 754,
+      "cache_creation_input_tokens": 3023,
+      "cache_read_input_tokens": 12097,
+      "cost": 0.011929,
+      "timestamp": "2026-05-06T20:54:37.421801+00:00"
+    }
+  ],
+  "outcome": "timeout",
+  "elapsed_seconds": 641.46,
+  "budget_dollars": 3.0,
+  "budget_exceeded": false
+}

@@ -1,0 +1,9 @@
+ frontend/src/App.tsx               | 304 ++++++++++++++++++++++++---
+ frontend/src/api.ts                |  89 ++++++--
+ src/backend/api/messages.py        | 407 +++++++++++++++++++++++++++++++++++--
+ src/backend/auth.py                |  38 ++++
+ src/backend/main.py                |   9 +-
+ src/backend/models.py              | 237 +++++++++++++++++++--
+ src/backend/translation_service.py | 153 ++++++++++++++
+ tests/test_messages.py             | 401 ++++++++++++++++++++++++++++++++++--
+ 8 files changed, 1539 insertions(+), 99 deletions(-)

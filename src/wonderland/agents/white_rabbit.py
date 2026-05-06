@@ -16,17 +16,16 @@ because decomposition produces a set, not one at a time.
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.engagement import (
     EngagementRules,
+    addressed_to,
     almost_never,
     always,
     any_of,
@@ -38,6 +37,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
+from wonderland.parsing import extract_and_validate
 from wonderland.ticket import TicketPayload, TicketRegistry
 from wonderland.utterance import (
     Artifact,
@@ -98,6 +98,8 @@ def white_rabbit_rules() -> EngagementRules:
     is_tweedle = any_of(speaker_is("tweedledee"), speaker_is("tweedledum"))
 
     return EngagementRules.of(
+        # ALWAYS — INVITE addressed to me always wakes me up (Block 2c)
+        always(SpeechAct.INVITE, condition=addressed_to(RABBIT_NAME)),
         # ALWAYS
         always(SpeechAct.DIRECTIVE),
         always(SpeechAct.STORY, condition=speaker_is("alice")),
@@ -202,31 +204,18 @@ discussed; soft cuts cannot.
 """
 
 
-_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-
-
 class RabbitResponseParseError(ValueError):
     """The Rabbit's LLM response did not parse into a valid RabbitResponse."""
 
 
 def parse_rabbit_response(text: str) -> RabbitResponse:
-    """Extract the fenced JSON block from `text` and validate it."""
-    match = _JSON_BLOCK.search(text)
-    if match is None:
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise RabbitResponseParseError("no JSON block found in Rabbit response")
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RabbitResponseParseError(f"Rabbit response was not valid JSON: {exc}") from exc
-    try:
-        return RabbitResponse.model_validate(data)
-    except ValidationError as exc:
-        raise RabbitResponseParseError(f"Rabbit response failed schema validation: {exc}") from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``,
+    which handles fenced/bare/balanced-fallback extraction
+    uniformly across every agent.
+    """
+    return extract_and_validate(text, RabbitResponse, RabbitResponseParseError)
 
 
 # --------------------------------------------------------------------- #
@@ -263,7 +252,7 @@ class WhiteRabbit(WonderlandAgent):
 
         system, messages = context.to_llm_request()
         # Output protocol cached alongside the constitution — both invariant per Rabbit.
-        system.insert(1, CachedBlock(_OUTPUT_PROTOCOL))
+        system.insert(2, CachedBlock(_OUTPUT_PROTOCOL))
 
         result = await self.llm.complete(system=system, messages=messages)
         response = parse_rabbit_response(result.text)

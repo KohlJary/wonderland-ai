@@ -107,10 +107,7 @@ def test_rules_always_engages_with_directive() -> None:
 
 def test_rules_story_from_alice_is_always() -> None:
     rules = mad_hatter_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.STORY, speaker="alice", body="x"))
-        is Engagement.ALWAYS
-    )
+    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="alice", body="x")) is Engagement.ALWAYS
 
 
 def test_rules_story_from_other_is_almost_never() -> None:
@@ -125,26 +122,19 @@ def test_rules_story_from_other_is_almost_never() -> None:
 
 def test_rules_proposal_from_cat_is_always() -> None:
     rules = mad_hatter_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="cheshire_cat"))
-        is Engagement.ALWAYS
-    )
+    assert rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="cheshire_cat")) is Engagement.ALWAYS
 
 
 def test_rules_proposal_from_other_is_almost_never() -> None:
     rules = mad_hatter_rules()
-    assert (
-        rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="dodo"))
-        is Engagement.ALMOST_NEVER
-    )
+    assert rules.categorize(_u(act=SpeechAct.PROPOSAL, speaker="dodo")) is Engagement.ALMOST_NEVER
 
 
 def test_rules_implementation_from_tweedle_is_always() -> None:
     rules = mad_hatter_rules()
     for tweedle in ("tweedledee", "tweedledum"):
         assert (
-            rules.categorize(_u(act=SpeechAct.IMPLEMENTATION, speaker=tweedle))
-            is Engagement.ALWAYS
+            rules.categorize(_u(act=SpeechAct.IMPLEMENTATION, speaker=tweedle)) is Engagement.ALWAYS
         )
 
 
@@ -166,28 +156,24 @@ def test_rules_concern_from_anyone_is_always() -> None:
 def test_rules_question_only_when_addressed_to_hatter() -> None:
     rules = mad_hatter_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.QUESTION, addressed=["mad_hatter"]))
-        is Engagement.ALWAYS
+        rules.categorize(_u(act=SpeechAct.QUESTION, addressed=["mad_hatter"])) is Engagement.ALWAYS
     )
     assert (
-        rules.categorize(_u(act=SpeechAct.QUESTION, addressed="caucus"))
-        is Engagement.ALMOST_NEVER
+        rules.categorize(_u(act=SpeechAct.QUESTION, addressed="caucus")) is Engagement.ALMOST_NEVER
     )
 
 
 def test_rules_ticket_from_rabbit_is_selective() -> None:
     rules = mad_hatter_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.TICKET, speaker="white_rabbit"))
-        is Engagement.SELECTIVELY
+        rules.categorize(_u(act=SpeechAct.TICKET, speaker="white_rabbit")) is Engagement.SELECTIVELY
     )
 
 
 def test_rules_review_from_caterpillar_is_selective() -> None:
     rules = mad_hatter_rules()
     assert (
-        rules.categorize(_u(act=SpeechAct.REVIEW, speaker="caterpillar"))
-        is Engagement.SELECTIVELY
+        rules.categorize(_u(act=SpeechAct.REVIEW, speaker="caterpillar")) is Engagement.SELECTIVELY
     )
 
 
@@ -223,9 +209,7 @@ def test_parse_silence() -> None:
 
 def test_parse_silence_coerces_explicit_nulls() -> None:
     """Live Haiku 4.5 sometimes emits explicit nulls for omitted fields."""
-    response = parse_hatter_response(
-        '{"decision": "silence", "body": null, "scenarios": null}'
-    )
+    response = parse_hatter_response('{"decision": "silence", "body": null, "scenarios": null}')
     assert response.decision == "silence"
     assert response.body == ""
     assert response.scenarios == []
@@ -271,9 +255,7 @@ def test_parse_test_scenario_with_multiple_scenarios() -> None:
 
 def test_parse_rejects_test_scenario_decision_with_no_scenarios() -> None:
     with pytest.raises(HatterResponseParseError):
-        parse_hatter_response(
-            '{"decision": "test_scenario", "body": "...", "scenarios": []}'
-        )
+        parse_hatter_response('{"decision": "test_scenario", "body": "...", "scenarios": []}')
 
 
 def test_parse_rejects_scenario_with_empty_concern() -> None:
@@ -410,11 +392,15 @@ async def test_deliberate_includes_protocol_in_system_prompt(tmp_path: Path) -> 
 
     create_kwargs = hatter.llm.client.messages.create.call_args.kwargs
     system_blocks = create_kwargs["system"]
-    assert system_blocks[0]["text"] == "C"
+    # Position 0 is the framework primer (shared across all agents)
+    assert "Wonderland — Framework Primer" in system_blocks[0]["text"]
     assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
-    assert "fenced JSON block" in system_blocks[1]["text"]
-    assert "severity" in system_blocks[1]["text"].lower()
+    # Position 1 is the per-agent constitution
+    assert system_blocks[1]["text"] == "C"
     assert system_blocks[1]["cache_control"] == {"type": "ephemeral"}
+    assert "fenced JSON block" in system_blocks[2]["text"]
+    assert "severity" in system_blocks[2]["text"].lower()
+    assert system_blocks[2]["cache_control"] == {"type": "ephemeral"}
 
 
 # ---------- end-to-end (mocked LLM) ----------

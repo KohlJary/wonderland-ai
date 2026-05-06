@@ -17,13 +17,11 @@ post-deploy or post-incident-confirmation reports.
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.engagement import (
@@ -41,6 +39,7 @@ from wonderland.engagement import (
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
 from wonderland.observation import ObservationPayload, ObservationRegistry
+from wonderland.parsing import extract_and_validate
 from wonderland.utterance import (
     Artifact,
     SpeechAct,
@@ -99,6 +98,8 @@ def dormouse_rules() -> EngagementRules:
     is_tweedle = any_of(speaker_is("tweedledee"), speaker_is("tweedledum"))
 
     return EngagementRules.of(
+        # ALWAYS — INVITE addressed to me always wakes me up (Block 2c)
+        always(SpeechAct.INVITE, condition=addressed_to(DORMOUSE_NAME)),
         # ALWAYS — the production-touching surfaces from §III
         always(SpeechAct.IMPLEMENTATION, condition=is_tweedle),
         always(SpeechAct.RULING, condition=speaker_is("queen_of_hearts")),
@@ -232,37 +233,18 @@ no other agent's work is awaiting your sign-off, choose `silence`.
 """
 
 
-_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-
-
 class DormouseResponseParseError(ValueError):
     """The Dormouse's LLM response did not parse into a valid DormouseResponse."""
 
 
 def parse_dormouse_response(text: str) -> DormouseResponse:
-    """Extract the fenced JSON block from `text` and validate it."""
-    match = _JSON_BLOCK.search(text)
-    if match is None:
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise DormouseResponseParseError(
-                "no JSON block found in Dormouse response"
-            )
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise DormouseResponseParseError(
-            f"Dormouse response was not valid JSON: {exc}"
-        ) from exc
-    try:
-        return DormouseResponse.model_validate(data)
-    except ValidationError as exc:
-        raise DormouseResponseParseError(
-            f"Dormouse response failed schema validation: {exc}"
-        ) from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``, which
+    handles fenced/bare/balanced-fallback extraction uniformly across
+    every agent.
+    """
+    return extract_and_validate(text, DormouseResponse, DormouseResponseParseError)
 
 
 # --------------------------------------------------------------------- #
@@ -300,7 +282,7 @@ class Dormouse(WonderlandAgent):
         system, messages = context.to_llm_request()
         # Output protocol cached alongside the constitution — both invariant
         # per Dormouse.
-        system.insert(1, CachedBlock(_OUTPUT_PROTOCOL))
+        system.insert(2, CachedBlock(_OUTPUT_PROTOCOL))
 
         result = await self.llm.complete(system=system, messages=messages)
         response = parse_dormouse_response(result.text)
@@ -325,9 +307,7 @@ class Dormouse(WonderlandAgent):
     # Internals
     # ------------------------------------------------------------------ #
 
-    def _record_observations(
-        self, payloads: list[ObservationPayload]
-    ) -> list[Artifact]:
+    def _record_observations(self, payloads: list[ObservationPayload]) -> list[Artifact]:
         if self._observation_registry is None:
             return []
         artifacts: list[Artifact] = []

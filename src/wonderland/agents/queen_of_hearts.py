@@ -17,13 +17,11 @@ distinct concerns.
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.engagement import (
@@ -40,6 +38,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
+from wonderland.parsing import extract_and_validate
 from wonderland.ruling import RulingPayload, RulingRegistry
 from wonderland.utterance import (
     Artifact,
@@ -140,6 +139,8 @@ def queen_of_hearts_rules() -> EngagementRules:
     is_tweedle = any_of(speaker_is("tweedledee"), speaker_is("tweedledum"))
 
     return EngagementRules.of(
+        # ALWAYS — INVITE addressed to me always wakes me up (Block 2c)
+        always(SpeechAct.INVITE, condition=addressed_to(QUEEN_NAME)),
         # ALWAYS — the early-engagement surfaces from §III
         always(SpeechAct.PROPOSAL, condition=speaker_is("cheshire_cat")),
         always(
@@ -209,7 +210,30 @@ class QueenResponse(BaseModel):
     def _rulings_none_to_empty(cls, v: object) -> object:
         return [] if v is None else v
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_empty_ruling_to_concern(cls, data: object) -> object:
+        """Live Haiku 4.5 sometimes emits ``decision='ruling'`` with
+        ``rulings=[]`` and a substantive ``body`` — the LLM intended to
+        ship a ruling but didn't fill the structured payload. Rather
+        than reject the whole response (and lose the body), coerce to
+        ``decision='concern'`` so the body content survives as a
+        legitimate Queen utterance. This is the same shape as the
+        Tweedle decision-coercion validator: narrow, observed
+        rephrasings only; the schema otherwise stays strict."""
+        if not isinstance(data, dict):
+            return data
+        decision = data.get("decision")
+        rulings = data.get("rulings") or []
+        body = data.get("body") or ""
+        if decision == "ruling" and not rulings and body.strip():
+            data = dict(data)
+            data["decision"] = "concern"
+        return data
+
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
+        # If coercion didn't apply (no body to salvage), the original
+        # invariant still holds: ruling decision needs at least one ruling.
         if self.decision == "ruling" and not self.rulings:
             raise ValueError(
                 "QueenResponse: decision='ruling' requires at least one "
@@ -284,35 +308,18 @@ planning.
 """
 
 
-_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-
-
 class QueenResponseParseError(ValueError):
     """The Queen's LLM response did not parse into a valid QueenResponse."""
 
 
 def parse_queen_response(text: str) -> QueenResponse:
-    """Extract the fenced JSON block from `text` and validate it."""
-    match = _JSON_BLOCK.search(text)
-    if match is None:
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise QueenResponseParseError("no JSON block found in Queen response")
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise QueenResponseParseError(
-            f"Queen response was not valid JSON: {exc}"
-        ) from exc
-    try:
-        return QueenResponse.model_validate(data)
-    except ValidationError as exc:
-        raise QueenResponseParseError(
-            f"Queen response failed schema validation: {exc}"
-        ) from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``, which
+    handles fenced/bare/balanced-fallback extraction uniformly across
+    every agent.
+    """
+    return extract_and_validate(text, QueenResponse, QueenResponseParseError)
 
 
 # --------------------------------------------------------------------- #
@@ -350,7 +357,7 @@ class QueenOfHearts(WonderlandAgent):
         system, messages = context.to_llm_request()
         # Output protocol cached alongside the constitution — both invariant
         # per Queen.
-        system.insert(1, CachedBlock(_OUTPUT_PROTOCOL))
+        system.insert(2, CachedBlock(_OUTPUT_PROTOCOL))
 
         result = await self.llm.complete(system=system, messages=messages)
         response = parse_queen_response(result.text)

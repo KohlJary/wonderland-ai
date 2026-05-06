@@ -286,9 +286,7 @@ class RulingRegistry:
 
     def write(self, payload: RulingPayload | dict) -> RulingRecord:
         validated = (
-            payload
-            if isinstance(payload, RulingPayload)
-            else RulingPayload.model_validate(payload)
+            payload if isinstance(payload, RulingPayload) else RulingPayload.model_validate(payload)
         )
 
         number = self.next_number()

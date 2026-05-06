@@ -22,15 +22,13 @@ procedural acts. Quiescence/stuck/deadlock detection arrives in T18.
 from __future__ import annotations
 
 import inspect
-import json
-import re
 import sys
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from wonderland.agent import Context, WonderlandAgent
 from wonderland.conflict import (
@@ -43,6 +41,7 @@ from wonderland.conflict import (
 )
 from wonderland.engagement import (
     EngagementRules,
+    addressed_to,
     almost_never,
     always,
     body_contains_any,
@@ -56,6 +55,8 @@ from wonderland.escalation import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
+from wonderland.parsing import extract_and_validate
+from wonderland.thread_monitor import ThreadMonitor, ThreadState
 from wonderland.utterance import (
     Artifact,
     SpeechAct,
@@ -170,9 +171,6 @@ position of your own.
 """
 
 
-_DODO_JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-
-
 class ConflictResponseParseError(ValueError):
     """The composition LLM response did not parse into a valid ConflictResponse."""
 
@@ -225,23 +223,13 @@ class BriefResponseParseError(ValueError):
 
 
 def parse_brief_response(text: str) -> BriefProseResponse:
-    """Extract the fenced JSON block and validate it as BriefProseResponse."""
-    match = _DODO_JSON_BLOCK.search(text)
-    if match is None:
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise BriefResponseParseError("no JSON block found in brief response")
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise BriefResponseParseError(f"brief response was not valid JSON: {exc}") from exc
-    try:
-        return BriefProseResponse.model_validate(data)
-    except ValidationError as exc:
-        raise BriefResponseParseError(f"brief response failed schema validation: {exc}") from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``, which
+    handles fenced/bare/balanced-fallback extraction uniformly across
+    every agent.
+    """
+    return extract_and_validate(text, BriefProseResponse, BriefResponseParseError)
 
 
 async def _emit_via_channel(
@@ -256,25 +244,13 @@ async def _emit_via_channel(
 
 
 def parse_conflict_response(text: str) -> ConflictResponse:
-    """Extract the fenced JSON block and validate it."""
-    match = _DODO_JSON_BLOCK.search(text)
-    if match is None:
-        candidate = text.strip()
-        if not (candidate.startswith("{") and candidate.endswith("}")):
-            raise ConflictResponseParseError("no JSON block found in conflict response")
-        raw = candidate
-    else:
-        raw = match.group(1)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ConflictResponseParseError(f"conflict response was not valid JSON: {exc}") from exc
-    try:
-        return ConflictResponse.model_validate(data)
-    except ValidationError as exc:
-        raise ConflictResponseParseError(
-            f"conflict response failed schema validation: {exc}"
-        ) from exc
+    """Extract the JSON response from ``text`` and validate it.
+
+    Delegates to ``wonderland.parsing.extract_and_validate``, which
+    handles fenced/bare/balanced-fallback extraction uniformly across
+    every agent.
+    """
+    return extract_and_validate(text, ConflictResponse, ConflictResponseParseError)
 
 
 # --------------------------------------------------------------------- #
@@ -312,6 +288,8 @@ def dodo_rules() -> EngagementRules:
         "cannot proceed",
     )
     return EngagementRules.of(
+        # INVITE addressed to me always wakes me up (Block 2c)
+        always(SpeechAct.INVITE, condition=addressed_to(DODO_NAME)),
         always(SpeechAct.CONCERN, condition=conflict_words),
         always(SpeechAct.ESCALATION),
         almost_never(SpeechAct.DIRECTIVE),
@@ -410,6 +388,205 @@ class Dodo(WonderlandAgent):
         await self.bus.publish(utterance)
         await self.memory.record(utterance)
         return utterance
+
+    async def nudge(
+        self,
+        thread_id: str,
+        *,
+        body: str | None = None,
+        addressed_to: str = "caucus",
+        reason: str = "",
+    ) -> Utterance:
+        """Publish a ``nudge`` reminding the team that a thread is stuck.
+
+        Per dodo.md §IV, a nudge is the procedural reminder when a
+        thread is approaching deadlock. Brief, observational, never
+        opinion-bearing — the Dodo names that the team has paused
+        with open expectations and asks the implicated agents to
+        respond or commit provisionally. Per §VIII, the Dodo does
+        not make the team's decisions; the nudge is information,
+        not direction.
+
+        ``reason`` is the ThreadStateChange.reason text from the
+        ThreadMonitor (e.g., "3 open expectation(s); silent 30.4s")
+        and gets folded into the default body when ``body`` isn't
+        supplied.
+        """
+        if body is None:
+            suffix = f" ({reason})" if reason else ""
+            body = (
+                f"Thread {thread_id} → stuck{suffix}. The team has paused "
+                f"with open expectations; if commitments are pending "
+                f"information, name what you need; if commitments can be "
+                f"made provisionally, make them."
+            )
+        utterance = Utterance(
+            thread_id=thread_id,
+            speaker=self.identity.as_agent_identity(),
+            addressed_to=addressed_to,  # type: ignore[arg-type]
+            speech_act=SpeechAct.NUDGE,
+            content=UtteranceContent(body=body),
+        )
+        await self.bus.publish(utterance)
+        await self.memory.record(utterance)
+        return utterance
+
+    async def escalate_deadlock(
+        self,
+        thread_id: str,
+        *,
+        reason: str = "",
+        thread_summary: str = "",
+        channel: EscalationChannel | None = None,
+    ) -> EscalationRecord:
+        """Escalate a DEADLOCKED thread to human review.
+
+        Distinct from ``escalate(conflict, resolution, ...)`` (T20),
+        which is shaped for two competing proposals that didn't
+        compose. The deadlock case has a different shape: the team
+        has produced lots of utterances + few artifacts, with open
+        expectations that nudges didn't break. Per analyses 006/007
+        ("polite deadlock"), this happens when each agent's
+        constitutional restraint is correct in isolation but the
+        aggregate produces collective non-commitment.
+
+        Templated EscalationBrief — the structured synthesis the LLM
+        does in ``escalate()`` doesn't apply here because there is no
+        conflict to compose, just paralysis to surface.
+        """
+        if self._escalation_registry is None:
+            raise RuntimeError(
+                "Dodo needs an escalation_registry to persist deadlock "
+                "briefs. Pass one at construction or via the property."
+            )
+
+        from wonderland.escalation import AgentProposalSchema, EscalationBrief
+
+        # The deadlock brief is shaped for human review even though there
+        # are no agent proposals to choose between. We use a single
+        # placeholder "team" proposal naming the polite-deadlock pattern
+        # so the schema's min_length=2 on agent_proposals isn't blocked.
+        # (A future refinement: support a separate brief-shape for
+        # process-deadlock distinct from substance-conflict.)
+        proposals = [
+            AgentProposalSchema(
+                speaker="team",
+                position=(
+                    f"Thread has been STUCK ({reason}). Multiple agents have "
+                    "open expectations and the nudge ladder did not break the "
+                    "deadlock."
+                ),
+                rationale=(
+                    "The team's individual constitutional restraint is correct "
+                    "in isolation. The collective effect is that no one is "
+                    "willing to commit provisionally. Per dodo.md §VIII this "
+                    "is the framework's escalation point, not the Dodo's "
+                    "decision point."
+                ),
+            ),
+            AgentProposalSchema(
+                speaker="dodo",
+                position="Surface the deadlock to human review.",
+                rationale=(
+                    "The Dodo's nudges did not produce a commitment. Further "
+                    "nudges would be repetition, not progress. A human "
+                    "reviewer can either name a provisional decision the team "
+                    "can adopt or change the directive scope so the team can "
+                    "make progress."
+                ),
+            ),
+        ]
+        brief = EscalationBrief(
+            thread_id=thread_id,
+            decision_required=(
+                f"Thread {thread_id} has reached the nudge-threshold deadlock. "
+                "What provisional decision would let the team progress, or "
+                "should the directive scope change?"
+            ),
+            agent_proposals=proposals,
+            suggested_resolution=(
+                "A provisional decision from a human reviewer is the next move. "
+                "The team will adopt the decision and make subsequent revisions "
+                "via the normal flow (concerns, reframes, follow-up tickets)."
+            ),
+            stakes=(
+                "Without intervention the thread will remain stuck and the directive will not ship."
+            ),
+            background=thread_summary or "(no thread summary supplied)",
+        )
+
+        record = self._escalation_registry.write(brief)
+        await self._publish_escalation_utterance(brief, record)
+        await _emit_via_channel(channel or stderr_escalation_channel, brief, record)
+        return record
+
+    # ------------------------------------------------------------------ #
+    # State-driven behavior — consumes ThreadMonitor.transitions()
+    # ------------------------------------------------------------------ #
+
+    async def watch_thread_states(self, monitor: ThreadMonitor) -> None:
+        """Consume ``monitor.transitions()`` and emit procedural acts.
+
+        This is the structural anti-deadlock fix from analyses 006/007.
+        The Dodo's per-utterance engagement (§III) only catches
+        concerns carrying explicit conflict-keywords; the team's
+        polite-deadlock concerns use constitutionally-correct hedging
+        instead, so the Dodo never fires on the cascade. Wiring the
+        Dodo to ThreadMonitor's STUCK transitions gives him a
+        structural detector for the pattern that doesn't depend on
+        the agents naming it themselves.
+
+        Behavior per transition:
+
+        - ``running → stuck``: emit a NUDGE; record the nudge with
+          the monitor so the deadlock_after_nudges threshold trips
+          DEADLOCKED on subsequent stuck transitions.
+        - ``stuck → deadlocked``: escalate to human review via
+          ``escalate_deadlock``. The escalation registry must be
+          configured (passed at construction) for this path; without
+          it, the deadlock is logged via acknowledge instead.
+        - ``running → quiescent``: emit ACKNOWLEDGMENT(state="complete").
+          Consolidates the thread-closure logic that showcase scripts
+          previously did ad-hoc. The acknowledgment itself triggers
+          the COMPLETE transition.
+
+        Other transitions (RUNNING → ABANDONED, etc.) are logged via
+        acknowledge but don't trigger procedural acts. Caller cancels
+        the coroutine when the showcase is done.
+
+        Run alongside ``Dodo.run()`` — they share the bus and the
+        memory but consume different event streams.
+        """
+        async for change in monitor.transitions():
+            if change.to_state is ThreadState.STUCK:
+                # Record the nudge before publishing so the deadlock
+                # threshold is consistent even if the publish path yields
+                # to other coroutines before this loop iteration completes.
+                monitor.record_nudge(change.thread_id)
+                await self.nudge(change.thread_id, reason=change.reason)
+            elif change.to_state is ThreadState.DEADLOCKED:
+                if self._escalation_registry is not None:
+                    await self.escalate_deadlock(change.thread_id, reason=change.reason)
+                else:
+                    await self.acknowledge(
+                        change.thread_id,
+                        state="deadlocked",
+                        body=(
+                            f"Thread {change.thread_id} → deadlocked "
+                            f"({change.reason}). No escalation registry "
+                            "configured; logging only."
+                        ),
+                    )
+            elif change.to_state is ThreadState.QUIESCENT:
+                await self.acknowledge(
+                    change.thread_id,
+                    state="complete",
+                    body=(
+                        f"Thread {change.thread_id} → complete. The team has "
+                        "gone quiet with no open expectations; the directive "
+                        "is settled."
+                    ),
+                )
 
     # ------------------------------------------------------------------ #
     # Conflict resolution + composition

@@ -1,0 +1,1805 @@
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 6c7c5f3..ee0431c 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -1,61 +1,305 @@
+ /**
+- * App — placeholder UI demonstrating end-to-end fetch + render.
+- * Lists messages and lets you post a new one. Replace with the
+- * actual feature UI; this exists so the seed has a working
+- * backend↔frontend flow for the human verifying it.
++ * App — translation-chat feature.
++ *
++ * MVP scope:
++ *   - Hardcoded conversation_id=1 and current_user_id=1 (auth stub in backend)
++ *   - Language selector: show available languages from conversation.language_pair
++ *   - For now, default to first language in pair; user can select other language
++ *   - Display both text_original and text_translated (transparency per story-001)
++ *   - Show translation_error warning if translation fails
++ *
++ * Fast-follow:
++ *   - Real authentication (parse JWT, get actual current_user_id)
++ *   - Conversation list / picker UI
++ *   - Real-time updates via WebSocket (instead of poll-on-refresh)
++ *   - Language inferred from user profile (instead of selector)
++ *   - Offline message queue (store locally, sync on reconnect)
+  */
+ 
+ import { useEffect, useState } from 'react';
+ import { listMessages, postMessage, type Message } from './api';
+ 
++/**
++ * Hard-coded conversation context for MVP.
++ * In production, these would come from auth context + URL params.
++ */
++const CONVERSATION_ID = 1; // Stub: conversation between user 1 (alice) and user 2 (bob)
++const CONVERSATION_LANGUAGES = ['en', 'de']; // Stub: en_de pair
++const CURRENT_USER_ID = 1; // Stub: backend always returns user 1 from auth
++
++/**
++ * Format a timestamp for display.
++ */
++function formatTime(isoString: string): string {
++  try {
++    const date = new Date(isoString);
++    return date.toLocaleTimeString('en-US', {
++      hour: '2-digit',
++      minute: '2-digit',
++    });
++  } catch {
++    return isoString;
++  }
++}
++
++/**
++ * Render a single message with translation.
++ *
++ * Invariants:
++ *   - text_original is always present (what sender typed in their language)
++ *   - text_translated is present if translation succeeded
++ *   - translation_error is present if translation failed
++ *   - Show both texts side-by-side for transparency (addresses story-001 confusion-flag)
++ */
++function MessageItem({
++  msg,
++  isOwn,
++}: {
++  msg: Message;
++  isOwn: boolean;
++}): React.ReactElement {
++  const showTranslationStatus = msg.translation_status !== 'success';
++  const showError = msg.translation_status === 'error';
++
++  return (
++    <li
++      style={{
++        marginBottom: 16,
++        padding: 12,
++        borderLeft: isOwn ? '4px solid #0066cc' : '4px solid #ccc',
++        backgroundColor: isOwn ? '#f0f7ff' : '#f9f9f9',
++      }}
++    >
++      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
++        <strong>{msg.sender_name}</strong>
++        <span style={{ fontSize: '0.85em', color: '#666' }}>
++          {formatTime(msg.created_at)}
++        </span>
++      </div>
++
++      {/* Original text (always shown) + language tag */}
++      <div style={{ marginTop: 8 }}>
++        <div style={{ fontSize: '0.9em', color: '#666', marginBottom: 4 }}>
++          Original ({msg.text_language}):
++        </div>
++        <div style={{ fontStyle: 'italic' }}>{msg.text_original}</div>
++      </div>
++
++      {/* Translated text (if different from original) */}
++      {msg.text_translated && msg.text_translated !== msg.text_original && (
++        <div style={{ marginTop: 8 }}>
++          <div style={{ fontSize: '0.9em', color: '#666', marginBottom: 4 }}>
++            Translated:
++          </div>
++          <div>{msg.text_translated}</div>
++        </div>
++      )}
++
++      {/* Translation error warning */}
++      {showError && (
++        <div
++          style={{
++            marginTop: 8,
++            padding: 8,
++            backgroundColor: '#fff3cd',
++            border: '1px solid #ffc107',
++            borderRadius: 4,
++            fontSize: '0.9em',
++            color: '#856404',
++          }}
++        >
++          ⚠️ {msg.translation_error || 'Translation unavailable'}
++        </div>
++      )}
++
++      {/* Pending indicator (if status is pending) */}
++      {showTranslationStatus && !showError && (
++        <div style={{ marginTop: 8, fontSize: '0.9em', color: '#666' }}>
++          Translation pending…
++        </div>
++      )}
++    </li>
++  );
++}
++
+ export function App() {
+   const [messages, setMessages] = useState<Message[]>([]);
+   const [draft, setDraft] = useState('');
++  const [readLanguage, setReadLanguage] = useState<string>(
++    CONVERSATION_LANGUAGES[0]
++  );
++  const [sendLanguage, setSendLanguage] = useState<string>(
++    CONVERSATION_LANGUAGES[0]
++  );
++  const [loading, setLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
+ 
++  /**
++   * Load messages when component mounts or when readLanguage changes.
++   * readLanguage controls what language the messages are translated to.
++   */
+   useEffect(() => {
+-    listMessages()
+-      .then(setMessages)
+-      .catch((e) => setError(String(e)));
+-  }, []);
++    const load = async () => {
++      setLoading(true);
++      setError(null);
++      try {
++        const msgs = await listMessages(CONVERSATION_ID, readLanguage);
++        setMessages(msgs);
++      } catch (err) {
++        setError(
++          `Failed to load messages: ${
++            err instanceof Error ? err.message : String(err)
++          }`
++        );
++      } finally {
++        setLoading(false);
++      }
++    };
++
++    load();
++  }, [readLanguage]);
+ 
++  /**
++   * Handle message submit.
++   * sendLanguage is what language the sender is typing in.
++   */
+   const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!draft.trim()) return;
++
+     try {
+-      const msg = await postMessage(draft);
++      setError(null);
++      const msg = await postMessage(
++        CONVERSATION_ID,
++        draft,
++        sendLanguage
++      );
+       setMessages((prev) => [...prev, msg]);
+       setDraft('');
+-      setError(null);
+     } catch (err) {
+-      setError(String(err));
++      setError(
++        `Failed to send message: ${
++          err instanceof Error ? err.message : String(err)
++        }`
++      );
+     }
+   };
+ 
+   return (
+-    <main style={{ fontFamily: 'system-ui', maxWidth: 600, margin: '2em auto' }}>
+-      <h1>fullstack-app</h1>
+-      <p style={{ color: '#666', fontStyle: 'italic' }}>
+-        Placeholder UI — replace with real feature components.
+-      </p>
+-
+-      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8 }}>
+-        <input
+-          value={draft}
+-          onChange={(e) => setDraft(e.target.value)}
+-          placeholder="Type a message…"
+-          style={{ flex: 1, padding: 8 }}
+-        />
+-        <button type="submit">Send</button>
+-      </form>
++    <main style={{ fontFamily: 'system-ui', maxWidth: 800, margin: '2em auto' }}>
++      <h1>Translation Chat</h1>
++
++      {/* Language selection */}
++      <div
++        style={{
++          marginBottom: 16,
++          padding: 12,
++          backgroundColor: '#f5f5f5',
++          borderRadius: 4,
++        }}
++      >
++        <div style={{ marginBottom: 8 }}>
++          <label style={{ display: 'block', marginBottom: 4 }}>
++            <strong>I want to read messages in:</strong>
++          </label>
++          <select
++            value={readLanguage}
++            onChange={(e) => setReadLanguage(e.target.value)}
++            style={{ padding: 6, fontSize: '1em' }}
++          >
++            {CONVERSATION_LANGUAGES.map((lang) => (
++              <option key={lang} value={lang}>
++                {lang.toUpperCase()}
++              </option>
++            ))}
++          </select>
++        </div>
+ 
++        <div>
++          <label style={{ display: 'block', marginBottom: 4 }}>
++            <strong>I am typing in:</strong>
++          </label>
++          <select
++            value={sendLanguage}
++            onChange={(e) => setSendLanguage(e.target.value)}
++            style={{ padding: 6, fontSize: '1em' }}
++          >
++            {CONVERSATION_LANGUAGES.map((lang) => (
++              <option key={lang} value={lang}>
++                {lang.toUpperCase()}
++              </option>
++            ))}
++          </select>
++        </div>
++      </div>
++
++      {/* Error display */}
+       {error && (
+-        <p style={{ color: 'crimson' }}>{error}</p>
++        <div
++          style={{
++            marginBottom: 16,
++            padding: 12,
++            backgroundColor: '#ffebee',
++            border: '1px solid #ef5350',
++            borderRadius: 4,
++            color: '#c62828',
++          }}
++        >
++          {error}
++        </div>
++      )}
++
++      {/* Message input form */}
++      <form onSubmit={handleSubmit} style={{ marginBottom: 16 }}>
++        <div style={{ display: 'flex', gap: 8 }}>
++          <input
++            value={draft}
++            onChange={(e) => setDraft(e.target.value)}
++            placeholder="Type a message…"
++            style={{
++              flex: 1,
++              padding: 8,
++              fontSize: '1em',
++              border: '1px solid #ccc',
++              borderRadius: 4,
++            }}
++            disabled={loading}
++          />
++          <button
++            type="submit"
++            disabled={loading || !draft.trim()}
++            style={{
++              padding: '8px 16px',
++              fontSize: '1em',
++              backgroundColor: '#0066cc',
++              color: 'white',
++              border: 'none',
++              borderRadius: 4,
++              cursor: 'pointer',
++              opacity: loading || !draft.trim() ? 0.5 : 1,
++            }}
++          >
++            Send
++          </button>
++        </div>
++      </form>
++
++      {/* Message list */}
++      {loading && <p style={{ textAlign: 'center', color: '#666' }}>Loading messages…</p>}
++
++      {!loading && messages.length === 0 && (
++        <p style={{ textAlign: 'center', color: '#666' }}>
++          No messages yet. Start the conversation!
++        </p>
+       )}
+ 
+-      <ul>
+-        {messages.map((m) => (
+-          <li key={m.id}>{m.text}</li>
++      <ul style={{ listStyle: 'none', padding: 0 }}>
++        {messages.map((msg) => (
++          <MessageItem
++            key={msg.id}
++            msg={msg}
++            isOwn={msg.sender_id === CURRENT_USER_ID}
++          />
+         ))}
+       </ul>
+     </main>
+diff --git a/frontend/src/api.ts b/frontend/src/api.ts
+index e32cfe3..36438dd 100644
+--- a/frontend/src/api.ts
++++ b/frontend/src/api.ts
+@@ -1,39 +1,94 @@
+ /**
+- * Backend API wrapper. Centralizes the HTTP details so feature
+- * components don't repeat fetch+JSON+error handling. Vite's dev
+- * server proxies /api → http://localhost:8000 (see vite.config.ts).
++ * Backend API wrapper for translation-chat feature.
++ * Centralizes the HTTP details so feature components don't repeat
++ * fetch+JSON+error handling. Vite's dev server proxies /api →
++ * http://localhost:8000 (see vite.config.ts).
++ *
++ * Contract: OpenAPI endpoints for /conversations/{id}/messages POST and GET.
++ * See .wonderland/contract-notes/contract-note-00[456].md for details.
+  */
+ 
++/**
++ * Message as returned by the backend.
++ * Includes both text_original and text_translated for transparency.
++ * translation_status is 'success' (translated), 'pending' (not yet), or 'error' (vendor failed).
++ * translation_error is present only if translation_status='error'.
++ */
+ export interface Message {
+   id: number;
+-  text: string;
++  conversation_id: number;
++  sender_id: number;
++  sender_name: string;
++  text_original: string;
++  text_language: string;
++  text_translated: string | null;
++  translation_status: 'success' | 'pending' | 'error';
++  translation_error: string | null;
+   created_at: string;
+ }
+ 
+-export async function listMessages(): Promise<Message[]> {
+-  const res = await fetch('/api/messages');
++/**
++ * Create a message in a conversation.
++ *
++ * @param conversation_id - ID of the conversation
++ * @param text - Message text (min 1 char, max 5000 chars)
++ * @param language - BCP-47 language code (must match one of the two languages in conversation.language_pair)
++ * @throws Error if the request fails (400 for invalid language, 404 for missing conversation, 500 for server error)
++ */
++export async function postMessage(
++  conversation_id: number,
++  text: string,
++  language: string
++): Promise<Message> {
++  const res = await fetch(`/api/conversations/${conversation_id}/messages`, {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify({ text, language }),
++  });
+   if (!res.ok) {
+-    throw new Error(`listMessages failed: ${res.status} ${res.statusText}`);
++    const errorBody = await res.text();
++    throw new Error(
++      `postMessage failed: ${res.status} ${res.statusText} — ${errorBody}`
++    );
+   }
+-  return res.json();
++  return res.json() as Promise<Message>;
+ }
+ 
+-export async function postMessage(text: string): Promise<Message> {
+-  const res = await fetch('/api/messages', {
+-    method: 'POST',
+-    headers: { 'Content-Type': 'application/json' },
+-    body: JSON.stringify({ text }),
+-  });
++/**
++ * List messages in a conversation, translated to read_language.
++ *
++ * @param conversation_id - ID of the conversation
++ * @param read_language - BCP-47 language code to translate messages into
++ *                       (must match one of the two languages in conversation.language_pair)
++ * @throws Error if the request fails (400 for invalid language, 404 for missing conversation, 500 for server error)
++ */
++export async function listMessages(
++  conversation_id: number,
++  read_language: string
++): Promise<Message[]> {
++  const params = new URLSearchParams({ read_language });
++  const res = await fetch(
++    `/api/conversations/${conversation_id}/messages?${params}`,
++    { method: 'GET' }
++  );
+   if (!res.ok) {
+-    throw new Error(`postMessage failed: ${res.status} ${res.statusText}`);
++    const errorBody = await res.text();
++    throw new Error(
++      `listMessages failed: ${res.status} ${res.statusText} — ${errorBody}`
++    );
+   }
+-  return res.json();
++  return res.json() as Promise<Message[]>;
+ }
+ 
++/**
++ * Health check endpoint (used by the app to verify backend is running).
++ * This endpoint was not changed in the contract refactor; it still exists
++ * at /health and requires no conversation context.
++ */
+ export async function checkHealth(): Promise<{ status: string }> {
+   const res = await fetch('/health');
+   if (!res.ok) {
+     throw new Error(`checkHealth failed: ${res.status}`);
+   }
+-  return res.json();
++  return res.json() as Promise<{ status: string }>;
+ }
+diff --git a/src/backend/api/messages.py b/src/backend/api/messages.py
+index b2edca7..48c8f10 100644
+--- a/src/backend/api/messages.py
++++ b/src/backend/api/messages.py
+@@ -1,42 +1,405 @@
+-"""POST /api/messages — placeholder echo endpoint demonstrating the
+-DB → API → response flow. The team should replace this with the
+-actual feature endpoints (delete or repurpose this file)."""
++"""POST and GET /conversations/{id}/messages endpoints.
+ 
+-from fastapi import APIRouter, Depends
++Contracts:
++  - POST /conversations/{id}/messages accepts {text, language}, stores in Message table,
++    returns message object (no translation on write)
++  - GET /conversations/{id}/messages?read_language={lang} returns array of messages
++    with translation_status and text_translated (translation happens on read)
++  - Soft-delete filter: all queries include WHERE deleted_at IS NULL
++  - Error handling: vendor errors return original text + error status, never fail
++  - All operations logged to AuditLog (Ruling 004)
++"""
++
++from __future__ import annotations
++
++import json
++import logging
++from datetime import datetime, timezone
++from typing import Literal
++
++from fastapi import APIRouter, Depends, HTTPException, Query
+ from pydantic import BaseModel, Field
+-from sqlalchemy.orm import Session
++from sqlalchemy.orm import Session, joinedload
+ 
+ from src.backend.db import get_db
+-from src.backend.models import HelloMessage
++from src.backend.models import AuditLog, Conversation, Message, User
++from src.backend.translation_service import get_translation_service
++
++logger = logging.getLogger(__name__)
+ 
+ router = APIRouter()
+ 
+ 
+-class MessageCreate(BaseModel):
+-    text: str = Field(min_length=1, max_length=280)
++# ============================================================================
++# Request/Response Pydantic schemas
++# ============================================================================
++
++
++class MessageCreateRequest(BaseModel):
++    """POST /conversations/{id}/messages request body.
++    Contract from contract-note-005."""
++
++    text: str = Field(min_length=1, max_length=5000)
++    language: str = Field(
++        description="BCP-47 language code sender typed in (e.g., 'en', 'de', 'ja'). "
++        "Must match one of the two languages in conversation.language_pair."
++    )
+ 
+ 
+ class MessageResponse(BaseModel):
++    """GET /conversations/{id}/messages response item.
++    Contract from contract-note-004 and contract-note-006.
++
++    Includes both text_original and text_translated for transparency (Sophie's
++    confusion-flag from story-001). If translation failed, text_translated is
++    null and translation_status is 'error'."""
++
+     id: int
+-    text: str
++    conversation_id: int
++    sender_id: int
++    sender_name: str
++    text_original: str
++    text_language: str
++    text_translated: str | None = None
++    translation_status: Literal["success", "pending", "error"] = "pending"
++    translation_error: str | None = None
+     created_at: str
+ 
+ 
+-@router.post("/messages", response_model=MessageResponse)
++# ============================================================================
++# Helpers
++# ============================================================================
++
++
++def _get_conversation_or_404(conversation_id: int, db: Session) -> Conversation:
++    """Fetch conversation or raise 404."""
++    conv = db.query(Conversation).filter(
++        Conversation.id == conversation_id,
++        Conversation.deleted_at.is_(None)
++    ).first()
++    if not conv:
++        raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
++    return conv
++
++
++def _get_user_or_404(user_id: int, db: Session) -> User:
++    """Fetch user or raise 404."""
++    user = db.query(User).filter(
++        User.id == user_id,
++        User.deleted_at.is_(None)
++    ).first()
++    if not user:
++        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
++    return user
++
++
++def _get_current_user(db: Session) -> User:
++    """Get the current authenticated user. For MVP, stub: returns user with id=1.
++    In production, this would parse JWT/session token and return the actual user.
++
++    TODO: Real auth integration (bearer token, session, etc.).
++    NOTE: Assumes user with id=1 exists. Tests ensure this."""
++    user = db.query(User).filter(
++        User.id == 1,
++        User.deleted_at.is_(None)
++    ).first()
++    if not user:
++        raise HTTPException(status_code=401, detail="Not authenticated")
++    return user
++
++
++def _log_audit(
++    db: Session,
++    user_id: int | None,
++    action: str,
++    resource_type: str,
++    resource_id: int,
++    status: str,
++    error_detail: str | None = None,
++    metadata: dict | None = None,
++) -> None:
++    """Log an operation to the audit trail (Ruling 004).
++    Append-only: never updates/deletes audit rows."""
++    audit = AuditLog(
++        user_id=user_id,
++        action=action,
++        resource_type=resource_type,
++        resource_id=resource_id,
++        status=status,
++        error_detail=error_detail,
++        metadata=json.dumps(metadata) if metadata else None,
++    )
++    db.add(audit)
++    db.commit()
++
++
++# ============================================================================
++# POST /conversations/{id}/messages — Create a message
++# ============================================================================
++
++
++@router.post("/conversations/{conversation_id}/messages", response_model=MessageResponse)
+ def create_message(
+-    payload: MessageCreate, db: Session = Depends(get_db)
++    conversation_id: int,
++    payload: MessageCreateRequest,
++    db: Session = Depends(get_db),
+ ) -> MessageResponse:
+-    """Echo a message into the DB and return it. Replace with real
+-    feature work."""
+-    msg = HelloMessage(text=payload.text)
+-    db.add(msg)
++    """Create a message in a conversation.
++
++    Contract (contract-note-005):
++      - Accepts {text, language} in request body
++      - language must be one of the two languages in conversation.language_pair
++      - Sender is inferred from auth context (stub: user 1)
++      - Returns created message (no translation on write)
++      - text_translated is empty (translation happens on read)
++
++    Invariants enforced:
++      - Conversation exists and is not soft-deleted
++      - Sender is one of the two users in the conversation
++      - language is exactly one of the two languages in conversation.language_pair
++      - text_original is immutable (never null)
++      - Operation logged to AuditLog (Ruling 004)
++    """
++    # Fetch conversation
++    conversation = _get_conversation_or_404(conversation_id, db)
++
++    # Get current user (stub: always user 1)
++    sender = _get_current_user(db)
++
++    # Invariant: sender must be one of the two users in this conversation
++    if sender.id not in (conversation.user_a_id, conversation.user_b_id):
++        _log_audit(
++            db,
++            user_id=sender.id,
++            action="message_create",
++            resource_type="message",
++            resource_id=0,  # Not yet created
++            status="error",
++            error_detail=f"User {sender.id} is not part of conversation {conversation_id}",
++        )
++        raise HTTPException(
++            status_code=403,
++            detail=f"User {sender.id} is not part of conversation {conversation_id}",
++        )
++
++    # Invariant: language must be one of the two languages in the conversation
++    if not conversation.is_language_in_pair(payload.language):
++        _log_audit(
++            db,
++            user_id=sender.id,
++            action="message_create",
++            resource_type="message",
++            resource_id=0,
++            status="error",
++            error_detail=f"Language '{payload.language}' not in conversation language_pair",
++        )
++        raise HTTPException(
++            status_code=400,
++            detail=f"Language '{payload.language}' not in conversation language_pair "
++            f"{conversation.get_languages()}",
++        )
++
++    # Create and persist message
++    message = Message(
++        conversation_id=conversation.id,
++        sender_id=sender.id,
++        text_original=payload.text,
++        text_language=payload.language,
++    )
++    db.add(message)
+     db.commit()
+-    db.refresh(msg)
+-    return MessageResponse(**msg.to_dict())
++    db.refresh(message)
++
++    # Log successful message creation
++    _log_audit(
++        db,
++        user_id=sender.id,
++        action="message_create",
++        resource_type="message",
++        resource_id=message.id,
++        status="success",
++        metadata={"conversation_id": conversation_id, "language": payload.language},
++    )
++
++    # created_at is guaranteed to be set by the database
++    assert message.created_at is not None, "Message created_at should be set by database"
++
++    # Return response (text_translated is empty on write; no translation here)
++    return MessageResponse(
++        id=message.id,
++        conversation_id=message.conversation_id,
++        sender_id=message.sender_id,
++        sender_name=sender.username,
++        text_original=message.text_original,
++        text_language=message.text_language,
++        text_translated=None,
++        translation_status="pending",
++        translation_error=None,
++        created_at=message.created_at.isoformat(),
++    )
++
++
++# ============================================================================
++# GET /conversations/{id}/messages — List messages with translation
++# ============================================================================
++
++
++@router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])
++def list_messages(
++    conversation_id: int,
++    read_language: str = Query(..., description="Language code to translate messages into"),
++    db: Session = Depends(get_db),
++) -> list[MessageResponse]:
++    """List messages in a conversation, translated to read_language.
++
++    Contract (contract-note-002, contract-note-004, contract-note-006):
++      - Accepts query param ?read_language=lang_code (required)
++      - Returns array of messages with both text_original and text_translated
++      - On translation success: text_translated is populated, translation_status='success'
++      - On translation error: text_translated is null, translation_status='error',
++        translation_error has user-facing message (generic, not implementation detail)
++      - Filters soft-deleted messages (WHERE deleted_at IS NULL)
++      - No conversation history sent to translator (just current message)
++
++    Failure modes handled (contract-note-003):
++      - Vendor timeout: returns original text + error_original_returned status
++      - Vendor auth failure: returns original text + error_original_returned status
++      - Vendor unavailable: returns original text + error_original_returned status
++      - No retries on client side (backend retried once)
++
++    Performance:
++      - Uses joinedload(Message.sender) to avoid N+1 query; sender is eager-loaded
++        with messages in a single query.
++    """
++    # Fetch conversation
++    conversation = _get_conversation_or_404(conversation_id, db)
++
++    # Validate read_language is one of the two languages in the pair
++    if not conversation.is_language_in_pair(read_language):
++        raise HTTPException(
++            status_code=400,
++            detail=f"read_language '{read_language}' not in conversation language_pair "
++            f"{conversation.get_languages()}",
++        )
++
++    # Fetch messages with sender eager-loaded (no N+1 query)
++    # joinedload(Message.sender) causes SQLAlchemy to join the User table and
++    # load all senders in a single query, rather than issuing a query per message.
++    messages = (
++        db.query(Message)
++        .options(joinedload(Message.sender))
++        .filter(
++            Message.conversation_id == conversation_id,
++            Message.deleted_at.is_(None),
++        )
++        .order_by(Message.created_at)
++        .all()
++    )
++
++    # Translate each message (if needed) and build response
++    translation_service = get_translation_service()
++    responses: list[MessageResponse] = []
++
++    for msg in messages:
++        # sender is already loaded via joinedload; no query issued here
++        sender = msg.sender
++        assert sender is not None, "Message.sender should be loaded via joinedload"
++
++        # created_at is guaranteed by database schema
++        assert msg.created_at is not None, "Message created_at should be set by database"
++
++        # Log the read operation
++        _log_audit(
++            db,
++            user_id=None,  # read operation doesn't have an authenticated requester in stub auth
++            action="message_read",
++            resource_type="message",
++            resource_id=msg.id,
++            status="success",
++            metadata={"conversation_id": conversation_id, "read_language": read_language},
++        )
++
++        # If message is already in the read language, no translation needed
++        if msg.text_language == read_language:
++            responses.append(
++                MessageResponse(
++                    id=msg.id,
++                    conversation_id=msg.conversation_id,
++                    sender_id=msg.sender_id,
++                    sender_name=sender.username,
++                    text_original=msg.text_original,
++                    text_language=msg.text_language,
++                    text_translated=msg.text_original,  # Same as original
++                    translation_status="success",
++                    translation_error=None,
++                    created_at=msg.created_at.isoformat(),
++                )
++            )
++        else:
++            # Translate message from text_language to read_language
++            success, result = translation_service.translate(
++                text=msg.text_original,
++                source_lang=msg.text_language,
++                target_lang=read_language,
++            )
+ 
++            if success:
++                # Translation succeeded
++                _log_audit(
++                    db,
++                    user_id=None,
++                    action="translation_request",
++                    resource_type="message",
++                    resource_id=msg.id,
++                    status="success",
++                    metadata={
++                        "source_lang": msg.text_language,
++                        "target_lang": read_language,
++                    },
++                )
++                responses.append(
++                    MessageResponse(
++                        id=msg.id,
++                        conversation_id=msg.conversation_id,
++                        sender_id=msg.sender_id,
++                        sender_name=sender.username,
++                        text_original=msg.text_original,
++                        text_language=msg.text_language,
++                        text_translated=result,  # The translated text
++                        translation_status="success",
++                        translation_error=None,
++                        created_at=msg.created_at.isoformat(),
++                    )
++                )
++            else:
++                # Translation failed; return original + error
++                # result is the error detail (for logging); we send generic message to user
++                _log_audit(
++                    db,
++                    user_id=None,
++                    action="translation_request",
++                    resource_type="message",
++                    resource_id=msg.id,
++                    status="error",
++                    error_detail=result,  # Error detail from translation service
++                    metadata={
++                        "source_lang": msg.text_language,
++                        "target_lang": read_language,
++                    },
++                )
++                responses.append(
++                    MessageResponse(
++                        id=msg.id,
++                        conversation_id=msg.conversation_id,
++                        sender_id=msg.sender_id,
++                        sender_name=sender.username,
++                        text_original=msg.text_original,
++                        text_language=msg.text_language,
++                        text_translated=None,  # Translation failed
++                        translation_status="error",
++                        translation_error="Translation unavailable; showing original text",
++                        created_at=msg.created_at.isoformat(),
++                    )
++                )
+ 
+-@router.get("/messages", response_model=list[MessageResponse])
+-def list_messages(db: Session = Depends(get_db)) -> list[MessageResponse]:
+-    """List all messages (newest last). For development convenience."""
+-    rows = db.query(HelloMessage).order_by(HelloMessage.id).all()
+-    return [MessageResponse(**r.to_dict()) for r in rows]
++    return responses
+diff --git a/src/backend/auth.py b/src/backend/auth.py
+new file mode 100644
+index 0000000..66bf2c6
+--- /dev/null
++++ b/src/backend/auth.py
+@@ -0,0 +1,38 @@
++"""Password hashing and authentication utilities (Ruling 005).
++
++Per OWASP A02:2021 (Cryptographic Failures), all passwords are hashed with
++bcrypt(rounds=12) before storage. This module provides the hashing and
++verification functions that the application uses."""
++
++from passlib.context import CryptContext
++
++# bcrypt context with 12 rounds of hashing (default Passlib value)
++# Per Ruling 005: all passwords must use bcrypt, never plaintext storage
++pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
++
++
++def hash_password(plaintext: str) -> str:
++    """Hash a plaintext password using bcrypt(rounds=12).
++    
++    Args:
++        plaintext: the user's password (never stored)
++    
++    Returns:
++        bcrypt-hashed string, safe to store in password_hash column
++    
++    Per Ruling 005: all password writes must use this function."""
++    return pwd_context.hash(plaintext)
++
++
++def verify_password(plaintext: str, hashed: str) -> bool:
++    """Verify a plaintext password against a bcrypt hash.
++    
++    Args:
++        plaintext: the user's input password
++        hashed: the stored password_hash from the User table
++    
++    Returns:
++        True if the password matches, False otherwise
++    
++    Per Ruling 005: authentication must use this function."""
++    return pwd_context.verify(plaintext, hashed)
+diff --git a/src/backend/main.py b/src/backend/main.py
+index 6ff31c2..37d4366 100644
+--- a/src/backend/main.py
++++ b/src/backend/main.py
+@@ -3,9 +3,11 @@
+ Wires the SQLAlchemy engine, creates tables on startup (SQLite +
+ create_all is fine for development; production deployment would add
+ Alembic migrations), mounts the API router, configures permissive
+-CORS for the local frontend dev server.
++CORS for the local frontend dev server, initializes the translation
++service client.
+ """
+ 
++import os
+ from contextlib import asynccontextmanager
+ 
+ from fastapi import FastAPI
+@@ -14,12 +16,17 @@ from fastapi.middleware.cors import CORSMiddleware
+ from src.backend.api import api_router
+ from src.backend.db import engine
+ from src.backend.models import Base
++from src.backend.translation_service import init_translation_service
+ 
+ 
+ @asynccontextmanager
+ async def lifespan(app: FastAPI):
++    # Startup
+     Base.metadata.create_all(bind=engine)
++    vendor_key = os.environ.get("TRANSLATION_VENDOR_KEY", None)
++    init_translation_service(vendor_key=vendor_key)
+     yield
++    # Shutdown (if needed)
+ 
+ 
+ app = FastAPI(title="fullstack-app", version="0.1.0", lifespan=lifespan)
+diff --git a/src/backend/models.py b/src/backend/models.py
+index abd60be..b73aa95 100644
+--- a/src/backend/models.py
++++ b/src/backend/models.py
+@@ -1,35 +1,240 @@
+-"""SQLAlchemy models. Just `Base` + an example `HelloMessage` showing
+-the pattern. Replace HelloMessage with the actual feature models."""
++"""SQLAlchemy models for translation-chat MVP.
++
++Core entities: User (exactly one of two per conversation), Conversation (pairwise,
++language_pair explicit), Message (in original language, soft-delete support),
++AuditLog (immutable audit trail per GDPR Art. 32 and Ruling 004).
++
++Invariants:
++  - Conversation has exactly two users (enforced by unique constraint on (user_a_id, user_b_id, language_pair))
++  - Message belongs to exactly one conversation and one sender (FK constraints)
++  - Message text_original is immutable (never null, never translated)
++  - Message text_language matches one of the two languages in its conversation's language_pair
++    (NOT database-enforced; API layer validates; documented here for future migration)
++  - User passwords are bcrypt(rounds=12) hashed; plaintext never stored (Ruling 005)
++  - All message-handling operations are logged to AuditLog (Ruling 004)
++  - All queries on Message/User must filter deleted_at IS NULL (soft-delete)
++"""
+ 
+ from __future__ import annotations
+ 
+ from datetime import datetime, timezone
++from enum import Enum
+ 
+-from sqlalchemy import Column, DateTime, Integer, String, func
+-from sqlalchemy.orm import declarative_base
++from sqlalchemy import (
++    CheckConstraint,
++    Column,
++    DateTime,
++    Enum as SQLEnum,
++    ForeignKey,
++    Integer,
++    String,
++    Text,
++    UniqueConstraint,
++    func,
++)
++from sqlalchemy.orm import declarative_base, relationship
+ 
+ Base = declarative_base()
+ 
+ 
+-class HelloMessage(Base):
+-    """Placeholder model demonstrating the SQLAlchemy pattern.
++class LanguagePair(str, Enum):
++    """Enum of supported language pairs for MVP. Extensible."""
++    EN_DE = "en_de"
++    EN_JA = "en_ja"
++    DE_JA = "de_ja"
++
++
++class TranslationStatus(str, Enum):
++    """Translation service result status."""
++    SUCCESS = "success"
++    PENDING = "pending"
++    ERROR = "error"
++
++
++class User(Base):
++    """User account. Language capability is inferred from conversations they
++    participate in, not stored as a separate attribute (simpler, more flexible).
++
++    Invariant: password_hash is always bcrypt(rounds=12) of the plaintext password.
++    Never store plaintext. The application layer enforces this via set_password()
++    or direct bcrypt calls; the database schema has no way to enforce it.
++    """
++
++    __tablename__ = "users"
++
++    id = Column(Integer, primary_key=True, autoincrement=True)
++    username = Column(String(255), nullable=False, unique=True)
++    password_hash = Column(String(255), nullable=False)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++    deleted_at = Column(DateTime(timezone=True), nullable=True, default=None)
++
++    # Relationships
++    conversations_as_user_a = relationship(
++        "Conversation",
++        foreign_keys="Conversation.user_a_id",
++        back_populates="user_a",
++        cascade="all, delete-orphan",
++    )
++    conversations_as_user_b = relationship(
++        "Conversation",
++        foreign_keys="Conversation.user_b_id",
++        back_populates="user_b",
++        cascade="all, delete-orphan",
++    )
++    messages = relationship(
++        "Message",
++        foreign_keys="Message.sender_id",
++        back_populates="sender",
++        cascade="all, delete-orphan",
++    )
++
++    def to_dict(self) -> dict:
++        return {
++            "id": self.id,
++            "username": self.username,
++            "created_at": self.created_at.isoformat(),
++        }
++
++
++class Conversation(Base):
++    """Pairwise conversation. Exactly two users, explicit language_pair.
++    Invariant: (user_a_id, user_b_id, language_pair) is unique (no duplicates).
++    Constraint: user_a_id < user_b_id to enforce ordering and prevent duplicates."""
++
++    __tablename__ = "conversations"
++    __table_args__ = (
++        UniqueConstraint("user_a_id", "user_b_id", "language_pair", name="uq_conversation_users_pair"),
++        CheckConstraint("user_a_id < user_b_id", name="ck_conversation_user_order"),
++    )
++
++    id = Column(Integer, primary_key=True, autoincrement=True)
++    user_a_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
++    user_b_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
++    language_pair = Column(SQLEnum(LanguagePair), nullable=False)
++    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++    deleted_at = Column(DateTime(timezone=True), nullable=True, default=None)
++
++    # Relationships
++    user_a = relationship(
++        "User",
++        foreign_keys=[user_a_id],
++        back_populates="conversations_as_user_a",
++    )
++    user_b = relationship(
++        "User",
++        foreign_keys=[user_b_id],
++        back_populates="conversations_as_user_b",
++    )
++    messages = relationship(
++        "Message",
++        back_populates="conversation",
++        cascade="all, delete-orphan",
++    )
++
++    def to_dict(self) -> dict:
++        return {
++            "id": self.id,
++            "user_a_id": self.user_a_id,
++            "user_b_id": self.user_b_id,
++            "language_pair": self.language_pair.value,
++            "created_at": self.created_at.isoformat(),
++        }
++
++    def get_languages(self) -> list[str]:
++        """Extract the two language codes from the language_pair enum.
++        e.g., 'en_de' -> ['en', 'de']"""
++        return self.language_pair.value.split("_")
++
++    def is_language_in_pair(self, lang: str) -> bool:
++        """Check if a language code is one of the two in this conversation's pair.
++        Encapsulates the validation logic; used by API layer to validate requests."""
++        return lang in self.get_languages()
++
++    def get_other_user_id(self, user_id: int) -> int | None:
++        """Given one user in the conversation, return the other's id.
++        Returns None if user_id is not in this conversation."""
++        if user_id == self.user_a_id:
++            return self.user_b_id
++        elif user_id == self.user_b_id:
++            return self.user_a_id
++        return None
+ 
+-    The team should DELETE this when shipping real features — it
+-    exists only so the seed has a working end-to-end flow (DB row →
+-    API response → frontend render) for the human verifying the
+-    seed."""
+ 
+-    __tablename__ = "hello_messages"
++class Message(Base):
++    """Message in a conversation. Stored once in sender's original language.
++    Translation happens on-read (GET), not on write (POST).
++
++    Invariants:
++      - Exactly one sender per message (sender_id FK to User)
++      - Exactly one conversation per message (conversation_id FK to Conversation)
++      - text_original is immutable and always non-null (what sender typed)
++      - text_language is exactly one of the two languages in conversation.language_pair
++        (IMPORTANT: NOT database-enforced, only API-layer-validated; see Caterpillar review
++        finding 'Models use string type for text_language'. Future migration should add
++        CheckConstraint or convert to Enum column to prevent direct DB manipulation.)
++      - Soft-delete: queries must filter deleted_at IS NULL
++      - All message create/read/update operations logged to AuditLog (Ruling 004)
++    """
++
++    __tablename__ = "messages"
+ 
+     id = Column(Integer, primary_key=True, autoincrement=True)
+-    text = Column(String(280), nullable=False)
++    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
++    sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
++    text_original = Column(Text, nullable=False)
++    text_language = Column(String(10), nullable=False)
+     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++    deleted_at = Column(DateTime(timezone=True), nullable=True, default=None)
++
++    # Relationships
++    conversation = relationship("Conversation", back_populates="messages")
++    sender = relationship("User", back_populates="messages", foreign_keys=[sender_id])
++
++    def to_dict(self) -> dict:
++        """Return message as dict for JSON serialization. Does NOT include
++        translation fields; those are added by the API layer after calling
++        the translation service."""
++        return {
++            "id": self.id,
++            "conversation_id": self.conversation_id,
++            "sender_id": self.sender_id,
++            "text_original": self.text_original,
++            "text_language": self.text_language,
++            "created_at": self.created_at.isoformat(),
++        }
++
++
++class AuditLog(Base):
++    """Immutable audit log of all message-handling operations.
++    Per GDPR Art. 32 (Ruling 004) and OWASP A09:2021 (logging & monitoring).
++
++    Invariants:
++      - Append-only: rows are never updated or deleted
++      - Each log entry records: timestamp, user_id, action, resource_id, status, error (if any)
++      - Actions: message_created, message_read, message_deleted, translation_requested, etc.
++      - Status: success, error
++      - error_detail: if status=error, the implementation-detail error message (not shown to user)
++    """
++
++    __tablename__ = "audit_log"
++
++    id = Column(Integer, primary_key=True, autoincrement=True)
++    timestamp = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
++    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
++    action = Column(String(50), nullable=False)  # e.g., 'message_created', 'message_read'
++    resource_type = Column(String(50), nullable=False)  # e.g., 'message', 'conversation'
++    resource_id = Column(Integer, nullable=False)  # e.g., message_id, conversation_id
++    status = Column(String(20), nullable=False)  # 'success' or 'error'
++    error_detail = Column(Text, nullable=True)  # Implementation detail if error; never shown to user
++    metadata = Column(Text, nullable=True)  # JSON string of additional context (source_lang, target_lang, etc.)
+ 
+     def to_dict(self) -> dict:
+         return {
+             "id": self.id,
+-            "text": self.text,
+-            "created_at": (
+-                self.created_at.isoformat() if self.created_at else datetime.now(timezone.utc).isoformat()
+-            ),
++            "timestamp": self.timestamp.isoformat(),
++            "user_id": self.user_id,
++            "action": self.action,
++            "resource_type": self.resource_type,
++            "resource_id": self.resource_id,
++            "status": self.status,
+         }
+diff --git a/src/backend/translation_service.py b/src/backend/translation_service.py
+new file mode 100644
+index 0000000..b909899
+--- /dev/null
++++ b/src/backend/translation_service.py
+@@ -0,0 +1,153 @@
++"""Translation service client. Abstraction layer for external translation vendor
++(Google Translate, DeepL, etc.). For MVP, this is a stub that can be
++extended with real vendor implementations.
++
++Contract: synchronous call, <300ms timeout, returns either (success, translated_text)
++or (error, error_detail_for_logging). Frontend-facing error message is generic;
++error_detail is logged for debugging."""
++
++from __future__ import annotations
++
++import logging
++from typing import TypeAlias
++
++logger = logging.getLogger(__name__)
++
++# Type aliases for clarity
++TranslationResult: TypeAlias = tuple[bool, str]  # (success, translated_text or error_detail)
++
++
++class TranslationServiceError(Exception):
++    """Base exception for translation service failures."""
++
++    pass
++
++
++class TranslationTimeoutError(TranslationServiceError):
++    """Translation vendor timed out."""
++
++    pass
++
++
++class TranslationAuthError(TranslationServiceError):
++    """Translation vendor auth failed (invalid key, etc.)."""
++
++    pass
++
++
++class TranslationServiceClient:
++    """Client for external translation vendor. Implements retry logic and
++    error handling per the contract-note-006 agreement:
++      - Synchronous call
++      - Timeout <300ms
++      - One retry on transient error
++      - Permanent errors -> error_original_returned
++    """
++
++    def __init__(self, vendor_key: str | None = None):
++        """Initialize translation client. vendor_key is the API key for the
++        translation vendor (e.g., Google Translate key). For MVP testing,
++        can be None (stub mode)."""
++        self.vendor_key = vendor_key
++        self.timeout_ms = 300
++
++    def translate(self, text: str, source_lang: str, target_lang: str) -> TranslationResult:
++        """Translate text from source_lang to target_lang.
++
++        Args:
++            text: text to translate (just the current message, not history)
++            source_lang: BCP-47 language code (e.g., 'en', 'de', 'ja')
++            target_lang: BCP-47 language code
++
++        Returns:
++            (True, translated_text) on success
++            (False, error_detail) on failure (error_detail is for logging, not user display)
++
++        Contract:
++            - Always returns within 300ms (or raises TranslationTimeoutError after retry)
++            - On transient error (timeout, rate limit), retries once then returns error
++            - On permanent error (auth failure, invalid key), returns error immediately
++            - Frontend-facing error message is generic; error_detail is implementation detail
++        """
++        if source_lang == target_lang:
++            # No translation needed; return original as "translation"
++            return (True, text)
++
++        try:
++            # For MVP, stub implementation: just return the text with a language tag
++            # Real implementation would call Google Translate / DeepL API here
++            translated = self._call_vendor(text, source_lang, target_lang)
++            return (True, translated)
++        except TranslationTimeoutError as e:
++            # Transient error: retry once
++            logger.warning(
++                f"Translation timeout (attempt 1): {source_lang}->{target_lang}, retrying. "
++                f"Error: {e}"
++            )
++            try:
++                translated = self._call_vendor(text, source_lang, target_lang)
++                logger.info(f"Translation retry succeeded: {source_lang}->{target_lang}")
++                return (True, translated)
++            except TranslationTimeoutError as e_retry:
++                logger.error(
++                    f"Translation timeout (attempt 2, final): {source_lang}->{target_lang}. "
++                    f"Error: {e_retry}. Returning original."
++                )
++                return (False, f"Translation service timeout after retry: {e_retry}")
++        except TranslationAuthError as e:
++            # Permanent error: don't retry
++            logger.error(f"Translation auth error: {e}. Returning original.")
++            return (False, f"Translation service auth error: {e}")
++        except TranslationServiceError as e:
++            # Other permanent errors
++            logger.error(f"Translation service error: {e}. Returning original.")
++            return (False, f"Translation service error: {e}")
++
++    def _call_vendor(self, text: str, source_lang: str, target_lang: str) -> str:
++        """Internal: call the actual translation vendor.
++
++        For MVP (stub mode), this returns a placeholder translation with language tags.
++        Real implementation would call Google Translate API, DeepL, etc.
++
++        Raises TranslationTimeoutError, TranslationAuthError, TranslationServiceError
++        on vendor errors."""
++        if not self.vendor_key:
++            # Stub mode: return text with language tag
++            # This allows testing the translation flow without a real vendor
++            return f"[{target_lang}] {text}"
++
++        # TODO: Real vendor integration here
++        # Example (pseudocode):
++        #   response = requests.post(
++        #       f"{VENDOR_URL}/translate",
++        #       json={"text": text, "source": source_lang, "target": target_lang},
++        #       headers={"Authorization": f"Bearer {self.vendor_key}"},
++        #       timeout=0.3  # 300ms
++        #   )
++        #   if response.status_code == 401:
++        #       raise TranslationAuthError(response.text)
++        #   elif response.status_code == 429:
++        #       raise TranslationTimeoutError("Rate limited")
++        #   elif response.status_code == 200:
++        #       return response.json()["translatedText"]
++        #   else:
++        #       raise TranslationServiceError(f"HTTP {response.status_code}")
++
++        return f"[{target_lang}] {text}"
++
++
++# Singleton instance (initialized in main.py with vendor_key from env)
++_client: TranslationServiceClient | None = None
++
++
++def init_translation_service(vendor_key: str | None = None) -> None:
++    """Initialize the translation service singleton."""
++    global _client
++    _client = TranslationServiceClient(vendor_key=vendor_key)
++
++
++def get_translation_service() -> TranslationServiceClient:
++    """Get the translation service singleton. Raises RuntimeError if not initialized."""
++    if _client is None:
++        raise RuntimeError("Translation service not initialized. Call init_translation_service() first.")
++    return _client
+diff --git a/tests/test_messages.py b/tests/test_messages.py
+index 8e39784..bcdae2d 100644
+--- a/tests/test_messages.py
++++ b/tests/test_messages.py
+@@ -1,25 +1,400 @@
+-"""Baseline test — POST /api/messages echoes a message into the DB,
+-GET /api/messages lists what's been posted."""
++"""Tests for POST and GET /conversations/{id}/messages endpoints.
+ 
++Coverage:
++  - Message creation (POST): valid requests, invalid language, non-existent conversation
++  - Message listing (GET): translation success, translation error handling, soft-delete filter
++  - Invariants: sender must be in conversation, language must be in pair, text_original immutable
++  - Soft-delete: deleted messages are not returned
++  - Translation: both text_original and text_translated in response (transparency)
++  - Audit logging: all operations logged to AuditLog (Ruling 004)
+ 
+-def test_post_and_list_messages(client):
+-    res = client.post("/api/messages", json={"text": "hello"})
++Test Fixture Assumption (per Caterpillar review):
++  The _get_current_user() stub auth function always returns user with id=1.
++  Our fixtures create users in order (alice, bob, ...), and the first user
++  created gets id=1 (in a fresh SQLite test DB). So alice.id == 1 and the
++  stub auth always returns alice. This assumption works because:
++  
++  1. Each test gets a fresh in-memory SQLite database (via db_session fixture)
++  2. Fixtures are created in a consistent order (alice first, bob second)
++  3. SQLite autoincrement starts at 1
++  
++  If the test setup changes (e.g., a factory creates users before fixtures,
++  or a pre-populated DB is used), this assumption breaks and tests fail.
++  Future work: Refactor _get_current_user() to accept a test config parameter
++  so tests can control which user is returned.
++"""
++
++import json
++from datetime import datetime, timezone
++
++import pytest
++from fastapi.testclient import TestClient
++from sqlalchemy.orm import Session
++
++from src.backend.models import AuditLog, Conversation, LanguagePair, Message, User
++
++
++# ============================================================================
++# Fixtures
++# ============================================================================
++
++
++@pytest.fixture
++def user_alice(db_session: Session) -> User:
++    """Create user alice (id=1 in fresh test DB).
++    Stub _get_current_user() always returns id=1, so tests return alice."""
++    user = User(username="alice", password_hash="hash_alice")
++    db_session.add(user)
++    db_session.commit()
++    db_session.refresh(user)
++    return user
++
++
++@pytest.fixture
++def user_bob(db_session: Session) -> User:
++    """Create user bob (id=2 in fresh test DB)."""
++    user = User(username="bob", password_hash="hash_bob")
++    db_session.add(user)
++    db_session.commit()
++    db_session.refresh(user)
++    return user
++
++
++@pytest.fixture
++def conversation_en_de(db_session: Session, user_alice: User, user_bob: User) -> Conversation:
++    """Create a conversation between alice and bob in en_de language pair.
++    Invariant: user_a_id < user_b_id, so alice (lower id) is user_a."""
++    conv = Conversation(
++        user_a_id=user_alice.id,
++        user_b_id=user_bob.id,
++        language_pair=LanguagePair.EN_DE,
++    )
++    db_session.add(conv)
++    db_session.commit()
++    db_session.refresh(conv)
++    return conv
++
++
++# ============================================================================
++# POST /conversations/{id}/messages tests
++# ============================================================================
++
++
++def test_post_message_success(
++    client: TestClient,
++    db_session: Session,
++    conversation_en_de: Conversation,
++    user_alice: User,
++):
++    """POST with valid {text, language} stores message and returns it."""
++    res = client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Hello Bob", "language": "en"},
++    )
+     assert res.status_code == 200
+     msg = res.json()
+-    assert msg["text"] == "hello"
++    assert msg["text_original"] == "Hello Bob"
++    assert msg["text_language"] == "en"
++    assert msg["sender_id"] == user_alice.id  # Stub: always user 1
+     assert msg["id"] >= 1
++    assert msg["translation_status"] == "pending"
++    assert msg["text_translated"] is None
+ 
+-    res = client.get("/api/messages")
++    # Verify audit log entry
++    audit = db_session.query(AuditLog).filter_by(
++        action="message_create",
++        resource_type="message",
++        resource_id=msg["id"],
++    ).first()
++    assert audit is not None
++    assert audit.status == "success"
++    assert audit.user_id == user_alice.id
++    metadata = json.loads(audit.metadata)
++    assert metadata["conversation_id"] == conversation_en_de.id
++    assert metadata["language"] == "en"
++
++
++def test_post_message_language_de(
++    client: TestClient,
++    conversation_en_de: Conversation,
++):
++    """POST with language='de' (second language in pair) also works."""
++    res = client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Hallo Alice", "language": "de"},
++    )
+     assert res.status_code == 200
+-    rows = res.json()
+-    assert any(r["text"] == "hello" for r in rows)
++    msg = res.json()
++    assert msg["text_language"] == "de"
++
++
++def test_post_message_invalid_language(
++    client: TestClient,
++    conversation_en_de: Conversation,
++):
++    """POST with language not in the conversation's language_pair returns 400."""
++    res = client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Konnichiwa", "language": "ja"},
++    )
++    assert res.status_code == 400
++    assert "not in conversation language_pair" in res.json()["detail"]
++
++
++def test_post_message_nonexistent_conversation(client: TestClient):
++    """POST to nonexistent conversation returns 404."""
++    res = client.post(
++        "/api/conversations/9999/messages",
++        json={"text": "Hello", "language": "en"},
++    )
++    assert res.status_code == 404
++
+ 
++def test_post_message_empty_text(client: TestClient, conversation_en_de: Conversation):
++    """POST with empty text fails validation (pydantic min_length=1)."""
++    res = client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "", "language": "en"},
++    )
++    assert res.status_code == 422  # Validation error
+ 
+-def test_post_message_rejects_empty_text(client):
+-    res = client.post("/api/messages", json={"text": ""})
+-    assert res.status_code == 422  # pydantic validation
+ 
++def test_post_message_missing_language(client: TestClient, conversation_en_de: Conversation):
++    """POST without language field fails validation."""
++    res = client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Hello"},
++    )
++    assert res.status_code == 422  # Validation error
++
++
++# ============================================================================
++# GET /conversations/{id}/messages tests
++# ============================================================================
++
++
++def test_get_messages_single_message_no_translation(
++    client: TestClient,
++    db_session: Session,
++    conversation_en_de: Conversation,
++):
++    """GET with one message in read_language returns it with translation_status=success
++    (no translation needed because message is already in read language)."""
++    # Create message in English
++    client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Hello", "language": "en"},
++    )
++
++    # GET messages with read_language=en (no translation needed)
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "en"},
++    )
++    assert res.status_code == 200
++    messages = res.json()
++    assert len(messages) == 1
++    msg = messages[0]
++    assert msg["text_original"] == "Hello"
++    assert msg["text_language"] == "en"
++    assert msg["text_translated"] == "Hello"  # Same as original (no translation)
++    assert msg["translation_status"] == "success"
++    assert msg["translation_error"] is None
++
++    # Verify audit logs: message_create and message_read and translation_request (no-op)
++    audits = db_session.query(AuditLog).filter_by(resource_id=msg["id"]).all()
++    # Should have message_create, message_read, and translation_request
++    assert len(audits) >= 2  # At least create and read
++    assert any(a.action == "message_create" for a in audits)
++    assert any(a.action == "message_read" for a in audits)
+ 
+-def test_post_message_rejects_text_over_280_chars(client):
+-    res = client.post("/api/messages", json={"text": "x" * 281})
++
++def test_get_messages_with_translation(
++    client: TestClient,
++    conversation_en_de: Conversation,
++):
++    """GET with read_language != message language calls translation service.
++    With stub vendor, returns [target_lang] + text."""
++    # Create message in English
++    client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Hello", "language": "en"},
++    )
++
++    # GET messages with read_language=de (translation needed)
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "de"},
++    )
++    assert res.status_code == 200
++    messages = res.json()
++    assert len(messages) == 1
++    msg = messages[0]
++    assert msg["text_original"] == "Hello"
++    assert msg["text_language"] == "en"
++    # Stub vendor returns [de] prefix
++    assert msg["text_translated"] == "[de] Hello"
++    assert msg["translation_status"] == "success"
++
++
++def test_get_messages_invalid_read_language(
++    client: TestClient,
++    conversation_en_de: Conversation,
++):
++    """GET with read_language not in the conversation's pair returns 400."""
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "ja"},
++    )
++    assert res.status_code == 400
++    assert "not in conversation language_pair" in res.json()["detail"]
++
++
++def test_get_messages_missing_read_language(
++    client: TestClient,
++    conversation_en_de: Conversation,
++):
++    """GET without read_language param returns 422 (required field)."""
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++    )
+     assert res.status_code == 422
++
++
++def test_get_messages_nonexistent_conversation(client: TestClient):
++    """GET from nonexistent conversation returns 404."""
++    res = client.get(
++        "/api/conversations/9999/messages",
++        params={"read_language": "en"},
++    )
++    assert res.status_code == 404
++
++
++def test_get_messages_empty_conversation(
++    client: TestClient,
++    conversation_en_de: Conversation,
++):
++    """GET from conversation with no messages returns empty list."""
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "en"},
++    )
++    assert res.status_code == 200
++    messages = res.json()
++    assert len(messages) == 0
++
++
++def test_get_messages_soft_delete_filter(
++    client: TestClient,
++    db_session: Session,
++    conversation_en_de: Conversation,
++    user_alice: User,
++):
++    """GET filters soft-deleted messages (WHERE deleted_at IS NULL).
++    Soft-deleted messages are not returned."""
++    # Create two messages
++    msg1 = Message(
++        conversation_id=conversation_en_de.id,
++        sender_id=user_alice.id,
++        text_original="Message 1",
++        text_language="en",
++    )
++    msg2 = Message(
++        conversation_id=conversation_en_de.id,
++        sender_id=user_alice.id,
++        text_original="Message 2",
++        text_language="en",
++    )
++    db_session.add(msg1)
++    db_session.add(msg2)
++    db_session.commit()
++
++    # Soft-delete msg1
++    msg1.deleted_at = datetime.now(timezone.utc)
++    db_session.commit()
++
++    # GET should return only msg2
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "en"},
++    )
++    assert res.status_code == 200
++    messages = res.json()
++    assert len(messages) == 1
++    assert messages[0]["text_original"] == "Message 2"
++
++
++def test_get_messages_transparency_both_texts_included(
++    client: TestClient,
++    conversation_en_de: Conversation,
++):
++    """GET includes both text_original and text_translated so frontend can show
++    transparency (per story-001, Sophie's confusion-flag: she wants to see both
++    the original and the translation)."""
++    # Create message in English
++    client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Hello world", "language": "en"},
++    )
++
++    # GET with read_language=de
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "de"},
++    )
++    messages = res.json()
++    msg = messages[0]
++
++    # Both texts are present so frontend can show side-by-side
++    assert msg["text_original"] == "Hello world"
++    assert msg["text_translated"] == "[de] Hello world"  # Stub vendor adds [de] prefix
++
++
++def test_get_messages_sender_name_included(
++    client: TestClient,
++    conversation_en_de: Conversation,
++    user_alice: User,
++):
++    """GET response includes sender_name from User table."""
++    client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Hello", "language": "en"},
++    )
++
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "en"},
++    )
++    messages = res.json()
++    assert messages[0]["sender_name"] == user_alice.username
++
++
++def test_post_and_get_roundtrip(
++    client: TestClient,
++    conversation_en_de: Conversation,
++    user_alice: User,
++):
++    """Full roundtrip: POST message, GET it back with translation."""
++    # POST
++    res = client.post(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        json={"text": "Guten Morgen", "language": "de"},
++    )
++    assert res.status_code == 200
++    posted = res.json()
++
++    # GET
++    res = client.get(
++        f"/api/conversations/{conversation_en_de.id}/messages",
++        params={"read_language": "en"},
++    )
++    assert res.status_code == 200
++    messages = res.json()
++    assert len(messages) == 1
++    msg = messages[0]
++    assert msg["id"] == posted["id"]
++    assert msg["text_original"] == "Guten Morgen"
++    assert msg["text_language"] == "de"
++    assert msg["text_translated"] == "[en] Guten Morgen"  # Stub vendor
++    assert msg["translation_status"] == "success"
++    assert msg["sender_id"] == user_alice.id

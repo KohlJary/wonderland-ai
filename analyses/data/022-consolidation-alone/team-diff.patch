@@ -1,0 +1,272 @@
+diff --git a/src/backend/api/__init__.py b/src/backend/api/__init__.py
+index f5b3e38..75a875e 100644
+--- a/src/backend/api/__init__.py
++++ b/src/backend/api/__init__.py
+@@ -2,9 +2,11 @@
+ 
+ from fastapi import APIRouter
+ 
++from src.backend.api.auth import router as auth_router
+ from src.backend.api.health import router as health_router
+ from src.backend.api.messages import router as messages_router
+ 
+ api_router = APIRouter()
++api_router.include_router(auth_router)
+ api_router.include_router(health_router)
+ api_router.include_router(messages_router, prefix="/api")
+diff --git a/src/backend/api/auth.py b/src/backend/api/auth.py
+new file mode 100644
+index 0000000..e3e181f
+--- /dev/null
++++ b/src/backend/api/auth.py
+@@ -0,0 +1,74 @@
++"""POST /auth/signup and POST /auth/login endpoints.
++
++Contract-002 v1: HTTP Basic auth (stateless, no tokens).
++- POST /auth/signup: create account, return user object.
++- POST /auth/login: validate credentials, return user object (200 on success, 401 on invalid).
++"""
++
++from __future__ import annotations
++
++from typing import Optional
++
++from fastapi import APIRouter, Depends, Header
++from pydantic import BaseModel, Field
++from sqlalchemy.orm import Session
++
++from src.backend.auth import login_user, parse_basic_auth, signup_user
++from src.backend.db import get_db
++
++router = APIRouter()
++
++
++class SignupRequest(BaseModel):
++    """POST /auth/signup request body."""
++
++    email: str = Field(min_length=1, max_length=255)
++    password: str = Field(min_length=8, max_length=255)
++    display_name: str = Field(min_length=1, max_length=255)
++    language_preference: str = Field(default="en", min_length=2, max_length=5)
++
++
++class UserResponse(BaseModel):
++    """User object returned from /auth/signup and /auth/login.
++    
++    Invariant: user_id is always present (users always have an id).
++    Invariant: email, display_name, language_preference are always present.
++    """
++
++    user_id: int
++    email: str
++    display_name: str
++    language_preference: str
++
++
++@router.post("/auth/signup", response_model=UserResponse, status_code=201)
++def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> UserResponse:
++    """Create a new user account.
++    
++    Returns 201 + user object on success.
++    Returns 400 if email already registered or language_preference invalid.
++    """
++    user = signup_user(
++        email=payload.email,
++        password=payload.password,
++        display_name=payload.display_name,
++        language_preference=payload.language_preference,
++        db=db,
++    )
++    return UserResponse(**user.to_dict())
++
++
++@router.post("/auth/login", response_model=UserResponse, status_code=200)
++def login(
++    authorization: Optional[str] = Header(None), db: Session = Depends(get_db)
++) -> UserResponse:
++    """Validate HTTP Basic credentials and return user object.
++    
++    Expects Authorization: Basic <base64(email:password)> header.
++    
++    Returns 200 + user object on success.
++    Returns 401 if email not found or password incorrect.
++    """
++    email, password = parse_basic_auth(authorization)
++    user = login_user(email=email, password=password, db=db)
++    return UserResponse(**user.to_dict())
+diff --git a/src/backend/auth.py b/src/backend/auth.py
+new file mode 100644
+index 0000000..8b79827
+--- /dev/null
++++ b/src/backend/auth.py
+@@ -0,0 +1,116 @@
++"""Authentication: HTTP Basic auth validation and signup/login endpoints."""
++
++from __future__ import annotations
++
++import base64
++from typing import Optional
++
++from fastapi import HTTPException, status
++from passlib.context import CryptContext
++from sqlalchemy.orm import Session
++
++from src.backend.models import User
++
++# Argon2 password hashing (via passlib).
++pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
++
++
++def hash_password(password: str) -> str:
++    """Hash a plaintext password with argon2."""
++    return pwd_context.hash(password)
++
++
++def verify_password(plain: str, hashed: str) -> bool:
++    """Verify plaintext password against argon2 hash."""
++    return pwd_context.verify(plain, hashed)
++
++
++def parse_basic_auth(auth_header: Optional[str]) -> tuple[str, str]:
++    """Parse Authorization: Basic header.
++    
++    Returns (email, password). Raises HTTPException 401 if malformed.
++    
++    Invariant: if this function returns, auth_header was valid Basic format
++    and email+password are non-empty strings.
++    """
++    if not auth_header or not auth_header.startswith("Basic "):
++        raise HTTPException(
++            status_code=status.HTTP_401_UNAUTHORIZED,
++            detail="Missing or invalid Authorization header",
++            headers={"WWW-Authenticate": "Basic"},
++        )
++    
++    try:
++        encoded = auth_header[6:]  # Strip "Basic "
++        decoded = base64.b64decode(encoded).decode("utf-8")
++        email, password = decoded.split(":", 1)
++        
++        if not email or not password:
++            raise ValueError("email or password is empty")
++        
++        return email, password
++    except (ValueError, base64.binascii.Error) as e:
++        raise HTTPException(
++            status_code=status.HTTP_401_UNAUTHORIZED,
++            detail="Invalid Authorization header format",
++            headers={"WWW-Authenticate": "Basic"},
++        ) from e
++
++
++def signup_user(email: str, password: str, display_name: str, language_preference: str, db: Session) -> User:
++    """Create a new user account.
++    
++    Raises HTTPException 400 if email already exists.
++    Raises HTTPException 400 if language_preference is not a valid ISO 639-1 code.
++    
++    Invariant: on successful return, a User row exists with unique email, password_hash set, display_name set.
++    """
++    # Validate language_preference (basic ISO 639-1 check).
++    valid_langs = {"en", "es", "fr", "de", "it", "pt", "ja", "zh", "ko"}  # Expandable.
++    if language_preference not in valid_langs:
++        raise HTTPException(
++            status_code=status.HTTP_400_BAD_REQUEST,
++            detail=f"language_preference '{language_preference}' not supported",
++        )
++    
++    # Check if email already exists.
++    existing = db.query(User).filter(User.email == email).first()
++    if existing:
++        raise HTTPException(
++            status_code=status.HTTP_400_BAD_REQUEST,
++            detail="Email already registered",
++        )
++    
++    # Create new user.
++    hashed = hash_password(password)
++    user = User(
++        email=email,
++        password_hash=hashed,
++        display_name=display_name,
++        language_preference=language_preference,
++    )
++    db.add(user)
++    db.commit()
++    db.refresh(user)
++    
++    return user
++
++
++def login_user(email: str, password: str, db: Session) -> User:
++    """Validate credentials and return user.
++    
++    Raises HTTPException 401 if email not found or password is incorrect.
++    
++    Invariant: on successful return, the returned User has valid credentials
++    (password matches the stored hash).
++    """
++    user = db.query(User).filter(User.email == email).first()
++    
++    if not user or not verify_password(password, user.password_hash):
++        raise HTTPException(
++            status_code=status.HTTP_401_UNAUTHORIZED,
++            detail="Invalid email or password",
++            headers={"WWW-Authenticate": "Basic"},
++        )
++    
++    return user
+diff --git a/src/backend/models.py b/src/backend/models.py
+index abd60be..377a8ea 100644
+--- a/src/backend/models.py
++++ b/src/backend/models.py
+@@ -1,5 +1,4 @@
+-"""SQLAlchemy models. Just `Base` + an example `HelloMessage` showing
+-the pattern. Replace HelloMessage with the actual feature models."""
++"""SQLAlchemy models."""
+ 
+ from __future__ import annotations
+ 
+@@ -11,25 +10,28 @@ from sqlalchemy.orm import declarative_base
+ Base = declarative_base()
+ 
+ 
+-class HelloMessage(Base):
+-    """Placeholder model demonstrating the SQLAlchemy pattern.
++class User(Base):
++    """Users table: email, password_hash, display_name, language_preference.
++    
++    Invariant: email is unique (no duplicate accounts).
++    Invariant: password_hash is never null (all users have a password).
++    Invariant: language_preference is one of the supported ISO 639-1 codes.
++    """
+ 
+-    The team should DELETE this when shipping real features — it
+-    exists only so the seed has a working end-to-end flow (DB row →
+-    API response → frontend render) for the human verifying the
+-    seed."""
+-
+-    __tablename__ = "hello_messages"
++    __tablename__ = "users"
+ 
+     id = Column(Integer, primary_key=True, autoincrement=True)
+-    text = Column(String(280), nullable=False)
++    email = Column(String(255), unique=True, nullable=False, index=True)
++    password_hash = Column(String(255), nullable=False)  # argon2 hash
++    display_name = Column(String(255), nullable=False)
++    language_preference = Column(String(5), nullable=False, default="en")  # ISO 639-1
+     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+ 
+     def to_dict(self) -> dict:
++        """Return user object for login response."""
+         return {
+-            "id": self.id,
+-            "text": self.text,
+-            "created_at": (
+-                self.created_at.isoformat() if self.created_at else datetime.now(timezone.utc).isoformat()
+-            ),
++            "user_id": self.id,
++            "email": self.email,
++            "display_name": self.display_name,
++            "language_preference": self.language_preference,
+         }

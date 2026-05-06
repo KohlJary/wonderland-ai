@@ -270,13 +270,26 @@ guard knows the difference (so far, on n=1).
 | total utterances | 80 |
 | substantive utterances | 4 + 3 ADRs + 3 rulings + 9 stories + 3 spike tickets = 22 artifacts |
 | concerns / total | 79% |
-| total input tokens | 4,577,266 |
+| total input tokens (uncached) | 4,577,266 |
+| total cache reads | ~723,000 |
 | total output tokens | 96,236 |
 | total LLM calls | 144 (Cat 53, Caterpillar 29, Rabbit 23, Dee 18, Dum 13, Queen 3, Alice 2, Dormouse 2, Hatter 1, Dodo 0) |
 | Dodo LLM calls | 0 |
 | ThreadState transitions | 2 × `running → stuck` |
 | consensus alerts | 0 |
-| cost (Haiku, post-cache) | ~$0.50–1.00 (cached agents 10× cheaper on input) |
+| **actual cost (Haiku 4.5)** | **~$5.10** ($1/MTok in × 4.58M + $5/MTok out × 96k + cache reads at $0.10/MTok). Cat alone accounted for ~$2.70 of this — 53 calls × ~49k uncached input each, no cache hits at all. |
+
+*Cost note (added after analysis publication):* my original
+estimate here was "~$0.50–1.00" using stale Haiku 3 prices. Actual
+Haiku 4.5 pricing is **$1.00/MTok input + $5.00/MTok output** —
+4× higher on both than I'd been assuming. The corrected $5.10
+figure makes the cost-anomaly framing in this analysis even
+sharper: Cat's 2.59M uncached input tokens isn't a $2.59 oversight,
+it's a $2.70 oversight, and it's >50% of the run's total cost.
+The polite-deadlock pattern compounds this — 79% of the dance was
+concerns that each cost real money to produce. **P6's T32 (Cat
+cache fix) and T33 (Dodo nudge ladder) are not optional cost
+optimizations; they're table stakes for affordable showcases.**
 
 ---
 

@@ -90,7 +90,18 @@ class EngagementRules:
         return cls(rules=tuple(rules), default=default)
 
     def categorize(self, u: Utterance) -> Engagement:
-        """Return the tier this utterance falls into."""
+        """Return the tier this utterance falls into.
+
+        Seed utterances (``u.is_seed=True``, set by Runner.convene when
+        re-publishing prior-thread artifacts as context for a follow-up
+        meeting) short-circuit to ALMOST_NEVER. Seeds are visible in
+        thread history and engagement-state counts, but they are not
+        engagement triggers — reacting to them as if they were fresh
+        turns pulls agents into respond-mode against historical
+        artifacts that were already negotiated/decided in their
+        original thread."""
+        if u.is_seed:
+            return Engagement.ALMOST_NEVER
         for rule in self.rules:
             if rule.matches(u):
                 return rule.category

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from pydantic import ValidationError
 
+from wonderland.roster import ThreadRoster
 from wonderland.utterance import SpeechAct, Utterance
 
 try:
@@ -64,12 +65,19 @@ class Caucus(Protocol):
         thread_id: str | None = None,
         *,
         from_beginning: bool = False,
+        bypass_roster: bool = False,
     ) -> AsyncIterator[Utterance]:
         """Yield utterances matching `interests` (and optionally `thread_id`).
 
         `agent_name` identifies the subscriber so each agent can keep its
         own independent position in the stream — two agents subscribing
         with the same `agent_name` share a position.
+
+        `bypass_roster=True` is for framework observers (ThreadMonitor,
+        ConsensusGuard, the Runner's bus observer) that need to see
+        every utterance regardless of per-thread roster filtering. Agent
+        subscribers leave it False so the roster's per-thread membership
+        check applies.
         """
         ...
 
@@ -125,9 +133,16 @@ class RedisCaucus:
         thread_id: str | None = None,
         *,
         from_beginning: bool = False,
+        bypass_roster: bool = False,
         block_ms: int = 5000,
         batch: int = 16,
     ) -> AsyncIterator[Utterance]:
+        # bypass_roster is accepted for protocol parity but ignored
+        # here — the Redis backend doesn't yet support roster-aware
+        # delivery (server-side filtering would require a stream-per-
+        # thread or per-agent topology). Revisit when distributed
+        # rosters are needed.
+        _ = bypass_roster
         await self._ensure_group(agent_name, from_beginning=from_beginning)
         consumer = agent_name
 
@@ -187,10 +202,22 @@ class InMemoryCaucus:
     long as no ``await`` is interleaved between read and write.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, roster: ThreadRoster | None = None) -> None:
         self._history: list[Utterance] = []
         self._subscribers: dict[str, list[asyncio.Queue[Utterance]]] = {}
+        # Names that bypass roster filtering on publish — framework
+        # observers (ThreadMonitor, ConsensusGuard, Runner observer)
+        # need every utterance regardless of per-thread roster.
+        self._bypass_roster: set[str] = set()
         self._counter = 0
+        # Optional ThreadRoster gates delivery per-thread. When None,
+        # every utterance fans out to every subscriber (the original
+        # behavior; what existing demos and tests depend on). When set,
+        # only roster members of the utterance's thread receive it.
+        # Open threads (threads the roster doesn't know about) still
+        # fan out to everyone, so a partial roster setup doesn't break
+        # untouched threads.
+        self._roster = roster
 
     @property
     def history(self) -> list[Utterance]:
@@ -200,7 +227,13 @@ class InMemoryCaucus:
         self._counter += 1
         entry_id = f"0-{self._counter}"
         self._history.append(utterance)
-        for queues in list(self._subscribers.values()):
+        for sub_name, queues in list(self._subscribers.items()):
+            if (
+                self._roster is not None
+                and sub_name not in self._bypass_roster
+                and not self._roster.is_member(utterance.thread_id, sub_name)
+            ):
+                continue
             for queue in queues:
                 queue.put_nowait(utterance)
         return entry_id
@@ -212,12 +245,15 @@ class InMemoryCaucus:
         thread_id: str | None = None,
         *,
         from_beginning: bool = False,
+        bypass_roster: bool = False,
     ) -> AsyncIterator[Utterance]:
         queue: asyncio.Queue[Utterance] = asyncio.Queue()
         if from_beginning:
             for past in self._history:
                 queue.put_nowait(past)
         self._subscribers.setdefault(agent_name, []).append(queue)
+        if bypass_roster:
+            self._bypass_roster.add(agent_name)
         return self._consume(queue, agent_name, interests, thread_id)
 
     async def _consume(

@@ -1,0 +1,51 @@
+==============================================================================
+Wonderland — Translation Chat MVP showcase (T36, full cast via Runner)
+==============================================================================
+Project root: /tmp/translation-chat-roster
+Budget cap:   $2.50
+Timeout:      240s
+Roster:       alice, cheshire_cat, queen_of_hearts (+ dodo, auto-added)
+Goal:         produce an ADR for the translation message envelope
+Directive:    Build a translation-integrated chat application MVP. Two users in different language groups exchanging short messages with near-real-time translation. EU consumer scope (GDPR applies). Target: shippable v1 in three weeks. Initial scope: text-only messages, two-language pairs at launch (English ↔ German, English ↔ Japanese), no message edit, no message delete, basic auth. Looking for the team to scope, decompose, and identify the ship-blocking decisions.
+
+--- Dance ---
+[t=  0.00s] dodo               directive      Build a translation-integrated chat application MVP. Two users in different language groups exchanging short messages with near-real-time tr…
+[t=  6.07s] cheshire_cat       question       Before we settle the architecture, I need to surface what's actually at stake in this directive. Three constraints are in tension: near-real…
+[t=  8.13s] queen_of_hearts    concern        This directive carries three regulatory and architectural implications that must surface before the team decomposes work. I need clarificati…
+[t= 15.53s] cheshire_cat       question       The Queen has named three clarifications that are load-bearing for both architecture and scope. I'll add a fourth that flows from hers, beca…
+[t= 31.10s] alice              story          
+                             ↳ story: Anna and Marco: First Real Exchange
+                             ↳ story: Kenji's First Conversation: English-Japanese Bridge
+                             ↳ story: Hannah's Privacy Question: What Happens to My Words?
+                             ↳ story: Esmé's Onboarding: Can She Actually Get In?
+                             ↳ story: Marco's Frustration: The Translation Was Wrong and Nobody Knows
+                             ↳ story: Admin's Oversight: Is Everything Working or Just Appearing To?
+[t= 39.13s] queen_of_hearts    concern        Alice, your stories are precise and they surface the real work. I have read all six. Before I can rule on the scope they imply, I need you t…
+[t= 70.07s] <thread_monitor>   running → stuck  (1 open expectation(s); silent 30.9s)
+[t= 70.07s] dodo               nudge          Thread main → stuck (1 open expectation(s); silent 30.9s). The team has paused with open expectations; if commitments are pending informatio…
+[t=100.10s] <thread_monitor>   running → quiescent  (no open expectations; silent 30.0s)
+[t=100.10s] dodo               acknowledgment Thread main → complete. The team has gone quiet with no open expectations; the directive is settled.
+[t=100.10s] <thread_monitor>   running → complete  (acknowledgment of completion)
+[t=100.10s] <complete>         thread settled cleanly
+
+--- Summary ---
+Elapsed:        100.1s
+Total cost:     $0.0576  (cap $2.50)
+LLM calls:      5
+Telemetry path: .wonderland/telemetry/run-20260505T175656.json
+
+Speech acts:
+  question           2
+  concern            2
+  directive          1
+  story              1
+  nudge              1
+  acknowledgment     1
+
+Artifacts on disk:
+  story              6
+
+Per-agent token usage:
+  alice              calls=  1 in=    118 out=  2513 cache_r=      0 cost=$0.0218
+  queen_of_hearts    calls=  2 in=    931 out=  1039 cache_r=  11334 cost=$0.0214
+  cheshire_cat       calls=  2 in=   1057 out=   896 cache_r=   6591 cost=$0.0144

@@ -1,0 +1,112 @@
+==============================================================================
+T36 FULL ENCHILADA — vague directive → working code via 5 meetings
+==============================================================================
+Project root:  /tmp/t36-enchilada-v9
+Budget cap:    $3.00 hard
+Total timeout: 900s
+Directive:     Build a translation-integrated chat application MVP. Two users in different language groups exchangi...
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M1: produce user stories + an architectural ADR + GDPR rulings
+  thread_id: scoping
+  roster:    ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.0000
+──────────────────────────────────────────────────────────────────────────────
+  M1[t=  0.00s] dodo               directive      →caucus Build a translation-integrated chat application MVP. Two users in different language groups exchangi…
+  M1[t=  5.16s] queen_of_hearts    concern        →caucus I need to surface regulatory scope early. GDPR applies to the user base; this directive does not nam…
+  M1[t=  5.71s] cheshire_cat       question       →caucus Before the team scopes this, I need to surface the architectural decision that sits underneath: what…
+  M1[t= 13.64s] cheshire_cat       reframe        →caucus The Queen has surfaced the real constraint, and it is earlier than the architecture. Before I can re…
+  M1[t= 27.90s] alice              story          →caucus (no body)
+  M1                             ↳ story: Monolingual user joins a cross-language conversation
+  M1                             ↳ story: Polyglot user moderates a two-language community exchange
+  M1                             ↳ story: Deaf user receives live captioning alongside translation
+  M1                             ↳ story: User learns the app is trustworthy with their data (GDPR minimum viable)
+  M1[t= 38.45s] queen_of_hearts    concern        →caucus Alice has surfaced four stories, and three of them are well-formed; the fourth names a GDPR-minimum …
+  M1[t= 45.32s] cheshire_cat       deference      →caucus The Queen has surfaced the load-bearing seam. She is right — the stories have moved faster than the …
+  M1[t= 55.85s] queen_of_hearts    concern        →caucus The Cat has restated my framing accurately, but I need to add specificity before Alice moves to clar…
+  M1[t= 65.92s] cheshire_cat       question       →caucus I want to sharpen the Queen's tier-1 questions before I propose architecture, because the answers wi…
+  M1[t= 96.10s] <thread_monitor> running → stuck
+  M1[t= 96.10s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); silent 30.2s). The team has paused with open expectat…
+  M1[t=126.13s] <thread_monitor> running → quiescent
+  M1[t=126.13s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  M1[t=126.13s] <thread_monitor> running → complete
+  M1[t=126.13s] <complete>
+
+  ── M1 END ── outcome=COMPLETE
+     elapsed:        126.1s
+     this meeting:   8 calls, $0.0744
+     running totals: 8 calls, $0.0744 / $3.00 cap
+     artifacts:      1 (story×4)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M2: decompose the ADR + stories into v1 tickets
+  thread_id: decomposition
+  roster:    ['cheshire_cat', 'dodo', 'white_rabbit']
+  seeds:     1 utterance(s)
+  cost so far before this meeting: $0.0744
+──────────────────────────────────────────────────────────────────────────────
+  M2[t=126.13s] alice              story          →caucus (no body)
+  M2                             ↳ story: Monolingual user joins a cross-language conversation
+  M2                             ↳ story: Polyglot user moderates a two-language community exchange
+  M2                             ↳ story: Deaf user receives live captioning alongside translation
+  M2                             ↳ story: User learns the app is trustworthy with their data (GDPR minimum viable)
+  M2[t=151.43s] white_rabbit       ticket         →caucus Four stories in, scope is taking shape. I'm decomposing these into v1 + fast-follow, identifying the…
+  M2                             ↳ ticket: Monolingual user joins a cross-language conversation — v1 scope definition
+  M2                             ↳ ticket: Translation architecture — proposal + ADR
+  M2                             ↳ ticket: Accessibility + translation scope — Queen review
+  M2                             ↳ ticket: Monolingual join flow — Tweedle implementation
+  M2                             ↳ ticket: Polyglot moderation flow — Tweedle implementation
+  M2                             ↳ ticket: Live captioning — Tweedle implementation (dep on accessibility review)
+  M2                             ↳ ticket: GDPR compliance — data trust story
+  M2                             ↳ ticket: GDPR compliance — implementation
+  M2[t=182.18s] <thread_monitor> running → quiescent
+  M2[t=182.18s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  M2[t=182.18s] <thread_monitor> running → complete
+  M2[t=182.18s] <complete>
+
+  ── M2 END ── outcome=COMPLETE
+     elapsed:        56.1s
+     this meeting:   1 calls, $0.0259
+     running totals: 9 calls, $0.1003 / $3.00 cap
+     artifacts:      2 (ticket×8, story×4)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M3: negotiate contracts the Tweedles will implement against
+  thread_id: contract-negotiation
+  roster:    ['cheshire_cat', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     1 utterance(s)
+  cost so far before this meeting: $0.1003
+──────────────────────────────────────────────────────────────────────────────
+  M3[t=182.18s] white_rabbit       ticket         →caucus Four stories in, scope is taking shape. I'm decomposing these into v1 + fast-follow, identifying the…
+  M3                             ↳ ticket: Monolingual user joins a cross-language conversation — v1 scope definition
+  M3                             ↳ ticket: Translation architecture — proposal + ADR
+  M3                             ↳ ticket: Accessibility + translation scope — Queen review
+  M3                             ↳ ticket: Monolingual join flow — Tweedle implementation
+  M3                             ↳ ticket: Polyglot moderation flow — Tweedle implementation
+  M3                             ↳ ticket: Live captioning — Tweedle implementation (dep on accessibility review)
+  M3                             ↳ ticket: GDPR compliance — data trust story
+  M3                             ↳ ticket: GDPR compliance — implementation
+  M3[t=212.21s] <thread_monitor> running → quiescent
+  M3[t=212.21s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  M3[t=212.21s] <thread_monitor> running → complete
+  M3[t=212.21s] <complete>
+
+  ── M3 END ── outcome=COMPLETE
+     elapsed:        30.0s
+     this meeting:   2 calls, $0.0312
+     running totals: 11 calls, $0.1315 / $3.00 cap
+     artifacts:      1 (ticket×8)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M4: ship code honoring the agreed contracts
+  thread_id: implementation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.1315
+──────────────────────────────────────────────────────────────────────────────
+  M4[t=212.22s] dodo               directive      →caucus Implementation thread. The contract notes in your context are locked — they were negotiated and agre…
+  M4[t=242.24s] <thread_monitor> running → quiescent
+  M4[t=242.24s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  M4[t=242.24s] <thread_monitor> running → complete
+  M4[t=242.24s] <complete>

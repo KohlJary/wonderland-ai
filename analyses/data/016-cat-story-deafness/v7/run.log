@@ -1,0 +1,109 @@
+==============================================================================
+T36 FULL ENCHILADA — vague directive → working code via 5 meetings
+==============================================================================
+Project root:  /tmp/t36-enchilada-v7
+Budget cap:    $3.00 hard
+Total timeout: 900s
+Directive:     Build a translation-integrated chat application MVP. Two users in different language groups exchangi...
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M1: produce user stories + an architectural ADR + GDPR rulings
+  thread_id: scoping
+  roster:    ['alice', 'cheshire_cat', 'dodo', 'queen_of_hearts']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.0000
+──────────────────────────────────────────────────────────────────────────────
+  M1[t=  0.00s] dodo               directive      →caucus Build a translation-integrated chat application MVP. Two users in different language groups exchangi…
+  M1[t=  6.69s] cheshire_cat       question       →caucus Before we scope, I need to understand the load-bearing seam you've named. You say 'text-only message…
+  M1[t=  9.01s] queen_of_hearts    concern        →caucus This directive implies significant data-handling and compliance scope that needs to surface before d…
+  M1[t= 14.91s] cheshire_cat       question       →caucus The Queen has surfaced three load-bearing compliance questions that sit upstream of both architectur…
+  M1[t= 24.02s] alice              story          →caucus (no body)
+  M1                             ↳ story: Monolingual speaker joins a cross-language conversation without friction
+  M1                             ↳ story: Polyglot moderator manages a conversation across three language groups
+  M1                             ↳ story: New user creates an account and joins their first conversation
+  M1                             ↳ story: User has a bad translation and needs to understand the original
+  M1                             ↳ story: A message arrives while the user is briefly offline and they catch up
+  M1[t= 32.37s] queen_of_hearts    concern        →caucus Alice's stories surface the user experience cleanly, but they have implied data-handling assumptions…
+  M1[t= 63.07s] <thread_monitor> running → stuck
+  M1[t= 63.07s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); silent 30.7s). The team has paused with open expectat…
+  M1[t= 93.10s] <thread_monitor> running → quiescent
+  M1[t= 93.10s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  M1[t= 93.10s] <thread_monitor> running → complete
+  M1[t= 93.10s] <complete>
+
+  ── M1 END ── outcome=COMPLETE
+     elapsed:        93.1s
+     this meeting:   6 calls, $0.0614
+     running totals: 6 calls, $0.0614 / $3.00 cap
+     artifacts:      1 (story×5)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M2: decompose the ADR + stories into v1 tickets
+  thread_id: decomposition
+  roster:    ['cheshire_cat', 'dodo', 'white_rabbit']
+  seeds:     1 utterance(s)
+  cost so far before this meeting: $0.0614
+──────────────────────────────────────────────────────────────────────────────
+  M2[t= 93.10s] alice              story          →caucus (no body)
+  M2                             ↳ story: Monolingual speaker joins a cross-language conversation without friction
+  M2                             ↳ story: Polyglot moderator manages a conversation across three language groups
+  M2                             ↳ story: New user creates an account and joins their first conversation
+  M2                             ↳ story: User has a bad translation and needs to understand the original
+  M2                             ↳ story: A message arrives while the user is briefly offline and they catch up
+  M2[t=109.13s] white_rabbit       ticket         →caucus Alice, I've decomposed these five stories into v1 and fast-follow scope. The critical path runs thro…
+  M2                             ↳ ticket: New user account creation and first conversation join
+  M2                             ↳ ticket: Monolingual speaker can join cross-language conversation
+  M2                             ↳ ticket: Polyglot moderator manages three-language conversation
+  M2                             ↳ ticket: User understands bad translation and retrieves original
+  M2                             ↳ ticket: Offline user catches up on messages sent while away
+  M2[t=139.15s] <thread_monitor> running → quiescent
+  M2[t=139.15s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  M2[t=139.15s] <thread_monitor> running → complete
+  M2[t=139.15s] <complete>
+
+  ── M2 END ── outcome=COMPLETE
+     elapsed:        46.1s
+     this meeting:   1 calls, $0.0203
+     running totals: 7 calls, $0.0817 / $3.00 cap
+     artifacts:      2 (story×5, ticket×5)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M3: negotiate contracts the Tweedles will implement against
+  thread_id: contract-negotiation
+  roster:    ['cheshire_cat', 'dodo', 'tweedledee', 'tweedledum']
+  seeds:     1 utterance(s)
+  cost so far before this meeting: $0.0817
+──────────────────────────────────────────────────────────────────────────────
+  M3[t=139.15s] white_rabbit       ticket         →caucus Alice, I've decomposed these five stories into v1 and fast-follow scope. The critical path runs thro…
+  M3                             ↳ ticket: New user account creation and first conversation join
+  M3                             ↳ ticket: Monolingual speaker can join cross-language conversation
+  M3                             ↳ ticket: Polyglot moderator manages three-language conversation
+  M3                             ↳ ticket: User understands bad translation and retrieves original
+  M3                             ↳ ticket: Offline user catches up on messages sent while away
+[tweedledee] deliberate() raised TweedleResponseParseError: Tweedle response failed schema validation: 1 validation error for TweedleResponse
+decision
+  Input should be 'implementation', 'contract_note', 'concern', 'question', 'deference', 'invite' or 'silence' [type=literal_error, input_value='acknowledgment', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/literal_error — treating as silence
+  M3[t=153.82s] tweedledum         invite         →[cheshire_cat] Acknowledged: ticket-001, ticket-002, ticket-004 form the critical path. I'm reading the translation…
+  M3[t=159.63s] cheshire_cat       question       →caucus Before I commit to the shape of the translation abstraction: what would have to be true for you to p…
+  M3[t=190.20s] <thread_monitor> running → stuck
+  M3[t=190.20s] dodo               nudge          →caucus Thread contract-negotiation → stuck (1 open expectation(s); silent 30.6s). The team has paused with …
+  M3[t=220.23s] <thread_monitor> running → quiescent
+  M3[t=220.23s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  M3[t=220.23s] <thread_monitor> running → complete
+  M3[t=220.23s] <complete>
+
+  ── M3 END ── outcome=COMPLETE
+     elapsed:        81.1s
+     this meeting:   7 calls, $0.0471
+     running totals: 14 calls, $0.1288 / $3.00 cap
+     artifacts:      1 (ticket×5)
+
+──────────────────────────────────────────────────────────────────────────────
+MEETING M4: ship code honoring the agreed contracts
+  thread_id: implementation
+  roster:    ['dodo', 'tweedledee', 'tweedledum']
+  seeds:     0 utterance(s)
+  cost so far before this meeting: $0.1288
+──────────────────────────────────────────────────────────────────────────────
+  M4[t=900.00s] <timeout>
