@@ -311,6 +311,70 @@ class TestCanonicalSpecifics:
         assert contract_seed.fallback == "any"
 
 
+@pytest.mark.parametrize(
+    "workflow_name,impl_meeting_id",
+    [("canonical", "implementation"), ("tdd", "implementation")],
+)
+class TestImplementationMeetingPathSafety:
+    """Pins the implementation meeting's directive against the
+    path-drift failure mode from analysis 024 — Tweedledee invented
+    `src/frontend/` instead of using the skeleton's `frontend/src/`.
+
+    The fix is content-only (clearer instructions in the directive),
+    so the regression test is also content-only: assert the prompt
+    contains the load-bearing phrasing. Avoids burning a live LLM
+    run to validate a deterministic prompt change.
+    """
+
+    def test_directive_requires_list_files_before_write(
+        self, workflow_name, impl_meeting_id
+    ):
+        wf = load_workflow(workflow_name)
+        meeting = wf.meeting_by_id(impl_meeting_id)
+        assert meeting is not None
+        directive = meeting.convenor_directive.lower()
+        assert "list_files" in directive, (
+            f"{workflow_name}: implementation directive must mention list_files"
+        )
+        assert "before any" in directive or "first move" in directive, (
+            f"{workflow_name}: implementation directive must order list_files "
+            "BEFORE write_file (not just mention them as alternatives)"
+        )
+
+    def test_directive_forbids_inventing_top_level_directories(
+        self, workflow_name, impl_meeting_id
+    ):
+        wf = load_workflow(workflow_name)
+        meeting = wf.meeting_by_id(impl_meeting_id)
+        assert meeting is not None
+        directive = meeting.convenor_directive.lower()
+        # The exact failure mode from analysis 024: Tweedledee invented
+        # `src/frontend/` instead of using `frontend/src/`. Pin the fix.
+        assert "do not invent" in directive or "do not create" in directive, (
+            f"{workflow_name}: implementation directive must explicitly "
+            "forbid inventing new top-level directories"
+        )
+
+    def test_directive_names_the_path_drift_example(
+        self, workflow_name, impl_meeting_id
+    ):
+        wf = load_workflow(workflow_name)
+        meeting = wf.meeting_by_id(impl_meeting_id)
+        assert meeting is not None
+        directive = meeting.convenor_directive
+        # Naming the specific layout makes the instruction concrete.
+        # Both `frontend/src/` and `src/backend/` are mentioned to
+        # cover both Tweedles' domains.
+        assert "frontend/src/" in directive, (
+            f"{workflow_name}: implementation directive should name the "
+            "skeleton's frontend layout to anchor Tweedledee"
+        )
+        assert "src/backend/" in directive, (
+            f"{workflow_name}: implementation directive should name the "
+            "skeleton's backend layout to anchor Tweedledum"
+        )
+
+
 class TestTDDSpecifics:
     """Tests for the TDD workflow's particular shape — what makes it
     different from canonical."""

@@ -102,9 +102,20 @@ meetings:
       bus utterance is the team's record of what happened.
 
       **The codebase ALREADY EXISTS in the working tree** — the
-      project skeleton is laid down before the run. Call `list_files`
-      to see the layout, `read_file` to read what's there,
-      `write_file` to extend.
+      project skeleton is laid down before the run.
+
+      **MANDATORY first move: call `list_files` on the project root
+      before any `write_file`.** The skeleton's directory layout is
+      authoritative — do NOT invent new top-level directories. If
+      the skeleton has `frontend/src/`, frontend code goes there;
+      do not create `src/frontend/`. If it has `src/backend/`, backend
+      code goes there; do not create `backend/`. New files extend
+      the existing tree, never replace it.
+
+      After `list_files`, use `read_file` on the key files in your
+      domain (frontend → `frontend/src/App.tsx`, `frontend/src/api.ts`;
+      backend → `src/backend/models.py`, `src/backend/api/`) to
+      understand the conventions before writing.
 
       Tweedledee owns frontend; Tweedledum owns backend.
     seeds:
