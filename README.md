@@ -176,6 +176,21 @@ In-progress, building in public. Phase 5 of 7 complete.
       closed. Worth naming explicitly: working-tree-as-implementation-
       artifact — the bus utterance is ancillary to the actual
       deliverable, which is the diff.
+      [Analysis 024](./analyses/024-tdd-validated.md) extends the
+      framework into workflow-as-data territory. Live A/B run of
+      the TDD workflow against a rate-limiting directive on the
+      fullstack skeleton: parse-retry recovers 5/5 malformed agent
+      responses (Hatter prose, Tweedle empty responses, schema-
+      validation failures), Hatter ships 14 test scenarios pinning
+      directive intent, and the team builds the actual rate limiter
+      end-to-end (1804 lines across 13 files — backend limiter +
+      observability, frontend client/hooks/components, comprehensive
+      tests). The prior run without retry shipped baseline message
+      endpoints — coherent code that drifted from the directive.
+      With retry, the framework reliably ships the feature that
+      was asked for. **TDD becomes the recommended default
+      workflow** for feature work; canonical retained for fast
+      iteration when directive drift is unlikely.
 - [ ] **P7 — Evals**
       Generic-baseline vs Wonderland comparison. The compounding curve.
 

@@ -255,7 +255,12 @@ def main() -> int:
     p.add_argument(
         "--workflow",
         default="smoke",
-        help="Bundled workflow name (default: smoke). Use --list to see options.",
+        help=(
+            "Bundled workflow name. Default 'smoke' (cheap sanity ping). "
+            "Use 'tdd' for real feature work — the recommended default per "
+            "analysis 024. 'canonical' for faster/cheaper iteration when "
+            "directive drift is unlikely. Use --list to see all options."
+        ),
     )
     p.add_argument("--directive", default=DEFAULT_DIRECTIVE, help="User directive.")
     p.add_argument(

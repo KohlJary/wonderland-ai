@@ -1,0 +1,14 @@
+ src/backend/api/__init__.py                |   2 +
+ src/backend/api/messages.py                |  94 ++++++++++-
+ src/backend/api/observability.py           |  63 +++++++
+ src/backend/rate_limiter.py                | 133 +++++++++++++++
+ src/frontend/__tests__/rate_limit.test.ts  | 233 ++++++++++++++++++++++++++
+ src/frontend/api_client.ts                 | 175 +++++++++++++++++++
+ src/frontend/components/RateLimitError.tsx |  90 ++++++++++
+ src/frontend/hooks/useRateLimit.ts         | 114 +++++++++++++
+ src/frontend/rate_limit.ts                 | 176 ++++++++++++++++++++
+ tests/conftest.py                          |   8 +-
+ tests/test_rate_limit_enforcement.py       | 253 ++++++++++++++++++++++++++++
+ tests/test_rate_limit_messaging.py         | 213 ++++++++++++++++++++++++
+ tests/test_rate_limit_observability.py     | 259 +++++++++++++++++++++++++++++
+ 13 files changed, 1804 insertions(+), 9 deletions(-)

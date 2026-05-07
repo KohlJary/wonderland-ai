@@ -1,16 +1,22 @@
 name: canonical
 description: |
-  The 5-meeting sequence for greenfield-on-skeleton features.
+  Faster/cheaper alternative to the tdd workflow (now the
+  recommended default per analysis 024). Keep this around for
+  exploratory work, throwaway prototypes, very concrete directives,
+  and as the structural variant Dodo can pick when speed matters
+  more than directive-alignment guarantee.
 
-  Validated end-to-end across analyses 015-023 — produces a real
-  feature MVP from a vague directive in ~8 minutes / ~$1.50, on
-  top of an existing project skeleton (closet/skeletons/<name>).
+  The 5-meeting sequence for greenfield-on-skeleton features:
+  scoping → decomposition → contract negotiation → implementation
+  → review. Validated end-to-end across analyses 015-023 — produces
+  a real feature MVP from a vague directive in ~8 minutes / ~$1.50,
+  on top of an existing project skeleton (closet/skeletons/<name>).
 
-  The shape: scoping → decomposition → contract negotiation →
-  implementation → review. Each meeting is single-purpose with a
-  closure criterion. Turn-based quiescence holds meetings open
-  until everyone goes IDLE — the prior wall-clock model killed
-  meetings mid-tool-loop, see analyses 020-023.
+  Risk to be aware of: without Hatter's failing tests pinning
+  behavior, the team can ship coherent code that drifts from what
+  was asked. Analysis 024 documents one such drift (canonical built
+  baseline message endpoints when asked for rate limiting). The
+  drift is rare for concrete directives, common for vague ones.
 
   Used as the baseline for the Dodo dynamic-workflow generation
   work (roadmap 29497820).

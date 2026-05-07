@@ -26,8 +26,8 @@ finally:
 | Name | Meetings | Default budget | When to use |
 |---|---|---|---|
 | `smoke` | 1 | $0.50 | Sanity-check the loader/runner integration. Alice produces one story, ~$0.10. |
-| `canonical` | 5 | $3.00 | Standard greenfield-on-skeleton feature work. Validated end-to-end across analyses 015-023. |
-| `tdd` | 6 | $4.00 | Test-first variant — Hatter writes failing tests before Tweedles implement. Use for safety-critical or regression-prone surfaces. |
+| **`tdd` (default)** | 6 | $4.00 | **Recommended default for feature work.** Hatter writes failing test scenarios before Tweedles implement; M5's closure criterion is "make Hatter's red tests green." Validated end-to-end in [analysis 024](../../../../analyses/024-tdd-validated.md) — directive-aligned output (1804 lines of working rate-limiter end-to-end) where canonical drifted on the same directive. |
+| `canonical` | 5 | $3.00 | Faster/cheaper alternative when directive drift is unlikely (throwaway prototypes, very concrete directives, or exploratory iteration). Validated across analyses 015-023. **Risk:** without Hatter's tests pinning behavior, the team can ship coherent code that doesn't match what was asked. |
 
 Run any of them via the demo script:
 
@@ -39,7 +39,7 @@ uv run python scripts/workflow_demo.py --list
 uv run python scripts/workflow_demo.py --workflow tdd --dry-run
 ```
 
-## canonical vs tdd — compare and contrast
+## tdd vs canonical — compare and contrast
 
 Both workflows take the same vague directive in M1 (scoping) and
 hand off to Tweedles for implementation. The difference is what
@@ -81,36 +81,43 @@ The implementation phase changes too:
 
 ### Tradeoffs
 
-| | canonical | tdd |
+| | tdd (default) | canonical |
 |---|---|---|
-| Cost | ~$1.50 (validated, analysis 023) | ~$2.00-2.50 (estimated; not yet smoke-tested live) |
-| Wall clock | ~7-8 minutes | ~10-12 minutes (estimated) |
-| Implementation drift | possible — Tweedles interpret a directive | bounded — Tweedles implement to a runnable spec |
-| Test coverage | review-after-the-fact (Caterpillar in M5) | test-first (Hatter in M4) |
-| When it shines | greenfield exploratory work, throwaway prototypes | safety-critical surfaces, regression-prone code paths |
+| Cost | ~$2.13 (validated, analysis 024) | ~$1.50 (validated, analysis 023) |
+| Wall clock | ~10 minutes | ~7-8 minutes |
+| Directive alignment | bounded — Hatter's tests pin behavior to the spec | possible drift — team can ship coherent code that doesn't match the ask |
+| Test coverage | test-first (Hatter writes failing scenarios in M4, becomes the M5 closure criterion) | review-after-the-fact (Caterpillar surfaces findings in M5 review) |
+| When it shines | feature work where the directive is vague or regressions matter | exploratory work, throwaway prototypes, very concrete directives |
+
+### When tdd wins (the default case)
+
+For most feature work, tdd is the right tool. The Hatter's failing
+tests are the team's commitment to the *directive*, not just to the
+contract. When the user says "rate limit /api/messages", Hatter
+writes scenarios for X-Forwarded-For, atomic enforcement, header
+spoofing — concrete behavior the Tweedles' code has to satisfy.
+Without that pinning step, the team can converge on coherent code
+that drifted from what was asked (analysis 024 documents an A/B
+where canonical built baseline message endpoints instead of the
+rate limiter the directive named).
+
+This generalizes: any directive vague enough that the implementing
+agents would have to *interpret* it benefits from Hatter's
+test-first scoping. Most real directives are vague.
 
 ### When canonical wins
 
-For the standard "build me a feature on a working skeleton" flow,
-canonical is the right tool. Hatter's role as review-after-the-fact
-is sufficient when the feature is exploratory and bug discovery is
-cheap (you re-run the showcase, you see the bug, you ship the fix).
-The extra meeting in tdd costs real money for relatively little
-gain when the feature is throwaway-grade or hasn't been
-production-hardened yet.
+When the directive is concrete enough that interpretation is
+unlikely — "add a `--verbose` flag that prints DEBUG-level logs",
+"refactor `_resolve()` to use `Path.resolve()` instead of manual
+prefix-stripping". Or when the work is exploratory and you'll
+discard it (testing whether an architecture is even feasible
+before committing). Or when iterating fast and the cost of being
+wrong is "rerun the workflow", not "ship a bug."
 
-### When tdd wins
-
-When a regression would be expensive — auth flows, payment paths,
-data-integrity invariants, security boundaries — tdd's test-first
-shape pins behavior in a way canonical doesn't. The Tweedles can't
-silently drop a contract requirement because Hatter's tests would
-catch it. The extra ~30% spend buys a stronger safety guarantee.
-
-Tdd is also better when **you don't trust the directive yet**.
-canonical assumes the directive is rich enough to drive
-implementation; tdd assumes Hatter's tests will surface the
-directive's ambiguities before Tweedles commit to an interpretation.
+The extra ~30% spend on tdd buys directive-alignment insurance.
+When the failure mode is cheap, the insurance isn't always worth
+it.
 
 ## Adding your own workflow
 
