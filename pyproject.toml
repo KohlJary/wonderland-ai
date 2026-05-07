@@ -30,16 +30,21 @@ dependencies = [
 
 [project.scripts]
 wonderland = "wonderland.cli:main"
+wonderland-tui = "wonderland.tui.app:main"
 
 [project.optional-dependencies]
 redis = [
     "redis>=5.2",
+]
+tui = [
+    "textual>=0.85",  # P8 user-facing interface — TUI now, web later
 ]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "redis>=5.2",  # full test coverage includes the Redis path
+    "textual>=0.85",  # so tests can exercise the TUI module
 ]
 
 [tool.hatch.build.targets.wheel]

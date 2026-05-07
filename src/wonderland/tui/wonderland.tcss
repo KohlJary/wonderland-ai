@@ -1,0 +1,71 @@
+/* Wonderland TUI stylesheet — default theme: cyan + purple.
+   Multi-scheme support (htop-style F-key cycling) planned for a
+   later sub-phase; this is the default that ships. */
+
+Screen {
+    layers: base overlay;
+    background: #0a0a14;
+    color: #e6e6f0;
+}
+
+Header {
+    background: #2d1b4e;
+    color: #00d9d9;
+}
+
+Footer {
+    background: #1a0f2e;
+    color: #b794f4;
+}
+
+Footer > .footer--key {
+    color: #00d9d9;
+    background: #1a0f2e;
+}
+
+Footer > .footer--description {
+    color: #e6e6f0;
+}
+
+#library-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: #1f1438;
+    color: #00d9d9;
+}
+
+#summary-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: #1f1438;
+    color: #e6e6f0;
+    height: auto;
+}
+
+#meetings-label,
+#agents-label,
+#utterances-label {
+    padding: 1 2 0 2;
+    margin-top: 1;
+    color: #b794f4;
+}
+
+DataTable {
+    margin: 0 2 1 2;
+    background: #0a0a14;
+    color: #e6e6f0;
+}
+
+DataTable > .datatable--header {
+    background: #2d1b4e;
+    color: #00d9d9;
+}
+
+DataTable > .datatable--cursor {
+    background: #00bfa5;
+    color: #0a0a14;
+}
+
+DataTable > .datatable--hover {
+    background: #1f1438;
+}
