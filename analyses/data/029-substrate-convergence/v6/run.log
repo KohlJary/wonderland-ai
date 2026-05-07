@@ -1,0 +1,351 @@
+Skeleton:     fullstack-fastapi-react → /tmp/wonderland-m25-pomodoro-v6
+
+==============================================================================
+Running workflow 'tdd' live
+==============================================================================
+Project root: /tmp/wonderland-m25-pomodoro-v6
+Directive:    Build a pomodoro tracker. Users start a 25-minute focus session, get a notification when it ends, then take a 5-minute break. Sessions are saved to a personal history that the user can review (today's count, this week, all-time). Settings let the user adjust session and break lengths. No auth — single-user local app, but design with a real database so multi-user can be added later.
+Runner:       budget=$6.00 cap, timeout=off (turn-based, no wall-clock cap), quiescence_fallback=300s
+
+──────────────────────────────────────────────────────────────────────────────
+  M1 (The Caucus Race) START · scoping · roster=['alice', 'cheshire_cat', 'queen_of_hearts'] · seeds=0
+  goal: produce user stories + an architectural ADR + GDPR rulings
+──────────────────────────────────────────────────────────────────────────────
+  [t=  0.00s] dodo               directive      →caucus **M1 — The Caucus Race.**
+  [t= 25.61s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Complete a break and start the next session
+                             ↳ story: Review today's completed sessions
+                             ↳ story: Review historical session data
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Abandon a session without affecting history
+  [t= 29.38s] queen_of_hearts    question       →caucus Alice, before I assess these stories for data-handling and compliance implications: what is the scop…
+[cheshire_cat] parse error on attempt 1, retrying: CatResponseParseError: CatResponse response failed schema validation: 1 validation error for CatResponse
+  Value error, CatResponse: decision='proposal' requires the `adr` field. A proposal without an ADR is prose, not an architectural commitment — the team has nothing to compose against. If you don't yet have a decision concrete enough to record, choose 'question' or 'reframe' instead. If you do, name the tradeoffs explicitly (mark uncertain ones with what would have to be true to settle them) and ship the ADR. [type=value_error, input_value={'decision': 'proposal', ... session?', 'adr': None}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+[cheshire_cat] parse retry succeeded on attempt 2
+  [t= 36.72s] cheshire_cat       question       →caucus Six stories, and I'm reading them as a single architectural surface: the shape of time and state in …
+  [t= 36.72s] <thread_monitor> running → stuck
+  [t= 36.72s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); all members idle). The team has paused with open expe…
+  [t=337.34s] <thread_monitor> running → quiescent
+  [t=337.34s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  [t=337.34s] <thread_monitor> running → complete
+  [t=337.34s] <complete>
+
+  M1 (The Caucus Race) END · COMPLETE · 337.3s · 5 calls · $0.0675
+  artifacts: story×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M2 (The Rabbit's Errand) START · decomposition · roster=['alice', 'cheshire_cat', 'white_rabbit'] · seeds=1
+  goal: decompose the ADR + stories into v1 tickets, with the user-facing point preserved
+──────────────────────────────────────────────────────────────────────────────
+  [t=337.34s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Complete a break and start the next session
+                             ↳ story: Review today's completed sessions
+                             ↳ story: Review historical session data
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Abandon a session without affecting history
+  [t=337.34s] dodo               directive      →caucus **M2 — The Rabbit's Errand.**
+  [t=356.07s] white_rabbit       ticket         →caucus Reading the six stories as locked context. The core flow is: user initiates a focus session → comple…
+                             ↳ ticket: Initialize session state machine and data model
+                             ↳ ticket: Frontend: session start button and timer display
+                             ↳ ticket: Frontend: session complete button
+                             ↳ ticket: Backend: fetch today's sessions (review endpoint)
+                             ↳ ticket: Frontend: today's sessions review card
+                             ↳ ticket: Tweedles: negotiate session state handoff contract
+  [t=356.07s] <thread_monitor> running → quiescent
+  [t=356.07s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  [t=356.07s] <thread_monitor> running → complete
+  [t=356.07s] <complete>
+
+  M2 (The Rabbit's Errand) END · COMPLETE · 18.7s · 3 calls · $0.0462
+  artifacts: story×6, ticket×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M2.5 (Advice from a Caterpillar) START · composition · roster=['alice', 'caterpillar', 'white_rabbit'] · seeds=2
+  goal: group v1 tickets into user-facing features that span the stack coherently
+──────────────────────────────────────────────────────────────────────────────
+  [t=356.07s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Complete a break and start the next session
+                             ↳ story: Review today's completed sessions
+                             ↳ story: Review historical session data
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Abandon a session without affecting history
+  [t=356.07s] white_rabbit       ticket         →caucus Reading the six stories as locked context. The core flow is: user initiates a focus session → comple…
+                             ↳ ticket: Initialize session state machine and data model
+                             ↳ ticket: Frontend: session start button and timer display
+                             ↳ ticket: Frontend: session complete button
+                             ↳ ticket: Backend: fetch today's sessions (review endpoint)
+                             ↳ ticket: Frontend: today's sessions review card
+                             ↳ ticket: Tweedles: negotiate session state handoff contract
+  [t=356.07s] dodo               directive      →caucus **M2.5 — Advice from a Caterpillar.**
+  [t=361.64s] white_rabbit       feature        →caucus Six stories, six core capabilities. Each story maps to one feature; no cross-cutting needed. All are…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Complete a break and start the next session
+                             ↳ feature: Review today's completed sessions
+                             ↳ feature: Review historical session data
+                             ↳ feature: Adjust session and break lengths
+                             ↳ feature: Abandon a session without affecting history
+  [t=452.24s] caterpillar        question       →caucus Before I ship features, I need to ask Rabbit and the Tweedles a coherence question: **Does the state…
+  [t=452.24s] <thread_monitor> running → stuck
+  [t=452.24s] dodo               nudge          →caucus Thread composition → stuck (1 open expectation(s); all members idle). The team has paused with open …
+  [t=457.17s] white_rabbit       question       →caucus Caterpillar is right to surface this. Reading the tickets: T001 defines the break state machine in t…
+  [t=457.17s] <thread_monitor> running → stuck
+  [t=457.17s] dodo               nudge          →caucus Thread composition → stuck (1 open expectation(s); all members idle). The team has paused with open …
+  [t=757.77s] <thread_monitor> running → quiescent
+  [t=757.77s] dodo               acknowledgment →caucus Thread composition → complete. The team has gone quiet with no open expectations; the directive is s…
+  [t=757.77s] <thread_monitor> running → complete
+  [t=757.77s] <complete>
+
+  M2.5 (Advice from a Caterpillar) END · COMPLETE · 401.7s · 9 calls · $0.0995
+  artifacts: feature×6, story×6, ticket×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M3 (Tweedledum and Tweedledee) START · contract-negotiation · roster=['tweedledee', 'tweedledum'] · seeds=1
+  goal: negotiate contracts the Tweedles will implement against
+──────────────────────────────────────────────────────────────────────────────
+  [t=757.77s] white_rabbit       feature        →caucus Six stories, six core capabilities. Each story maps to one feature; no cross-cutting needed. All are…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Complete a break and start the next session
+                             ↳ feature: Review today's completed sessions
+                             ↳ feature: Review historical session data
+                             ↳ feature: Adjust session and break lengths
+                             ↳ feature: Abandon a session without affecting history
+  [t=757.77s] dodo               directive      →caucus **M3 — Tweedledum and Tweedledee.**
+  [t=781.52s] tweedledum         contract_note  →caucus Drafting contracts for the three core seams: session start, session complete, and today's sessions f…
+                             ↳ contract_note: Session Start Request/Response Shape
+                             ↳ contract_note: Session Complete Request/Response Shape
+                             ↳ contract_note: Today's Sessions Fetch Shape
+  [t=817.72s] tweedledee         contract_note  →caucus (no body)
+                             ↳ contract_note: Session state mutations: start, complete, abandon
+                             ↳ contract_note: Today's sessions query and refresh semantics
+                             ↳ contract_note: Historical sessions query: date range and aggregation
+                             ↳ contract_note: Session duration configuration: GET/PATCH defaults
+  [t=817.72s] <thread_monitor> running → quiescent
+  [t=817.72s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  [t=817.72s] <thread_monitor> running → complete
+  [t=817.72s] <complete>
+
+  M3 (Tweedledum and Tweedledee) END · COMPLETE · 60.0s · 14 calls · $0.1343
+  artifacts: contract_note×7, feature×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M4 (The Mad Tea Party) START · test-scenarios · roster=['alice', 'mad_hatter', 'tweedledee', 'tweedledum'] · seeds=4
+  goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
+──────────────────────────────────────────────────────────────────────────────
+  [t=817.72s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Complete a break and start the next session
+                             ↳ story: Review today's completed sessions
+                             ↳ story: Review historical session data
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Abandon a session without affecting history
+  [t=817.72s] white_rabbit       feature        →caucus Six stories, six core capabilities. Each story maps to one feature; no cross-cutting needed. All are…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Complete a break and start the next session
+                             ↳ feature: Review today's completed sessions
+                             ↳ feature: Review historical session data
+                             ↳ feature: Adjust session and break lengths
+                             ↳ feature: Abandon a session without affecting history
+  [t=817.72s] tweedledum         contract_note  →caucus Drafting contracts for the three core seams: session start, session complete, and today's sessions f…
+                             ↳ contract_note: Session Start Request/Response Shape
+                             ↳ contract_note: Session Complete Request/Response Shape
+                             ↳ contract_note: Today's Sessions Fetch Shape
+  [t=817.72s] tweedledee         contract_note  →caucus (no body)
+                             ↳ contract_note: Session state mutations: start, complete, abandon
+                             ↳ contract_note: Today's sessions query and refresh semantics
+                             ↳ contract_note: Historical sessions query: date range and aggregation
+                             ↳ contract_note: Session duration configuration: GET/PATCH defaults
+  [t=817.72s] dodo               directive      →caucus **M4 — The Mad Tea Party.**
+[late-publish] tweedledum → thread 'contract-negotiation' (already COMPLETE) — suppressing contract_note: 'Responding to your four notes and refining the first three. Sessions are the load-bearing entity — starting from what st'
+[late-publish] tweedledee → thread 'contract-negotiation' (already COMPLETE) — suppressing implementation: 'Responded to your three core seams with frontend impact filled. Three open questions surfaced — default duration ownersh'
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[mad_hatter] parse error on attempt 1, retrying: HatterResponseParseError: no JSON block found in HatterResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+  [t=1017.85s] tweedledee         implementation →caucus [bus record coerced to implementation: write_file calls landed for tests/test_session_004_historical…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+[mad_hatter] parse retry succeeded on attempt 2
+  [t=1029.93s] alice              concern        →caucus Tweedledee: I need to flag something about the test files you've shipped. The Dodo's directive was e…
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=1116.32s] tweedledum         implementation →caucus Tweedledee shipped test files without a bus record — I need to see what contract surfaces those test…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=1123.80s] alice              concern        →caucus I need to stop and name what's happening on this thread, because the team's workflow is breaking dow…
+  [t=1131.27s] mad_hatter         test_scenario  →caucus Shipped three Hatter-signed test scenarios for features 004–006 (historical data, config changes, se…
+                             ↳ test_scenario: Historical data query edge cases — date validation, pagination, large result sets, timezone boundaries
+                             ↳ test_scenario: Session configuration edge cases — validation, partial updates, persistence, concurrent changes
+                             ↳ test_scenario: Session abandonment idempotency and state transitions — double-tap, completed session, nonexistent
+  [t=1137.49s] alice              concern        →caucus Hatter: I need to name the sequence problem clearly, because your scenarios are good work but they'r…
+  [t=1208.23s] tweedledee         implementation →caucus **Contract Ambiguity Surfaced and Fixed: API Path Prefix**
+                             ↳ implementation: Files written in tweedledee's frontend turn
+
+  M4 (The Mad Tea Party) END · MEETING_BUDGET · 390.5s · 146 calls · $1.7207
+  artifacts: contract_note×7, feature×6, implementation×3, story×6, test_scenario×3
+
+──────────────────────────────────────────────────────────────────────────────
+  M5 START · implementation · roster=['tweedledee', 'tweedledum'] · seeds=5
+  goal: implement to make Hatter's failing tests pass (red → green)
+──────────────────────────────────────────────────────────────────────────────
+  [t=1208.23s] <thread_monitor> running → complete
+  [t=1208.23s] <complete>
+  [t=1208.23s] white_rabbit       feature        →caucus Six stories, six core capabilities. Each story maps to one feature; no cross-cutting needed. All are…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Complete a break and start the next session
+                             ↳ feature: Review today's completed sessions
+                             ↳ feature: Review historical session data
+                             ↳ feature: Adjust session and break lengths
+                             ↳ feature: Abandon a session without affecting history
+  [t=1208.23s] tweedledum         contract_note  →caucus Drafting contracts for the three core seams: session start, session complete, and today's sessions f…
+                             ↳ contract_note: Session Start Request/Response Shape
+                             ↳ contract_note: Session Complete Request/Response Shape
+                             ↳ contract_note: Today's Sessions Fetch Shape
+  [t=1208.23s] tweedledee         contract_note  →caucus (no body)
+                             ↳ contract_note: Session state mutations: start, complete, abandon
+                             ↳ contract_note: Today's sessions query and refresh semantics
+                             ↳ contract_note: Historical sessions query: date range and aggregation
+                             ↳ contract_note: Session duration configuration: GET/PATCH defaults
+  [t=1208.23s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Complete a break and start the next session
+                             ↳ story: Review today's completed sessions
+                             ↳ story: Review historical session data
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Abandon a session without affecting history
+  [t=1208.23s] mad_hatter         test_scenario  →caucus Shipped three Hatter-signed test scenarios for features 004–006 (historical data, config changes, se…
+                             ↳ test_scenario: Historical data query edge cases — date validation, pagination, large result sets, timezone boundaries
+                             ↳ test_scenario: Session configuration edge cases — validation, partial updates, persistence, concurrent changes
+                             ↳ test_scenario: Session abandonment idempotency and state transitions — double-tap, completed session, nonexistent
+  [t=1208.23s] dodo               directive      →caucus **M5.**
+[late-publish] tweedledee → thread 'test-scenarios' (already COMPLETE) — suppressing question: 'Hatter, I need specifics on two of your scenario hypotheses before I can wire the frontend cleanly.'
+[late-publish] alice → thread 'test-scenarios' (already COMPLETE) — suppressing concern: 'Tweedledum: I appreciate the contract-clarity work — surfacing the path-prefix mismatch and fixing it is exactly right. '
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+  [t=1255.63s] tweedledee         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/api/messages.py, test…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+[late-publish] tweedledum → thread 'test-scenarios' (already COMPLETE) — suppressing implementation: "Hatter, I need to read the test files Tweedledee landed to understand what backend contract surfaces they're exercising."
+  [t=1262.58s] <thread_monitor> running → quiescent
+  [t=1262.58s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  [t=1262.59s] <thread_monitor> running → complete
+  [t=1262.59s] <complete>
+
+  M5 END · COMPLETE · 54.4s · 37 calls · $0.3841
+  artifacts: contract_note×7, feature×6, implementation×1, story×6, test_scenario×3
+
+──────────────────────────────────────────────────────────────────────────────
+  M6 (The Trial) START · review · roster=['caterpillar', 'tweedledee', 'tweedledum'] · seeds=2
+  goal: Caterpillar reviews the shipped code; surface findings
+──────────────────────────────────────────────────────────────────────────────
+  [t=1262.59s] white_rabbit       feature        →caucus Six stories, six core capabilities. Each story maps to one feature; no cross-cutting needed. All are…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Complete a break and start the next session
+                             ↳ feature: Review today's completed sessions
+                             ↳ feature: Review historical session data
+                             ↳ feature: Adjust session and break lengths
+                             ↳ feature: Abandon a session without affecting history
+  [t=1262.59s] tweedledee         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/api/messages.py, test…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+  [t=1262.59s] dodo               directive      →caucus **M6 — The Trial.**
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing test_scenario: "I've reviewed Tweedledee's test files for features 004–006. They're comprehensive and well-structured—Alice's personas ("
+  [t=1315.09s] tweedledee         concern        →caucus **Per-feature review: contract-to-code integrity issues found.**
+[late-publish] tweedledum → thread 'test-scenarios' (already COMPLETE) — suppressing concern: "Contract surface verified. Tweedledee's path-prefix fix is correct and necessary. All backend endpoints now reachable at"
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing concern: "Read Tweedledee's three test files (004–006 historical, config, abandon). Contract surfaces are clear:"
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing concern: "Alice: you're right to name the sequence break. But I want to clarify what actually happened, because it's not quite cha"
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing question: "Alice, I read your concern and I see the sequence issue you're naming. Before I answer about holding—let me ask you dire"
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+[late-publish] tweedledum → thread 'implementation' (already COMPLETE) — suppressing implementation: '[bus record coerced to implementation: write_file calls landed for src/backend/api/sessions.py but the LLM chose `silenc'
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing concern: "Alice and Hatter: I need to surface what the artifact registry looks like right now. The Dodo's directive was clear — th"
+  [t=1407.45s] caterpillar        review         →caucus Code review of session endpoints and models (features 001–006). Three block-severity issues prevent …
+                             ↳ review: Session Endpoints and Models (sessions.py, models.py)
+[caterpillar] deliberate() raised BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'messages.14: user messages must have non-empty content'}, 'request_id': 'req_011CaopsaQF4SrXuxsYnk36s'} — treating as silence
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+[late-publish] tweedledum → thread 'implementation' (already COMPLETE) — suppressing implementation: '[bus record coerced to implementation: write_file calls landed for src/backend/api/sessions.py, src/backend/api/sessions'
+  [t=1520.52s] tweedledee         implementation →caucus Caterpillar review findings resolved. All three block-severity issues fixed: (1) 409 response now re…
+                             ↳ implementation: Caterpillar review fixes: 409 response shape, model rename, timezone handling
+
+  M6 (The Trial) END · MEETING_BUDGET · 257.9s · 121 calls · $1.7876
+  artifacts: feature×6, implementation×2, review×1
+
+==============================================================================
+Summary
+==============================================================================
+Total elapsed:  1520.5s
+Total cost:     $4.2399  (cap $6.00)
+Total LLM calls: 335
+
+Per-agent:
+  tweedledum         calls=116 cost=$1.4327
+  tweedledee         calls=109 cost=$1.2965
+  mad_hatter         calls= 71 cost=$0.9588
+  caterpillar        calls= 22 cost=$0.3904
+  alice              calls=  9 cost=$0.0700
+  cheshire_cat       calls=  4 cost=$0.0432
+  white_rabbit       calls=  3 cost=$0.0323
+  queen_of_hearts    calls=  1 cost=$0.0159
+
+Artifacts on disk:
+  contract-notes/ (7 files)
+    contract-note-001-session-start-request-response-shape.md
+    contract-note-002-session-complete-request-response-shape.md
+    contract-note-003-today-s-sessions-fetch-shape.md
+    contract-note-004-session-state-mutations-start-complete-abandon.md
+    contract-note-005-today-s-sessions-query-and-refresh-semantics.md
+    contract-note-006-historical-sessions-query-date-range-and-aggregation.md
+    contract-note-007-session-duration-configuration-get-patch-defaults.md
+  features/ (6 files)
+    feature-001-start-and-complete-a-focus-session.md
+    feature-002-complete-a-break-and-start-the-next-session.md
+    feature-003-review-today-s-completed-sessions.md
+    feature-004-review-historical-session-data.md
+    feature-005-adjust-session-and-break-lengths.md
+    feature-006-abandon-a-session-without-affecting-history.md
+  implementations/ (1 files)
+    implementation-001-caterpillar-review-fixes-409-response-shape-model-rename-timezone-handling.md
+  reviews/ (2 files)
+    001_session_endpoints_and_models.md
+    review-001-session-endpoints-and-models-sessions-py-models-py.md
+  stories/ (6 files)
+    story-001-start-and-complete-a-focus-session.md
+    story-002-complete-a-break-and-start-the-next-session.md
+    story-003-review-today-s-completed-sessions.md
+    story-004-review-historical-session-data.md
+    story-005-adjust-session-and-break-lengths.md
+    story-006-abandon-a-session-without-affecting-history.md
+  test-scenarios/ (25 files)
+    scenario-001-historical-data-query-edge-cases-date-validation-pagination-large-result-sets-timezone-boundaries.md
+    scenario-002-session-configuration-edge-cases-validation-partial-updates-persistence-concurrent-changes.md
+    scenario-003-session-abandonment-idempotency-and-state-transitions-double-tap-completed-session-nonexistent.md
+    scenario-004-historical-query-across-dst-boundary-returns-correct-count-despite-timezone-shift.md
+    scenario-005-session-start-during-concurrent-config-patch-reads-config-consistently-no-dirty-reads-or-state-mismatch.md
+    scenario-006-range-query-for-1000-sessions-responds-in-2-seconds-without-memory-spike-uses-database-pagination-not-app-level-slicing.md
+    scenario-007-rapid-fire-delete-three-retries-in-50ms-remains-idempotent-no-state-flip-flops-or-corrupted-invariants.md
+    scenario-008-session-created-at-23-59-59-utc-included-in-today-s-range-session-created-at-00-00-01-next-day-excluded.md
+    test-scenario-001-marcus-focus-session-happy-path.md
+    test-scenario-002-yuki-break-and-next-session.md
+    test-scenario-003-dev-today-review.md
+    test-scenario-004-hatter-historical-data-edge-cases.md
+    test-scenario-004-historical-data-queries.md
+    test-scenario-004-priya-historical-data.md
+    test-scenario-005-config-duration-changes.md
+    test-scenario-005-hatter-config-edge-cases.md
+    test-scenario-005-sam-config-adjustment.md
+    test-scenario-006-abandon-session-delete.md
+    test-scenario-006-hatter-abandon-idempotency.md
+    test-scenario-006-jordan-abandon-session.md
+    test-scenario-007-timezone-dst-boundary.md
+    test-scenario-008-concurrent-config-start-race.md
+    test-scenario-009-large-range-query-stress.md
+    test-scenario-010-abandon-idempotency-under-retry.md
+    test-scenario-011-midnight-day-boundary-timezone.md
+  tickets/ (6 files)
+    ticket-001-initialize-session-state-machine-and-data-model.md
+    ticket-002-frontend-session-start-button-and-timer-display.md
+    ticket-003-frontend-session-complete-button.md
+    ticket-004-backend-fetch-today-s-sessions-review-endpoint.md
+    ticket-005-frontend-today-s-sessions-review-card.md
+    ticket-006-tweedles-negotiate-session-state-handoff-contract.md

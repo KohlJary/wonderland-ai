@@ -81,6 +81,7 @@ from wonderland.story import StoryRegistry
 from wonderland.telemetry import Telemetry
 from wonderland.test_scenario import TestScenarioRegistry
 from wonderland.thread_monitor import ThreadMonitor, ThreadState, ThreadStateChange
+from wonderland.feature import FeatureRegistry
 from wonderland.ticket import TicketRegistry
 from wonderland.tools import Tools
 from wonderland.utterance import Utterance
@@ -216,7 +217,19 @@ class Runner:
     # 300s is generous enough to outlast any normal tool loop while
     # still bounding pathological cases.
     DEFAULT_QUIESCENCE_SECONDS: float = 300.0
-    DEFAULT_TIMEOUT_SECONDS: float = 600.0
+    # Wall-clock global timeout — None by default. Wonderland is turn-
+    # based; agents take turns, deliberate, ship work or go silent.
+    # Runaway-loop protection is GLOBAL_BUDGET's job (each turn costs
+    # money, the cap fires before any wall clock would meaningfully
+    # protect anything). Wall-clock-as-safety-net lives at the
+    # ThreadMonitor layer (network-hung deliberation, agent crash mid-
+    # state-transition) — see ThreadMonitor's quiescence_seconds.
+    # Per the project_no_wall_clock_in_turn_based memory and analysis
+    # 029's M5-RUNNING-outcome bug: applying clock semantics at the
+    # runner layer is a category error and was actively causing
+    # downstream meeting starvation. Removed as a default; users who
+    # want a wall-clock cap can pass timeout_seconds=N explicitly.
+    DEFAULT_TIMEOUT_SECONDS: float | None = None
     BUDGET_WARNING_FRACTION: float = 0.80
     BUDGET_CHECK_INTERVAL_SECONDS: float = 1.0
 
@@ -229,7 +242,7 @@ class Runner:
         project_root: Path,
         budget_dollars: float | None = DEFAULT_BUDGET_DOLLARS,
         quiescence_seconds: float = DEFAULT_QUIESCENCE_SECONDS,
-        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS,
         telemetry: Telemetry | None = None,
         run_id: str | None = None,
         roster: ThreadRoster | None = None,
@@ -306,7 +319,7 @@ class Runner:
         llm_factory: Callable[[str, Telemetry], LLMClient] | None = None,
         budget_dollars: float | None = DEFAULT_BUDGET_DOLLARS,
         quiescence_seconds: float = DEFAULT_QUIESCENCE_SECONDS,
-        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS,
         telemetry: Telemetry | None = None,
         run_id: str | None = None,
     ) -> Runner:
@@ -388,6 +401,7 @@ class Runner:
                 bus=bus,
                 llm=llm_factory("white_rabbit", telemetry),
                 ticket_registry=TicketRegistry(project_root),
+                feature_registry=FeatureRegistry(project_root),
             ),
             "mad_hatter": MadHatter(
                 memory=memories["mad_hatter"],
@@ -508,7 +522,14 @@ class Runner:
             self._budget_task = asyncio.create_task(
                 self._check_budget(), name="runner-budget-checker"
             )
-        self._timeout_task = asyncio.create_task(self._enforce_timeout(), name="runner-timeout")
+        # Wall-clock timeout — opt-in only. See DEFAULT_TIMEOUT_SECONDS
+        # for the rationale (turn-based system, GLOBAL_BUDGET handles
+        # runaway loops, applying clock semantics at this layer is a
+        # category error that caused real bugs in analysis 029).
+        if self.timeout_seconds is not None:
+            self._timeout_task = asyncio.create_task(
+                self._enforce_timeout(), name="runner-timeout"
+            )
         for name, agent in self.agents.items():
             self._agent_tasks.append(asyncio.create_task(agent.run(), name=f"{name}-run"))
 
@@ -571,6 +592,18 @@ class Runner:
         boundaries. Non-empty signals the slow-deliberation pattern
         roadmap 29497820 documents."""
         return list(self._lost_utterances)
+
+    def mark_thread_complete(self, thread_id: str, reason: str) -> None:
+        """Force-mark a thread COMPLETE in the monitor.
+
+        Called by run_workflow when a meeting exits via a non-COMPLETE
+        terminal outcome (MEETING_BUDGET today). Without this, an
+        in-flight deliberation whose LLM call returns after the meeting
+        closed would publish into a thread the monitor still considers
+        RUNNING — bypassing the late-publish guard and landing on an
+        abandoned thread.
+        """
+        self._monitor.mark_complete(thread_id, reason)
 
     async def teardown(self) -> None:
         """Stop everything and write the per-run telemetry record."""
@@ -738,13 +771,40 @@ class Runner:
 
         return published
 
-    async def events(self) -> AsyncIterator[RunnerEvent]:
-        """Yield Runner events until completion, abort, or timeout."""
+    async def events(
+        self,
+        *,
+        terminal_thread_id: str | None = None,
+    ) -> AsyncIterator[RunnerEvent]:
+        """Yield Runner events until completion, abort, or timeout.
+
+        ``terminal_thread_id``: when set, only auto-return on
+        ``complete`` events matching that thread. Stale complete
+        events from other threads (e.g. M(N-1)'s mark_thread_complete
+        firing during M(N)'s events loop) are yielded but don't end
+        iteration. Required for the workflow's per-meeting events
+        loop — otherwise a leaked complete from a prior meeting ends
+        the new meeting before any agent deliberates (analysis 030's
+        M5-RUNNING-outcome bug).
+
+        Default ``None``: any complete ends iteration. Backward-
+        compatible with the CLI and test_runner callers that drive
+        single-thread runs and expect the original behavior.
+        """
         while True:
             event = await self._event_queue.get()
             yield event
-            if event.kind in ("complete", "aborted", "timeout"):
+            if event.kind in ("aborted", "timeout"):
                 return
+            if event.kind == "complete":
+                if terminal_thread_id is None:
+                    # No filter: any complete ends iteration (legacy
+                    # contract for single-thread callers).
+                    return
+                event_thread_id = (event.payload or {}).get("thread_id")
+                if event_thread_id is None or event_thread_id == terminal_thread_id:
+                    return
+                # Stale complete from a different thread — keep going.
 
     async def respond_to_escalation(self, prompt_id: str, response: str) -> None:
         """Feed a human response into a pending escalation prompt.
@@ -874,14 +934,19 @@ class Runner:
                 )
 
     async def _enforce_timeout(self) -> None:
-        await asyncio.sleep(self.timeout_seconds)
+        # Only scheduled when timeout_seconds is not None — see setup().
+        # Belt-and-suspenders: bail if it somehow gets called with None.
+        timeout = self.timeout_seconds
+        if timeout is None:
+            return
+        await asyncio.sleep(timeout)
         if self._completed or self._aborted:
             return
         await self._event_queue.put(
             RunnerEvent(
                 kind="timeout",
                 elapsed=self._elapsed(),
-                payload={"timeout_seconds": self.timeout_seconds},
+                payload={"timeout_seconds": timeout},
             )
         )
 

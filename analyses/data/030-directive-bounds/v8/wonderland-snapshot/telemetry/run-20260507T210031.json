@@ -1,0 +1,3063 @@
+{
+  "run_id": "20260507T210031",
+  "model": "claude-haiku-4-5-20251001",
+  "pricing_per_mtok": {
+    "input": 1.0,
+    "output": 5.0,
+    "cache_write_5m": 1.25,
+    "cache_read": 0.1
+  },
+  "total_cost": 3.564265,
+  "total_calls": 331,
+  "per_agent": {
+    "cheshire_cat": {
+      "calls": 5,
+      "input_tokens": 5607,
+      "output_tokens": 1618,
+      "cache_creation_input_tokens": 10835,
+      "cache_read_input_tokens": 39883,
+      "cost": 0.03122905
+    },
+    "alice": {
+      "calls": 8,
+      "input_tokens": 12191,
+      "output_tokens": 3432,
+      "cache_creation_input_tokens": 7712,
+      "cache_read_input_tokens": 53984,
+      "cost": 0.0443894
+    },
+    "queen_of_hearts": {
+      "calls": 1,
+      "input_tokens": 202,
+      "output_tokens": 245,
+      "cache_creation_input_tokens": 11765,
+      "cache_read_input_tokens": 0,
+      "cost": 0.016133250000000002
+    },
+    "white_rabbit": {
+      "calls": 2,
+      "input_tokens": 1164,
+      "output_tokens": 2994,
+      "cache_creation_input_tokens": 9690,
+      "cache_read_input_tokens": 9540,
+      "cost": 0.029200499999999997
+    },
+    "caterpillar": {
+      "calls": 30,
+      "input_tokens": 146672,
+      "output_tokens": 18117,
+      "cache_creation_input_tokens": 85617,
+      "cache_read_input_tokens": 745746,
+      "cost": 0.41885285000000005
+    },
+    "tweedledum": {
+      "calls": 110,
+      "input_tokens": 396157,
+      "output_tokens": 58351,
+      "cache_creation_input_tokens": 211053,
+      "cache_read_input_tokens": 3041044,
+      "cost": 1.2558326499999999
+    },
+    "tweedledee": {
+      "calls": 128,
+      "input_tokens": 423395,
+      "output_tokens": 34902,
+      "cache_creation_input_tokens": 252511,
+      "cache_read_input_tokens": 3580361,
+      "cost": 1.2715798500000002
+    },
+    "mad_hatter": {
+      "calls": 47,
+      "input_tokens": 168449,
+      "output_tokens": 28343,
+      "cache_creation_input_tokens": 82889,
+      "cache_read_input_tokens": 832726,
+      "cost": 0.49704785
+    }
+  },
+  "entries": [
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 477,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 9753,
+      "cache_read_input_tokens": 0,
+      "cost": 0.012763,
+      "timestamp": "2026-05-07T21:00:32.866422+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 160,
+      "output_tokens": 2456,
+      "cache_creation_input_tokens": 7712,
+      "cache_read_input_tokens": 0,
+      "cost": 0.02208,
+      "timestamp": "2026-05-07T21:01:00.195741+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 299,
+      "output_tokens": 25,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.001195,
+      "timestamp": "2026-05-07T21:01:00.977821+00:00"
+    },
+    {
+      "agent": "queen_of_hearts",
+      "input_tokens": 202,
+      "output_tokens": 245,
+      "cache_creation_input_tokens": 11765,
+      "cache_read_input_tokens": 0,
+      "cost": 0.016133,
+      "timestamp": "2026-05-07T21:01:04.139227+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 630,
+      "output_tokens": 723,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9753,
+      "cost": 0.00522,
+      "timestamp": "2026-05-07T21:01:10.164243+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 779,
+      "output_tokens": 158,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 9753,
+      "cost": 0.002544,
+      "timestamp": "2026-05-07T21:01:11.782941+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 405,
+      "output_tokens": 457,
+      "cache_creation_input_tokens": 777,
+      "cache_read_input_tokens": 9753,
+      "cost": 0.004637,
+      "timestamp": "2026-05-07T21:01:14.296622+00:00"
+    },
+    {
+      "agent": "cheshire_cat",
+      "input_tokens": 3316,
+      "output_tokens": 261,
+      "cache_creation_input_tokens": 305,
+      "cache_read_input_tokens": 10624,
+      "cost": 0.006065,
+      "timestamp": "2026-05-07T21:01:18.816575+00:00"
+    },
+    {
+      "agent": "white_rabbit",
+      "input_tokens": 462,
+      "output_tokens": 2160,
+      "cache_creation_input_tokens": 9540,
+      "cache_read_input_tokens": 0,
+      "cost": 0.023187,
+      "timestamp": "2026-05-07T21:01:20.673799+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 502,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.001368,
+      "timestamp": "2026-05-07T21:01:21.492905+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 902,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.001768,
+      "timestamp": "2026-05-07T21:01:22.536450+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 1374,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 7253,
+      "cache_read_input_tokens": 5176,
+      "cost": 0.011053,
+      "timestamp": "2026-05-07T21:01:23.459515+00:00"
+    },
+    {
+      "agent": "white_rabbit",
+      "input_tokens": 702,
+      "output_tokens": 834,
+      "cache_creation_input_tokens": 150,
+      "cache_read_input_tokens": 9540,
+      "cost": 0.006013,
+      "timestamp": "2026-05-07T21:01:28.353744+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 877,
+      "output_tokens": 124,
+      "cache_creation_input_tokens": 10556,
+      "cache_read_input_tokens": 5176,
+      "cost": 0.01521,
+      "timestamp": "2026-05-07T21:01:30.260766+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 228,
+      "output_tokens": 112,
+      "cache_creation_input_tokens": 875,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.003455,
+      "timestamp": "2026-05-07T21:01:31.641843+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 877,
+      "output_tokens": 232,
+      "cache_creation_input_tokens": 10151,
+      "cache_read_input_tokens": 5176,
+      "cost": 0.015243,
+      "timestamp": "2026-05-07T21:01:31.724353+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 635,
+      "output_tokens": 259,
+      "cache_creation_input_tokens": 875,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.004597,
+      "timestamp": "2026-05-07T21:01:33.460035+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1309,
+      "output_tokens": 125,
+      "cache_creation_input_tokens": 142,
+      "cache_read_input_tokens": 16687,
+      "cost": 0.00378,
+      "timestamp": "2026-05-07T21:01:35.438445+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1142,
+      "output_tokens": 97,
+      "cache_creation_input_tokens": 337,
+      "cache_read_input_tokens": 16899,
+      "cost": 0.003738,
+      "timestamp": "2026-05-07T21:01:36.964868+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 746,
+      "output_tokens": 6586,
+      "cache_creation_input_tokens": 805,
+      "cache_read_input_tokens": 17327,
+      "cost": 0.036415,
+      "timestamp": "2026-05-07T21:02:29.602852+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 1854,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.00272,
+      "timestamp": "2026-05-07T21:02:30.449797+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1303,
+      "output_tokens": 56,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003116,
+      "timestamp": "2026-05-07T21:02:30.701907+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1309,
+      "output_tokens": 75,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.003257,
+      "timestamp": "2026-05-07T21:02:30.864787+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2326,
+      "output_tokens": 150,
+      "cache_creation_input_tokens": 5616,
+      "cache_read_input_tokens": 5176,
+      "cost": 0.010614,
+      "timestamp": "2026-05-07T21:02:31.525499+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 88,
+      "output_tokens": 71,
+      "cache_creation_input_tokens": 1300,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003601,
+      "timestamp": "2026-05-07T21:02:32.362272+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 741,
+      "output_tokens": 153,
+      "cache_creation_input_tokens": 2324,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.00549,
+      "timestamp": "2026-05-07T21:02:32.932355+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 126,
+      "output_tokens": 290,
+      "cache_creation_input_tokens": 1306,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.004782,
+      "timestamp": "2026-05-07T21:02:33.025707+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 207,
+      "output_tokens": 57,
+      "cache_creation_input_tokens": 1300,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.00365,
+      "timestamp": "2026-05-07T21:02:33.267484+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 1301,
+      "output_tokens": 253,
+      "cache_creation_input_tokens": 2324,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.00655,
+      "timestamp": "2026-05-07T21:02:34.570231+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 740,
+      "output_tokens": 258,
+      "cache_creation_input_tokens": 1306,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.005236,
+      "timestamp": "2026-05-07T21:02:34.745032+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 281,
+      "output_tokens": 241,
+      "cache_creation_input_tokens": 81,
+      "cache_read_input_tokens": 16627,
+      "cost": 0.00325,
+      "timestamp": "2026-05-07T21:02:36.088030+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 902,
+      "output_tokens": 90,
+      "cache_creation_input_tokens": 664,
+      "cache_read_input_tokens": 17107,
+      "cost": 0.003893,
+      "timestamp": "2026-05-07T21:02:36.486338+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 1456,
+      "output_tokens": 222,
+      "cache_creation_input_tokens": 665,
+      "cache_read_input_tokens": 13186,
+      "cost": 0.004716,
+      "timestamp": "2026-05-07T21:02:36.550991+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1039,
+      "output_tokens": 75,
+      "cache_creation_input_tokens": 51,
+      "cache_read_input_tokens": 16777,
+      "cost": 0.003155,
+      "timestamp": "2026-05-07T21:02:37.711545+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2097,
+      "output_tokens": 271,
+      "cache_creation_input_tokens": 491,
+      "cache_read_input_tokens": 13920,
+      "cost": 0.005458,
+      "timestamp": "2026-05-07T21:02:38.738522+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1091,
+      "output_tokens": 243,
+      "cache_creation_input_tokens": 664,
+      "cache_read_input_tokens": 17107,
+      "cost": 0.004847,
+      "timestamp": "2026-05-07T21:02:38.833913+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1058,
+      "output_tokens": 208,
+      "cache_creation_input_tokens": 155,
+      "cache_read_input_tokens": 16828,
+      "cost": 0.003975,
+      "timestamp": "2026-05-07T21:02:39.194676+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 3090,
+      "output_tokens": 117,
+      "cache_creation_input_tokens": 805,
+      "cache_read_input_tokens": 14496,
+      "cost": 0.006131,
+      "timestamp": "2026-05-07T21:02:40.292016+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2397,
+      "output_tokens": 111,
+      "cache_creation_input_tokens": 1108,
+      "cache_read_input_tokens": 15394,
+      "cost": 0.005876,
+      "timestamp": "2026-05-07T21:02:41.568324+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 1213,
+      "output_tokens": 55,
+      "cache_creation_input_tokens": 1792,
+      "cache_read_input_tokens": 16593,
+      "cost": 0.005387,
+      "timestamp": "2026-05-07T21:02:42.825822+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 809,
+      "output_tokens": 101,
+      "cache_creation_input_tokens": 435,
+      "cache_read_input_tokens": 18458,
+      "cost": 0.003704,
+      "timestamp": "2026-05-07T21:02:43.974738+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1418,
+      "output_tokens": 621,
+      "cache_creation_input_tokens": 805,
+      "cache_read_input_tokens": 17861,
+      "cost": 0.007315,
+      "timestamp": "2026-05-07T21:02:46.080541+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2106,
+      "output_tokens": 165,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.004504,
+      "timestamp": "2026-05-07T21:02:47.830542+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 756,
+      "output_tokens": 162,
+      "cache_creation_input_tokens": 2104,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.005769,
+      "timestamp": "2026-05-07T21:02:49.765041+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1325,
+      "output_tokens": 254,
+      "cache_creation_input_tokens": 2104,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.006798,
+      "timestamp": "2026-05-07T21:02:51.652787+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1466,
+      "output_tokens": 222,
+      "cache_creation_input_tokens": 665,
+      "cache_read_input_tokens": 17921,
+      "cost": 0.005199,
+      "timestamp": "2026-05-07T21:02:54.479774+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1368,
+      "output_tokens": 1278,
+      "cache_creation_input_tokens": 749,
+      "cache_read_input_tokens": 17111,
+      "cost": 0.010405,
+      "timestamp": "2026-05-07T21:02:55.202906+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2098,
+      "output_tokens": 269,
+      "cache_creation_input_tokens": 489,
+      "cache_read_input_tokens": 18666,
+      "cost": 0.005921,
+      "timestamp": "2026-05-07T21:02:56.583717+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2326,
+      "output_tokens": 191,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.004814,
+      "timestamp": "2026-05-07T21:02:57.292921+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3137,
+      "output_tokens": 115,
+      "cache_creation_input_tokens": 805,
+      "cache_read_input_tokens": 19241,
+      "cost": 0.006642,
+      "timestamp": "2026-05-07T21:02:58.666757+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 818,
+      "output_tokens": 153,
+      "cache_creation_input_tokens": 2324,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.006021,
+      "timestamp": "2026-05-07T21:02:59.278168+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2556,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 1108,
+      "cache_read_input_tokens": 20139,
+      "cost": 0.0063,
+      "timestamp": "2026-05-07T21:02:59.923519+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1378,
+      "output_tokens": 254,
+      "cache_creation_input_tokens": 2324,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.007086,
+      "timestamp": "2026-05-07T21:03:01.120396+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1457,
+      "output_tokens": 220,
+      "cache_creation_input_tokens": 742,
+      "cache_read_input_tokens": 17721,
+      "cost": 0.005257,
+      "timestamp": "2026-05-07T21:03:03.351781+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2348,
+      "output_tokens": 385,
+      "cache_creation_input_tokens": 491,
+      "cache_read_input_tokens": 18532,
+      "cost": 0.00674,
+      "timestamp": "2026-05-07T21:03:06.076805+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2828,
+      "output_tokens": 115,
+      "cache_creation_input_tokens": 2256,
+      "cache_read_input_tokens": 19109,
+      "cost": 0.008134,
+      "timestamp": "2026-05-07T21:03:07.647878+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3448,
+      "output_tokens": 874,
+      "cache_creation_input_tokens": 2256,
+      "cache_read_input_tokens": 19109,
+      "cost": 0.012549,
+      "timestamp": "2026-05-07T21:03:18.775411+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 536,
+      "output_tokens": 4783,
+      "cache_creation_input_tokens": 632,
+      "cache_read_input_tokens": 18960,
+      "cost": 0.027137,
+      "timestamp": "2026-05-07T21:03:25.440077+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1219,
+      "output_tokens": 4801,
+      "cache_creation_input_tokens": 1843,
+      "cache_read_input_tokens": 21334,
+      "cost": 0.029661,
+      "timestamp": "2026-05-07T21:03:43.436981+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 5246,
+      "output_tokens": 4463,
+      "cache_creation_input_tokens": 105,
+      "cache_read_input_tokens": 19592,
+      "cost": 0.029651,
+      "timestamp": "2026-05-07T21:03:55.737891+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 14052,
+      "output_tokens": 2062,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.025935,
+      "timestamp": "2026-05-07T21:03:55.890009+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2101,
+      "output_tokens": 1723,
+      "cache_creation_input_tokens": 14045,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.029845,
+      "timestamp": "2026-05-07T21:04:05.979729+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3854,
+      "output_tokens": 786,
+      "cache_creation_input_tokens": 14045,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.026913,
+      "timestamp": "2026-05-07T21:04:13.028263+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 9314,
+      "output_tokens": 2970,
+      "cache_creation_input_tokens": 327,
+      "cache_read_input_tokens": 19795,
+      "cost": 0.026552,
+      "timestamp": "2026-05-07T21:04:20.948321+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2575,
+      "output_tokens": 1979,
+      "cache_creation_input_tokens": 35,
+      "cache_read_input_tokens": 31837,
+      "cost": 0.015697,
+      "timestamp": "2026-05-07T21:04:25.596058+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2831,
+      "output_tokens": 150,
+      "cache_creation_input_tokens": 33,
+      "cache_read_input_tokens": 33592,
+      "cost": 0.006981,
+      "timestamp": "2026-05-07T21:04:28.602810+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2268,
+      "output_tokens": 91,
+      "cache_creation_input_tokens": 33,
+      "cache_read_input_tokens": 34408,
+      "cost": 0.006205,
+      "timestamp": "2026-05-07T21:04:31.232970+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 461,
+      "output_tokens": 1269,
+      "cache_creation_input_tokens": 33,
+      "cache_read_input_tokens": 36417,
+      "cost": 0.010489,
+      "timestamp": "2026-05-07T21:04:48.109882+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1562,
+      "output_tokens": 95,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 36597,
+      "cost": 0.00583,
+      "timestamp": "2026-05-07T21:04:50.061662+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 4452,
+      "output_tokens": 605,
+      "cache_creation_input_tokens": 114,
+      "cache_read_input_tokens": 36792,
+      "cost": 0.011299,
+      "timestamp": "2026-05-07T21:04:57.339354+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 7498,
+      "output_tokens": 5026,
+      "cache_creation_input_tokens": 35,
+      "cache_read_input_tokens": 24903,
+      "cost": 0.035162,
+      "timestamp": "2026-05-07T21:04:59.386251+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 5727,
+      "output_tokens": 112,
+      "cache_creation_input_tokens": 89,
+      "cache_read_input_tokens": 38172,
+      "cost": 0.010215,
+      "timestamp": "2026-05-07T21:04:59.832459+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 4463,
+      "output_tokens": 98,
+      "cache_creation_input_tokens": 3000,
+      "cache_read_input_tokens": 38353,
+      "cost": 0.012538,
+      "timestamp": "2026-05-07T21:05:02.715880+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3911,
+      "output_tokens": 114,
+      "cache_creation_input_tokens": 2028,
+      "cache_read_input_tokens": 41955,
+      "cost": 0.011211,
+      "timestamp": "2026-05-07T21:05:07.435075+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1861,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 14452,
+      "cache_read_input_tokens": 0,
+      "cost": 0.020021,
+      "timestamp": "2026-05-07T21:05:08.628235+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 2247,
+      "output_tokens": 229,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.004163,
+      "timestamp": "2026-05-07T21:05:12.499516+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2719,
+      "output_tokens": 192,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.005212,
+      "timestamp": "2026-05-07T21:05:15.738050+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 5063,
+      "output_tokens": 470,
+      "cache_creation_input_tokens": 33,
+      "cache_read_input_tokens": 32398,
+      "cost": 0.010694,
+      "timestamp": "2026-05-07T21:05:17.448143+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1061,
+      "output_tokens": 299,
+      "cache_creation_input_tokens": 2716,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.007484,
+      "timestamp": "2026-05-07T21:05:18.124880+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 7750,
+      "output_tokens": 90,
+      "cache_creation_input_tokens": 2716,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.013128,
+      "timestamp": "2026-05-07T21:05:19.727811+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 519,
+      "output_tokens": 410,
+      "cache_creation_input_tokens": 35,
+      "cache_read_input_tokens": 37454,
+      "cost": 0.006358,
+      "timestamp": "2026-05-07T21:05:23.165074+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 6834,
+      "output_tokens": 420,
+      "cache_creation_input_tokens": 968,
+      "cache_read_input_tokens": 18129,
+      "cost": 0.011957,
+      "timestamp": "2026-05-07T21:05:25.204926+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 719,
+      "output_tokens": 135,
+      "cache_creation_input_tokens": 6592,
+      "cache_read_input_tokens": 19194,
+      "cost": 0.011553,
+      "timestamp": "2026-05-07T21:05:26.695256+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 974,
+      "output_tokens": 371,
+      "cache_creation_input_tokens": 35,
+      "cache_read_input_tokens": 37454,
+      "cost": 0.006618,
+      "timestamp": "2026-05-07T21:05:28.050083+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1173,
+      "output_tokens": 143,
+      "cache_creation_input_tokens": 51,
+      "cache_read_input_tokens": 25874,
+      "cost": 0.004539,
+      "timestamp": "2026-05-07T21:05:29.055368+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1791,
+      "output_tokens": 132,
+      "cache_creation_input_tokens": 228,
+      "cache_read_input_tokens": 26270,
+      "cost": 0.005363,
+      "timestamp": "2026-05-07T21:05:30.718508+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1413,
+      "output_tokens": 55,
+      "cache_creation_input_tokens": 500,
+      "cache_read_input_tokens": 26591,
+      "cost": 0.004972,
+      "timestamp": "2026-05-07T21:05:31.803162+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 877,
+      "output_tokens": 323,
+      "cache_creation_input_tokens": 47,
+      "cache_read_input_tokens": 37956,
+      "cost": 0.006346,
+      "timestamp": "2026-05-07T21:05:31.818519+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 333,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 1092,
+      "cache_read_input_tokens": 27190,
+      "cost": 0.004712,
+      "timestamp": "2026-05-07T21:05:32.808811+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 276,
+      "output_tokens": 208,
+      "cache_creation_input_tokens": 143,
+      "cache_read_input_tokens": 28354,
+      "cost": 0.00433,
+      "timestamp": "2026-05-07T21:05:35.031624+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 785,
+      "output_tokens": 367,
+      "cache_creation_input_tokens": 455,
+      "cache_read_input_tokens": 38003,
+      "cost": 0.006989,
+      "timestamp": "2026-05-07T21:05:36.337888+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1603,
+      "output_tokens": 207,
+      "cache_creation_input_tokens": 112,
+      "cache_read_input_tokens": 28497,
+      "cost": 0.005628,
+      "timestamp": "2026-05-07T21:05:38.749347+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 777,
+      "output_tokens": 401,
+      "cache_creation_input_tokens": 417,
+      "cache_read_input_tokens": 38458,
+      "cost": 0.007149,
+      "timestamp": "2026-05-07T21:05:41.595270+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 853,
+      "output_tokens": 342,
+      "cache_creation_input_tokens": 363,
+      "cache_read_input_tokens": 38875,
+      "cost": 0.006904,
+      "timestamp": "2026-05-07T21:05:45.365509+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2079,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 9512,
+      "cache_read_input_tokens": 0,
+      "cost": 0.014064,
+      "timestamp": "2026-05-07T21:05:46.155155+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2474,
+      "output_tokens": 1593,
+      "cache_creation_input_tokens": 158,
+      "cache_read_input_tokens": 28609,
+      "cost": 0.013497,
+      "timestamp": "2026-05-07T21:05:47.635978+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2929,
+      "output_tokens": 285,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.005433,
+      "timestamp": "2026-05-07T21:05:48.475108+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 8049,
+      "output_tokens": 326,
+      "cache_creation_input_tokens": 2926,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.014416,
+      "timestamp": "2026-05-07T21:05:52.874864+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 9510,
+      "output_tokens": 166,
+      "cache_creation_input_tokens": 2926,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.015077,
+      "timestamp": "2026-05-07T21:05:55.138116+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2456,
+      "output_tokens": 803,
+      "cache_creation_input_tokens": 7942,
+      "cache_read_input_tokens": 13818,
+      "cost": 0.01778,
+      "timestamp": "2026-05-07T21:06:06.369929+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2655,
+      "output_tokens": 4013,
+      "cache_creation_input_tokens": 1297,
+      "cache_read_input_tokens": 28908,
+      "cost": 0.027232,
+      "timestamp": "2026-05-07T21:06:07.901057+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 3490,
+      "output_tokens": 227,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.005704,
+      "timestamp": "2026-05-07T21:06:08.898966+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 7529,
+      "output_tokens": 340,
+      "cache_creation_input_tokens": 3487,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.014667,
+      "timestamp": "2026-05-07T21:06:14.090416+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 5665,
+      "output_tokens": 1344,
+      "cache_creation_input_tokens": 886,
+      "cache_read_input_tokens": 30348,
+      "cost": 0.016527,
+      "timestamp": "2026-05-07T21:06:16.144545+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 5418,
+      "output_tokens": 1413,
+      "cache_creation_input_tokens": 29,
+      "cache_read_input_tokens": 32825,
+      "cost": 0.015802,
+      "timestamp": "2026-05-07T21:06:23.487542+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2823,
+      "output_tokens": 893,
+      "cache_creation_input_tokens": 29,
+      "cache_read_input_tokens": 36864,
+      "cost": 0.011011,
+      "timestamp": "2026-05-07T21:06:29.054114+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2372,
+      "output_tokens": 117,
+      "cache_creation_input_tokens": 32,
+      "cache_read_input_tokens": 38234,
+      "cost": 0.00682,
+      "timestamp": "2026-05-07T21:06:32.300027+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1449,
+      "output_tokens": 54,
+      "cache_creation_input_tokens": 34,
+      "cache_read_input_tokens": 39676,
+      "cost": 0.005729,
+      "timestamp": "2026-05-07T21:06:33.577411+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 711,
+      "output_tokens": 72,
+      "cache_creation_input_tokens": 32,
+      "cache_read_input_tokens": 40600,
+      "cost": 0.005171,
+      "timestamp": "2026-05-07T21:06:34.743772+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 309,
+      "output_tokens": 74,
+      "cache_creation_input_tokens": 447,
+      "cache_read_input_tokens": 40705,
+      "cost": 0.005308,
+      "timestamp": "2026-05-07T21:06:35.968366+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2474,
+      "output_tokens": 248,
+      "cache_creation_input_tokens": 14047,
+      "cache_read_input_tokens": 0,
+      "cost": 0.021273,
+      "timestamp": "2026-05-07T21:06:39.900990+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 3834,
+      "output_tokens": 204,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.005933,
+      "timestamp": "2026-05-07T21:06:41.869212+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2851,
+      "output_tokens": 306,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.005954,
+      "timestamp": "2026-05-07T21:06:44.158650+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 915,
+      "output_tokens": 343,
+      "cache_creation_input_tokens": 3831,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.008498,
+      "timestamp": "2026-05-07T21:06:44.321098+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 2807,
+      "output_tokens": 315,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.005153,
+      "timestamp": "2026-05-07T21:06:45.368664+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2024,
+      "output_tokens": 177,
+      "cache_creation_input_tokens": 828,
+      "cache_read_input_tokens": 14703,
+      "cost": 0.005414,
+      "timestamp": "2026-05-07T21:06:46.146296+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 976,
+      "output_tokens": 164,
+      "cache_creation_input_tokens": 2848,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.006929,
+      "timestamp": "2026-05-07T21:06:46.177266+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 7771,
+      "output_tokens": 77,
+      "cache_creation_input_tokens": 828,
+      "cache_read_input_tokens": 14703,
+      "cost": 0.010661,
+      "timestamp": "2026-05-07T21:06:47.584769+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2213,
+      "output_tokens": 217,
+      "cache_creation_input_tokens": 2848,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.008431,
+      "timestamp": "2026-05-07T21:06:47.832006+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2692,
+      "output_tokens": 177,
+      "cache_creation_input_tokens": 764,
+      "cache_read_input_tokens": 18785,
+      "cost": 0.006411,
+      "timestamp": "2026-05-07T21:06:49.716836+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 16942,
+      "output_tokens": 110,
+      "cache_creation_input_tokens": 1922,
+      "cache_read_input_tokens": 15626,
+      "cost": 0.021457,
+      "timestamp": "2026-05-07T21:06:49.862292+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 8989,
+      "output_tokens": 535,
+      "cache_creation_input_tokens": 1147,
+      "cache_read_input_tokens": 19639,
+      "cost": 0.015062,
+      "timestamp": "2026-05-07T21:06:57.112270+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 11660,
+      "output_tokens": 503,
+      "cache_creation_input_tokens": 1360,
+      "cache_read_input_tokens": 20874,
+      "cost": 0.017962,
+      "timestamp": "2026-05-07T21:07:03.364312+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 11708,
+      "output_tokens": 1076,
+      "cache_creation_input_tokens": 5664,
+      "cache_read_input_tokens": 17631,
+      "cost": 0.025931,
+      "timestamp": "2026-05-07T21:07:04.403383+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 5094,
+      "output_tokens": 86,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.006603,
+      "timestamp": "2026-05-07T21:07:09.909791+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 145,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 5091,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.007883,
+      "timestamp": "2026-05-07T21:07:11.910849+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 303,
+      "output_tokens": 81,
+      "cache_creation_input_tokens": 5091,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.008151,
+      "timestamp": "2026-05-07T21:07:13.319835+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 702,
+      "output_tokens": 80,
+      "cache_creation_input_tokens": 59,
+      "cache_read_input_tokens": 15963,
+      "cost": 0.002772,
+      "timestamp": "2026-05-07T21:07:14.247408+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 928,
+      "output_tokens": 81,
+      "cache_creation_input_tokens": 158,
+      "cache_read_input_tokens": 16022,
+      "cost": 0.003133,
+      "timestamp": "2026-05-07T21:07:15.340681+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 889,
+      "output_tokens": 83,
+      "cache_creation_input_tokens": 538,
+      "cache_read_input_tokens": 16180,
+      "cost": 0.003595,
+      "timestamp": "2026-05-07T21:07:16.707870+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 2561,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 384,
+      "cache_read_input_tokens": 16718,
+      "cost": 0.005028,
+      "timestamp": "2026-05-07T21:07:18.118059+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 3773,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 499,
+      "cache_read_input_tokens": 17102,
+      "cost": 0.006422,
+      "timestamp": "2026-05-07T21:07:19.458545+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 3677,
+      "output_tokens": 70,
+      "cache_creation_input_tokens": 1976,
+      "cache_read_input_tokens": 17681,
+      "cost": 0.008265,
+      "timestamp": "2026-05-07T21:07:21.225432+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 5860,
+      "output_tokens": 1393,
+      "cache_creation_input_tokens": 7443,
+      "cache_read_input_tokens": 22325,
+      "cost": 0.024361,
+      "timestamp": "2026-05-07T21:07:22.692951+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 3435,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 1711,
+      "cache_read_input_tokens": 19657,
+      "cost": 0.007834,
+      "timestamp": "2026-05-07T21:07:23.919977+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 5467,
+      "output_tokens": 58,
+      "cache_creation_input_tokens": 1960,
+      "cache_read_input_tokens": 21368,
+      "cost": 0.010344,
+      "timestamp": "2026-05-07T21:07:25.645314+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3182,
+      "output_tokens": 1174,
+      "cache_creation_input_tokens": 3632,
+      "cache_read_input_tokens": 30255,
+      "cost": 0.016618,
+      "timestamp": "2026-05-07T21:07:36.220259+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 4218,
+      "output_tokens": 1149,
+      "cache_creation_input_tokens": 1402,
+      "cache_read_input_tokens": 23395,
+      "cost": 0.014055,
+      "timestamp": "2026-05-07T21:07:41.685201+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2669,
+      "output_tokens": 1452,
+      "cache_creation_input_tokens": 1360,
+      "cache_read_input_tokens": 34261,
+      "cost": 0.015055,
+      "timestamp": "2026-05-07T21:07:53.109154+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2727,
+      "output_tokens": 923,
+      "cache_creation_input_tokens": 51,
+      "cache_read_input_tokens": 37012,
+      "cost": 0.011107,
+      "timestamp": "2026-05-07T21:08:03.532584+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3713,
+      "output_tokens": 3974,
+      "cache_creation_input_tokens": 1221,
+      "cache_read_input_tokens": 37063,
+      "cost": 0.028816,
+      "timestamp": "2026-05-07T21:08:40.389355+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1728,
+      "output_tokens": 71,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.003656,
+      "timestamp": "2026-05-07T21:08:41.717966+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 6113,
+      "output_tokens": 240,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.008392,
+      "timestamp": "2026-05-07T21:08:42.305364+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 111,
+      "output_tokens": 71,
+      "cache_creation_input_tokens": 1726,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.004197,
+      "timestamp": "2026-05-07T21:08:42.793007+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3387,
+      "output_tokens": 326,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.00655,
+      "timestamp": "2026-05-07T21:08:43.077355+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 307,
+      "output_tokens": 315,
+      "cache_creation_input_tokens": 1726,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.005613,
+      "timestamp": "2026-05-07T21:08:44.677071+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 6570,
+      "output_tokens": 201,
+      "cache_creation_input_tokens": 3384,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.013338,
+      "timestamp": "2026-05-07T21:08:45.415186+00:00"
+    },
+    {
+      "agent": "alice",
+      "input_tokens": 3420,
+      "output_tokens": 350,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 7712,
+      "cost": 0.005941,
+      "timestamp": "2026-05-07T21:08:45.661267+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 14284,
+      "output_tokens": 103,
+      "cache_creation_input_tokens": 41,
+      "cache_read_input_tokens": 17523,
+      "cost": 0.016603,
+      "timestamp": "2026-05-07T21:08:46.157061+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 12084,
+      "output_tokens": 169,
+      "cache_creation_input_tokens": 3384,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.018692,
+      "timestamp": "2026-05-07T21:08:47.346540+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 14300,
+      "output_tokens": 143,
+      "cache_creation_input_tokens": 128,
+      "cache_read_input_tokens": 17632,
+      "cost": 0.016938,
+      "timestamp": "2026-05-07T21:08:47.781629+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1507,
+      "output_tokens": 57,
+      "cache_creation_input_tokens": 14004,
+      "cache_read_input_tokens": 17838,
+      "cost": 0.021081,
+      "timestamp": "2026-05-07T21:08:49.144448+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1393,
+      "output_tokens": 149,
+      "cache_creation_input_tokens": 149,
+      "cache_read_input_tokens": 31905,
+      "cost": 0.005515,
+      "timestamp": "2026-05-07T21:08:50.532977+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1164,
+      "output_tokens": 72,
+      "cache_creation_input_tokens": 1190,
+      "cache_read_input_tokens": 32153,
+      "cost": 0.006227,
+      "timestamp": "2026-05-07T21:08:51.782424+00:00"
+    },
+    {
+      "agent": "mad_hatter",
+      "input_tokens": 4036,
+      "output_tokens": 659,
+      "cache_creation_input_tokens": 6110,
+      "cache_read_input_tokens": 10792,
+      "cost": 0.016048,
+      "timestamp": "2026-05-07T21:08:52.081889+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1586,
+      "output_tokens": 68,
+      "cache_creation_input_tokens": 99,
+      "cache_read_input_tokens": 33343,
+      "cost": 0.005384,
+      "timestamp": "2026-05-07T21:08:53.047170+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 698,
+      "output_tokens": 75,
+      "cache_creation_input_tokens": 957,
+      "cache_read_input_tokens": 33544,
+      "cost": 0.005624,
+      "timestamp": "2026-05-07T21:08:54.357162+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 494,
+      "output_tokens": 135,
+      "cache_creation_input_tokens": 452,
+      "cache_read_input_tokens": 34571,
+      "cost": 0.005191,
+      "timestamp": "2026-05-07T21:08:56.388548+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3061,
+      "output_tokens": 1051,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 35088,
+      "cost": 0.011959,
+      "timestamp": "2026-05-07T21:09:04.168320+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 12342,
+      "output_tokens": 2907,
+      "cache_creation_input_tokens": 6459,
+      "cache_read_input_tokens": 18815,
+      "cost": 0.036832,
+      "timestamp": "2026-05-07T21:09:14.326336+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3820,
+      "output_tokens": 2187,
+      "cache_creation_input_tokens": 246,
+      "cache_read_input_tokens": 35267,
+      "cost": 0.018589,
+      "timestamp": "2026-05-07T21:09:15.635705+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3296,
+      "output_tokens": 1131,
+      "cache_creation_input_tokens": 2607,
+      "cache_read_input_tokens": 35645,
+      "cost": 0.015774,
+      "timestamp": "2026-05-07T21:09:21.864235+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3378,
+      "output_tokens": 221,
+      "cache_creation_input_tokens": 29,
+      "cache_read_input_tokens": 39300,
+      "cost": 0.008449,
+      "timestamp": "2026-05-07T21:09:24.074281+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 9765,
+      "output_tokens": 1165,
+      "cache_creation_input_tokens": 5407,
+      "cache_read_input_tokens": 25381,
+      "cost": 0.024887,
+      "timestamp": "2026-05-07T21:09:24.287945+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1948,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003826,
+      "timestamp": "2026-05-07T21:09:25.404450+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1411,
+      "output_tokens": 76,
+      "cache_creation_input_tokens": 31,
+      "cache_read_input_tokens": 41513,
+      "cost": 0.005981,
+      "timestamp": "2026-05-07T21:09:25.776002+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 109,
+      "output_tokens": 138,
+      "cache_creation_input_tokens": 1946,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.004764,
+      "timestamp": "2026-05-07T21:09:26.731720+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 718,
+      "output_tokens": 104,
+      "cache_creation_input_tokens": 31,
+      "cache_read_input_tokens": 42672,
+      "cost": 0.005544,
+      "timestamp": "2026-05-07T21:09:27.507452+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 500,
+      "output_tokens": 101,
+      "cache_creation_input_tokens": 1946,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.00497,
+      "timestamp": "2026-05-07T21:09:28.614375+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 650,
+      "output_tokens": 101,
+      "cache_creation_input_tokens": 30,
+      "cache_read_input_tokens": 42921,
+      "cost": 0.005485,
+      "timestamp": "2026-05-07T21:09:29.872075+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 626,
+      "output_tokens": 361,
+      "cache_creation_input_tokens": 41,
+      "cache_read_input_tokens": 17336,
+      "cost": 0.004216,
+      "timestamp": "2026-05-07T21:09:31.022454+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 388,
+      "output_tokens": 83,
+      "cache_creation_input_tokens": 393,
+      "cache_read_input_tokens": 43024,
+      "cost": 0.005597,
+      "timestamp": "2026-05-07T21:09:31.547041+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 16475,
+      "output_tokens": 162,
+      "cache_creation_input_tokens": 557,
+      "cache_read_input_tokens": 17440,
+      "cost": 0.019725,
+      "timestamp": "2026-05-07T21:09:32.968219+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 513,
+      "output_tokens": 105,
+      "cache_creation_input_tokens": 79,
+      "cache_read_input_tokens": 43518,
+      "cost": 0.005489,
+      "timestamp": "2026-05-07T21:09:33.168708+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1483,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14452,
+      "cost": 0.003023,
+      "timestamp": "2026-05-07T21:09:33.830926+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1470,
+      "output_tokens": 111,
+      "cache_creation_input_tokens": 16390,
+      "cache_read_input_tokens": 18076,
+      "cost": 0.02432,
+      "timestamp": "2026-05-07T21:09:34.577488+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1815,
+      "output_tokens": 161,
+      "cache_creation_input_tokens": 16390,
+      "cache_read_input_tokens": 18076,
+      "cost": 0.024915,
+      "timestamp": "2026-05-07T21:09:36.054923+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3811,
+      "output_tokens": 72,
+      "cache_creation_input_tokens": 1388,
+      "cache_read_input_tokens": 34542,
+      "cost": 0.00936,
+      "timestamp": "2026-05-07T21:09:37.415228+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3987,
+      "output_tokens": 68,
+      "cache_creation_input_tokens": 280,
+      "cache_read_input_tokens": 35995,
+      "cost": 0.008276,
+      "timestamp": "2026-05-07T21:09:39.222178+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 698,
+      "output_tokens": 81,
+      "cache_creation_input_tokens": 3389,
+      "cache_read_input_tokens": 36346,
+      "cost": 0.008974,
+      "timestamp": "2026-05-07T21:09:41.202059+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 500,
+      "output_tokens": 100,
+      "cache_creation_input_tokens": 452,
+      "cache_read_input_tokens": 39805,
+      "cost": 0.005546,
+      "timestamp": "2026-05-07T21:09:42.613549+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 531,
+      "output_tokens": 127,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 40322,
+      "cost": 0.005332,
+      "timestamp": "2026-05-07T21:09:44.635015+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 390,
+      "output_tokens": 109,
+      "cache_creation_input_tokens": 246,
+      "cache_read_input_tokens": 40507,
+      "cost": 0.005293,
+      "timestamp": "2026-05-07T21:09:46.632503+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 531,
+      "output_tokens": 208,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 40850,
+      "cost": 0.00579,
+      "timestamp": "2026-05-07T21:09:48.269945+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4349,
+      "output_tokens": 1194,
+      "cache_creation_input_tokens": 59,
+      "cache_read_input_tokens": 41081,
+      "cost": 0.014501,
+      "timestamp": "2026-05-07T21:10:00.167839+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2230,
+      "output_tokens": 2527,
+      "cache_creation_input_tokens": 3859,
+      "cache_read_input_tokens": 41626,
+      "cost": 0.023851,
+      "timestamp": "2026-05-07T21:10:19.071473+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2558,
+      "output_tokens": 125,
+      "cache_creation_input_tokens": 1060,
+      "cache_read_input_tokens": 46652,
+      "cost": 0.009173,
+      "timestamp": "2026-05-07T21:10:20.770256+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 6696,
+      "output_tokens": 78,
+      "cache_creation_input_tokens": 1060,
+      "cache_read_input_tokens": 46652,
+      "cost": 0.013076,
+      "timestamp": "2026-05-07T21:10:22.571887+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 5618,
+      "output_tokens": 70,
+      "cache_creation_input_tokens": 31,
+      "cache_read_input_tokens": 50236,
+      "cost": 0.01103,
+      "timestamp": "2026-05-07T21:10:23.991772+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1597,
+      "output_tokens": 65,
+      "cache_creation_input_tokens": 4057,
+      "cache_read_input_tokens": 50347,
+      "cost": 0.012028,
+      "timestamp": "2026-05-07T21:10:25.499528+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1703,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14047,
+      "cost": 0.003203,
+      "timestamp": "2026-05-07T21:10:26.214052+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 1276,
+      "output_tokens": 99,
+      "cache_creation_input_tokens": 7253,
+      "cache_read_input_tokens": 5176,
+      "cost": 0.011355,
+      "timestamp": "2026-05-07T21:10:27.739013+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2156,
+      "output_tokens": 83,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.004104,
+      "timestamp": "2026-05-07T21:10:27.870193+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1936,
+      "output_tokens": 221,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.004614,
+      "timestamp": "2026-05-07T21:10:28.324983+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 124,
+      "output_tokens": 71,
+      "cache_creation_input_tokens": 2153,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.004703,
+      "timestamp": "2026-05-07T21:10:28.828541+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 418,
+      "output_tokens": 73,
+      "cache_creation_input_tokens": 1274,
+      "cache_read_input_tokens": 12429,
+      "cost": 0.003618,
+      "timestamp": "2026-05-07T21:10:28.833322+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 325,
+      "output_tokens": 65,
+      "cache_creation_input_tokens": 2153,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.004874,
+      "timestamp": "2026-05-07T21:10:29.808031+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 933,
+      "output_tokens": 173,
+      "cache_creation_input_tokens": 1933,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.005787,
+      "timestamp": "2026-05-07T21:10:29.833297+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 589,
+      "output_tokens": 241,
+      "cache_creation_input_tokens": 1274,
+      "cache_read_input_tokens": 12429,
+      "cost": 0.004629,
+      "timestamp": "2026-05-07T21:10:30.264696+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3269,
+      "output_tokens": 65,
+      "cache_creation_input_tokens": 41,
+      "cache_read_input_tokens": 17557,
+      "cost": 0.005401,
+      "timestamp": "2026-05-07T21:10:30.901711+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 1055,
+      "output_tokens": 58,
+      "cache_creation_input_tokens": 357,
+      "cache_read_input_tokens": 13758,
+      "cost": 0.003167,
+      "timestamp": "2026-05-07T21:10:31.366999+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 7776,
+      "output_tokens": 149,
+      "cache_creation_input_tokens": 1933,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.01251,
+      "timestamp": "2026-05-07T21:10:31.407112+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 5106,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 201,
+      "cache_read_input_tokens": 17598,
+      "cost": 0.007432,
+      "timestamp": "2026-05-07T21:10:31.920708+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 8056,
+      "output_tokens": 143,
+      "cache_creation_input_tokens": 850,
+      "cache_read_input_tokens": 17741,
+      "cost": 0.011608,
+      "timestamp": "2026-05-07T21:10:32.764408+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3755,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 3062,
+      "cache_read_input_tokens": 17799,
+      "cost": 0.009677,
+      "timestamp": "2026-05-07T21:10:33.018968+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 20956,
+      "output_tokens": 180,
+      "cache_creation_input_tokens": 101,
+      "cache_read_input_tokens": 14186,
+      "cost": 0.023401,
+      "timestamp": "2026-05-07T21:10:33.660341+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3496,
+      "output_tokens": 65,
+      "cache_creation_input_tokens": 2038,
+      "cache_read_input_tokens": 20861,
+      "cost": 0.008455,
+      "timestamp": "2026-05-07T21:10:34.086743+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1897,
+      "output_tokens": 119,
+      "cache_creation_input_tokens": 6766,
+      "cache_read_input_tokens": 18668,
+      "cost": 0.012816,
+      "timestamp": "2026-05-07T21:10:34.322445+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 5296,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 1711,
+      "cache_read_input_tokens": 22899,
+      "cost": 0.01004,
+      "timestamp": "2026-05-07T21:10:35.126125+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 24491,
+      "output_tokens": 126,
+      "cache_creation_input_tokens": 749,
+      "cache_read_input_tokens": 14415,
+      "cost": 0.027499,
+      "timestamp": "2026-05-07T21:10:35.470690+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 4349,
+      "output_tokens": 94,
+      "cache_creation_input_tokens": 1139,
+      "cache_read_input_tokens": 25501,
+      "cost": 0.008793,
+      "timestamp": "2026-05-07T21:10:35.973615+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 5907,
+      "output_tokens": 75,
+      "cache_creation_input_tokens": 1779,
+      "cache_read_input_tokens": 24610,
+      "cost": 0.010967,
+      "timestamp": "2026-05-07T21:10:37.070997+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 8452,
+      "output_tokens": 113,
+      "cache_creation_input_tokens": 20018,
+      "cache_read_input_tokens": 15220,
+      "cost": 0.035562,
+      "timestamp": "2026-05-07T21:10:37.335684+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3862,
+      "output_tokens": 77,
+      "cache_creation_input_tokens": 585,
+      "cache_read_input_tokens": 26739,
+      "cost": 0.007652,
+      "timestamp": "2026-05-07T21:10:37.609100+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3151,
+      "output_tokens": 57,
+      "cache_creation_input_tokens": 3511,
+      "cache_read_input_tokens": 26389,
+      "cost": 0.010464,
+      "timestamp": "2026-05-07T21:10:38.062435+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 524,
+      "output_tokens": 88,
+      "cache_creation_input_tokens": 3585,
+      "cache_read_input_tokens": 27397,
+      "cost": 0.008185,
+      "timestamp": "2026-05-07T21:10:39.138702+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 4257,
+      "output_tokens": 98,
+      "cache_creation_input_tokens": 4322,
+      "cache_read_input_tokens": 35327,
+      "cost": 0.013682,
+      "timestamp": "2026-05-07T21:10:39.165987+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 849,
+      "output_tokens": 55,
+      "cache_creation_input_tokens": 2390,
+      "cache_read_input_tokens": 29900,
+      "cost": 0.007102,
+      "timestamp": "2026-05-07T21:10:39.179463+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 198,
+      "output_tokens": 57,
+      "cache_creation_input_tokens": 683,
+      "cache_read_input_tokens": 32362,
+      "cost": 0.004573,
+      "timestamp": "2026-05-07T21:10:40.208582+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 456,
+      "output_tokens": 74,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 31074,
+      "cost": 0.004067,
+      "timestamp": "2026-05-07T21:10:40.345264+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 769,
+      "output_tokens": 76,
+      "cache_creation_input_tokens": 3957,
+      "cache_read_input_tokens": 39727,
+      "cost": 0.010068,
+      "timestamp": "2026-05-07T21:10:40.511551+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 229,
+      "output_tokens": 61,
+      "cache_creation_input_tokens": 87,
+      "cache_read_input_tokens": 33045,
+      "cost": 0.003947,
+      "timestamp": "2026-05-07T21:10:41.382014+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 319,
+      "output_tokens": 61,
+      "cache_creation_input_tokens": 105,
+      "cache_read_input_tokens": 33132,
+      "cost": 0.004068,
+      "timestamp": "2026-05-07T21:10:42.352899+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1609,
+      "output_tokens": 53,
+      "cache_creation_input_tokens": 246,
+      "cache_read_input_tokens": 31255,
+      "cost": 0.005307,
+      "timestamp": "2026-05-07T21:10:42.504363+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2705,
+      "output_tokens": 61,
+      "cache_creation_input_tokens": 118,
+      "cache_read_input_tokens": 33237,
+      "cost": 0.006481,
+      "timestamp": "2026-05-07T21:10:43.466692+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1753,
+      "output_tokens": 136,
+      "cache_creation_input_tokens": 46,
+      "cache_read_input_tokens": 31586,
+      "cost": 0.005649,
+      "timestamp": "2026-05-07T21:10:44.312603+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3628,
+      "output_tokens": 86,
+      "cache_creation_input_tokens": 195,
+      "cache_read_input_tokens": 33355,
+      "cost": 0.007637,
+      "timestamp": "2026-05-07T21:10:45.079345+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 519,
+      "output_tokens": 162,
+      "cache_creation_input_tokens": 1402,
+      "cache_read_input_tokens": 31703,
+      "cost": 0.006252,
+      "timestamp": "2026-05-07T21:10:46.360932+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1308,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 2504,
+      "cache_read_input_tokens": 33550,
+      "cost": 0.008088,
+      "timestamp": "2026-05-07T21:10:46.717797+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 4058,
+      "output_tokens": 121,
+      "cache_creation_input_tokens": 225,
+      "cache_read_input_tokens": 33155,
+      "cost": 0.00826,
+      "timestamp": "2026-05-07T21:10:47.799609+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 4182,
+      "output_tokens": 71,
+      "cache_creation_input_tokens": 1118,
+      "cache_read_input_tokens": 36054,
+      "cost": 0.00954,
+      "timestamp": "2026-05-07T21:10:48.062487+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 5468,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 101,
+      "cache_read_input_tokens": 37255,
+      "cost": 0.009665,
+      "timestamp": "2026-05-07T21:10:49.964656+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1648,
+      "output_tokens": 81,
+      "cache_creation_input_tokens": 3992,
+      "cache_read_input_tokens": 37356,
+      "cost": 0.010779,
+      "timestamp": "2026-05-07T21:10:51.547605+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1911,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14047,
+      "cost": 0.003411,
+      "timestamp": "2026-05-07T21:10:52.217853+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1191,
+      "output_tokens": 96,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003204,
+      "timestamp": "2026-05-07T21:10:53.520277+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 9751,
+      "output_tokens": 596,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 33513,
+      "cost": 0.016216,
+      "timestamp": "2026-05-07T21:10:53.978445+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 397,
+      "output_tokens": 112,
+      "cache_creation_input_tokens": 1189,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003976,
+      "timestamp": "2026-05-07T21:10:55.205482+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 625,
+      "output_tokens": 57,
+      "cache_creation_input_tokens": 1189,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003929,
+      "timestamp": "2026-05-07T21:10:56.112282+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 389,
+      "output_tokens": 241,
+      "cache_creation_input_tokens": 336,
+      "cache_read_input_tokens": 16571,
+      "cost": 0.003671,
+      "timestamp": "2026-05-07T21:10:57.659514+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1039,
+      "output_tokens": 71,
+      "cache_creation_input_tokens": 156,
+      "cache_read_input_tokens": 16979,
+      "cost": 0.003287,
+      "timestamp": "2026-05-07T21:10:58.929159+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 6699,
+      "output_tokens": 64,
+      "cache_creation_input_tokens": 156,
+      "cache_read_input_tokens": 17135,
+      "cost": 0.008928,
+      "timestamp": "2026-05-07T21:11:00.219652+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 16997,
+      "output_tokens": 173,
+      "cache_creation_input_tokens": 749,
+      "cache_read_input_tokens": 17419,
+      "cost": 0.02054,
+      "timestamp": "2026-05-07T21:11:02.139450+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 18023,
+      "output_tokens": 165,
+      "cache_creation_input_tokens": 5748,
+      "cache_read_input_tokens": 18237,
+      "cost": 0.027857,
+      "timestamp": "2026-05-07T21:11:04.003468+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 13005,
+      "output_tokens": 50,
+      "cache_creation_input_tokens": 11114,
+      "cache_read_input_tokens": 24046,
+      "cost": 0.029552,
+      "timestamp": "2026-05-07T21:11:05.386413+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 6316,
+      "output_tokens": 111,
+      "cache_creation_input_tokens": 6766,
+      "cache_read_input_tokens": 35236,
+      "cost": 0.018852,
+      "timestamp": "2026-05-07T21:11:07.323933+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 26549,
+      "output_tokens": 1336,
+      "cache_creation_input_tokens": 3700,
+      "cache_read_input_tokens": 33733,
+      "cost": 0.041227,
+      "timestamp": "2026-05-07T21:11:08.401195+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1163,
+      "output_tokens": 98,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.003226,
+      "timestamp": "2026-05-07T21:11:09.635394+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 601,
+      "output_tokens": 73,
+      "cache_creation_input_tokens": 6086,
+      "cache_read_input_tokens": 42073,
+      "cost": 0.012781,
+      "timestamp": "2026-05-07T21:11:10.176975+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 399,
+      "output_tokens": 50,
+      "cache_creation_input_tokens": 1161,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.003673,
+      "timestamp": "2026-05-07T21:11:10.861616+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 968,
+      "output_tokens": 78,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 48207,
+      "cost": 0.006312,
+      "timestamp": "2026-05-07T21:11:11.577936+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 20464,
+      "output_tokens": 70,
+      "cache_creation_input_tokens": 1161,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.023838,
+      "timestamp": "2026-05-07T21:11:12.294514+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 881,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 371,
+      "cache_read_input_tokens": 48384,
+      "cost": 0.006528,
+      "timestamp": "2026-05-07T21:11:12.753304+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 20203,
+      "output_tokens": 57,
+      "cache_creation_input_tokens": 336,
+      "cache_read_input_tokens": 16950,
+      "cost": 0.022603,
+      "timestamp": "2026-05-07T21:11:13.464114+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 721,
+      "output_tokens": 95,
+      "cache_creation_input_tokens": 452,
+      "cache_read_input_tokens": 48826,
+      "cost": 0.006644,
+      "timestamp": "2026-05-07T21:11:14.445108+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 292,
+      "output_tokens": 241,
+      "cache_creation_input_tokens": 20018,
+      "cache_read_input_tokens": 17334,
+      "cost": 0.028253,
+      "timestamp": "2026-05-07T21:11:15.316107+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 523,
+      "output_tokens": 86,
+      "cache_creation_input_tokens": 279,
+      "cache_read_input_tokens": 49353,
+      "cost": 0.006237,
+      "timestamp": "2026-05-07T21:11:15.761962+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1038,
+      "output_tokens": 107,
+      "cache_creation_input_tokens": 65,
+      "cache_read_input_tokens": 37419,
+      "cost": 0.005396,
+      "timestamp": "2026-05-07T21:11:17.036568+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 775,
+      "output_tokens": 104,
+      "cache_creation_input_tokens": 297,
+      "cache_read_input_tokens": 49698,
+      "cost": 0.006636,
+      "timestamp": "2026-05-07T21:11:17.189514+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2609,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 155,
+      "cache_read_input_tokens": 37484,
+      "cost": 0.006866,
+      "timestamp": "2026-05-07T21:11:18.088981+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 857,
+      "output_tokens": 139,
+      "cache_creation_input_tokens": 64,
+      "cache_read_input_tokens": 50087,
+      "cost": 0.006641,
+      "timestamp": "2026-05-07T21:11:19.115905+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3511,
+      "output_tokens": 63,
+      "cache_creation_input_tokens": 749,
+      "cache_read_input_tokens": 37767,
+      "cost": 0.008539,
+      "timestamp": "2026-05-07T21:11:19.166778+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 511,
+      "output_tokens": 75,
+      "cache_creation_input_tokens": 532,
+      "cache_read_input_tokens": 50234,
+      "cost": 0.006574,
+      "timestamp": "2026-05-07T21:11:20.357926+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3744,
+      "output_tokens": 65,
+      "cache_creation_input_tokens": 1651,
+      "cache_read_input_tokens": 38592,
+      "cost": 0.009992,
+      "timestamp": "2026-05-07T21:11:20.507382+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 5476,
+      "output_tokens": 76,
+      "cache_creation_input_tokens": 1779,
+      "cache_read_input_tokens": 40243,
+      "cost": 0.012104,
+      "timestamp": "2026-05-07T21:11:21.834207+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 738,
+      "output_tokens": 124,
+      "cache_creation_input_tokens": 137,
+      "cache_read_input_tokens": 50867,
+      "cost": 0.006616,
+      "timestamp": "2026-05-07T21:11:22.176013+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 4272,
+      "output_tokens": 102,
+      "cache_creation_input_tokens": 1960,
+      "cache_read_input_tokens": 42022,
+      "cost": 0.011434,
+      "timestamp": "2026-05-07T21:11:23.353031+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 669,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 133,
+      "cache_read_input_tokens": 51140,
+      "cost": 0.006294,
+      "timestamp": "2026-05-07T21:11:23.654823+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 946,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14047,
+      "cost": 0.002446,
+      "timestamp": "2026-05-07T21:11:24.373303+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1895,
+      "output_tokens": 69,
+      "cache_creation_input_tokens": 3511,
+      "cache_read_input_tokens": 43982,
+      "cost": 0.011027,
+      "timestamp": "2026-05-07T21:11:24.567528+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1311,
+      "output_tokens": 66,
+      "cache_creation_input_tokens": 683,
+      "cache_read_input_tokens": 47566,
+      "cost": 0.007251,
+      "timestamp": "2026-05-07T21:11:25.943513+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 903,
+      "output_tokens": 6392,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 43795,
+      "cost": 0.037376,
+      "timestamp": "2026-05-07T21:11:27.564087+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 486,
+      "output_tokens": 242,
+      "cache_creation_input_tokens": 1060,
+      "cache_read_input_tokens": 48323,
+      "cost": 0.007853,
+      "timestamp": "2026-05-07T21:11:29.584105+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 854,
+      "output_tokens": 99,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 49449,
+      "cost": 0.006428,
+      "timestamp": "2026-05-07T21:11:31.280544+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 6776,
+      "output_tokens": 1020,
+      "cache_creation_input_tokens": 452,
+      "cache_read_input_tokens": 43997,
+      "cost": 0.016841,
+      "timestamp": "2026-05-07T21:11:34.143085+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 703,
+      "output_tokens": 485,
+      "cache_creation_input_tokens": 246,
+      "cache_read_input_tokens": 49619,
+      "cost": 0.008397,
+      "timestamp": "2026-05-07T21:11:36.236009+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 7470,
+      "output_tokens": 78,
+      "cache_creation_input_tokens": 279,
+      "cache_read_input_tokens": 44522,
+      "cost": 0.012661,
+      "timestamp": "2026-05-07T21:11:36.969989+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3186,
+      "output_tokens": 744,
+      "cache_creation_input_tokens": 302,
+      "cache_read_input_tokens": 50104,
+      "cost": 0.012294,
+      "timestamp": "2026-05-07T21:11:43.751490+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3871,
+      "output_tokens": 81,
+      "cache_creation_input_tokens": 62,
+      "cache_read_input_tokens": 50502,
+      "cost": 0.009404,
+      "timestamp": "2026-05-07T21:11:44.934874+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 7175,
+      "output_tokens": 5126,
+      "cache_creation_input_tokens": 31,
+      "cache_read_input_tokens": 51190,
+      "cost": 0.037963,
+      "timestamp": "2026-05-07T21:12:14.643831+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 6215,
+      "output_tokens": 1515,
+      "cache_creation_input_tokens": 11149,
+      "cache_read_input_tokens": 0,
+      "cost": 0.027726,
+      "timestamp": "2026-05-07T21:12:24.320687+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1386,
+      "output_tokens": 137,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003604,
+      "timestamp": "2026-05-07T21:12:26.846210+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 362,
+      "output_tokens": 49,
+      "cache_creation_input_tokens": 1383,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003868,
+      "timestamp": "2026-05-07T21:12:27.853284+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 20413,
+      "output_tokens": 307,
+      "cache_creation_input_tokens": 1383,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.025209,
+      "timestamp": "2026-05-07T21:12:31.520797+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 25411,
+      "output_tokens": 288,
+      "cache_creation_input_tokens": 225,
+      "cache_read_input_tokens": 16841,
+      "cost": 0.028816,
+      "timestamp": "2026-05-07T21:12:35.462199+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 6916,
+      "output_tokens": 279,
+      "cache_creation_input_tokens": 20005,
+      "cache_read_input_tokens": 17112,
+      "cost": 0.035028,
+      "timestamp": "2026-05-07T21:12:39.666001+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2212,
+      "output_tokens": 6453,
+      "cache_creation_input_tokens": 2542,
+      "cache_read_input_tokens": 51046,
+      "cost": 0.042759,
+      "timestamp": "2026-05-07T21:12:41.058867+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2029,
+      "output_tokens": 164,
+      "cache_creation_input_tokens": 5135,
+      "cache_read_input_tokens": 37335,
+      "cost": 0.013001,
+      "timestamp": "2026-05-07T21:12:43.054363+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 7848,
+      "output_tokens": 254,
+      "cache_creation_input_tokens": 102,
+      "cache_read_input_tokens": 54329,
+      "cost": 0.014678,
+      "timestamp": "2026-05-07T21:12:44.293010+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 764,
+      "output_tokens": 79,
+      "cache_creation_input_tokens": 1271,
+      "cache_read_input_tokens": 42756,
+      "cost": 0.007023,
+      "timestamp": "2026-05-07T21:12:44.295912+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 918,
+      "output_tokens": 19,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 14452,
+      "cost": 0.002458,
+      "timestamp": "2026-05-07T21:12:45.160724+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1453,
+      "output_tokens": 131,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.003681,
+      "timestamp": "2026-05-07T21:12:47.081752+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 717,
+      "output_tokens": 273,
+      "cache_creation_input_tokens": 191,
+      "cache_read_input_tokens": 44303,
+      "cost": 0.006751,
+      "timestamp": "2026-05-07T21:12:48.267148+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 20415,
+      "output_tokens": 66,
+      "cache_creation_input_tokens": 1450,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.024131,
+      "timestamp": "2026-05-07T21:12:49.208220+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 703,
+      "output_tokens": 102,
+      "cache_creation_input_tokens": 131,
+      "cache_read_input_tokens": 44655,
+      "cost": 0.005842,
+      "timestamp": "2026-05-07T21:12:49.783333+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 731,
+      "output_tokens": 148,
+      "cache_creation_input_tokens": 420,
+      "cache_read_input_tokens": 44786,
+      "cost": 0.006475,
+      "timestamp": "2026-05-07T21:12:51.822685+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 1566,
+      "output_tokens": 58,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 12429,
+      "cost": 0.003099,
+      "timestamp": "2026-05-07T21:12:51.963276+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 283,
+      "output_tokens": 154,
+      "cache_creation_input_tokens": 1563,
+      "cache_read_input_tokens": 12429,
+      "cost": 0.00425,
+      "timestamp": "2026-05-07T21:12:54.113362+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 20609,
+      "output_tokens": 319,
+      "cache_creation_input_tokens": 1450,
+      "cache_read_input_tokens": 15732,
+      "cost": 0.02559,
+      "timestamp": "2026-05-07T21:12:55.948958+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1691,
+      "output_tokens": 462,
+      "cache_creation_input_tokens": 30,
+      "cache_read_input_tokens": 45453,
+      "cost": 0.008584,
+      "timestamp": "2026-05-07T21:12:57.631919+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 6710,
+      "output_tokens": 241,
+      "cache_creation_input_tokens": 1563,
+      "cache_read_input_tokens": 12429,
+      "cost": 0.011112,
+      "timestamp": "2026-05-07T21:12:57.823562+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1838,
+      "output_tokens": 105,
+      "cache_creation_input_tokens": 349,
+      "cache_read_input_tokens": 45583,
+      "cost": 0.007358,
+      "timestamp": "2026-05-07T21:12:59.200600+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1825,
+      "output_tokens": 277,
+      "cache_creation_input_tokens": 20342,
+      "cache_read_input_tokens": 17248,
+      "cost": 0.030362,
+      "timestamp": "2026-05-07T21:12:59.294886+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 14499,
+      "output_tokens": 266,
+      "cache_creation_input_tokens": 225,
+      "cache_read_input_tokens": 14044,
+      "cost": 0.017515,
+      "timestamp": "2026-05-07T21:13:00.952276+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 2971,
+      "output_tokens": 116,
+      "cache_creation_input_tokens": 131,
+      "cache_read_input_tokens": 37654,
+      "cost": 0.00748,
+      "timestamp": "2026-05-07T21:13:01.018066+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 10466,
+      "output_tokens": 287,
+      "cache_creation_input_tokens": 6315,
+      "cache_read_input_tokens": 14380,
+      "cost": 0.021233,
+      "timestamp": "2026-05-07T21:13:04.396607+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 861,
+      "output_tokens": 508,
+      "cache_creation_input_tokens": 1092,
+      "cache_read_input_tokens": 46077,
+      "cost": 0.009374,
+      "timestamp": "2026-05-07T21:13:06.842425+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3978,
+      "output_tokens": 405,
+      "cache_creation_input_tokens": 1535,
+      "cache_read_input_tokens": 37873,
+      "cost": 0.011709,
+      "timestamp": "2026-05-07T21:13:06.849938+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 3109,
+      "output_tokens": 59,
+      "cache_creation_input_tokens": 1092,
+      "cache_read_input_tokens": 39658,
+      "cost": 0.008735,
+      "timestamp": "2026-05-07T21:13:07.919467+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1473,
+      "output_tokens": 85,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.003431,
+      "timestamp": "2026-05-07T21:13:08.138751+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 5042,
+      "output_tokens": 328,
+      "cache_creation_input_tokens": 7961,
+      "cache_read_input_tokens": 20800,
+      "cost": 0.018713,
+      "timestamp": "2026-05-07T21:13:08.212849+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 637,
+      "output_tokens": 103,
+      "cache_creation_input_tokens": 2542,
+      "cache_read_input_tokens": 40838,
+      "cost": 0.008413,
+      "timestamp": "2026-05-07T21:13:09.354035+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 3080,
+      "output_tokens": 72,
+      "cache_creation_input_tokens": 2174,
+      "cache_read_input_tokens": 28980,
+      "cost": 0.009055,
+      "timestamp": "2026-05-07T21:13:09.532797+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 20333,
+      "output_tokens": 133,
+      "cache_creation_input_tokens": 1470,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.024368,
+      "timestamp": "2026-05-07T21:13:10.248272+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 958,
+      "output_tokens": 79,
+      "cache_creation_input_tokens": 2358,
+      "cache_read_input_tokens": 31439,
+      "cost": 0.007444,
+      "timestamp": "2026-05-07T21:13:10.960684+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 20656,
+      "output_tokens": 191,
+      "cache_creation_input_tokens": 1470,
+      "cache_read_input_tokens": 15327,
+      "cost": 0.024981,
+      "timestamp": "2026-05-07T21:13:12.221031+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 654,
+      "output_tokens": 80,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 34122,
+      "cost": 0.0046,
+      "timestamp": "2026-05-07T21:13:13.064603+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1345,
+      "output_tokens": 131,
+      "cache_creation_input_tokens": 20266,
+      "cache_read_input_tokens": 16857,
+      "cost": 0.029018,
+      "timestamp": "2026-05-07T21:13:13.787783+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 489,
+      "output_tokens": 74,
+      "cache_creation_input_tokens": 452,
+      "cache_read_input_tokens": 34298,
+      "cost": 0.004854,
+      "timestamp": "2026-05-07T21:13:14.173614+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1647,
+      "output_tokens": 136,
+      "cache_creation_input_tokens": 232,
+      "cache_read_input_tokens": 37214,
+      "cost": 0.006338,
+      "timestamp": "2026-05-07T21:13:15.984156+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 729,
+      "output_tokens": 154,
+      "cache_creation_input_tokens": 52,
+      "cache_read_input_tokens": 34826,
+      "cost": 0.005047,
+      "timestamp": "2026-05-07T21:13:16.186119+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1832,
+      "output_tokens": 111,
+      "cache_creation_input_tokens": 882,
+      "cache_read_input_tokens": 37579,
+      "cost": 0.007247,
+      "timestamp": "2026-05-07T21:13:18.143960+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 1563,
+      "output_tokens": 124,
+      "cache_creation_input_tokens": 496,
+      "cache_read_input_tokens": 38590,
+      "cost": 0.006662,
+      "timestamp": "2026-05-07T21:13:19.899004+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 2500,
+      "output_tokens": 484,
+      "cache_creation_input_tokens": 279,
+      "cache_read_input_tokens": 34955,
+      "cost": 0.008764,
+      "timestamp": "2026-05-07T21:13:20.867523+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 3000,
+      "output_tokens": 249,
+      "cache_creation_input_tokens": 1092,
+      "cache_read_input_tokens": 39195,
+      "cost": 0.009529,
+      "timestamp": "2026-05-07T21:13:23.486629+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 4332,
+      "output_tokens": 338,
+      "cache_creation_input_tokens": 297,
+      "cache_read_input_tokens": 35305,
+      "cost": 0.009924,
+      "timestamp": "2026-05-07T21:13:25.063455+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 2996,
+      "output_tokens": 214,
+      "cache_creation_input_tokens": 248,
+      "cache_read_input_tokens": 40395,
+      "cost": 0.008415,
+      "timestamp": "2026-05-07T21:13:26.779768+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 2611,
+      "output_tokens": 67,
+      "cache_creation_input_tokens": 1976,
+      "cache_read_input_tokens": 35753,
+      "cost": 0.008991,
+      "timestamp": "2026-05-07T21:13:27.582090+00:00"
+    },
+    {
+      "agent": "caterpillar",
+      "input_tokens": 577,
+      "output_tokens": 221,
+      "cache_creation_input_tokens": 1719,
+      "cache_read_input_tokens": 38210,
+      "cost": 0.007652,
+      "timestamp": "2026-05-07T21:13:29.322157+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 797,
+      "output_tokens": 211,
+      "cache_creation_input_tokens": 2542,
+      "cache_read_input_tokens": 40739,
+      "cost": 0.009103,
+      "timestamp": "2026-05-07T21:13:29.399092+00:00"
+    },
+    {
+      "agent": "tweedledee",
+      "input_tokens": 894,
+      "output_tokens": 110,
+      "cache_creation_input_tokens": 107,
+      "cache_read_input_tokens": 43527,
+      "cost": 0.00593,
+      "timestamp": "2026-05-07T21:13:31.365710+00:00"
+    },
+    {
+      "agent": "tweedledum",
+      "input_tokens": 1551,
+      "output_tokens": 2634,
+      "cache_creation_input_tokens": 71,
+      "cache_read_input_tokens": 43782,
+      "cost": 0.019188,
+      "timestamp": "2026-05-07T21:13:32.161930+00:00"
+    }
+  ],
+  "outcome": "complete",
+  "elapsed_seconds": 780.55,
+  "budget_dollars": 6.0,
+  "budget_exceeded": false
+}

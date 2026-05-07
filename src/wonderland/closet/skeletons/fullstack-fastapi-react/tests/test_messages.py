@@ -1,5 +1,19 @@
 """Baseline test — POST /api/messages echoes a message into the DB,
-GET /api/messages lists what's been posted."""
+GET /api/messages lists what's been posted.
+
+============================================================================
+SKELETON TEMPLATE — DELETE THIS FILE when shipping real features.
+
+These tests pin the placeholder /api/messages endpoint that ships
+with the seed. They exist so the human verifying the skeleton can
+run pytest end-to-end before any real work happens.
+
+When you replace messages.py with real endpoints, also delete this
+file and replace it with feature-specific tests. Leaving this file
+when messages.py is gone causes a collection failure that hides
+all your real test signal.
+============================================================================
+"""
 
 
 def test_post_and_list_messages(client):

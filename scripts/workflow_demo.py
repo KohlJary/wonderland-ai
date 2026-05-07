@@ -100,13 +100,16 @@ def print_workflow(wf: Workflow) -> None:
         print(f"Default budget: ${wf.defaults.budget_dollars:.2f}")
     if wf.defaults.timeout_seconds:
         print(f"Default timeout: {wf.defaults.timeout_seconds:.0f}s")
+    else:
+        print("Default timeout: off (turn-based, no wall-clock cap)")
     if wf.defaults.quiescence_seconds:
         print(f"Default quiescence fallback: {wf.defaults.quiescence_seconds:.0f}s")
     print()
     print(f"Meetings ({len(wf.meetings)}):")
     for m in wf.meetings:
         budget = f"${m.meeting_budget:.2f}" if m.meeting_budget else "no cap"
-        print(f"  {m.label}: {m.id} ({budget})")
+        named = f" — {m.name}" if m.name else ""
+        print(f"  {m.label}: {m.id}{named} ({budget})")
         print(f"      goal:    {m.goal}")
         print(f"      roster:  {sorted(m.roster)}")
         if m.seeds:
@@ -131,9 +134,10 @@ def render_event(event) -> str | None:
     if isinstance(event, MeetingStartEvent):
         m = event.meeting
         n_seeds = len(event.seeds)
+        named = f" ({m.name})" if m.name else ""
         return (
             f"\n{'─' * 78}\n"
-            f"  {m.label} START · {m.id} · roster={sorted(m.roster)} · seeds={n_seeds}\n"
+            f"  {m.label}{named} START · {m.id} · roster={sorted(m.roster)} · seeds={n_seeds}\n"
             f"  goal: {m.goal}\n"
             f"{'─' * 78}"
         )
@@ -143,8 +147,9 @@ def render_event(event) -> str | None:
             ", ".join(f"{k}×{v}" for k, v in sorted(event.artifact_kinds.items()))
             or "no artifacts"
         )
+        named = f" ({m.name})" if m.name else ""
         return (
-            f"\n  {m.label} END · {event.outcome} · "
+            f"\n  {m.label}{named} END · {event.outcome} · "
             f"{event.elapsed_s:.1f}s · {event.calls_delta} calls · "
             f"${event.cost_delta:.4f}\n"
             f"  artifacts: {kinds}"
@@ -199,12 +204,17 @@ async def run_live(workflow: Workflow, directive: str, project_root: Path) -> in
     runner = await Runner.make_full_cast(
         project_root,
         budget_dollars=workflow.defaults.budget_dollars or 1.00,
-        timeout_seconds=workflow.defaults.timeout_seconds or 300.0,
+        timeout_seconds=workflow.defaults.timeout_seconds,
         quiescence_seconds=workflow.defaults.quiescence_seconds or 300.0,
+    )
+    timeout_display = (
+        f"timeout={runner.timeout_seconds:.0f}s"
+        if runner.timeout_seconds is not None
+        else "timeout=off (turn-based, no wall-clock cap)"
     )
     print(
         f"Runner:       budget=${runner.budget_dollars:.2f} cap, "
-        f"timeout={runner.timeout_seconds:.0f}s, "
+        f"{timeout_display}, "
         f"quiescence_fallback={runner.quiescence_seconds:.0f}s"
     )
 

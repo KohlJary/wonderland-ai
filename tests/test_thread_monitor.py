@@ -292,6 +292,163 @@ async def test_stop_is_safe_when_never_started() -> None:
 # ---------- integration: monitor + Dodo.relay/acknowledge ----------
 
 
+async def test_idle_keyed_quiescence_blocked_until_member_engages() -> None:
+    """A freshly-convened thread must not quiesce just because its
+    roster members are IDLE. Without this gate, a member finishing a
+    turn on a different thread (going IDLE) would instantly quiesce
+    any other thread they're in — including ones that just opened.
+
+    Regression for the M5-immediate-quiescence pattern documented in
+    analysis 027: M4 budget cap → M5 convene → M4's last agent goes
+    IDLE → M5 transitions RUNNING → QUIESCENT → COMPLETE in 0s before
+    any agent reads the M5 directive.
+    """
+    from wonderland.agent import AgentState
+    from wonderland.roster import ThreadRoster
+
+    bus = InMemoryCaucus()
+    roster = ThreadRoster()
+    roster.register(
+        "implementation",
+        members={"tweedledee", "tweedledum", "dodo"},
+        goal="ship it",
+        convenor="dodo",
+    )
+    monitor = ThreadMonitor(
+        bus, roster=roster, quiescence_seconds=10.0, check_interval=10.0
+    )
+    await monitor.start()
+
+    # Convenor publishes the directive. Thread now has utterance_count=1
+    # but member_engagements=0 — no roster member has acted yet.
+    await bus.publish(
+        _u(thread_id="implementation", speaker="dodo", act=SpeechAct.DIRECTIVE)
+    )
+    await asyncio.sleep(0.05)
+
+    # Simulate Tweedles being mid-turn on a different thread, then
+    # going IDLE as that turn finishes. record_agent_state only fires
+    # the quiescence check on a *transition* to IDLE, so we have to
+    # flip them to AWAITING_RESPONSE first to make IDLE a real change.
+    monitor.record_agent_state("tweedledum", AgentState.AWAITING_RESPONSE)
+    monitor.record_agent_state("tweedledee", AgentState.AWAITING_RESPONSE)
+    monitor.record_agent_state("tweedledum", AgentState.IDLE)
+    monitor.record_agent_state("tweedledee", AgentState.IDLE)
+
+    # Give the monitor a moment to process. Nothing should fire — the
+    # implementation thread is RUNNING with zero member engagements.
+    await asyncio.sleep(0.05)
+
+    info = monitor.thread_info("implementation")
+    assert info is not None
+    assert info.state is ThreadState.RUNNING, (
+        "thread must stay RUNNING when only the convenor has spoken — "
+        "without member engagement, quiescence is premature"
+    )
+    assert info.member_engagements == 0
+
+    await monitor.stop()
+
+
+async def test_idle_keyed_quiescence_fires_after_member_engages() -> None:
+    """Complementary pin: once a roster member engages, the IDLE-keyed
+    quiescence check works as before. The gate from the prior test
+    only blocks before-engagement, not after.
+    """
+    from wonderland.agent import AgentState
+    from wonderland.roster import ThreadRoster
+
+    bus = InMemoryCaucus()
+    roster = ThreadRoster()
+    roster.register(
+        "t",
+        members={"alice", "white_rabbit", "dodo"},
+        goal="g",
+        convenor="dodo",
+    )
+    monitor = ThreadMonitor(
+        bus, roster=roster, quiescence_seconds=10.0, check_interval=10.0
+    )
+    await monitor.start()
+
+    # Directive lands; no engagement yet.
+    await bus.publish(_u(thread_id="t", speaker="dodo", act=SpeechAct.DIRECTIVE))
+    # A roster member emits a non-expectation act — engagement registered.
+    await bus.publish(
+        _u(thread_id="t", speaker="alice", act=SpeechAct.ACKNOWLEDGMENT)
+    )
+    await asyncio.sleep(0.05)
+
+    info = monitor.thread_info("t")
+    assert info is not None
+    assert info.member_engagements == 1
+
+    # Now the team goes IDLE; quiescence should fire. Flip to
+    # AWAITING_RESPONSE first so IDLE is a real transition.
+    monitor.record_agent_state("white_rabbit", AgentState.AWAITING_RESPONSE)
+    monitor.record_agent_state("alice", AgentState.AWAITING_RESPONSE)
+    monitor.record_agent_state("white_rabbit", AgentState.IDLE)
+    monitor.record_agent_state("alice", AgentState.IDLE)
+
+    [change] = await _drain_until(monitor, count=1)
+    assert change.thread_id == "t"
+    assert change.to_state is ThreadState.QUIESCENT
+
+    await monitor.stop()
+
+
+async def test_seeds_do_not_count_as_engagement() -> None:
+    """Seeds replayed from a prior meeting carry the original speaker's
+    identity but is_seed=True. They populate context, they don't
+    represent new work on the current thread, so they must not unlock
+    the quiescence gate.
+    """
+    from wonderland.agent import AgentState
+    from wonderland.roster import ThreadRoster
+
+    bus = InMemoryCaucus()
+    roster = ThreadRoster()
+    roster.register(
+        "t",
+        members={"alice", "white_rabbit", "dodo"},
+        goal="g",
+        convenor="dodo",
+    )
+    monitor = ThreadMonitor(
+        bus, roster=roster, quiescence_seconds=10.0, check_interval=10.0
+    )
+    await monitor.start()
+
+    # Seed from a roster member — re-stamped from a prior meeting.
+    seed = Utterance(
+        thread_id="t",
+        speaker=AgentIdentity(name="alice", constitution_version="0.1"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.STORY,
+        content=UtteranceContent(body="seeded story from prior meeting"),
+        is_seed=True,
+    )
+    await bus.publish(seed)
+    await asyncio.sleep(0.05)
+
+    info = monitor.thread_info("t")
+    assert info is not None
+    assert info.member_engagements == 0, (
+        "seeds carry the original speaker but represent prior-meeting "
+        "context, not new engagement on the current thread"
+    )
+
+    # All members IDLE — should still not quiesce.
+    monitor.record_agent_state("alice", AgentState.AWAITING_RESPONSE)
+    monitor.record_agent_state("white_rabbit", AgentState.AWAITING_RESPONSE)
+    monitor.record_agent_state("alice", AgentState.IDLE)
+    monitor.record_agent_state("white_rabbit", AgentState.IDLE)
+    await asyncio.sleep(0.05)
+    assert info.state is ThreadState.RUNNING
+
+    await monitor.stop()
+
+
 async def test_monitor_observes_dodo_relay_and_ack(tmp_path) -> None:
     """End-to-end: Dodo relays directive, ack completion, monitor sees both."""
     from pathlib import Path

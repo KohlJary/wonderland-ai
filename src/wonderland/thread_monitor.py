@@ -88,6 +88,15 @@ class ThreadInfo:
     utterance_count: int = 0
     open_expectations: dict[str, Utterance] = field(default_factory=dict)
     nudge_count: int = 0
+    # Count of utterances from roster members other than the convenor,
+    # excluding seeds replayed from prior meetings. The IDLE-keyed
+    # quiescence check requires this to be > 0 — a thread that just
+    # opened can't be "quiescent" before any member has had a chance
+    # to engage. Without this gate, a member transitioning to IDLE
+    # from a different thread (e.g. finishing M4's last call right as
+    # M5 convenes) would instantly quiesce M5 before its agents read
+    # the directive. See analysis 027.
+    member_engagements: int = 0
 
 
 class ThreadMonitor:
@@ -158,6 +167,24 @@ class ThreadMonitor:
 
     def known_threads(self) -> list[str]:
         return sorted(self._threads.keys())
+
+    def mark_complete(self, thread_id: str, reason: str) -> None:
+        """Force-transition a thread to COMPLETE.
+
+        Used by run_workflow when a meeting exits via MEETING_BUDGET (or
+        any non-COMPLETE terminal outcome) so the late-publish guard
+        suppresses any in-flight deliberations whose calls land after
+        the meeting closed. Without this, a slow agent's response would
+        post into a still-RUNNING thread that no one is reading, and
+        get miscounted against the next meeting.
+
+        No-op if the thread is unknown or already COMPLETE.
+        """
+        info = self._threads.get(thread_id)
+        if info is None or info.state is ThreadState.COMPLETE:
+            return
+        change = self._transition(info, ThreadState.COMPLETE, reason)
+        self._transitions.put_nowait(change)
 
     def record_nudge(self, thread_id: str) -> None:
         """Register that the Dodo (or anyone) issued a nudge against a thread.
@@ -239,6 +266,17 @@ class ThreadMonitor:
             ThreadState.COMPLETE,
             ThreadState.ABANDONED,
         ):
+            return None
+        # A freshly-convened thread has utterance_count=1 (the
+        # convenor's directive) but no member engagements yet. If a
+        # roster member transitions to IDLE in this window — typically
+        # because they just finished a turn on a *different* thread —
+        # the quiescence check would otherwise see all-members-idle
+        # and instantly transition the new thread to QUIESCENT before
+        # any agent has had a chance to read the directive. Wall-clock
+        # quiescence (_check_state_after_silence) remains the safety
+        # net for threads that genuinely never engage.
+        if info.member_engagements == 0:
             return None
         if not self._all_members_idle(thread_id):
             return None
@@ -324,6 +362,20 @@ class ThreadMonitor:
         info = self._threads.setdefault(u.thread_id, ThreadInfo(thread_id=u.thread_id))
         info.last_activity = u.timestamp
         info.utterance_count += 1
+
+        # Track member engagement so the IDLE-keyed quiescence check can
+        # tell "team finished" from "team hasn't started." A new thread
+        # gets the convenor's directive (utterance_count=1) but no real
+        # member work yet. We count an utterance as engagement when its
+        # speaker is on the thread's roster, isn't the convenor, and
+        # isn't a seed replayed from a prior meeting.
+        if (
+            self._roster is not None
+            and not u.is_seed
+            and self._roster.is_member(u.thread_id, u.speaker.name)
+            and u.speaker.name != self._roster.convenor(u.thread_id)
+        ):
+            info.member_engagements += 1
 
         # Engagement heuristic: any utterance from a different speaker than
         # an open expectation closes that expectation.

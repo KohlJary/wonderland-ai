@@ -1,6 +1,23 @@
 """POST /api/messages — placeholder echo endpoint demonstrating the
 DB → API → response flow. The team should replace this with the
-actual feature endpoints (delete or repurpose this file)."""
+actual feature endpoints (delete or repurpose this file).
+
+============================================================================
+SKELETON TEMPLATE — DELETE THIS FILE when shipping real features.
+
+If you delete this file, you MUST also:
+  - Remove `from src.backend.api.messages import router as messages_router`
+    from src/backend/api/__init__.py
+  - Remove `api_router.include_router(messages_router, prefix="/api")`
+    from the same __init__.py
+  - Delete tests/test_messages.py
+
+This file imports HelloMessage from models.py. If HelloMessage gets
+removed but this file stays, the import chain breaks and pytest
+can't collect any tests. Run `run_tests` after a batch of changes
+to catch this early.
+============================================================================
+"""
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field

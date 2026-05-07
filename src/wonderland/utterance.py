@@ -31,6 +31,7 @@ class SpeechAct(StrEnum):
     STORY = "story"
     QUESTION = "question"
     TICKET = "ticket"
+    FEATURE = "feature"
     PROPOSAL = "proposal"
     CONCERN = "concern"
     IMPLEMENTATION = "implementation"
@@ -57,6 +58,7 @@ SUBSTANTIVE_ACTS: frozenset[SpeechAct] = frozenset(
         SpeechAct.STORY,
         SpeechAct.QUESTION,
         SpeechAct.TICKET,
+        SpeechAct.FEATURE,
         SpeechAct.PROPOSAL,
         SpeechAct.CONCERN,
         SpeechAct.IMPLEMENTATION,

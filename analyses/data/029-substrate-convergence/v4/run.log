@@ -1,0 +1,347 @@
+Skeleton:     fullstack-fastapi-react → /tmp/wonderland-m25-pomodoro-v4
+
+==============================================================================
+Running workflow 'tdd' live
+==============================================================================
+Project root: /tmp/wonderland-m25-pomodoro-v4
+Directive:    Build a pomodoro tracker. Users start a 25-minute focus session, get a notification when it ends, then take a 5-minute break. Sessions are saved to a personal history that the user can review (today's count, this week, all-time). Settings let the user adjust session and break lengths. No auth — single-user local app, but design with a real database so multi-user can be added later.
+Runner:       budget=$6.00 cap, timeout=off (turn-based, no wall-clock cap), quiescence_fallback=300s
+
+──────────────────────────────────────────────────────────────────────────────
+  M1 (The Caucus Race) START · scoping · roster=['alice', 'cheshire_cat', 'queen_of_hearts'] · seeds=0
+  goal: produce user stories + an architectural ADR + GDPR rulings
+──────────────────────────────────────────────────────────────────────────────
+  [t=  0.00s] dodo               directive      →caucus **M1 — The Caucus Race.**
+  [t= 22.47s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a timed break between sessions
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break durations
+                             ↳ story: View and understand local-first persistence
+                             ↳ story: Export or migrate session history
+  [t= 33.13s] queen_of_hearts    concern        →caucus Seven stories, no confusion-flags. Before I rule on any of these, I need to understand the data-hand…
+  [t= 37.14s] cheshire_cat       proposal       →caucus Seven stories, seven user surfaces — but I'm seeing two architectural surfaces beneath them, and the…
+                             ↳ adr: Session engine, data contract, and notification boundary
+  [t= 44.55s] queen_of_hearts    concern        →caucus The Cat has surfaced three architectural seams that require data-handling clarity before I can asses…
+  [t= 45.07s] alice              concern        →caucus The Cat has surfaced three real seams, and I need to understand the user experience on the other sid…
+  [t= 46.04s] cheshire_cat       concern        →caucus The Queen's reading is sharp and the team needs to surface what she's surfacing before we move forwa…
+  [t= 59.72s] cheshire_cat       concern        →caucus The Queen has surfaced the export and compliance boundary — a fourth seam that lives at the intersec…
+  [t= 61.44s] queen_of_hearts    concern        →caucus The Cat has named three architectural seams that I need clarity on before I can rule on data handlin…
+  [t= 70.34s] queen_of_hearts    concern        →caucus The Cat is right to hold. The thread is at exactly the juncture where proceeding without answers pro…
+  [t= 70.42s] cheshire_cat       deference      →caucus This thread has surfaced three architectural seams (mine), four compliance seams (the Queen's), and …
+  [t= 70.42s] <thread_monitor> running → stuck
+  [t= 70.42s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); all members idle). The team has paused with open expe…
+  [t= 71.57s] <thread_monitor> running → quiescent
+  [t= 71.57s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  [t= 71.57s] <thread_monitor> running → complete
+  [t= 71.57s] <complete>
+
+  M1 (The Caucus Race) END · COMPLETE · 71.6s · 16 calls · $0.1212
+  artifacts: adr×1, story×7
+
+──────────────────────────────────────────────────────────────────────────────
+  M2 (The Rabbit's Errand) START · decomposition · roster=['alice', 'cheshire_cat', 'white_rabbit'] · seeds=2
+  goal: decompose the ADR + stories into v1 tickets, with the user-facing point preserved
+──────────────────────────────────────────────────────────────────────────────
+  [t= 71.57s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a timed break between sessions
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break durations
+                             ↳ story: View and understand local-first persistence
+                             ↳ story: Export or migrate session history
+  [t= 71.57s] cheshire_cat       proposal       →caucus Seven stories, seven user surfaces — but I'm seeing two architectural surfaces beneath them, and the…
+                             ↳ adr: Session engine, data contract, and notification boundary
+  [t= 71.57s] dodo               directive      →caucus **M2 — The Rabbit's Errand.**
+  [t= 84.55s] cheshire_cat       concern        →caucus ADR-001 is marked `Status: Proposed` and explicitly defers three architectural questions: (a) what n…
+  [t=101.38s] white_rabbit       ticket         →caucus Reading the stories and the Cat's ADR: the architectural surfaces are clear, and they do resolve int…
+                             ↳ ticket: Define session record schema and persistence contract
+                             ↳ ticket: Set up IndexedDB store for session history
+                             ↳ ticket: Implement timer and session state machine
+                             ↳ ticket: Implement web notifications for session end
+                             ↳ ticket: Build session UI: timer display and controls
+                             ↳ ticket: Persist session on completion
+                             ↳ ticket: Display today's session count and aggregate duration
+                             ↳ ticket: Build settings UI: adjust session and break durations
+                             ↳ ticket: Display weekly and all-time history summary
+  [t=101.38s] <thread_monitor> running → quiescent
+  [t=101.38s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  [t=101.38s] <thread_monitor> running → complete
+  [t=101.38s] <complete>
+
+  M2 (The Rabbit's Errand) END · COMPLETE · 29.8s · 6 calls · $0.0494
+  artifacts: adr×1, story×7, ticket×9
+
+──────────────────────────────────────────────────────────────────────────────
+  M2.5 (Advice from a Caterpillar) START · composition · roster=['alice', 'caterpillar', 'white_rabbit'] · seeds=3
+  goal: group v1 tickets into user-facing features that span the stack coherently
+──────────────────────────────────────────────────────────────────────────────
+  [t=101.38s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a timed break between sessions
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break durations
+                             ↳ story: View and understand local-first persistence
+                             ↳ story: Export or migrate session history
+  [t=101.38s] cheshire_cat       proposal       →caucus Seven stories, seven user surfaces — but I'm seeing two architectural surfaces beneath them, and the…
+                             ↳ adr: Session engine, data contract, and notification boundary
+  [t=101.38s] white_rabbit       ticket         →caucus Reading the stories and the Cat's ADR: the architectural surfaces are clear, and they do resolve int…
+                             ↳ ticket: Define session record schema and persistence contract
+                             ↳ ticket: Set up IndexedDB store for session history
+                             ↳ ticket: Implement timer and session state machine
+                             ↳ ticket: Implement web notifications for session end
+                             ↳ ticket: Build session UI: timer display and controls
+                             ↳ ticket: Persist session on completion
+                             ↳ ticket: Display today's session count and aggregate duration
+                             ↳ ticket: Build settings UI: adjust session and break durations
+                             ↳ ticket: Display weekly and all-time history summary
+  [t=101.38s] dodo               directive      →caucus **M2.5 — Advice from a Caterpillar.**
+[late-publish] white_rabbit → thread 'decomposition' (already COMPLETE) — suppressing concern: 'The Cat is right. I decomposed against three architectural assumptions I should have named explicitly as such.'
+  [t=115.43s] white_rabbit       feature        →caucus Reading the stories and the Cat's architectural surfaces, I'm grouping the work into four user-facin…
+                             ↳ feature: Start, run, and complete a focus session with timer notification
+                             ↳ feature: Take timed breaks between sessions
+                             ↳ feature: Review and customize session and break durations
+                             ↳ feature: Review session history across time
+                             ↳ feature: Understand and control local-first persistence
+                             ↳ feature: Export or migrate session history
+  [t=115.43s] <thread_monitor> running → quiescent
+  [t=115.43s] dodo               acknowledgment →caucus Thread composition → complete. The team has gone quiet with no open expectations; the directive is s…
+  [t=115.43s] <thread_monitor> running → complete
+  [t=115.43s] <complete>
+
+  M2.5 (Advice from a Caterpillar) END · COMPLETE · 14.1s · 5 calls · $0.0290
+  artifacts: adr×1, feature×6, story×7, ticket×9
+
+──────────────────────────────────────────────────────────────────────────────
+  M3 (Tweedledum and Tweedledee) START · contract-negotiation · roster=['tweedledee', 'tweedledum'] · seeds=2
+  goal: negotiate contracts the Tweedles will implement against
+──────────────────────────────────────────────────────────────────────────────
+  [t=115.43s] cheshire_cat       proposal       →caucus Seven stories, seven user surfaces — but I'm seeing two architectural surfaces beneath them, and the…
+                             ↳ adr: Session engine, data contract, and notification boundary
+  [t=115.43s] white_rabbit       feature        →caucus Reading the stories and the Cat's architectural surfaces, I'm grouping the work into four user-facin…
+                             ↳ feature: Start, run, and complete a focus session with timer notification
+                             ↳ feature: Take timed breaks between sessions
+                             ↳ feature: Review and customize session and break durations
+                             ↳ feature: Review session history across time
+                             ↳ feature: Understand and control local-first persistence
+                             ↳ feature: Export or migrate session history
+  [t=115.43s] dodo               directive      →caucus **M3 — Tweedledum and Tweedledee.**
+  [t=129.96s] tweedledee         invite         →[cheshire_cat,alice] The engagement state says the ADR is locked. I've read it — the Cheshire Cat deferred three architec…
+  [t=134.03s] alice              concern        →caucus Tweedledee is right that the seams matter, and I need to surface something before the technical agen…
+  [t=138.88s] cheshire_cat       concern        →caucus Tweedledee is correct. ADR-001 is well-formed — it defers the right questions — but the team has not…
+  [t=142.24s] cheshire_cat       question       →caucus Alice, I hear the order you're naming — user need first, then architecture, then contracts. One clar…
+  [t=176.05s] tweedledum         contract_note  →caucus (no body)
+                             ↳ contract_note: Session record data shape and immutability
+                             ↳ contract_note: Notification contract and failure semantics
+                             ↳ contract_note: Persistence layer: local-first with eventual export
+  [t=176.05s] <thread_monitor> running → quiescent
+  [t=176.05s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  [t=176.06s] <thread_monitor> running → complete
+  [t=176.06s] <complete>
+
+  M3 (Tweedledum and Tweedledee) END · COMPLETE · 60.6s · 14 calls · $0.1120
+  artifacts: adr×1, contract_note×3, feature×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M4 (The Mad Tea Party) START · test-scenarios · roster=['alice', 'mad_hatter', 'tweedledee', 'tweedledum'] · seeds=4
+  goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
+──────────────────────────────────────────────────────────────────────────────
+  [t=176.06s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a timed break between sessions
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break durations
+                             ↳ story: View and understand local-first persistence
+                             ↳ story: Export or migrate session history
+  [t=176.06s] cheshire_cat       proposal       →caucus Seven stories, seven user surfaces — but I'm seeing two architectural surfaces beneath them, and the…
+                             ↳ adr: Session engine, data contract, and notification boundary
+  [t=176.06s] white_rabbit       feature        →caucus Reading the stories and the Cat's architectural surfaces, I'm grouping the work into four user-facin…
+                             ↳ feature: Start, run, and complete a focus session with timer notification
+                             ↳ feature: Take timed breaks between sessions
+                             ↳ feature: Review and customize session and break durations
+                             ↳ feature: Review session history across time
+                             ↳ feature: Understand and control local-first persistence
+                             ↳ feature: Export or migrate session history
+  [t=176.06s] tweedledum         contract_note  →caucus (no body)
+                             ↳ contract_note: Session record data shape and immutability
+                             ↳ contract_note: Notification contract and failure semantics
+                             ↳ contract_note: Persistence layer: local-first with eventual export
+  [t=176.06s] dodo               directive      →caucus **M4 — The Mad Tea Party.**
+[late-publish] tweedledee → thread 'contract-negotiation' (already COMPLETE) — suppressing contract_note: "Reading your three proposed contract notes. All three settle the architectural questions cleanly. I'm responding with fr"
+[mad_hatter] parse error on attempt 1, retrying: HatterResponseParseError: no JSON block found in HatterResponse response (len=0 chars, preview: '<empty string>')
+[mad_hatter] parse retry succeeded on attempt 2
+  [t=476.49s] <thread_monitor> running → quiescent
+  [t=476.49s] dodo               acknowledgment →caucus Thread test-scenarios → complete. The team has gone quiet with no open expectations; the directive i…
+  [t=476.49s] <thread_monitor> running → complete
+  [t=476.49s] <complete>
+
+  M4 (The Mad Tea Party) END · COMPLETE · 300.4s · 51 calls · $0.4725
+  artifacts: adr×1, contract_note×3, feature×6, story×7
+
+──────────────────────────────────────────────────────────────────────────────
+  M5 START · implementation · roster=['tweedledee', 'tweedledum'] · seeds=4
+  goal: implement to make Hatter's failing tests pass (red → green)
+──────────────────────────────────────────────────────────────────────────────
+  [t=476.49s] cheshire_cat       proposal       →caucus Seven stories, seven user surfaces — but I'm seeing two architectural surfaces beneath them, and the…
+                             ↳ adr: Session engine, data contract, and notification boundary
+  [t=476.49s] white_rabbit       feature        →caucus Reading the stories and the Cat's architectural surfaces, I'm grouping the work into four user-facin…
+                             ↳ feature: Start, run, and complete a focus session with timer notification
+                             ↳ feature: Take timed breaks between sessions
+                             ↳ feature: Review and customize session and break durations
+                             ↳ feature: Review session history across time
+                             ↳ feature: Understand and control local-first persistence
+                             ↳ feature: Export or migrate session history
+  [t=476.49s] tweedledum         contract_note  →caucus (no body)
+                             ↳ contract_note: Session record data shape and immutability
+                             ↳ contract_note: Notification contract and failure semantics
+                             ↳ contract_note: Persistence layer: local-first with eventual export
+  [t=476.49s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a timed break between sessions
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break durations
+                             ↳ story: View and understand local-first persistence
+                             ↳ story: Export or migrate session history
+  [t=476.49s] dodo               directive      →caucus **M5.**
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=559.34s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=559.34s] <thread_monitor> running → quiescent
+  [t=559.34s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  [t=559.34s] <thread_monitor> running → complete
+  [t=559.34s] <complete>
+
+  M5 END · COMPLETE · 82.9s · 42 calls · $0.3763
+  artifacts: adr×1, contract_note×3, feature×6, implementation×1, story×7
+
+──────────────────────────────────────────────────────────────────────────────
+  M6 (The Trial) START · review · roster=['caterpillar', 'tweedledee', 'tweedledum'] · seeds=2
+  goal: Caterpillar reviews the shipped code; surface findings
+──────────────────────────────────────────────────────────────────────────────
+  [t=559.34s] white_rabbit       feature        →caucus Reading the stories and the Cat's architectural surfaces, I'm grouping the work into four user-facin…
+                             ↳ feature: Start, run, and complete a focus session with timer notification
+                             ↳ feature: Take timed breaks between sessions
+                             ↳ feature: Review and customize session and break durations
+                             ↳ feature: Review session history across time
+                             ↳ feature: Understand and control local-first persistence
+                             ↳ feature: Export or migrate session history
+  [t=559.34s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=559.34s] dodo               directive      →caucus **M6 — The Trial.**
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+  [t=633.86s] tweedledum         concern        →caucus Review of backend implementation against feature claims and test intent.
+  [t=657.35s] tweedledee         concern        →caucus **Code review: Sessions and Breaks implementation (M5)**
+  [t=662.76s] tweedledee         concern        →caucus Tweedledum surfaces a real semantic validation gap in both Sessions and Breaks: `duration_seconds` i…
+  [t=666.50s] caterpillar        review         →caucus Code review of backend sessions and breaks APIs. Core functionality is solid—create and retrieve ses…
+                             ↳ review: Backend Sessions and Breaks APIs
+  [t=667.30s] tweedledum         concern        →caucus Reading your review of the M5 backend work, I agree on all counts. The code correctly honors the fea…
+  [t=670.51s] tweedledee         question       →caucus Tweedledum: I'm reading the Caterpillar's review flagging a type annotation issue in the datetime va…
+  [t=681.49s] tweedledum         contract_note  →caucus (no body)
+                             ↳ contract_note: Sessions and Breaks: Backend-Computed Duration
+  [t=681.63s] caterpillar        review         →caucus Code review of backend sessions and breaks APIs. Core functionality is sound—persistence, retrieval,…
+                             ↳ review: Backend Sessions and Breaks APIs
+  [t=706.65s] caterpillar        review         →caucus Code review of backend sessions and breaks APIs.
+                             ↳ review: Backend Sessions and Breaks APIs
+  [t=712.52s] tweedledee         contract_note  →caucus Tweedledum: I've read the implementation and understand the type annotation issue now — the validato…
+                             ↳ contract_note: Duration Validation: Client-Reported vs. Backend-Computed
+                             ↳ contract_note: Type Annotations: Datetime Post-Validator
+  [t=728.28s] caterpillar        review         →caucus Code review of backend sessions and breaks APIs.
+                             ↳ review: Backend Sessions and Breaks APIs — Duration Validation and Contract
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: TweedleResponse response failed schema validation: 1 validation error for TweedleResponse
+contract_notes.2
+  Value error, TweedleContractNoteAction(mark_agreed) requires contract_version — the locked version both sides accept. [type=value_error, input_value={'operation': 'mark_agree...est/response contract.'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+[tweedledee] parse retry succeeded on attempt 2
+  [t=733.24s] tweedledee         contract_note  →caucus Tweedledum: Your proposal (CN-004) to make the backend compute duration_seconds is sound from the fr…
+                             ↳ contract_note: Sessions and Breaks: Backend-Computed Duration
+                             ↳ contract_note: Duration Validation: Client-Reported vs. Backend-Computed
+                             ↳ contract_note: Type Annotations: Datetime Post-Validator
+  [t=737.09s] tweedledum         implementation →caucus Fixed two issues surfaced by the Caterpillar and prior concerns:
+                             ↳ implementation: Sessions and Breaks: Backend-Computed Duration + Type Annotation Fixes
+  [t=743.48s] caterpillar        review         →caucus Reading the follow-up implementation against the prior concerns. Type annotations and duration valid…
+                             ↳ review: Sessions and Breaks: Backend-Computed Duration + Type Annotation Fixes
+  [t=745.45s] tweedledee         deference      →caucus Caterpillar: Your finding is correct — the semantic validation gap on duration_seconds was real. Tha…
+  [t=757.69s] tweedledum         implementation →caucus Tweedledee: The type annotation issue has already been fixed in the current implementation. Both Ses…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=761.71s] caterpillar        review         →caucus Reading the current working tree against the implementation claim. The dead `to_dict()` methods have…
+                             ↳ review: Backend Models: Dead Code Removal
+
+  M6 (The Trial) END · MEETING_BUDGET · 202.4s · 98 calls · $1.2003
+  artifacts: contract_note×6, feature×6, implementation×3, review×6
+
+==============================================================================
+Summary
+==============================================================================
+Total elapsed:  761.7s
+Total cost:     $2.3608  (cap $6.00)
+Total LLM calls: 232
+
+Per-agent:
+  tweedledum         calls= 68 cost=$0.7841
+  tweedledee         calls= 87 cost=$0.7486
+  caterpillar        calls= 24 cost=$0.3665
+  mad_hatter         calls= 21 cost=$0.2575
+  cheshire_cat       calls= 16 cost=$0.0857
+  queen_of_hearts    calls=  6 cost=$0.0416
+  white_rabbit       calls=  3 cost=$0.0400
+  alice              calls=  7 cost=$0.0365
+
+Artifacts on disk:
+  architecture/ (1 files)
+    adr-001-session-engine-data-contract-and-notification-boundary.md
+  contract-notes/ (6 files)
+    contract-note-001-session-record-data-shape-and-immutability.md
+    contract-note-002-notification-contract-and-failure-semantics.md
+    contract-note-003-persistence-layer-local-first-with-eventual-export.md
+    contract-note-004-sessions-and-breaks-backend-computed-duration.md
+    contract-note-005-duration-validation-client-reported-vs-backend-computed.md
+    contract-note-006-type-annotations-datetime-post-validator.md
+  features/ (6 files)
+    feature-001-start-run-and-complete-a-focus-session-with-timer-notification.md
+    feature-002-take-timed-breaks-between-sessions.md
+    feature-003-review-and-customize-session-and-break-durations.md
+    feature-004-review-session-history-across-time.md
+    feature-005-understand-and-control-local-first-persistence.md
+    feature-006-export-or-migrate-session-history.md
+  implementations/ (1 files)
+    implementation-001-sessions-and-breaks-backend-computed-duration-type-annotation-fixes.md
+  reviews/ (7 files)
+    001_sessions_and_breaks_api.md
+    review-001-backend-sessions-and-breaks-apis.md
+    review-002-backend-sessions-and-breaks-apis.md
+    review-003-backend-sessions-and-breaks-apis.md
+    review-004-backend-sessions-and-breaks-apis-duration-validation-and-contract.md
+    review-005-sessions-and-breaks-backend-computed-duration-type-annotation-fixes.md
+    review-006-backend-models-dead-code-removal.md
+  stories/ (7 files)
+    story-001-start-and-complete-a-focus-session.md
+    story-002-take-a-timed-break-between-sessions.md
+    story-003-review-today-s-session-count.md
+    story-004-review-weekly-and-all-time-history.md
+    story-005-adjust-session-and-break-durations.md
+    story-006-view-and-understand-local-first-persistence.md
+    story-007-export-or-migrate-session-history.md
+  test-scenarios/ (4 files)
+    test-scenario-001-session-immutability-and-validation.md
+    test-scenario-002-session-duration-integrity.md
+    test-scenario-003-zero-or-negative-duration-rejected.md
+    test-scenario-004-notification-independent-of-logging.md
+  tickets/ (9 files)
+    ticket-001-define-session-record-schema-and-persistence-contract.md
+    ticket-002-set-up-indexeddb-store-for-session-history.md
+    ticket-003-implement-timer-and-session-state-machine.md
+    ticket-004-implement-web-notifications-for-session-end.md
+    ticket-005-build-session-ui-timer-display-and-controls.md
+    ticket-006-persist-session-on-completion.md
+    ticket-007-display-today-s-session-count-and-aggregate-duration.md
+    ticket-008-build-settings-ui-adjust-session-and-break-durations.md
+    ticket-009-display-weekly-and-all-time-history-summary.md

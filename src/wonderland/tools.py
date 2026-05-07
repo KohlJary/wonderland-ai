@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,17 @@ from typing import Any
 # Most source files are well under this; binaries or large assets get truncated
 # with a clear marker so the LLM can decide what to do.
 MAX_READ_BYTES = 64 * 1024  # 64 KiB
+
+# Cap for `run_tests` output. Tighter than MAX_READ_BYTES — pytest
+# output for large failing suites can be tens of KB and would dominate
+# the LLM's context window. The compact summary + truncated failure
+# detail is what's load-bearing for the Tweedles' red→green loop.
+MAX_TEST_OUTPUT_BYTES = 4 * 1024  # 4 KiB ≈ ~1k tokens
+
+# Default per-call wall-clock cap for `run_tests`. Long enough for a
+# real test suite, short enough that a hung test doesn't burn the
+# meeting's wall-clock budget.
+DEFAULT_TEST_TIMEOUT_SECONDS = 60.0
 
 # Hard cap on the number of grep results to avoid context-flood.
 MAX_GREP_HITS = 100
@@ -290,6 +302,67 @@ class Tools:
             return "(working tree clean — no changes since last commit)"
         return out
 
+    # ------------------------------------------------------------------ #
+    # Test execution — Tweedles in M5 use this to iterate red→green
+    # against Hatter's failing tests. Without it, Tweedles ship code
+    # blind and rely on M6 (Caterpillar's review) to surface failures
+    # downstream — which often hits MEETING_BUDGET before the fix loop
+    # closes. Running tests during M5 collapses the iteration distance.
+    # ------------------------------------------------------------------ #
+
+    def run_tests(
+        self,
+        paths: list[str] | None = None,
+        timeout_seconds: float = DEFAULT_TEST_TIMEOUT_SECONDS,
+    ) -> str:
+        """Run pytest in the project root, return a compact result summary.
+
+        Output is structured for LLM consumption — capped at
+        MAX_TEST_OUTPUT_BYTES, summary line first, then short-form
+        failures (one line each), then truncated tracebacks for the
+        first few failures if budget allows.
+
+        ``paths``: specific test files or test IDs (e.g.
+        ``tests/test_foo.py`` or ``tests/test_foo.py::test_bar``). When
+        None, runs the full suite (pytest's default discovery). Each
+        path is sandbox-checked.
+
+        ``timeout_seconds``: hard wall-clock cap; raises ToolError on
+        expiration so the LLM can decide whether to narrow scope.
+
+        Returns the compact summary string. Raises ToolError on setup
+        failures (no Python interpreter, no pytest installed, sandbox
+        escape, timeout). A failing pytest run is *not* an error — the
+        return string conveys it via the summary.
+        """
+        cmd: list[str] = [sys.executable, "-m", "pytest", "--tb=short", "-q"]
+        if paths:
+            for p in paths:
+                self._resolve(p)  # raises ToolError on sandbox escape
+            cmd.extend(paths)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=self._root,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_seconds,
+            )
+        except FileNotFoundError as exc:
+            raise ToolError(
+                "python interpreter not available — "
+                "run_tests requires sys.executable to be valid"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ToolError(
+                f"pytest timed out after {timeout_seconds}s — "
+                f"narrow the test scope with `paths` or fix a hung test"
+            ) from exc
+
+        return _format_pytest_output(result.stdout, result.stderr, result.returncode)
+
     def git_diff(self, path: str | None = None) -> str:
         """Show the diff of working-tree changes against HEAD.
 
@@ -450,6 +523,49 @@ class Tools:
                 },
             },
             {
+                "name": "run_tests",
+                "description": (
+                    "Run pytest in the project root. Returns a compact "
+                    "summary: total pass/fail/skip counts, the short-form "
+                    "list of failing tests, and truncated tracebacks for "
+                    "the first few failures. Use this during M5 (the "
+                    "implementation phase) to iterate red→green: ship "
+                    "code with write_file, run the relevant tests, read "
+                    "what's still failing, fix and repeat. Without this, "
+                    "you ship blind and rely on M6 review to find what's "
+                    "broken — much slower and more expensive. Specify "
+                    "`paths` to scope to particular test files or test "
+                    "IDs (e.g. 'tests/test_feature_001.py' or "
+                    "'tests/test_feature_001.py::test_happy_path'); "
+                    "omit to run the full suite. A failing pytest is "
+                    "NOT an error — the result string conveys the state."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "Optional list of test files or test IDs. "
+                                "Omit to run the full suite (slowest but "
+                                "most thorough). Narrow when iterating "
+                                "on a specific failure."
+                            ),
+                        },
+                        "timeout_seconds": {
+                            "type": "number",
+                            "description": (
+                                "Hard wall-clock cap for the pytest run. "
+                                "Defaults to 60s. Increase for slow "
+                                "suites; decrease when narrowing scope."
+                            ),
+                        },
+                    },
+                    "required": [],
+                },
+            },
+            {
                 "name": "git_diff",
                 "description": (
                     "Show the diff of working-tree changes against HEAD. "
@@ -503,7 +619,171 @@ class Tools:
             return self.git_status()
         if tool_name == "git_diff":
             return self.git_diff(tool_input.get("path"))
+        if tool_name == "run_tests":
+            return self.run_tests(
+                paths=tool_input.get("paths"),
+                timeout_seconds=tool_input.get(
+                    "timeout_seconds", DEFAULT_TEST_TIMEOUT_SECONDS
+                ),
+            )
         raise ToolError(f"unknown tool: {tool_name}")
 
 
-__all__ = ["MAX_GREP_HITS", "MAX_LIST_ENTRIES", "MAX_READ_BYTES", "ToolError", "Tools"]
+def _format_pytest_output(stdout: str, stderr: str, returncode: int) -> str:
+    """Compress pytest output into an LLM-friendly summary.
+
+    Pytest dumps tens of KB of output for a moderately-failing suite —
+    too much for a Tweedle's tool_result context. We extract the
+    structured bits the LLM needs to iterate red→green:
+
+    1. The terminal summary line (e.g. "16 passed, 48 failed in 9.14s")
+    2. The short test summary section (one line per failure)
+    3. Truncated failure tracebacks for the first ~3 failures, if
+       budget allows.
+
+    Pytest exit codes:
+      0 — all tests passed
+      1 — at least one test failed
+      2 — pytest was interrupted
+      3 — internal error
+      4 — usage error (bad CLI args)
+      5 — no tests collected
+    """
+    # Detect collection failures (broken import chain) FIRST, before
+    # any exit-code-specific handling. When pytest can't load a test
+    # module (or its conftest.py) because some import fails, it can't
+    # collect ANY tests — every other test in the project is invisible
+    # until the import is fixed. This surface is *higher priority*
+    # than test failures because it hides all other test signal.
+    #
+    # Pytest's exit code for collection failures varies: a conftest
+    # ImportError exits 4 ("usage error"); a test-module ImportError
+    # may exit 2 with collection error in stdout; a missing module
+    # might exit 1. So we can't rely on returncode alone — we scan
+    # both stdout and stderr for telltale patterns and let that
+    # supersede the exit-code branches below.
+    combined = stdout + "\n" + stderr
+    collection_error_match = re.search(
+        r"ERROR\s+collecting\s+([^\n]+)", combined
+    )
+    import_error_match = re.search(
+        r"^(?:E\s+)?(ImportError|ModuleNotFoundError):\s+([^\n]+)",
+        combined,
+        re.MULTILINE,
+    )
+    if collection_error_match or import_error_match:
+        msg_parts = [
+            "BUILD FAILURE — pytest could not collect tests because the "
+            "import chain is broken. NO test signal is available until "
+            "this is fixed."
+        ]
+        if collection_error_match:
+            msg_parts.append(
+                f"Collection error in: {collection_error_match.group(1).strip()}"
+            )
+        if import_error_match:
+            msg_parts.append(
+                f"{import_error_match.group(1)}: {import_error_match.group(2).strip()}"
+            )
+        # Try to find the file:line where the import fails.
+        traceback_match = re.search(
+            r"^([\w\-/]+\.py):(\d+):\s*in\s+",
+            combined,
+            re.MULTILINE,
+        )
+        if traceback_match:
+            msg_parts.append(
+                f"Failure traceback ends at: "
+                f"{traceback_match.group(1)}:{traceback_match.group(2)}"
+            )
+        msg_parts.append(
+            "Common cause: a file you replaced or deleted is still being "
+            "imported elsewhere. Check api/__init__.py and other "
+            "aggregator files for stale imports of removed symbols."
+        )
+        return "\n\n".join(msg_parts)
+
+    # Exit-code-specific handling for non-collection-error cases.
+    if returncode == 5:
+        # No tests collected — usually a path issue or empty test dir.
+        clean_stderr = stderr.strip()[:200] or "(no stderr)"
+        return f"pytest collected no tests. stderr: {clean_stderr}"
+    if returncode == 4:
+        clean_stderr = stderr.strip()[:200] or "(no stderr)"
+        return f"pytest usage error (bad arguments). stderr: {clean_stderr}"
+    if returncode == 3:
+        clean_stderr = stderr.strip()[:200] or "(no stderr)"
+        return (
+            f"pytest internal error. stderr: {clean_stderr}\n"
+            f"stdout (last 200 chars): ...{stdout[-200:]}"
+        )
+
+    # Final summary line. Pytest's format depends on verbosity:
+    #   default verbosity: "========= 2 passed in 0.05s ========="
+    #   quiet (-q):        "2 passed in 0.05s"
+    # Match both — optional leading/trailing `=` decorations, but the
+    # body always starts with a count + outcome and ends with "in Xs".
+    summary_match = re.search(
+        r"^(?:=+\s*)?(\d+\s+(?:passed|failed|skipped|error|errors)[^=\n]*?in\s+[\d.]+\s*s)(?:\s*=+)?\s*$",
+        stdout,
+        re.MULTILINE,
+    )
+    summary = summary_match.group(1).strip() if summary_match else "(could not parse summary)"
+
+    # Short test summary section — one line per failed test.
+    short_summary = ""
+    short_match = re.search(
+        r"=+\s*short test summary info\s*=+\n(.+?)(?:\n=+|\Z)",
+        stdout,
+        re.DOTALL,
+    )
+    if short_match:
+        short_summary = short_match.group(1).strip()
+
+    parts = [f"pytest result: {summary}"]
+    if short_summary:
+        lines = [ln for ln in short_summary.splitlines() if ln.strip()]
+        max_lines = 12
+        shown = lines[:max_lines]
+        parts.append("\nFailing tests:")
+        parts.append("\n".join(shown))
+        if len(lines) > max_lines:
+            parts.append(f"\n... and {len(lines) - max_lines} more")
+
+    result = "\n".join(parts)
+
+    # If we have headroom under the cap, append truncated failure
+    # tracebacks for the first few failures from the FAILURES section.
+    failures_match = re.search(
+        r"=+\s*FAILURES\s*=+\n(.+?)\n=+\s*(?:warnings summary|short test summary info|=)",
+        stdout,
+        re.DOTALL,
+    )
+    if failures_match and len(result) < MAX_TEST_OUTPUT_BYTES // 2:
+        failures_block = failures_match.group(1)
+        # Each failure starts with "_____ test_name _____"
+        failure_chunks = re.split(r"\n_+\s.+?\s_+\n", failures_block)
+        # First chunk is empty (split before first separator); take next 3
+        failure_chunks = [c.strip() for c in failure_chunks if c.strip()][:3]
+        if failure_chunks:
+            available = MAX_TEST_OUTPUT_BYTES - len(result) - 200
+            traceback_section = "\n\nFirst failures (tracebacks):\n"
+            traceback_section += "\n---\n".join(failure_chunks)
+            if len(traceback_section) > available:
+                traceback_section = traceback_section[:available] + "\n[truncated]"
+            result += traceback_section
+
+    if len(result.encode("utf-8")) > MAX_TEST_OUTPUT_BYTES:
+        result = result[:MAX_TEST_OUTPUT_BYTES] + "\n\n[output truncated]"
+    return result
+
+
+__all__ = [
+    "DEFAULT_TEST_TIMEOUT_SECONDS",
+    "MAX_GREP_HITS",
+    "MAX_LIST_ENTRIES",
+    "MAX_READ_BYTES",
+    "MAX_TEST_OUTPUT_BYTES",
+    "ToolError",
+    "Tools",
+]

@@ -69,6 +69,30 @@ directive correctly chose silence because their constitutions named
 padding, false certainty, and orchestration-performance as failure modes
 to actively guard against, not because an external policy intervened.
 
+A third corollary, observed when a phase of the workflow misfired:
+**character-shaped agents degrade visibly rather than silently when
+parts of the system fail**. Most LLM pipelines have two outcomes —
+they succeed, or they produce silent garbage at the end of a path
+where data was missing or contracts were violated. In
+[analysis 027](./analyses/027-pomodoro-degradation-and-event-leak.md),
+the new feature-composition phase wired correctly but didn't fire
+under live conditions; the next meeting's directive then referenced
+artifacts that didn't exist. The Tweedles read the directive
+carefully, *noticed* the contradiction with their actual seed
+manifest, flagged the mismatch as a `concern`, and reached for the
+disk-resident artifacts via their `list_files`/`read_file` tools to
+recover the data the bus channel was missing. They stayed within
+their character roles — they didn't try to *be the Rabbit* and re-
+emit the missing artifacts; they negotiated against what the Rabbit
+had actually produced. None of this recovery was designed. It's
+emergent from three converging properties: agents have intentions
+tied to their constitutions (Tweedles want concrete artifacts to
+negotiate against), the substrate offers multiple data channels (bus
+*and* disk), and the framework gives characters tools to cross
+between those channels. The literary parallel keeps earning its keep
+— the recovery pattern works *because* the agents have characters
+with intentions, not despite it.
+
 The framing the project is building around: *failures are how software
 gets built.* The iterative cycle of ship-then-discover-then-fix depends
 on recognizing what went wrong; agents whose failure modes are part of

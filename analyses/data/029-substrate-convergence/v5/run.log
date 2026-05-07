@@ -1,0 +1,405 @@
+Skeleton:     fullstack-fastapi-react → /tmp/wonderland-m25-pomodoro-v5
+
+==============================================================================
+Running workflow 'tdd' live
+==============================================================================
+Project root: /tmp/wonderland-m25-pomodoro-v5
+Directive:    Build a pomodoro tracker. Users start a 25-minute focus session, get a notification when it ends, then take a 5-minute break. Sessions are saved to a personal history that the user can review (today's count, this week, all-time). Settings let the user adjust session and break lengths. No auth — single-user local app, but design with a real database so multi-user can be added later.
+Runner:       budget=$6.00 cap, timeout=off (turn-based, no wall-clock cap), quiescence_fallback=300s
+
+──────────────────────────────────────────────────────────────────────────────
+  M1 (The Caucus Race) START · scoping · roster=['alice', 'cheshire_cat', 'queen_of_hearts'] · seeds=0
+  goal: produce user stories + an architectural ADR + GDPR rulings
+──────────────────────────────────────────────────────────────────────────────
+  [t=  0.00s] dodo               directive      →caucus **M1 — The Caucus Race.**
+  [t= 21.47s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a break and return to focus
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Trust the app to retain data across sessions
+  [t= 21.47s] <thread_monitor> running → quiescent
+  [t= 21.47s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  [t= 21.47s] <thread_monitor> running → complete
+  [t= 21.47s] <complete>
+
+  M1 (The Caucus Race) END · COMPLETE · 21.5s · 2 calls · $0.0339
+  artifacts: story×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M2 (The Rabbit's Errand) START · decomposition · roster=['alice', 'cheshire_cat', 'white_rabbit'] · seeds=1
+  goal: decompose the ADR + stories into v1 tickets, with the user-facing point preserved
+──────────────────────────────────────────────────────────────────────────────
+  [t= 21.47s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a break and return to focus
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Trust the app to retain data across sessions
+  [t= 21.47s] dodo               directive      →caucus **M2 — The Rabbit's Errand.**
+[late-publish] queen_of_hearts → thread 'scoping' (already COMPLETE) — suppressing question: 'Alice, before I rule on these stories, I need clarity on data scope and jurisdictional context. These are Pomodoro-style'
+[late-publish] cheshire_cat → thread 'scoping' (already COMPLETE) — suppressing proposal: 'Six stories, one real architectural seam: the difference between ephemeral state (the running timer, the current break, '
+  [t= 38.32s] white_rabbit       ticket         →caucus (no body)
+                             ↳ ticket: Implement Pomodoro timer UI and state machine
+                             ↳ ticket: Implement customizable session and break lengths (settings panel)
+                             ↳ ticket: Wire timer state to backend persistence
+                             ↳ ticket: Add session history view (today's session count)
+                             ↳ ticket: Add weekly and all-time history view
+                             ↳ ticket: Wire settings to backend persistence
+  [t= 44.27s] <thread_monitor> running → quiescent
+  [t= 44.27s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  [t= 44.27s] <thread_monitor> running → complete
+  [t= 44.27s] <complete>
+
+  M2 (The Rabbit's Errand) END · COMPLETE · 22.8s · 9 calls · $0.0622
+  artifacts: story×6, ticket×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M2.5 (Advice from a Caterpillar) START · composition · roster=['alice', 'caterpillar', 'white_rabbit'] · seeds=2
+  goal: group v1 tickets into user-facing features that span the stack coherently
+──────────────────────────────────────────────────────────────────────────────
+  [t= 44.27s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a break and return to focus
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Trust the app to retain data across sessions
+  [t= 44.27s] white_rabbit       ticket         →caucus (no body)
+                             ↳ ticket: Implement Pomodoro timer UI and state machine
+                             ↳ ticket: Implement customizable session and break lengths (settings panel)
+                             ↳ ticket: Wire timer state to backend persistence
+                             ↳ ticket: Add session history view (today's session count)
+                             ↳ ticket: Add weekly and all-time history view
+                             ↳ ticket: Wire settings to backend persistence
+  [t= 44.27s] dodo               directive      →caucus **M2.5 — Advice from a Caterpillar.**
+  [t= 51.32s] white_rabbit       feature        →caucus M2.5 composition: six stories, three core user capabilities. All features tier v1 — the Pomodoro mod…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Take a break and return to focus
+                             ↳ feature: View session history and statistics
+                             ↳ feature: Customize session and break durations
+  [t= 62.78s] <thread_monitor> running → quiescent
+  [t= 62.78s] dodo               acknowledgment →caucus Thread composition → complete. The team has gone quiet with no open expectations; the directive is s…
+  [t= 62.78s] <thread_monitor> running → complete
+  [t= 62.78s] <complete>
+
+  M2.5 (Advice from a Caterpillar) END · COMPLETE · 18.5s · 5 calls · $0.0360
+  artifacts: feature×4, story×6, ticket×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M3 (Tweedledum and Tweedledee) START · contract-negotiation · roster=['tweedledee', 'tweedledum'] · seeds=1
+  goal: negotiate contracts the Tweedles will implement against
+──────────────────────────────────────────────────────────────────────────────
+  [t= 62.78s] white_rabbit       feature        →caucus M2.5 composition: six stories, three core user capabilities. All features tier v1 — the Pomodoro mod…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Take a break and return to focus
+                             ↳ feature: View session history and statistics
+                             ↳ feature: Customize session and break durations
+  [t= 62.78s] dodo               directive      →caucus **M3 — Tweedledum and Tweedledee.**
+  [t= 95.19s] tweedledum         contract_note  →caucus (no body)
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=125.86s] tweedledee         contract_note  →caucus (no body)
+                             ↳ contract_note: Session lifecycle and real-time state
+                             ↳ contract_note: Settings persistence and live application
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=147.42s] tweedledee         contract_note  →caucus Reading your proposals — solid architectural clarity on the session lifecycle and break semantics. I…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=151.87s] tweedledum         contract_note  →caucus Responding to your four proposals. I'm taking your frontend-owned-timer framing on session lifecycle…
+                             ↳ contract_note: Session lifecycle and real-time state
+                             ↳ contract_note: Settings persistence and live application
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Break state and session-to-break transition
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: TweedleResponse response failed schema validation: 1 validation error for TweedleResponse
+contract_notes.0
+  Value error, TweedleContractNoteAction(mark_agreed) requires resolution — name what got agreed / why the escalation / why the deferral. [type=value_error, input_value={'operation': 'mark_agree...with persisted record)'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+[tweedledee] parse retry succeeded on attempt 2
+  [t=181.77s] tweedledee         contract_note  →caucus Accepting your backend framings across the board. On session-lifecycle, the frontend-owned-timer mod…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=184.37s] tweedledum         contract_note  →caucus Reading your Frontend Impact fills — strong alignment on all four seams. I see you and I proposed th…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=193.11s] tweedledum         contract_note  →caucus Responding to your three clarification prompts on history date boundaries, settings versioning displ…
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=199.97s] tweedledee         contract_note  →caucus Accepting your break-state clarifications. completed_break_at starts null; gets populated on /sessio…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=224.59s] tweedledee         contract_note  →caucus Confirmed on all three. For 002 (history queries): UTC midnight boundaries on the backend, cursor pa…
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=224.59s] <thread_monitor> running → quiescent
+  [t=224.59s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  [t=224.59s] <thread_monitor> running → complete
+  [t=224.59s] <complete>
+
+  M3 (Tweedledum and Tweedledee) END · COMPLETE · 161.8s · 50 calls · $0.3489
+  artifacts: contract_note×34, feature×4
+
+──────────────────────────────────────────────────────────────────────────────
+  M4 (The Mad Tea Party) START · test-scenarios · roster=['alice', 'mad_hatter', 'tweedledee', 'tweedledum'] · seeds=6
+  goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
+──────────────────────────────────────────────────────────────────────────────
+  [t=224.59s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a break and return to focus
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Trust the app to retain data across sessions
+  [t=224.59s] white_rabbit       feature        →caucus M2.5 composition: six stories, three core user capabilities. All features tier v1 — the Pomodoro mod…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Take a break and return to focus
+                             ↳ feature: View session history and statistics
+                             ↳ feature: Customize session and break durations
+  [t=224.59s] tweedledee         contract_note  →caucus Accepting your backend framings across the board. On session-lifecycle, the frontend-owned-timer mod…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=224.59s] tweedledum         contract_note  →caucus Reading your Frontend Impact fills — strong alignment on all four seams. I see you and I proposed th…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=224.59s] tweedledee         contract_note  →caucus Accepting your break-state clarifications. completed_break_at starts null; gets populated on /sessio…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=224.59s] tweedledee         contract_note  →caucus Confirmed on all three. For 002 (history queries): UTC midnight boundaries on the backend, cursor pa…
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=224.59s] dodo               directive      →caucus **M4 — The Mad Tea Party.**
+[late-publish] tweedledum → thread 'contract-negotiation' (already COMPLETE) — suppressing deference: 'All four core contracts locked and agreed. Session lifecycle, history queries, settings persistence, and break-state sem'
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=363.08s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for tests/test_feature_001_session_li…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=513.90s] mad_hatter         test_scenario  →caucus **M4 Tea Party: Test Scenarios and Pytest Files**
+                             ↳ test_scenario: Marcus starts a 25-minute session and receives completion feedback
+                             ↳ test_scenario: Marcus manually completes session early (10 min instead of 25)
+                             ↳ test_scenario: Marcus completes session 26.5 minutes after start (network delay, within jitter)
+                             ↳ test_scenario: Marcus closes app during session; /complete never called (abandoned session)
+                             ↳ test_scenario: Yuki takes 5-minute break after session, then starts next session
+                             ↳ test_scenario: Yuki takes longer break (10 minutes instead of default 5)
+                             ↳ test_scenario: Yuki skips break, starts next session immediately
+                             ↳ test_scenario: Devon views completed session count for today
+                             ↳ test_scenario: Priya views weekly and all-time session statistics
+                             ↳ test_scenario: Pagination: Priya pages through 25 sessions with cursor-based pagination
+                             ↳ test_scenario: Midnight boundary: Session spanning midnight counted on start day
+                             ↳ test_scenario: Empty history: New user views today's count and stats
+                             ↳ test_scenario: User customizes session duration from 25 to 30 minutes
+                             ↳ test_scenario: New session uses updated duration after settings change
+                             ↳ test_scenario: Settings change mid-session doesn't affect current session
+                             ↳ test_scenario: User sets duration to 30 seconds (below 60-second minimum)
+                             ↳ test_scenario: User sets duration to 3 hours (above 2-hour maximum)
+                             ↳ test_scenario: User updates only session duration (break duration unchanged)
+                             ↳ test_scenario: Settings persisted across app restarts
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=614.36s] tweedledee         implementation →caucus Tweedledum's backend tests are comprehensive and locked. I've read them carefully and have three con…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+  [t=618.75s] tweedledum         question       →caucus Three contract clarifications needed before M5 implementation — these are the seams between our test…
+  [t=619.90s] alice              question       →caucus Tweedledee, I need to understand the scope of your three questions before I can validate them agains…
+  [t=633.33s] mad_hatter         question       →caucus Tweedledee's three clarifications are well-formed and block implementation. I'm reading them against…
+  [t=671.11s] tweedledee         concern        →caucus Hatter's test surface locked across all four features. My M4 clarifications are answered by the test…
+  [t=671.11s] <thread_monitor> running → stuck
+  [t=671.11s] dodo               nudge          →caucus Thread test-scenarios → stuck (1 open expectation(s); all members idle). The team has paused with op…
+  [t=680.43s] tweedledum         concern        →caucus Agreed — test surface validates all four contracts. Three observations:
+  [t=714.18s] tweedledee         question       →caucus Reading your edge-case tests to ground my contract assumptions. Three clarifications needed before M…
+  [t=714.18s] <thread_monitor> running → stuck
+  [t=714.18s] dodo               nudge          →caucus Thread test-scenarios → stuck (1 open expectation(s); all members idle). The team has paused with op…
+  [t=756.58s] tweedledum         concern        →caucus All three clarifications are answered by the test surface. Reading the locked contracts and edge-cas…
+
+  M4 (The Mad Tea Party) END · MEETING_BUDGET · 532.0s · 150 calls · $1.7097
+  artifacts: contract_note×15, feature×4, implementation×2, story×6, test_scenario×19
+
+──────────────────────────────────────────────────────────────────────────────
+  M5 START · implementation · roster=['tweedledee', 'tweedledum'] · seeds=7
+  goal: implement to make Hatter's failing tests pass (red → green)
+──────────────────────────────────────────────────────────────────────────────
+  [t=756.58s] <thread_monitor> running → complete
+  [t=756.58s] <complete>
+
+  M5 END · RUNNING · 0.0s · 0 calls · $0.0000
+  artifacts: no artifacts
+
+──────────────────────────────────────────────────────────────────────────────
+  M6 (The Trial) START · review · roster=['caterpillar', 'tweedledee', 'tweedledum'] · seeds=1
+  goal: Caterpillar reviews the shipped code; surface findings
+──────────────────────────────────────────────────────────────────────────────
+  [t=756.58s] white_rabbit       feature        →caucus M2.5 composition: six stories, three core user capabilities. All features tier v1 — the Pomodoro mod…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Take a break and return to focus
+                             ↳ feature: View session history and statistics
+                             ↳ feature: Customize session and break durations
+  [t=756.58s] tweedledee         contract_note  →caucus Accepting your backend framings across the board. On session-lifecycle, the frontend-owned-timer mod…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=756.58s] tweedledum         contract_note  →caucus Reading your Frontend Impact fills — strong alignment on all four seams. I see you and I proposed th…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=756.58s] tweedledee         contract_note  →caucus Accepting your break-state clarifications. completed_break_at starts null; gets populated on /sessio…
+                             ↳ contract_note: Session lifecycle and state machine
+                             ↳ contract_note: History query and display
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and session-to-break transition
+  [t=756.58s] tweedledee         contract_note  →caucus Confirmed on all three. For 002 (history queries): UTC midnight boundaries on the backend, cursor pa…
+                             ↳ contract_note: Session record schema and history queries
+                             ↳ contract_note: Settings persistence and application
+                             ↳ contract_note: Break state and break-to-session transition
+  [t=756.58s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take a break and return to focus
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Trust the app to retain data across sessions
+  [t=756.58s] mad_hatter         test_scenario  →caucus **M4 Tea Party: Test Scenarios and Pytest Files**
+                             ↳ test_scenario: Marcus starts a 25-minute session and receives completion feedback
+                             ↳ test_scenario: Marcus manually completes session early (10 min instead of 25)
+                             ↳ test_scenario: Marcus completes session 26.5 minutes after start (network delay, within jitter)
+                             ↳ test_scenario: Marcus closes app during session; /complete never called (abandoned session)
+                             ↳ test_scenario: Yuki takes 5-minute break after session, then starts next session
+                             ↳ test_scenario: Yuki takes longer break (10 minutes instead of default 5)
+                             ↳ test_scenario: Yuki skips break, starts next session immediately
+                             ↳ test_scenario: Devon views completed session count for today
+                             ↳ test_scenario: Priya views weekly and all-time session statistics
+                             ↳ test_scenario: Pagination: Priya pages through 25 sessions with cursor-based pagination
+                             ↳ test_scenario: Midnight boundary: Session spanning midnight counted on start day
+                             ↳ test_scenario: Empty history: New user views today's count and stats
+                             ↳ test_scenario: User customizes session duration from 25 to 30 minutes
+                             ↳ test_scenario: New session uses updated duration after settings change
+                             ↳ test_scenario: Settings change mid-session doesn't affect current session
+                             ↳ test_scenario: User sets duration to 30 seconds (below 60-second minimum)
+                             ↳ test_scenario: User sets duration to 3 hours (above 2-hour maximum)
+                             ↳ test_scenario: User updates only session duration (break duration unchanged)
+                             ↳ test_scenario: Settings persisted across app restarts
+  [t=756.58s] dodo               directive      →caucus **M5.**
+  [t=756.58s] white_rabbit       feature        →caucus M2.5 composition: six stories, three core user capabilities. All features tier v1 — the Pomodoro mod…
+                             ↳ feature: Start and complete a focus session
+                             ↳ feature: Take a break and return to focus
+                             ↳ feature: View session history and statistics
+                             ↳ feature: Customize session and break durations
+  [t=756.58s] dodo               directive      →caucus **M6 — The Trial.**
+[late-publish] tweedledee → thread 'test-scenarios' (already COMPLETE) — suppressing deference: 'Contracts locked. All three clarifications resolved: Q1 (30s jitter tolerance confirmed), Q2 (POST /sessions/{session_id'
+  [t=786.02s] caterpillar        deference      →caucus No production code to review. The working tree contains comprehensive test scenarios (14 test files …
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+[late-publish] tweedledee → thread 'test-scenarios' (already COMPLETE) — suppressing deference: 'All three contract clarifications confirmed by the locked test surface. Q1: 30-second jitter tolerance (test_marcus_comp'
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing concern: '**CRITICAL: Test surface self-contradiction detected.** The test files contradict each other AND the locked contracts on'
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+  [t=888.42s] tweedledee         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=907.08s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=929.39s] tweedledee         concern        →caucus I've examined the backend implementation against the Hatter's test contract and the features. The co…
+
+  M6 (The Trial) END · MEETING_BUDGET · 172.8s · 115 calls · $1.2542
+  artifacts: contract_note×15, feature×8, implementation×2, story×6, test_scenario×19
+
+==============================================================================
+Summary
+==============================================================================
+Total elapsed:  929.4s
+Total cost:     $3.4448  (cap $6.00)
+Total LLM calls: 331
+
+Per-agent:
+  tweedledee         calls=121 cost=$1.3670
+  tweedledum         calls=120 cost=$1.1263
+  mad_hatter         calls= 48 cost=$0.6113
+  caterpillar        calls= 25 cost=$0.2189
+  alice              calls=  8 cost=$0.0419
+  cheshire_cat       calls=  6 cost=$0.0346
+  white_rabbit       calls=  2 cost=$0.0284
+  queen_of_hearts    calls=  1 cost=$0.0164
+
+Artifacts on disk:
+  architecture/ (1 files)
+    adr-001-separate-ephemeral-session-state-from-persisted-audit-trail.md
+  contract-notes/ (8 files)
+    contract-note-001-session-lifecycle-and-state-machine.md
+    contract-note-002-session-record-schema-and-history-queries.md
+    contract-note-003-settings-persistence-and-application.md
+    contract-note-004-break-state-and-break-to-session-transition.md
+    contract-note-005-session-lifecycle-and-real-time-state.md
+    contract-note-006-settings-persistence-and-live-application.md
+    contract-note-007-history-query-and-display.md
+    contract-note-008-break-state-and-session-to-break-transition.md
+  features/ (4 files)
+    feature-001-start-and-complete-a-focus-session.md
+    feature-002-take-a-break-and-return-to-focus.md
+    feature-003-view-session-history-and-statistics.md
+    feature-004-customize-session-and-break-durations.md
+  stories/ (6 files)
+    story-001-start-and-complete-a-focus-session.md
+    story-002-take-a-break-and-return-to-focus.md
+    story-003-review-today-s-session-count.md
+    story-004-review-weekly-and-all-time-history.md
+    story-005-customize-session-and-break-lengths.md
+    story-006-trust-the-app-to-retain-data-across-sessions.md
+  test-scenarios/ (29 files)
+    scenario-001-marcus-starts-a-25-minute-session-and-receives-completion-feedback.md
+    scenario-002-marcus-manually-completes-session-early-10-min-instead-of-25.md
+    scenario-003-marcus-completes-session-26-5-minutes-after-start-network-delay-within-jitter.md
+    scenario-004-marcus-closes-app-during-session-complete-never-called-abandoned-session.md
+    scenario-005-yuki-takes-5-minute-break-after-session-then-starts-next-session.md
+    scenario-006-yuki-takes-longer-break-10-minutes-instead-of-default-5.md
+    scenario-007-yuki-skips-break-starts-next-session-immediately.md
+    scenario-008-devon-views-completed-session-count-for-today.md
+    scenario-009-priya-views-weekly-and-all-time-session-statistics.md
+    scenario-010-pagination-priya-pages-through-25-sessions-with-cursor-based-pagination.md
+    scenario-011-midnight-boundary-session-spanning-midnight-counted-on-start-day.md
+    scenario-012-empty-history-new-user-views-today-s-count-and-stats.md
+    scenario-013-user-customizes-session-duration-from-25-to-30-minutes.md
+    scenario-014-new-session-uses-updated-duration-after-settings-change.md
+    scenario-015-settings-change-mid-session-doesn-t-affect-current-session.md
+    scenario-016-user-sets-duration-to-30-seconds-below-60-second-minimum.md
+    scenario-017-user-sets-duration-to-3-hours-above-2-hour-maximum.md
+    scenario-018-user-updates-only-session-duration-break-duration-unchanged.md
+    scenario-019-settings-persisted-across-app-restarts.md
+    test-scenario-001-marcus-starts-session.md
+    test-scenario-001-session-lifecycle-invariants.md
+    test-scenario-002-break-state-invariants.md
+    test-scenario-002-marcus-early-completion.md
+    test-scenario-003-history-query-invariants.md
+    test-scenario-004-settings-validation-and-application.md
+    test-scenario-005-marcus-starts-and-completes-a-session.md
+    test-scenario-006-yuki-takes-a-break-and-continues.md
+    test-scenario-007-devon-reviews-today-s-sessions.md
+    test-scenario-008-alex-customizes-his-rhythm.md
+  tickets/ (6 files)
+    ticket-001-implement-pomodoro-timer-ui-and-state-machine.md
+    ticket-002-implement-customizable-session-and-break-lengths-settings-panel.md
+    ticket-003-wire-timer-state-to-backend-persistence.md
+    ticket-004-add-session-history-view-today-s-session-count.md
+    ticket-005-add-weekly-and-all-time-history-view.md
+    ticket-006-wire-settings-to-backend-persistence.md

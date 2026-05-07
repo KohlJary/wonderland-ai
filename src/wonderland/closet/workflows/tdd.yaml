@@ -38,8 +38,13 @@ description: |
 version: 1
 
 defaults:
-  budget_dollars: 5.00   # higher than canonical's $3 — extra meeting + Alice + Hatter pair
-  timeout_seconds: 1200.0
+  budget_dollars: 6.00   # extra meeting + Alice + Hatter pair + M4 headroom + M6 review-and-fix loop
+  # No timeout_seconds — Wonderland is turn-based; wall-clock global
+  # timeout was a category error that caused real bugs (see analysis
+  # 029's M5-RUNNING-outcome cascade). Runaway-loop protection is
+  # GLOBAL_BUDGET's job. The ThreadMonitor's wall-clock quiescence
+  # check (quiescence_seconds) remains as the safety net for hung
+  # deliberations.
   quiescence_seconds: 300.0
 
 meetings:
@@ -48,6 +53,7 @@ meetings:
   # ---------------------------------------------------------------------
   - id: scoping
     label: M1
+    name: The Caucus Race
     goal: produce user stories + an architectural ADR + GDPR rulings
     roster: [alice, cheshire_cat, queen_of_hearts]
     meeting_budget: 0.40
@@ -55,28 +61,115 @@ meetings:
 
   - id: decomposition
     label: M2
-    goal: decompose the ADR + stories into v1 tickets
-    roster: [white_rabbit, cheshire_cat]
-    meeting_budget: 0.30
+    name: The Rabbit's Errand
+    goal: decompose the ADR + stories into v1 tickets, with the user-facing point preserved
+    roster: [alice, white_rabbit, cheshire_cat]
+    meeting_budget: 0.40
     convenor_directive: |
       Decomposition thread. The stories and ADR(s) in your context
       are settled — they were produced in a prior scoping thread.
       Read them as locked context, not as fresh proposals to respond
-      to. Rabbit, your move is `ticket`: decompose the user-story-
+      to.
+
+      **Rabbit, your move is `ticket`:** decompose the user-story-
       and-architecture picture into v1-scope work units the Tweedles
-      can pick up. Cat, weigh in only if a ticket implies a fresh
-      architectural decision the existing ADRs don't cover.
+      can pick up.
+
+      **Cat:** weigh in only if a ticket implies a fresh architectural
+      decision the existing ADRs don't cover.
+
+      **Alice — you're here as the grounding voice.** You wrote the
+      stories Rabbit is decomposing; your job in this thread is to
+      defend them when Rabbit's tickets compress them past user-
+      recognition, and to ask "would the persona I named actually
+      care about this?" when a ticket drifts toward technical
+      convenience. You are not driving the decomposition; you are
+      defending the user-facing point of it. Default to silence
+      unless the work is drifting from a story your persona would
+      recognize.
     seeds:
       - from: scoping
         kinds: [adr, story]
 
+  # ---------------------------------------------------------------------
+  # M2.5 is the feature-composition phase — tickets get grouped into
+  # user-facing features that span the stack coherently. Addresses the
+  # gap surfaced in analysis 026/027: M3 currently seeds from a single
+  # ticket and Tweedles generalize from there, which produces the
+  # inconsistent-frontend-vs-backend pattern across runs. With features,
+  # M3 negotiates seams against a coherent user-facing unit instead of
+  # inferring cross-stack coordination from a representative ticket.
+  # ---------------------------------------------------------------------
+  - id: composition
+    label: M2.5
+    name: Advice from a Caterpillar
+    goal: group v1 tickets into user-facing features that span the stack coherently
+    roster: [alice, white_rabbit, caterpillar]
+    meeting_budget: 0.40
+    convenor_directive: |
+      **Rabbit, ship features.** This is your meeting — the chapter
+      title (Caterpillar's chapter) describes the *stance* the team
+      takes in this thread, not who's driving. You are. Read the
+      tickets in your context and group them into user-facing
+      features. A feature is a capability a user can describe in
+      one sentence; it aggregates multiple tickets that ship
+      together as a coherent thing. **Silence is wrong here — your
+      job is to produce features.** The decomposition work already
+      happened in the prior thread (the Rabbit's Errand); this
+      thread is the composition work that hands off to the
+      Tweedles. Without features, M3 has nothing to negotiate
+      against and the rest of the pipeline degrades.
+
+      For every feature you ship, name:
+      - `stack_span` — frontend / backend / full-stack. Tweedles
+        use this in M3 to decide whether both sides need to align
+        on the seam or just one.
+      - `personas` — at least one persona name from the M1 stories
+        that this feature serves. If you can't name a persona, the
+        grouping isn't a feature, it's a bag of tickets.
+      - `tickets` — the ticket slugs this feature aggregates.
+      - `tier` — v1 / fast-follow / post-launch. Tier the feature
+        separately from its constituent tickets. A feature can be
+        deferred to fast-follow even when its underlying tickets
+        stay v1 (the ticket is the unit of work; the feature is
+        the unit of user-facing framing).
+
+      You don't need to be perfect — half-formed groupings are
+      better than silence. Alice and Caterpillar will push back
+      if you've drifted; revise from there.
+
+      **Alice — same grounding role as M2.** Audit feature claims
+      against your stories. Push back when a feature has drifted
+      from a story your persona would recognize, or when a story
+      you wrote has no feature serving it (dropped on the floor in
+      the grouping). Default to silence unless a grounding
+      intervention is needed.
+
+      **Caterpillar — apply your "who are you?" stance one layer
+      earlier than M6.** For each feature Rabbit ships, ask: what
+      does this claim, and do its constituent tickets actually
+      deliver that? You're reviewing the *promise* the feature
+      makes, not shipped code. Speak when a feature's claim is
+      incoherent with its tickets, or when its tickets aggregate
+      something that isn't a coherent capability the user would
+      name. Default to silence otherwise.
+
+      Don't add tickets, don't remove tickets, don't re-litigate
+      scope. Group what's there.
+    seeds:
+      - from: scoping
+        kinds: [adr, story]
+      - from: decomposition
+        kinds: [ticket]
+
   - id: contract-negotiation
     label: M3
+    name: Tweedledum and Tweedledee
     goal: negotiate contracts the Tweedles will implement against
     roster: [tweedledee, tweedledum]
     meeting_budget: 0.80
     convenor_directive: |
-      Contract negotiation thread. The ADR(s) and ticket in your
+      Contract negotiation thread. The ADR(s) and features in your
       context are settled — read them as locked. Tweedledee,
       Tweedledum: this is the pair's design work. **Do NOT call
       write_file in this thread.** The codebase is not yet in scope
@@ -84,18 +177,25 @@ meetings:
       failing tests against your contracts in the next thread, then
       implementation happens.
 
-      Draft the contract notes that nail down the seam between
-      frontend and backend for the seeded ticket. Half-formed is
-      fine (state=proposed); your sibling fills in their side. Reach
-      `state=agreed` on the load-bearing contracts before this
+      Each feature in your context names a `stack_span`:
+      - `full-stack` features: both of you negotiate the seam
+        together. The contract spans frontend ↔ backend — surface
+        what each side promises and consumes.
+      - `frontend` features: Tweedledee leads; Tweedledum confirms
+        no backend impact (or names the impact if there is one).
+      - `backend` features: Tweedledum leads; Tweedledee confirms
+        no frontend impact.
+
+      Draft the contract notes that nail down the seams. Half-formed
+      is fine (state=proposed); your sibling fills in their side.
+      Reach `state=agreed` on the load-bearing contracts before this
       meeting closes — Hatter writes tests against agreed contracts
       only.
     seeds:
       - from: scoping
         kinds: [adr]
-      - from: decomposition
-        kinds: [ticket]
-        limit: 1
+      - from: composition
+        kinds: [feature]
 
   # ---------------------------------------------------------------------
   # M4 is the TDD-specific phase. Hatter writes failing tests + the
@@ -104,9 +204,10 @@ meetings:
   # ---------------------------------------------------------------------
   - id: test-scenarios
     label: M4
+    name: The Mad Tea Party
     goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
     roster: [alice, mad_hatter, tweedledee, tweedledum]
-    meeting_budget: 1.20
+    meeting_budget: 1.50
     convenor_directive: |
       Test-scenarios thread — the tea party. The contract notes in
       your context are locked (state=agreed in the prior thread).
@@ -115,17 +216,36 @@ meetings:
       Tweedles ask clarifying questions; do NOT write production
       code in this thread.
 
-      **Alice's move** — user-journey scenarios. Read your stories
-      from the scoping thread and translate the load-bearing ones
-      into concrete happy-path test scenarios: a real persona, the
-      sequence of actions they take, the observable result. These
-      are the WHO-IS-THIS-FOR tests — what does a real user do, and
-      does it work?
+      **Scope tests per feature, not per system.** Your context
+      includes the features Rabbit shipped in M2.5 and the contracts
+      the Tweedles agreed in M3. For each feature, you ship test
+      scenarios bounded by that feature's claim and stack_span —
+      not generalized to invariants that span the whole system.
+      Stop when a feature is covered; don't keep generating tests
+      because more failure modes are imaginable. Caterpillar's
+      review in M6 is the system-wide-invariants safety net — you
+      don't need to be exhaustive at this layer. Bounded reasoning
+      is the right shape for this meeting; sprawling reasoning is
+      the failure mode.
 
-      **Hatter's move** — failure-mode scenarios. Edge cases first —
-      that's where the system actually lives. Security, concurrency,
-      malformed input, GDPR-cascade edges, the things that look fine
-      on the happy path and break on the second Tuesday in March.
+      **Alice's move** — user-journey scenarios, one per feature.
+      For each feature, write the happy-path scenario: a real
+      persona from your M1 stories, the sequence of actions they
+      take to use the feature, the observable result. One scenario
+      per feature is the floor; ship more only when a feature has
+      genuinely distinct user paths. These are the WHO-IS-THIS-FOR
+      tests — what does a real user do with this feature, and does
+      it work?
+
+      **Hatter's move** — failure-mode scenarios, scoped per
+      feature. For each feature, ship the load-bearing edge cases
+      that match its failure-mode profile (security, concurrency,
+      malformed input, the things that look fine on the happy path
+      and break on the second Tuesday in March). Match the feature's
+      stack_span: full-stack features need both halves of the edge
+      cases; one-sided features need only their side. Stop when the
+      feature's surface is covered — system-wide invariants are
+      M6's job.
 
       **CRITICAL: each of you must do TWO things per scenario, not
       one.** A scenario without a runnable test file is documentation,
@@ -172,9 +292,35 @@ meetings:
       Tweedledee, Tweedledum: ask Alice or Hatter clarifying
       questions if a test's intent is ambiguous against your
       contract — you are about to implement against these.
+
+      **Hatter — stay in your lane.** Your job here is to ship
+      failure-mode scenarios for features. Two things you do NOT do:
+
+      1. **Don't iterate on meta-discussion.** If you observe
+         process issues mid-meeting (workflow breaking, contract
+         ambiguities, another agent shipping off-spec), raise ONE
+         `concern` naming the problem clearly and move on. Do not
+         re-litigate once raised. Caterpillar reviews shipped work
+         in M6; the Dodo orchestrates the team.
+      2. **Don't write production code.** No `write_file` calls
+         into `src/backend/`, `frontend/src/`, or anywhere outside
+         `tests/` (the test files you author) and `.wonderland/`
+         (artifact paths, but those should go through speech-act
+         emissions, not direct writes). Production code is M5's
+         job and the Tweedles' lane. If you see a contract
+         ambiguity that needs code-level resolution, raise a
+         `concern` with the contract gap — don't fix it yourself
+         by editing src/.
+
+      Per analysis 029 F5 + the v7 follow-up: your §VIII failure
+      mode (scenario sprawl + severity inflation) generalizes to
+      both meta-discussion sprawl AND out-of-lane code shipping.
+      This is the bound on both.
     seeds:
       - from: scoping
         kinds: [adr, story]
+      - from: composition
+        kinds: [feature]
       - from: contract-negotiation
         kinds: [contract_note]
         where:
@@ -219,15 +365,66 @@ meetings:
       backend → `src/backend/models.py`, `src/backend/api/`) to
       understand the conventions before writing.
 
-      Tweedledee owns frontend; Tweedledum owns backend. Run the
-      tests if you have a way to (you can't actually execute
-      pytest; rely on your read of the test code to validate
-      coverage). Closure: every test from M4 — Alice's user-journey
-      scenarios AND Hatter's failure-mode scenarios — has matching
-      production code that would make it pass.
+      **Skeleton TEMPLATE markers — read carefully.** The skeleton
+      ships with a working hello-world example (HelloMessage model,
+      /api/messages endpoint, test_messages.py). These files are
+      marked at the top with `SKELETON TEMPLATE — REPLACE OR
+      DELETE` comment blocks. They exist so the human verifying
+      the skeleton has a runnable end-to-end flow before any real
+      work happens.
+
+      When you replace template content, the deletion has to be
+      *consistent across all files that reference the deleted
+      symbols*. The HelloMessage chain is: models.py defines it →
+      api/messages.py imports it → api/__init__.py imports the
+      router → tests/test_messages.py exercises the endpoint. Half-
+      replacement breaks the import chain — pytest fails to collect
+      ANY tests because conftest.py imports the broken chain, and
+      all your real test signal disappears. Each TEMPLATE comment
+      block names exactly which other files need updating; follow
+      the instruction.
+
+      Tweedledee owns frontend; Tweedledum owns backend.
+
+      **Iterate red→green using `run_tests`.** This is the load-bearing
+      loop for M5: ship code with `write_file`, run the relevant tests
+      with `run_tests` (scope to the test file you just touched —
+      faster than running everything), read what's still failing, fix
+      and repeat. Without this loop you ship blind and the bugs
+      surface in M6 review (slower and more expensive). The result
+      string from `run_tests` tells you exactly what's red and why.
+
+      **If `run_tests` reports `BUILD FAILURE` (collection error /
+      import error), STOP shipping new code and fix the import chain
+      first.** A build failure hides ALL test signal — every other
+      test in the project becomes invisible. Common cause: you
+      replaced or deleted a file that's still being imported
+      elsewhere (typically api/__init__.py importing a removed
+      router, or tests/ importing a removed model class). Read the
+      offending file the error names, remove the stale import, run
+      tests again to confirm. Don't keep shipping over a broken
+      build — you'll just keep accumulating broken state.
+
+      Use `paths=['tests/test_feature_001_<topic>.py']` to scope to
+      the feature you're working on. Run the full suite occasionally
+      to catch cross-feature regressions but don't make it your
+      default — the full suite is slower and produces more output
+      than you can productively read.
+
+      A test that passes when it should fail, or fails when it should
+      pass, is a `concern` to raise — don't silently change the test.
+
+      Closure: every test from M4 — Alice's user-journey scenarios
+      AND Hatter's failure-mode scenarios — has matching production
+      code. The `run_tests` summary line is the literal signal of
+      done: when it reports zero failures (or only the failures you
+      and the team have explicitly accepted as known limits of the
+      v1 scaffold), you're done.
     seeds:
       - from: scoping
         kinds: [adr]
+      - from: composition
+        kinds: [feature]
       - from: contract-negotiation
         kinds: [contract_note]
         where:
@@ -243,9 +440,10 @@ meetings:
   # ---------------------------------------------------------------------
   - id: review
     label: M6
+    name: The Trial
     goal: Caterpillar reviews the shipped code; surface findings
     roster: [caterpillar, tweedledee, tweedledum]
-    meeting_budget: 0.50
+    meeting_budget: 1.20
     convenor_directive: |
       Review thread. Code was shipped in a prior implementation
       thread to make Hatter's tests pass. Caterpillar: the working
@@ -253,6 +451,19 @@ meetings:
       what shipped, then `git_diff` to read the changes. Surface
       findings on the production code itself, citing files and
       lines.
+
+      The features in your context are the user-facing claims the
+      shipped code is supposed to deliver. Two layers of review
+      land naturally on you:
+      - **Per-feature claim integrity** — for each feature, does
+        the shipped code actually deliver what the feature claims?
+        Apply your "what does this code claim, and does the claim
+        hold?" stance with the feature's user-facing promise as the
+        anchor. This is the system-wide-invariants check M4 was
+        scoped *not* to do (M4 stays per-feature; you generalize).
+      - **Implementation correctness** — bugs at the file/line
+        level: imports that don't resolve, contracts that aren't
+        honored, error paths that swallow data.
 
       You can also `read_file` Hatter's tests if a finding hinges on
       whether the code matches test intent — but don't critique
@@ -262,6 +473,18 @@ meetings:
       change you agree with, ship the fix via `write_file` and
       re-emit an `implementation` utterance. Do not re-litigate the
       contracts or the tests; both are locked.
+
+      **Bound your fix-on-review work to genuinely-broken bugs.**
+      Don't accept every finding as actionable. If Caterpillar's
+      finding is a refactor suggestion or "could be improved" —
+      not a name-the-broken-behavior bug — push back as a
+      `concern` rather than shipping the refactor. M6's job is
+      *closure on named bugs*, not perfection. Speculative
+      refactors during review are scope creep. (Per analysis 029
+      F5's pattern: bound the iteration, ship what's load-bearing,
+      let the rest go to a future pass.)
     seeds:
+      - from: composition
+        kinds: [feature]
       - from: implementation
         kinds: [implementation]

@@ -311,6 +311,353 @@ class TestCanonicalSpecifics:
         assert contract_seed.fallback == "any"
 
 
+@pytest.mark.parametrize("workflow_name", ["canonical", "tdd"])
+class TestDecompositionGroundingVoice:
+    """Pins Alice's presence in M2 (decomposition) as the grounding
+    voice. The literary parallel: in the book, every character's
+    distinctive shape is legible because Alice is there to be confused
+    by them — strip her out and the Cheshire Cat is just a slippery
+    answerer rather than a slippery answerer to *Alice*. The framework
+    operationalizes this in M2 by pairing Alice with Rabbit + Cat —
+    she defends her stories when Rabbit's tickets compress them past
+    user-recognition.
+    """
+
+    @pytest.fixture
+    def m2(self, workflow_name):
+        return load_workflow(workflow_name).meeting_by_id("decomposition")
+
+    def test_alice_is_in_m2_roster(self, m2):
+        assert m2 is not None
+        assert "alice" in m2.roster, (
+            "Alice belongs in M2 — Rabbit's anxious-thoroughness "
+            "failure mode is decomposing past usefulness, and Alice's "
+            "'would the persona actually care about this?' voice is "
+            "the counter. See the literary-parallel discussion that "
+            "filed this change."
+        )
+
+    def test_m2_directive_names_alice_as_grounding_voice(self, m2):
+        assert m2 is not None
+        directive = m2.convenor_directive.lower()
+        assert "alice" in directive, (
+            "M2 directive must explicitly call out Alice's role; she "
+            "is in the room but defensive/observational by default — "
+            "without the directive naming her job, the LLM doesn't "
+            "know what move she should make."
+        )
+        assert "grounding voice" in directive or "user-facing point" in directive, (
+            "M2 directive must name Alice's role as defensive (defending "
+            "the user-facing point) rather than driving the decomposition. "
+            "Without the framing, she'll either be silent (waste) or try to "
+            "do Rabbit's job (muddy the meeting)."
+        )
+
+
+class TestCompositionPhase:
+    """Pins the M2.5 feature-composition phase (TDD only). Per roadmap
+    d1f4f2ec and analyses 026/027: M3 seeding from a single ticket
+    forced Tweedles to generalize cross-stack coordination from one
+    representative work unit, producing the inconsistent-frontend-vs-
+    backend pattern. M2.5 groups tickets into features that span the
+    stack coherently; M3 then negotiates seams against the feature.
+
+    Caterpillar is here applying his "what does this claim?" stance
+    one layer earlier than M6 — to the *promise* of the feature, not
+    the shipped code. Alice extends her M2 grounding-voice role.
+    Rabbit drives the grouping (he wrote the tickets).
+    """
+
+    @pytest.fixture
+    def composition(self):
+        return load_workflow("tdd").meeting_by_id("composition")
+
+    def test_composition_meeting_exists_in_tdd(self, composition):
+        assert composition is not None
+        assert composition.label == "M2.5"
+        assert composition.name == "Advice from a Caterpillar"
+
+    def test_composition_meeting_does_not_exist_in_canonical(self):
+        canonical = load_workflow("canonical")
+        assert canonical.meeting_by_id("composition") is None, (
+            "M2.5 ships in TDD first; canonical can follow if the "
+            "experiment shows the phase earns its keep"
+        )
+
+    def test_composition_roster_has_rabbit_alice_caterpillar(self, composition):
+        assert composition is not None
+        assert set(composition.roster) == {"white_rabbit", "alice", "caterpillar"}, (
+            "Rabbit drives (he wrote the tickets), Alice audits user-coherence "
+            "(extending M2 role), Caterpillar audits feature-claim integrity "
+            "(M6 stance applied earlier). Adding anyone else dilutes the focus."
+        )
+
+    def test_composition_directive_names_rabbits_feature_move(self, composition):
+        assert composition is not None
+        directive = composition.convenor_directive.lower()
+        assert "feature" in directive
+        assert "rabbit" in directive, (
+            "Directive must name Rabbit's role explicitly; without it the "
+            "LLM doesn't know which agent should drive the grouping"
+        )
+
+    def test_composition_directive_requires_persona_grounding(self, composition):
+        assert composition is not None
+        directive = composition.convenor_directive.lower()
+        assert "persona" in directive, (
+            "The persona requirement is the framework's anti-bag-of-tickets "
+            "guard: if a feature can't name a persona it serves, it isn't a "
+            "feature, it's a grouping convenience. Directive must surface this."
+        )
+
+    def test_composition_directive_names_stack_span(self, composition):
+        assert composition is not None
+        directive = composition.convenor_directive.lower()
+        assert "stack_span" in directive or "stack-span" in directive or "stack span" in directive, (
+            "stack_span is what M3 reads to decide whether contracts are "
+            "one-sided or full-stack. Directive must name it so Rabbit "
+            "produces it on every feature."
+        )
+
+    def test_composition_seeds_from_decomposition_tickets(self, composition):
+        assert composition is not None
+        ticket_seed = next(
+            (s for s in composition.seeds if s.from_meeting == "decomposition"), None
+        )
+        assert ticket_seed is not None
+        assert "ticket" in ticket_seed.kinds
+
+    def test_tdd_m3_seeds_features_not_tickets(self):
+        """The whole point of adding M2.5 — M3 negotiates contracts against
+        features, not against a single representative ticket."""
+        m3 = load_workflow("tdd").meeting_by_id("contract-negotiation")
+        assert m3 is not None
+        feature_seed = next(
+            (s for s in m3.seeds if s.from_meeting == "composition"), None
+        )
+        assert feature_seed is not None, (
+            "TDD M3 must seed from composition.feature so Tweedles get "
+            "feature-bound contract scope. Otherwise M2.5 doesn't actually "
+            "change downstream behavior."
+        )
+        assert "feature" in feature_seed.kinds
+        ticket_seed = next(
+            (s for s in m3.seeds if s.from_meeting == "decomposition"), None
+        )
+        assert ticket_seed is None, (
+            "TDD M3 should no longer seed directly from decomposition.ticket "
+            "— the composition phase aggregates them. Canonical M3 still does."
+        )
+
+    def test_canonical_m3_still_seeds_from_decomposition_ticket(self):
+        """Canonical doesn't have M2.5, so its M3 still seeds tickets directly."""
+        m3 = load_workflow("canonical").meeting_by_id("contract-negotiation")
+        assert m3 is not None
+        ticket_seed = next(
+            (s for s in m3.seeds if s.from_meeting == "decomposition"), None
+        )
+        assert ticket_seed is not None
+        assert "ticket" in ticket_seed.kinds
+
+    def test_composition_directive_opens_with_rabbit_imperative(self, composition):
+        """Per analysis 027 F1: Rabbit chose silence in M2.5 because the
+        directive's structure (long preamble, role descriptions for all
+        three agents, 'default to silence' framing) read as ambient
+        rather than imperative. The fix is to lead with Rabbit's move
+        explicitly. This test pins that Rabbit's imperative appears in
+        the *first 200 characters* of the directive, before any role
+        framing for Alice or Caterpillar.
+        """
+        assert composition is not None
+        opening = composition.convenor_directive[:200].lower()
+        assert "rabbit" in opening, (
+            "Directive must open with Rabbit's role; without that the "
+            "LLM reads the meeting as ambient and chooses silence"
+        )
+
+    def test_composition_directive_explicitly_rejects_silence_for_rabbit(
+        self, composition
+    ):
+        """Same finding: Rabbit's default is silence-when-uncertain
+        (correct in M2 where Alice and Cat are watching for grounding
+        breaks), but M2.5 needs him to drive. The directive must name
+        silence as wrong for Rabbit specifically.
+        """
+        assert composition is not None
+        directive = composition.convenor_directive.lower()
+        assert "silence is wrong" in directive, (
+            "Without an explicit anti-silence statement, Rabbit's "
+            "constitutional default-to-silence-when-uncertain wins and "
+            "M2.5 produces no features (analysis 027 F1)"
+        )
+
+    def test_composition_directive_counters_chapter_title_bias(self, composition):
+        """The meeting prefix '**M2.5 — Advice from a Caterpillar.**'
+        primes the LLM toward 'this is Caterpillar's show.' The
+        directive must explicitly name that the chapter title
+        describes the *stance*, not the convenor — Rabbit drives.
+        """
+        assert composition is not None
+        directive = composition.convenor_directive.lower()
+        # Must reference the chapter title bias and counter it
+        assert "chapter title" in directive or "caterpillar's chapter" in directive, (
+            "Directive must explicitly counter the chapter-title bias "
+            "introduced by the meeting name prefix"
+        )
+
+
+class TestTeaPartyScopesPerFeature:
+    """Pins M4's per-feature scoping discipline added after analysis
+    027. Without this, Hatter's open-ended 'what could break?' search
+    produces test sprawl — analysis 027 saw 22 test files including
+    several pairs of overlapping timezone/persistence scenarios. With
+    features as the unit of scope and M6 named as the system-wide
+    safety net, M4 is bounded and (hypothesized) cheaper.
+    """
+
+    @pytest.fixture
+    def m4(self):
+        return load_workflow("tdd").meeting_by_id("test-scenarios")
+
+    def test_m4_seeds_features_from_composition(self, m4):
+        """M4 needs features in its seed manifest; without them the
+        per-feature scoping language has nothing to bind to and
+        Hatter falls back to system-wide search.
+        """
+        assert m4 is not None
+        feature_seed = next(
+            (s for s in m4.seeds if s.from_meeting == "composition"), None
+        )
+        assert feature_seed is not None
+        assert "feature" in feature_seed.kinds
+
+    def test_m4_directive_scopes_tests_per_feature(self, m4):
+        assert m4 is not None
+        directive = m4.convenor_directive.lower()
+        assert "scope" in directive and "per feature" in directive, (
+            "M4 directive must explicitly bound test-writing to "
+            "per-feature scope, otherwise Hatter generates system-wide "
+            "edge tests and M4 sprawls (analysis 027)"
+        )
+
+    def test_m4_directive_names_m6_as_safety_net(self, m4):
+        """The 'stop when feature is covered' discipline only works if
+        the agents know there's a safety net for system-wide
+        invariants. Naming M6 / Caterpillar's review explicitly as
+        that safety net frees them from being exhaustive at this
+        layer.
+        """
+        assert m4 is not None
+        directive = m4.convenor_directive.lower()
+        assert "m6" in directive or "caterpillar" in directive, (
+            "M4 directive must point at M6/Caterpillar as the system-"
+            "wide-invariants safety net so agents can stop at feature "
+            "scope without anxiety about uncaught failure modes"
+        )
+
+    def test_m4_directive_bounds_hatter_lane(self, m4):
+        """Per analysis 029 F5 + v7 follow-up: Hatter's §VIII failure
+        mode (scenario sprawl + severity inflation) generalizes to
+        BOTH meta-discussion sprawl AND out-of-lane code shipping.
+        The directive must bound both — ship failure-mode scenarios
+        and test files, raise ONE concern on process issues, no
+        write_file calls into production code paths.
+
+        Without these bounds, Hatter's character-shaped tendency to
+        keep iterating on observations sprawls into:
+          - team-process critique (properly Dodo's / Caterpillar's job)
+          - direct production-code edits (properly the Tweedles' lane)
+
+        v7 showed the meta-discussion bound shifted his content but
+        he replaced it with src/backend/ write_file calls. Both
+        need bounding.
+        """
+        assert m4 is not None
+        directive = m4.convenor_directive.lower()
+        assert "hatter" in directive
+        assert "stay in your lane" in directive or "your lane" in directive, (
+            "M4 directive must explicitly bound Hatter's role; without "
+            "the lane-keeping language the LLM expands into meta-"
+            "discussion (analysis 029 F5)"
+        )
+        # New (post-v7): must also forbid out-of-lane code shipping.
+        assert "production code" in directive or "src/backend" in directive, (
+            "M4 directive must forbid Hatter from shipping production "
+            "code via write_file — v7 showed he shifted from meta-"
+            "discussion sprawl to backend-code sprawl when only the "
+            "first was bounded"
+        )
+
+
+class TestReviewBoundsScope:
+    """Pins the M6 directive's scope-of-fix-work bound. Per analysis
+    029, M6 went over budget across multiple runs because Tweedles
+    accepted every Caterpillar finding — including refactor
+    suggestions — as actionable. The directive must distinguish
+    name-the-broken-bug findings (act on these) from speculative-
+    improvement findings (push back as concern).
+    """
+
+    @pytest.fixture
+    def m6(self):
+        return load_workflow("tdd").meeting_by_id("review")
+
+    def test_m6_directive_distinguishes_broken_from_refactor(self, m6):
+        assert m6 is not None
+        directive = m6.convenor_directive.lower()
+        assert "refactor" in directive, (
+            "M6 directive must name 'refactor' as the category Tweedles "
+            "should NOT accept as actionable in M6 — only genuinely "
+            "broken bugs warrant fix-during-review"
+        )
+        assert "broken" in directive or "bug" in directive
+
+
+class TestFeatureSeedingFlowsThroughPipeline:
+    """Pins that features Rabbit ships in M2.5 reach M3, M4, M5, and
+    M6 through their seed queries. If a downstream meeting can't see
+    features, the directive's references to features are factually
+    wrong and the team will (correctly, per analysis 027) flag the
+    mismatch as a concern.
+    """
+
+    @pytest.fixture
+    def tdd(self):
+        return load_workflow("tdd")
+
+    def test_m3_sees_features(self, tdd):
+        m3 = tdd.meeting_by_id("contract-negotiation")
+        assert m3 is not None
+        assert any(
+            s.from_meeting == "composition" and "feature" in s.kinds
+            for s in m3.seeds
+        )
+
+    def test_m4_sees_features(self, tdd):
+        m4 = tdd.meeting_by_id("test-scenarios")
+        assert m4 is not None
+        assert any(
+            s.from_meeting == "composition" and "feature" in s.kinds
+            for s in m4.seeds
+        )
+
+    def test_m5_sees_features(self, tdd):
+        m5 = tdd.meeting_by_id("implementation")
+        assert m5 is not None
+        assert any(
+            s.from_meeting == "composition" and "feature" in s.kinds
+            for s in m5.seeds
+        )
+
+    def test_m6_sees_features(self, tdd):
+        m6 = tdd.meeting_by_id("review")
+        assert m6 is not None
+        assert any(
+            s.from_meeting == "composition" and "feature" in s.kinds
+            for s in m6.seeds
+        )
+
+
 @pytest.mark.parametrize(
     "workflow_name,impl_meeting_id",
     [("canonical", "implementation"), ("tdd", "implementation")],
@@ -668,6 +1015,13 @@ class FakeRunner:
         self._completed = False
         # Track calls to convene for assertions
         self.convene_calls: list[dict[str, Any]] = []
+        # Track calls to mark_thread_complete (workflow uses this to
+        # close threads that exited via a non-COMPLETE outcome so the
+        # late-publish guard can fire on slow deliberations).
+        self.thread_completes: list[dict[str, str]] = []
+
+    def mark_thread_complete(self, thread_id: str, reason: str) -> None:
+        self.thread_completes.append({"thread_id": thread_id, "reason": reason})
 
     async def convene(
         self,
@@ -689,14 +1043,27 @@ class FakeRunner:
             }
         )
 
-    async def events(self) -> AsyncIterator[FakeEvent]:
+    async def events(
+        self, *, terminal_thread_id: str | None = None
+    ) -> AsyncIterator[FakeEvent]:
         # Cost/call accounting bumps as if the LLM ran.
+        # Mirrors the real Runner.events() filter: stale `complete`
+        # events from other threads should be yielded but not end
+        # iteration when terminal_thread_id is set.
         for ev in self._scripts.get(self._current_thread or "", []):
             if ev.kind == "utterance":
                 self.telemetry.call_count += 1
                 self.total_cost += 0.10
             yield ev
             await asyncio.sleep(0)
+            if ev.kind in ("aborted", "timeout"):
+                return
+            if ev.kind == "complete":
+                if terminal_thread_id is None:
+                    return
+                event_thread_id = (ev.payload or {}).get("thread_id")
+                if event_thread_id is None or event_thread_id == terminal_thread_id:
+                    return
 
 
 class TestRunWorkflow:
@@ -728,6 +1095,58 @@ class TestRunWorkflow:
                 ),
             ],
         )
+
+    async def test_directive_body_is_prefixed_with_meeting_name(self):
+        """The literary parallel is load-bearing only if agents see the
+        name. run_workflow prefixes the convenor directive with the
+        meeting's label + name before passing it to convene(), so the
+        Dodo-relayed directive utterance carries the framing into the
+        agents' context.
+        """
+        wf = Workflow(
+            name="named",
+            description="d",
+            meetings=[
+                Meeting(
+                    id="m1",
+                    label="M1",
+                    name="The Caucus Race",
+                    goal="g",
+                    roster=["alice"],
+                    meeting_budget=0.50,
+                ),
+                Meeting(
+                    id="m2",
+                    label="M2",
+                    goal="g",
+                    roster=["alice"],
+                    convenor_directive="do the thing",
+                    meeting_budget=0.50,
+                ),
+            ],
+        )
+        scripts = {
+            "m1": [FakeEvent("complete")],
+            "m2": [FakeEvent("complete")],
+        }
+        runner = FakeRunner(scripts)
+        async for _ in run_workflow(wf, runner, "user input directive"):
+            pass
+
+        # M1 is the entry meeting — body is the user's directive plus the
+        # name prefix.
+        m1_call = runner.convene_calls[0]
+        assert m1_call["convenor_directive"].startswith(
+            "**M1 — The Caucus Race.**"
+        )
+        assert "user input directive" in m1_call["convenor_directive"]
+
+        # M2 has no name — should still get the label prefix for orientation,
+        # without name boilerplate.
+        m2_call = runner.convene_calls[1]
+        assert m2_call["convenor_directive"].startswith("**M2.**")
+        assert "Caucus Race" not in m2_call["convenor_directive"]
+        assert "do the thing" in m2_call["convenor_directive"]
 
     async def test_emits_meeting_start_and_end_per_meeting(self, two_meeting_workflow):
         scripts = {
@@ -763,8 +1182,12 @@ class TestRunWorkflow:
         runner = FakeRunner(scripts)
         async for _ in run_workflow(two_meeting_workflow, runner, "USER DIRECTIVE"):
             pass
-        assert runner.convene_calls[0]["convenor_directive"] == "USER DIRECTIVE"
-        assert runner.convene_calls[1]["convenor_directive"] == "ship the code"
+        # Body is the user directive plus the meeting label/name prefix
+        # the workflow injects (so agents see the meeting framing).
+        assert "USER DIRECTIVE" in runner.convene_calls[0]["convenor_directive"]
+        assert runner.convene_calls[0]["convenor_directive"].startswith("**M1.**")
+        assert "ship the code" in runner.convene_calls[1]["convenor_directive"]
+        assert runner.convene_calls[1]["convenor_directive"].startswith("**M2.**")
 
     async def test_seeds_pass_through_from_prior_meetings(self, two_meeting_workflow):
         story = _utt(
@@ -815,6 +1238,131 @@ class TestRunWorkflow:
             events.append(ev)
         end = next(e for e in events if isinstance(e, MeetingEndEvent))
         assert end.outcome == "MEETING_BUDGET"
+
+    async def test_meeting_budget_marks_thread_complete(self):
+        """When MEETING_BUDGET caps a meeting, run_workflow must mark
+        the thread COMPLETE so the late-publish guard suppresses any
+        in-flight deliberation that lands after the cap fires.
+
+        Regression test for the M5 race documented in analysis 026: an
+        agent's slow LLM call landed test_scenarios on a still-RUNNING
+        (but abandoned) thread, the workflow capture miscounted them
+        against the wrong meeting, and the next meeting's seed query
+        missed them entirely.
+        """
+        wf = Workflow(
+            name="cap-marks-complete",
+            description="d",
+            meetings=[
+                Meeting(
+                    id="m",
+                    label="M1",
+                    goal="g",
+                    roster=["alice"],
+                    meeting_budget=0.15,
+                ),
+            ],
+        )
+        scripts = {
+            "m": [
+                FakeEvent("utterance", {"utterance": _utt(thread_id="m")}),
+                FakeEvent("utterance", {"utterance": _utt(thread_id="m")}),
+            ]
+        }
+        runner = FakeRunner(scripts)
+        async for _ in run_workflow(wf, runner, "go"):
+            pass
+        assert len(runner.thread_completes) == 1, (
+            "MEETING_BUDGET exit must trigger exactly one mark_thread_complete "
+            "so the runner's late-publish guard can suppress slow deliberations"
+        )
+        call = runner.thread_completes[0]
+        assert call["thread_id"] == "m"
+        assert "MEETING_BUDGET" in call["reason"]
+
+    async def test_leaked_complete_event_from_prior_meeting_does_not_end_next(self):
+        """Regression test for the cross-meeting event leakage pattern.
+
+        Documented in the pomodoro test run: when a meeting exited via
+        MEETING_BUDGET, mark_thread_complete generated a `complete`
+        runner event with the prior meeting's thread_id. That event
+        sat in the runner's queue. When the next meeting's events loop
+        started consuming, it saw `kind="complete"` and exited
+        immediately — even though the event was for a different
+        thread. Result: the next meeting ended in 0 calls / 0s with no
+        agent deliberation, observed across analyses 026 and 027 and
+        identified definitively in the pomodoro run.
+
+        The fix filters `complete` events by thread_id. This test
+        emits a complete event with a *different* thread_id during a
+        meeting and asserts the meeting does not exit on it.
+        """
+        wf = Workflow(
+            name="leak",
+            description="d",
+            meetings=[
+                Meeting(
+                    id="real",
+                    label="M1",
+                    goal="g",
+                    roster=["alice"],
+                    meeting_budget=1.00,
+                ),
+            ],
+        )
+        scripts = {
+            "real": [
+                # First event: a leaked `complete` from a prior thread.
+                # Without the fix, this ends the meeting immediately.
+                FakeEvent("complete", {"thread_id": "previous-meeting"}),
+                # Then a real utterance happens on the actual meeting.
+                FakeEvent("utterance", {"utterance": _utt(thread_id="real")}),
+                # And finally the meeting's own complete event.
+                FakeEvent("complete", {"thread_id": "real"}),
+            ],
+        }
+        runner = FakeRunner(scripts)
+        events = []
+        async for ev in run_workflow(wf, runner, "go"):
+            events.append(ev)
+        end = next(e for e in events if isinstance(e, MeetingEndEvent))
+        assert end.outcome == "COMPLETE"
+        # The meeting must have actually run — at least one utterance
+        # observed and at least one LLM call billed (the FakeRunner
+        # bumps call_count on each utterance event).
+        assert end.calls_delta >= 1, (
+            "Leaked complete event from prior meeting must not short-"
+            "circuit the current meeting's events loop"
+        )
+
+    async def test_complete_meeting_does_not_force_thread_complete(self):
+        """Complementary pin: a meeting that exits via the natural
+        'complete' event already had its thread transitioned by the
+        ThreadMonitor's normal completion path. run_workflow must NOT
+        re-trigger the transition — that would emit a duplicate state
+        change and confuse downstream subscribers.
+        """
+        wf = Workflow(
+            name="complete-clean",
+            description="d",
+            meetings=[
+                Meeting(
+                    id="m",
+                    label="M1",
+                    goal="g",
+                    roster=["alice"],
+                    meeting_budget=1.00,
+                ),
+            ],
+        )
+        scripts = {"m": [FakeEvent("complete")]}
+        runner = FakeRunner(scripts)
+        async for _ in run_workflow(wf, runner, "go"):
+            pass
+        assert runner.thread_completes == [], (
+            "natural COMPLETE must not trigger mark_thread_complete; "
+            "the monitor already transitioned via the convenor's acknowledgment"
+        )
 
     async def test_global_budget_aborts_workflow(self, two_meeting_workflow):
         scripts = {
@@ -890,8 +1438,11 @@ class TestRunWorkflow:
         assert starts == 5
         assert ends == 5
         assert len(runner.convene_calls) == 5
-        # Entry meeting got the user directive
-        assert runner.convene_calls[0]["convenor_directive"] == "user directive"
-        # Subsequent meetings got their YAML directives
+        # Entry meeting got the user directive (with meeting label/name
+        # prefix injected by run_workflow so agents see the framing).
+        assert "user directive" in runner.convene_calls[0]["convenor_directive"]
+        # Subsequent meetings got their YAML directive bodies, also
+        # prefixed with their label/name.
         for call, meeting in zip(runner.convene_calls[1:], wf.meetings[1:]):
-            assert call["convenor_directive"] == meeting.convenor_directive
+            assert meeting.convenor_directive in call["convenor_directive"]
+            assert call["convenor_directive"].startswith(f"**{meeting.label}")

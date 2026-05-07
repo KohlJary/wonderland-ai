@@ -26,8 +26,8 @@ finally:
 | Name | Meetings | Default budget | When to use |
 |---|---|---|---|
 | `smoke` | 1 | $0.50 | Sanity-check the loader/runner integration. Alice produces one story, ~$0.10. |
-| **`tdd` (default)** | 6 | $5.00 | **Recommended default for feature work.** Alice + Hatter pair up at the tea party in M4 — Alice ships user-journey scenarios, Hatter ships failure-mode scenarios. Together they pin the test pyramid M5 has to satisfy. Validated end-to-end in [analysis 024](../../../../analyses/024-tdd-validated.md) — directive-aligned output (1804 lines of working rate-limiter end-to-end) where canonical drifted on the same directive. |
-| `canonical` | 5 | $3.00 | Faster/cheaper alternative when directive drift is unlikely (throwaway prototypes, very concrete directives, or exploratory iteration). Validated across analyses 015-023. **Risk:** without Hatter's tests pinning behavior, the team can ship coherent code that doesn't match what was asked. |
+| **`tdd` (default)** | 7 | $6.00 | **Recommended default for feature work.** Alice + Hatter pair up at the tea party in M4 — Alice ships user-journey scenarios, Hatter ships failure-mode scenarios. Together they pin the test pyramid M5 has to satisfy. Validated end-to-end in [analysis 024](../../../../analyses/024-tdd-validated.md) — directive-aligned output (1804 lines of working rate-limiter end-to-end) where canonical drifted on the same directive. |
+| `canonical` | 5 | $3.50 | Faster/cheaper alternative when directive drift is unlikely (throwaway prototypes, very concrete directives, or exploratory iteration). Validated across analyses 015-023. **Risk:** without Hatter's tests pinning behavior, the team can ship coherent code that doesn't match what was asked. |
 
 Run any of them via the demo script:
 

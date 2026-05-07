@@ -1,5 +1,24 @@
 """SQLAlchemy models. Just `Base` + an example `HelloMessage` showing
-the pattern. Replace HelloMessage with the actual feature models."""
+the pattern. Replace HelloMessage with the actual feature models.
+
+============================================================================
+SKELETON TEMPLATE — HelloMessage is a placeholder; DELETE OR REPLACE.
+
+If you delete this class, you MUST also:
+  - Delete src/backend/api/messages.py (it imports HelloMessage)
+  - Remove the `messages_router` line in src/backend/api/__init__.py
+  - Delete tests/test_messages.py
+
+Half-replacement (removing HelloMessage but leaving the references
+in messages.py / __init__.py) breaks the import chain — pytest will
+fail to collect ANY tests because conftest.py imports the broken
+chain. Always run `run_tests` after a batch of changes to verify
+the build still loads.
+
+If you replace HelloMessage with new classes (Session, Break, etc.),
+that's fine — but apply the same cleanup to its referencers above.
+============================================================================
+"""
 
 from __future__ import annotations
 
@@ -11,6 +30,7 @@ from sqlalchemy.orm import declarative_base
 Base = declarative_base()
 
 
+# === TEMPLATE: HelloMessage is a placeholder. Delete or replace. ===
 class HelloMessage(Base):
     """Placeholder model demonstrating the SQLAlchemy pattern.
 

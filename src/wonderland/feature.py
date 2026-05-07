@@ -1,0 +1,213 @@
+"""Feature writer + registry — Rabbit's grouping artifact for M2.5.
+
+Per the M2/M3 gap surfaced in analysis 026/027 and roadmap d1f4f2ec:
+M3 contract-negotiation seeds from a single ticket and Tweedles
+generalize from there, which produces the inconsistent-frontend-vs-
+backend pattern observed across runs. Features are tickets *grouped*
+into user-facing units that span the stack coherently, so M3 can
+negotiate seams against a feature instead of one ticket at a time.
+
+Storage: ``<project_root>/.wonderland/features/feature-NNN-slug.md``,
+3-digit zero-padded numbering. Same single-source-of-truth approach
+as TicketRegistry — no separate counter file; ``next_number()``
+derives from scanning existing features.
+
+Validation is deliberately looser than tickets. Tickets pin scope,
+estimate, and dependencies because the Rabbit's discipline says they
+must; features are organizational — title, description, and at least
+one constituent ticket are required, the rest is free-form. The
+discipline lives at the ticket layer; features carry the user-facing
+framing on top.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from wonderland.adr import slugify
+from wonderland.ticket import TicketTier
+
+FEATURES_DIRNAME = "features"
+_FILENAME_PATTERN = re.compile(r"^feature-(\d+)-([a-z0-9-]+)\.md$")
+
+
+class StackSpan(StrEnum):
+    """Which side of the stack a feature touches.
+
+    Knowing this up front lets M3's contract negotiation pre-flight
+    the right seams: full-stack features need both Tweedles aligned
+    on the contract; backend-only or frontend-only features can be
+    handled on one side. The pattern Tweedles missed in prior runs
+    was full-stack work that they negotiated as if it were one-sided.
+    """
+
+    FRONTEND = "frontend"
+    BACKEND = "backend"
+    FULL_STACK = "full-stack"
+
+
+class FeaturePayload(BaseModel):
+    """Structured payload Rabbit attaches to a feature-issuing utterance."""
+
+    title: str = Field(min_length=1)
+    description: str = Field(
+        min_length=1,
+        description="What user-facing thing this feature delivers, in plain language.",
+    )
+    tickets: list[str] = Field(
+        min_length=1,
+        description="Slugs of constituent tickets this feature aggregates.",
+    )
+    personas: list[str] = Field(
+        default_factory=list,
+        description="Persona names from M1 stories that this feature serves.",
+    )
+    stack_span: StackSpan
+    tier: TicketTier
+    sources: list[str] = Field(
+        default_factory=list,
+        description="Story slugs whose intent this feature realizes.",
+    )
+
+
+@dataclass(frozen=True)
+class FeatureRecord:
+    number: int
+    slug: str
+    title: str
+    path: Path
+
+    def read(self) -> str:
+        return self.path.read_text(encoding="utf-8")
+
+
+def render_feature(number: int, payload: FeaturePayload) -> str:
+    """Render a feature payload as the markdown that lands on disk."""
+    lines: list[str] = [
+        f"## Feature {number:03d}: {payload.title}",
+        "",
+        f"**Sources:** {_join_or_dash(payload.sources)}",
+        f"**Personas:** {_join_or_dash(payload.personas)}",
+        f"**Stack span:** {payload.stack_span.value}",
+        f"**Tier:** {payload.tier.value}",
+        "",
+        "**Description:**",
+        "",
+        payload.description.rstrip(),
+        "",
+        "**Constituent tickets:**",
+    ]
+    if payload.tickets:
+        lines.extend(f"- {ticket}" for ticket in payload.tickets)
+    else:
+        lines.append("- (none — this should not happen)")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _join_or_dash(items: list[str]) -> str:
+    return ", ".join(items) if items else "—"
+
+
+class FeatureRegistry:
+    """Read/write registry over ``<project_root>/.wonderland/features/``.
+
+    Same shape as TicketRegistry: numbering derives from scanning
+    existing files; no separate counter to keep in sync.
+    """
+
+    def __init__(self, project_root: Path) -> None:
+        self._root = project_root / ".wonderland" / FEATURES_DIRNAME
+
+    @property
+    def path(self) -> Path:
+        return self._root
+
+    def list_features(self) -> list[FeatureRecord]:
+        if not self._root.is_dir():
+            return []
+        records: list[FeatureRecord] = []
+        for entry in self._root.iterdir():
+            if not entry.is_file():
+                continue
+            record = self._record_from_path(entry)
+            if record is not None:
+                records.append(record)
+        records.sort(key=lambda r: r.number)
+        return records
+
+    def next_number(self) -> int:
+        existing = self.list_features()
+        if not existing:
+            return 1
+        return max(r.number for r in existing) + 1
+
+    def find_by_slug(self, slug: str) -> FeatureRecord | None:
+        for record in self.list_features():
+            if record.slug == slug:
+                return record
+        return None
+
+    def find_by_number(self, number: int) -> FeatureRecord | None:
+        for record in self.list_features():
+            if record.number == number:
+                return record
+        return None
+
+    def write(self, payload: FeaturePayload | dict) -> FeatureRecord:
+        validated = (
+            payload
+            if isinstance(payload, FeaturePayload)
+            else FeaturePayload.model_validate(payload)
+        )
+
+        number = self.next_number()
+        slug = slugify(validated.title)
+        filename = f"feature-{number:03d}-{slug}.md"
+        full_path = self._root / filename
+
+        self._root.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(render_feature(number, validated), encoding="utf-8")
+
+        return FeatureRecord(
+            number=number,
+            slug=slug,
+            title=validated.title,
+            path=full_path,
+        )
+
+    @staticmethod
+    def _record_from_path(path: Path) -> FeatureRecord | None:
+        match = _FILENAME_PATTERN.match(path.name)
+        if not match:
+            return None
+        number = int(match.group(1))
+        slug = match.group(2)
+        title = FeatureRegistry._title_from_file(path, fallback=slug)
+        return FeatureRecord(number=number, slug=slug, title=title, path=path)
+
+    @staticmethod
+    def _title_from_file(path: Path, *, fallback: str) -> str:
+        try:
+            with path.open(encoding="utf-8") as f:
+                first_line = f.readline().strip()
+        except OSError:
+            return fallback
+        if not first_line.startswith("## Feature") or ":" not in first_line:
+            return fallback
+        return first_line.split(":", 1)[1].strip() or fallback
+
+
+__all__ = [
+    "FEATURES_DIRNAME",
+    "FeaturePayload",
+    "FeatureRecord",
+    "FeatureRegistry",
+    "StackSpan",
+    "render_feature",
+]

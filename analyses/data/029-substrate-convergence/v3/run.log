@@ -1,0 +1,369 @@
+Skeleton:     fullstack-fastapi-react → /tmp/wonderland-m25-pomodoro-v3
+
+==============================================================================
+Running workflow 'tdd' live
+==============================================================================
+Project root: /tmp/wonderland-m25-pomodoro-v3
+Directive:    Build a pomodoro tracker. Users start a 25-minute focus session, get a notification when it ends, then take a 5-minute break. Sessions are saved to a personal history that the user can review (today's count, this week, all-time). Settings let the user adjust session and break lengths. No auth — single-user local app, but design with a real database so multi-user can be added later.
+Runner:       budget=$6.00 cap, timeout=1200s, quiescence_fallback=300s
+
+──────────────────────────────────────────────────────────────────────────────
+  M1 (The Caucus Race) START · scoping · roster=['alice', 'cheshire_cat', 'queen_of_hearts'] · seeds=0
+  goal: produce user stories + an architectural ADR + GDPR rulings
+──────────────────────────────────────────────────────────────────────────────
+  [t=  0.00s] dodo               directive      →caucus **M1 — The Caucus Race.**
+[alice] parse error on attempt 1, retrying: AliceResponseParseError: AliceResponse response failed schema validation: 2 validation errors for AliceResponse
+stories.6.acceptance
+  List should have at least 1 item after validation, not 0 [type=too_short, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.13/v/too_short
+stories.6.tier
+  Input should be 'core', 'enrichment' or 'fast-follow' [type=enum, input_value='N/A', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.13/v/enum
+[alice] parse retry succeeded on attempt 2
+  [t= 42.18s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take and track a break
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Trust that data persists across app restarts
+  [t= 46.24s] queen_of_hearts    question       →caucus Alice, before I assess these stories for data-handling and compliance implications, I need clarity o…
+  [t= 57.95s] cheshire_cat       proposal       →caucus Six user stories, six user surfaces — you're describing a multi-role system even though it's single-…
+                             ↳ adr: Separate Timer, History, and Settings into distinct persistence entities
+  [t= 63.06s] queen_of_hearts    concern        →caucus Cat, your schema proposal is sound architecturally, but it surfaces a critical gap I need Alice to r…
+  [t= 64.00s] alice              concern        →caucus The Cat's schema is clean and I appreciate the forward-looking multi-user path. But I want to surfac…
+  [t= 69.71s] queen_of_hearts    concern        →caucus Alice, your distinction between core and enrichment is strategically sound, but it surfaces a data-h…
+  [t= 79.40s] cheshire_cat       concern        →caucus You've surfaced a load-bearing gap in the current ADR, and you're right to hold on it. The schema I …
+  [t= 85.63s] cheshire_cat       concern        →caucus Alice has surfaced a critical distinction that the architecture needs to reflect explicitly: Timer i…
+  [t= 87.58s] queen_of_hearts    concern        →caucus Cat, your willingness to hold the schema pending data-payload clarity is exactly right. But I need t…
+  [t= 92.47s] cheshire_cat       reframe        →caucus The Queen has surfaced a critical reframe that I need to mirror back: you three—Alice, Queen, and I—…
+  [t= 96.05s] queen_of_hearts    concern        →caucus Cat, your point about implementation sequence is architecturally sound, but it surfaces a persistenc…
+  [t= 99.17s] cheshire_cat       question       →caucus Queen, your precision here is exactly what the team needs—you're asking the right sizing questions b…
+  [t= 99.17s] <thread_monitor> running → stuck
+  [t= 99.17s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); all members idle). The team has paused with open expe…
+  [t=106.32s] cheshire_cat       question       →caucus Queen, your persistence-layer framing is precise and I want to sharpen it further before Alice respo…
+  [t=106.32s] <thread_monitor> running → stuck
+  [t=106.32s] dodo               nudge          →caucus Thread scoping → stuck (1 open expectation(s); all members idle). The team has paused with open expe…
+  [t=406.42s] <thread_monitor> running → quiescent
+  [t=406.42s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  [t=406.42s] <thread_monitor> running → complete
+  [t=406.42s] <complete>
+
+  M1 (The Caucus Race) END · COMPLETE · 406.4s · 19 calls · $0.1437
+  artifacts: adr×1, story×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M2 (The Rabbit's Errand) START · decomposition · roster=['alice', 'cheshire_cat', 'white_rabbit'] · seeds=2
+  goal: decompose the ADR + stories into v1 tickets, with the user-facing point preserved
+──────────────────────────────────────────────────────────────────────────────
+  [t=406.42s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take and track a break
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Trust that data persists across app restarts
+  [t=406.42s] cheshire_cat       proposal       →caucus Six user stories, six user surfaces — you're describing a multi-role system even though it's single-…
+                             ↳ adr: Separate Timer, History, and Settings into distinct persistence entities
+  [t=406.42s] dodo               directive      →caucus **M2 — The Rabbit's Errand.**
+  [t=448.17s] white_rabbit       ticket         →caucus Reading the stories and ADR as locked. Six stories map to three persistence domains (Timer, History,…
+                             ↳ ticket: Define session state machine and contract for Timer ↔ History seam
+                             ↳ ticket: Schema and migrations: Timer, History, Settings tables
+                             ↳ ticket: Timer state machine and session lifecycle (backend)
+                             ↳ ticket: History append-only log and session aggregation (backend)
+                             ↳ ticket: Settings read and write endpoints (backend)
+                             ↳ ticket: Frontend timer UI and session rendering
+                             ↳ ticket: Frontend history views: today, week, all-time
+                             ↳ ticket: Frontend settings UI
+                             ↳ ticket: Data persistence across app restarts
+  [t=469.36s] cheshire_cat       concern        →caucus The Rabbit's decomposition is clean — vertical lock on schema, then horizontal parallelization. One …
+  [t=469.36s] <thread_monitor> running → stuck
+  [t=469.36s] dodo               nudge          →caucus Thread decomposition → stuck (1 open expectation(s); all members idle). The team has paused with ope…
+  [t=769.79s] <thread_monitor> running → quiescent
+  [t=769.79s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  [t=769.79s] <thread_monitor> running → complete
+  [t=769.79s] <complete>
+
+  M2 (The Rabbit's Errand) END · COMPLETE · 363.4s · 11 calls · $0.0924
+  artifacts: adr×1, story×6, ticket×9
+
+──────────────────────────────────────────────────────────────────────────────
+  M2.5 (Advice from a Caterpillar) START · composition · roster=['alice', 'caterpillar', 'white_rabbit'] · seeds=3
+  goal: group v1 tickets into user-facing features that span the stack coherently
+──────────────────────────────────────────────────────────────────────────────
+  [t=769.79s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take and track a break
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Trust that data persists across app restarts
+  [t=769.79s] cheshire_cat       proposal       →caucus Six user stories, six user surfaces — you're describing a multi-role system even though it's single-…
+                             ↳ adr: Separate Timer, History, and Settings into distinct persistence entities
+  [t=769.79s] white_rabbit       ticket         →caucus Reading the stories and ADR as locked. Six stories map to three persistence domains (Timer, History,…
+                             ↳ ticket: Define session state machine and contract for Timer ↔ History seam
+                             ↳ ticket: Schema and migrations: Timer, History, Settings tables
+                             ↳ ticket: Timer state machine and session lifecycle (backend)
+                             ↳ ticket: History append-only log and session aggregation (backend)
+                             ↳ ticket: Settings read and write endpoints (backend)
+                             ↳ ticket: Frontend timer UI and session rendering
+                             ↳ ticket: Frontend history views: today, week, all-time
+                             ↳ ticket: Frontend settings UI
+                             ↳ ticket: Data persistence across app restarts
+  [t=769.79s] dodo               directive      →caucus **M2.5 — Advice from a Caterpillar.**
+  [t=777.28s] white_rabbit       feature        →caucus Six stories, three features. Each is a coherent user capability that the persona can name in one sen…
+                             ↳ feature: Run a focused work session with built-in break
+                             ↳ feature: Review today's session activity at a glance
+                             ↳ feature: Inspect historical session data across weeks and all-time
+                             ↳ feature: Customize session and break lengths to fit personal rhythm
+  [t=786.20s] <thread_monitor> running → quiescent
+  [t=786.20s] dodo               acknowledgment →caucus Thread composition → complete. The team has gone quiet with no open expectations; the directive is s…
+  [t=786.20s] <thread_monitor> running → complete
+  [t=786.20s] <complete>
+
+  M2.5 (Advice from a Caterpillar) END · COMPLETE · 16.4s · 8 calls · $0.0930
+  artifacts: adr×1, feature×4, story×6, ticket×9
+
+──────────────────────────────────────────────────────────────────────────────
+  M3 (Tweedledum and Tweedledee) START · contract-negotiation · roster=['tweedledee', 'tweedledum'] · seeds=2
+  goal: negotiate contracts the Tweedles will implement against
+──────────────────────────────────────────────────────────────────────────────
+  [t=786.20s] cheshire_cat       proposal       →caucus Six user stories, six user surfaces — you're describing a multi-role system even though it's single-…
+                             ↳ adr: Separate Timer, History, and Settings into distinct persistence entities
+  [t=786.20s] white_rabbit       feature        →caucus Six stories, three features. Each is a coherent user capability that the persona can name in one sen…
+                             ↳ feature: Run a focused work session with built-in break
+                             ↳ feature: Review today's session activity at a glance
+                             ↳ feature: Inspect historical session data across weeks and all-time
+                             ↳ feature: Customize session and break lengths to fit personal rhythm
+  [t=786.20s] dodo               directive      →caucus **M3 — Tweedledum and Tweedledee.**
+  [t=833.59s] tweedledee         contract_note  →caucus Drafting the Session state machine and completion event contract. This is the spine of Feature 001 a…
+                             ↳ contract_note: Session state machine and completion event
+                             ↳ contract_note: Session completion event and SessionRecord write
+  [t=835.78s] tweedledum         contract_note  →caucus Proposing backend contracts for the four features. Starting with the load-bearing seam: Feature 001'…
+                             ↳ contract_note: Feature 001: Session lifecycle and timer state machine
+                             ↳ contract_note: Feature 002: Today's session count aggregate
+                             ↳ contract_note: Feature 004: Settings persistence and change propagation
+                             ↳ contract_note: Feature 003: Historical aggregations (weekly, all-time)
+  [t=894.24s] tweedledee         implementation →caucus Frontend side specified for all four feature contracts. Feature 001 is load-bearing — detailed on UI…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+  [t=898.46s] tweedledum         contract_note  →caucus Reading your session state machine and completion event contracts now. These overlap with my Feature…
+                             ↳ contract_note: Session state machine and completion event
+                             ↳ contract_note: Session completion event and SessionRecord write
+                             ↳ contract_note: Feature 001: Session lifecycle and timer state machine
+  [t=898.46s] <thread_monitor> running → quiescent
+  [t=898.46s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  [t=898.46s] <thread_monitor> running → complete
+  [t=898.46s] <complete>
+
+  M3 (Tweedledum and Tweedledee) END · COMPLETE · 112.3s · 21 calls · $0.2248
+  artifacts: adr×1, contract_note×9, feature×4, implementation×1
+
+──────────────────────────────────────────────────────────────────────────────
+  M4 (The Mad Tea Party) START · test-scenarios · roster=['alice', 'mad_hatter', 'tweedledee', 'tweedledum'] · seeds=4
+  goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
+──────────────────────────────────────────────────────────────────────────────
+  [t=898.47s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take and track a break
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Trust that data persists across app restarts
+  [t=898.47s] cheshire_cat       proposal       →caucus Six user stories, six user surfaces — you're describing a multi-role system even though it's single-…
+                             ↳ adr: Separate Timer, History, and Settings into distinct persistence entities
+  [t=898.47s] white_rabbit       feature        →caucus Six stories, three features. Each is a coherent user capability that the persona can name in one sen…
+                             ↳ feature: Run a focused work session with built-in break
+                             ↳ feature: Review today's session activity at a glance
+                             ↳ feature: Inspect historical session data across weeks and all-time
+                             ↳ feature: Customize session and break lengths to fit personal rhythm
+  [t=898.47s] tweedledum         contract_note  →caucus Reading your session state machine and completion event contracts now. These overlap with my Feature…
+                             ↳ contract_note: Session state machine and completion event
+                             ↳ contract_note: Session completion event and SessionRecord write
+                             ↳ contract_note: Feature 001: Session lifecycle and timer state machine
+  [t=898.47s] dodo               directive      →caucus **M4 — The Mad Tea Party.**
+  [t=922.23s] alice              story          →caucus Reading the contracts and the four features from M2.5 through your context. I'm starting with the ha…
+                             ↳ story: Marcus runs a single focused 25-minute session and sees it complete
+                             ↳ story: Maya reviews the four sessions she completed today and sees their aggregate duration
+                             ↳ story: Yuki scans her weekly and all-time session patterns to understand her focus rhythm
+                             ↳ story: James customizes his session and break lengths and confirms the new timings on his next run
+[late-publish] tweedledum → thread 'contract-negotiation' (already COMPLETE) — suppressing contract_note: 'Responding to your Feature-001 frontend specs and open questions on Features 002-004. Backend side filled in below; conf'
+[late-publish] tweedledee → thread 'contract-negotiation' (already COMPLETE) — suppressing implementation: 'Integrating your backend assessments on Notes 001 and 002 — they compose cleanly with the frontend side. Marking both as'
+[mad_hatter] parse error on attempt 1, retrying: HatterResponseParseError: no JSON block found in HatterResponse response (len=0 chars, preview: '<empty string>')
+[mad_hatter] parse retry succeeded on attempt 2
+  [t=1120.51s] tweedledum         implementation →caucus Reading Alice's four test stories against the locked contracts. I have clarifying questions and some…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=1127.11s] alice              concern        →caucus Tweedledum's clarifications are real and necessary, but I need to flag something about the test scen…
+  [t=1200.00s] <timeout>
+
+  M4 (The Mad Tea Party) END · TIMEOUT · 301.5s · 95 calls · $1.1269
+  artifacts: adr×1, contract_note×3, feature×4, implementation×1, story×10
+
+──────────────────────────────────────────────────────────────────────────────
+  M5 START · implementation · roster=['tweedledee', 'tweedledum'] · seeds=5
+  goal: implement to make Hatter's failing tests pass (red → green)
+──────────────────────────────────────────────────────────────────────────────
+  [t=1200.00s] <thread_monitor> running → complete
+  [t=1200.00s] <complete>
+
+  M5 END · RUNNING · 0.0s · 0 calls · $0.0000
+  artifacts: no artifacts
+
+──────────────────────────────────────────────────────────────────────────────
+  M6 (The Trial) START · review · roster=['caterpillar', 'tweedledee', 'tweedledum'] · seeds=1
+  goal: Caterpillar reviews the shipped code; surface findings
+──────────────────────────────────────────────────────────────────────────────
+  [t=1200.00s] cheshire_cat       proposal       →caucus Six user stories, six user surfaces — you're describing a multi-role system even though it's single-…
+                             ↳ adr: Separate Timer, History, and Settings into distinct persistence entities
+  [t=1200.00s] white_rabbit       feature        →caucus Six stories, three features. Each is a coherent user capability that the persona can name in one sen…
+                             ↳ feature: Run a focused work session with built-in break
+                             ↳ feature: Review today's session activity at a glance
+                             ↳ feature: Inspect historical session data across weeks and all-time
+                             ↳ feature: Customize session and break lengths to fit personal rhythm
+  [t=1200.00s] tweedledum         contract_note  →caucus Reading your session state machine and completion event contracts now. These overlap with my Feature…
+                             ↳ contract_note: Session state machine and completion event
+                             ↳ contract_note: Session completion event and SessionRecord write
+                             ↳ contract_note: Feature 001: Session lifecycle and timer state machine
+  [t=1200.00s] alice              story          →caucus (no body)
+                             ↳ story: Start and complete a focus session
+                             ↳ story: Take and track a break
+                             ↳ story: Review today's session count
+                             ↳ story: Review weekly and all-time history
+                             ↳ story: Adjust session and break lengths
+                             ↳ story: Trust that data persists across app restarts
+  [t=1200.00s] alice              story          →caucus Reading the contracts and the four features from M2.5 through your context. I'm starting with the ha…
+                             ↳ story: Marcus runs a single focused 25-minute session and sees it complete
+                             ↳ story: Maya reviews the four sessions she completed today and sees their aggregate duration
+                             ↳ story: Yuki scans her weekly and all-time session patterns to understand her focus rhythm
+                             ↳ story: James customizes his session and break lengths and confirms the new timings on his next run
+  [t=1200.00s] dodo               directive      →caucus **M5.**
+  [t=1200.00s] white_rabbit       feature        →caucus Six stories, three features. Each is a coherent user capability that the persona can name in one sen…
+                             ↳ feature: Run a focused work session with built-in break
+                             ↳ feature: Review today's session activity at a glance
+                             ↳ feature: Inspect historical session data across weeks and all-time
+                             ↳ feature: Customize session and break lengths to fit personal rhythm
+  [t=1200.00s] dodo               directive      →caucus **M6 — The Trial.**
+[mad_hatter] parse error on attempt 1, retrying: HatterResponseParseError: no JSON block found in HatterResponse response (len=0 chars, preview: '<empty string>')
+[mad_hatter] parse retry succeeded on attempt 2
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing test_scenario: ''
+  [t=1270.51s] caterpillar        review         →caucus I've reviewed the test scenarios shipped by the Hatter for Features 001–004. The tests are well-stru…
+                             ↳ review: test_feature_001_state_machine.py and test_feature_002_today_count.py
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=1274.56s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+[late-publish] tweedledee → thread 'test-scenarios' (already COMPLETE) — suppressing implementation: 'Shipped four failure-mode test scenario files covering Features 001-004. Each file encodes the edge cases, state machine'
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing test_scenario: "Tweedledum's clarifications are good seam questions and his prep work shows foresight. But Alice is right—the failure-mo"
+  [t=1427.19s] tweedledum         implementation →caucus Addressed all three critical findings from Caterpillar's review:
+                             ↳ implementation: Session lifecycle with corrected pause duration response
+                             ↳ implementation: History endpoints with consistent response shapes
+
+  M6 (The Trial) END · MEETING_BUDGET · 227.2s · 85 calls · $1.2921
+  artifacts: adr×1, contract_note×3, feature×8, implementation×3, review×1, story×10
+
+==============================================================================
+Summary
+==============================================================================
+Total elapsed:  1427.2s
+Total cost:     $2.9729  (cap $6.00)
+Total LLM calls: 239
+
+Per-agent:
+  tweedledum         calls= 70 cost=$0.9897
+  tweedledee         calls= 61 cost=$0.8014
+  mad_hatter         calls= 56 cost=$0.6691
+  caterpillar        calls= 18 cost=$0.2282
+  cheshire_cat       calls= 19 cost=$0.1121
+  alice              calls=  8 cost=$0.0826
+  white_rabbit       calls=  2 cost=$0.0520
+  queen_of_hearts    calls=  5 cost=$0.0378
+
+Artifacts on disk:
+  architecture/ (1 files)
+    adr-001-separate-timer-history-and-settings-into-distinct-persistence-entities.md
+  contract-notes/ (6 files)
+    contract-note-001-session-state-machine-and-completion-event.md
+    contract-note-002-session-completion-event-and-sessionrecord-write.md
+    contract-note-003-feature-001-session-lifecycle-and-timer-state-machine.md
+    contract-note-004-feature-002-today-s-session-count-aggregate.md
+    contract-note-005-feature-004-settings-persistence-and-change-propagation.md
+    contract-note-006-feature-003-historical-aggregations-weekly-all-time.md
+  features/ (4 files)
+    feature-001-run-a-focused-work-session-with-built-in-break.md
+    feature-002-review-today-s-session-activity-at-a-glance.md
+    feature-003-inspect-historical-session-data-across-weeks-and-all-time.md
+    feature-004-customize-session-and-break-lengths-to-fit-personal-rhythm.md
+  implementations/ (6 files)
+    implementation-001-feature-001-session-lifecycle-failure-modes-and-state-machine-constraints.md
+    implementation-002-feature-002-today-s-session-count-failure-modes-and-cache-invalidation.md
+    implementation-003-feature-003-historical-aggregation-failure-modes-and-aggregation-correctness.md
+    implementation-004-feature-004-settings-customization-failure-modes-and-validation.md
+    implementation-005-session-lifecycle-with-corrected-pause-duration-response.md
+    implementation-006-history-endpoints-with-consistent-response-shapes.md
+  reviews/ (1 files)
+    review-001-test-feature-001-state-machine-py-and-test-feature-002-today-count-py.md
+  stories/ (10 files)
+    story-001-start-and-complete-a-focus-session.md
+    story-002-take-and-track-a-break.md
+    story-003-review-today-s-session-count.md
+    story-004-review-weekly-and-all-time-history.md
+    story-005-adjust-session-and-break-lengths.md
+    story-006-trust-that-data-persists-across-app-restarts.md
+    story-007-marcus-runs-a-single-focused-25-minute-session-and-sees-it-complete.md
+    story-008-maya-reviews-the-four-sessions-she-completed-today-and-sees-their-aggregate-duration.md
+    story-009-yuki-scans-her-weekly-and-all-time-session-patterns-to-understand-her-focus-rhythm.md
+    story-010-james-customizes-his-session-and-break-lengths-and-confirms-the-new-timings-on-his-next-run.md
+  test-scenarios/ (44 files)
+    scenario-001-marcus-hits-the-25-minute-mark-and-the-timer-does-not-stop-session-hangs-in-running-state.md
+    scenario-002-marcus-force-quits-the-app-10-seconds-into-his-25-minute-session.md
+    scenario-003-marcus-completes-a-session-the-break-auto-starts-but-the-app-crashes-before-the-break-state-is-written-restart-shows-the-session-as-still-running.md
+    scenario-004-marcus-is-in-a-session-when-his-system-clock-jumps-backward-ntp-correction-user-manually-adjusts-clock.md
+    scenario-005-marcus-starts-a-session-then-immediately-toggles-between-app-in-foreground-and-app-in-background-switches-away-and-back-rapidly.md
+    scenario-006-marcus-completes-a-25-minute-session-but-the-timer-never-transitions-to-break-session-hangs-in-running-state.md
+    scenario-007-maya-crosses-midnight-and-the-today-count-still-shows-yesterday-s-sessions.md
+    scenario-008-yuki-s-sessions-get-bucketed-into-the-wrong-week-because-backend-groups-by-utc-date-while-yuki-is-in-a-timezone-east-of-utc.md
+    scenario-009-james-saves-custom-session-length-50-minutes-but-the-next-session-still-counts-down-from-25-minutes.md
+    test-scenario-001-feature-001-invalid-state-transition.md
+    test-scenario-001-session-timer-countdown-accuracy.md
+    test-scenario-002-feature-001-sessionrecord-atomicity.md
+    test-scenario-002-session-pause-resume-accumulated-pause-time.md
+    test-scenario-003-feature-001-pause-duration-accumulation.md
+    test-scenario-003-session-completion-is-atomic.md
+    test-scenario-004-feature-001-clock-drift-reconciliation.md
+    test-scenario-004-today-count-timezone-boundary.md
+    test-scenario-005-feature-002-midnight-boundary-handling.md
+    test-scenario-005-today-count-includes-only-focus-not-breaks.md
+    test-scenario-006-feature-002-empty-count-response.md
+    test-scenario-007-feature-003-timezone-utc-assumption.md
+    test-scenario-008-feature-003-weekly-boundary.md
+    test-scenario-009-feature-003-empty-history.md
+    test-scenario-010-feature-004-settings-validation.md
+    test-scenario-011-feature-001-session-countdown-starts-immediately.md
+    test-scenario-011-feature-004-settings-apply-to-next-session.md
+    test-scenario-012-feature-001-session-pause-accumulates-correctly.md
+    test-scenario-012-feature-004-default-settings-initialization.md
+    test-scenario-013-feature-001-cannot-start-two-sessions-simultaneously.md
+    test-scenario-014-feature-001-break-transition-is-explicit.md
+    test-scenario-015-feature-001-device-clock-ahead-does-not-break-timer.md
+    test-scenario-016-feature-002-midnight-boundary-count-resets.md
+    test-scenario-017-feature-002-break-sessions-not-counted.md
+    test-scenario-018-feature-002-pause-time-excluded-from-count.md
+    test-scenario-019-feature-003-weekly-includes-only-past-7-days.md
+    test-scenario-020-feature-003-break-sessions-excluded-from-history.md
+    test-scenario-021-feature-003-newest-first-ordering.md
+    test-scenario-022-feature-004-validation-rejects-out-of-range-values.md
+    test-scenario-023-feature-004-new-settings-apply-only-to-next-session.md
+    test-scenario-024-feature-004-default-settings-exist-without-explicit-creation.md
+    test-scenario-101-feature-001-silent-wrongness-completion-atomicity.md
+    test-scenario-102-feature-002-breakage-midnight-boundary.md
+    test-scenario-103-feature-003-silent-wrongness-timezone-bucketing.md
+    test-scenario-104-feature-004-breakage-settings-persistence.md
+  tickets/ (9 files)
+    ticket-001-define-session-state-machine-and-contract-for-timer-history-seam.md
+    ticket-002-schema-and-migrations-timer-history-settings-tables.md
+    ticket-003-timer-state-machine-and-session-lifecycle-backend.md
+    ticket-004-history-append-only-log-and-session-aggregation-backend.md
+    ticket-005-settings-read-and-write-endpoints-backend.md
+    ticket-006-frontend-timer-ui-and-session-rendering.md
+    ticket-007-frontend-history-views-today-week-all-time.md
+    ticket-008-frontend-settings-ui.md
+    ticket-009-data-persistence-across-app-restarts.md

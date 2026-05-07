@@ -24,18 +24,22 @@ description: |
 version: 1
 
 defaults:
-  budget_dollars: 3.00
-  timeout_seconds: 900.0
-  # Wall-clock fallback for hung LLM calls. Turn-based quiescence
-  # fires the moment all members go IDLE — this is just the safety
-  # net for the pathological case (network-hung deliberate, agent
-  # crashed mid-state-transition).
+  budget_dollars: 3.50
+  # No timeout_seconds — Wonderland is turn-based; wall-clock global
+  # timeout was a category error (see analysis 029). Runaway-loop
+  # protection is GLOBAL_BUDGET's job.
+  # quiescence_seconds is the wall-clock fallback for hung LLM calls
+  # at the *thread* layer. Turn-based quiescence (IDLE-keyed) fires
+  # the moment all members go IDLE; this is the safety net for the
+  # pathological case (network-hung deliberate, agent crashed mid-
+  # state-transition).
   quiescence_seconds: 300.0
 
 meetings:
   # ---------------------------------------------------------------------
   - id: scoping
     label: M1
+    name: The Caucus Race
     goal: produce user stories + an architectural ADR + GDPR rulings
     roster: [alice, cheshire_cat, queen_of_hearts]
     meeting_budget: 0.40
@@ -48,17 +52,32 @@ meetings:
   # ---------------------------------------------------------------------
   - id: decomposition
     label: M2
-    goal: decompose the ADR + stories into v1 tickets
-    roster: [white_rabbit, cheshire_cat]
-    meeting_budget: 0.30
+    name: The Rabbit's Errand
+    goal: decompose the ADR + stories into v1 tickets, with the user-facing point preserved
+    roster: [alice, white_rabbit, cheshire_cat]
+    meeting_budget: 0.40
     convenor_directive: |
       Decomposition thread. The stories and ADR(s) in your context
       are settled — they were produced in a prior scoping thread.
       Read them as locked context, not as fresh proposals to respond
-      to. Rabbit, your move is `ticket`: decompose the user-story-
+      to.
+
+      **Rabbit, your move is `ticket`:** decompose the user-story-
       and-architecture picture into v1-scope work units the Tweedles
-      can pick up. Cat, weigh in only if a ticket implies a fresh
-      architectural decision the existing ADRs don't cover.
+      can pick up.
+
+      **Cat:** weigh in only if a ticket implies a fresh architectural
+      decision the existing ADRs don't cover.
+
+      **Alice — you're here as the grounding voice.** You wrote the
+      stories Rabbit is decomposing; your job in this thread is to
+      defend them when Rabbit's tickets compress them past user-
+      recognition, and to ask "would the persona I named actually
+      care about this?" when a ticket drifts toward technical
+      convenience. You are not driving the decomposition; you are
+      defending the user-facing point of it. Default to silence
+      unless the work is drifting from a story your persona would
+      recognize.
     seeds:
       - from: scoping
         kinds: [adr, story]
@@ -66,6 +85,7 @@ meetings:
   # ---------------------------------------------------------------------
   - id: contract-negotiation
     label: M3
+    name: Tweedledum and Tweedledee
     goal: negotiate contracts the Tweedles will implement against
     roster: [tweedledee, tweedledum]
     meeting_budget: 0.80
@@ -130,6 +150,7 @@ meetings:
   # ---------------------------------------------------------------------
   - id: review
     label: M5
+    name: The Trial
     goal: Caterpillar reviews the shipped code; surface findings
     roster: [caterpillar, tweedledee, tweedledum]
     meeting_budget: 0.50

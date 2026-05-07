@@ -94,6 +94,16 @@ class Meeting(BaseModel):
 
     id: str = Field(description="Stable thread_id for this meeting (e.g. 'scoping').")
     label: str = Field(description="Display label (e.g. 'M1').")
+    name: str | None = Field(
+        default=None,
+        description=(
+            "Optional book-event name (e.g. 'The Caucus Race'). The "
+            "framework's character-shaped substrate makes pure numeric "
+            "labels feel sterile; named meetings make the literary "
+            "structure legible in logs and analyses. Numeric labels "
+            "remain authoritative for sequencing."
+        ),
+    )
     goal: str = Field(description="One-line statement of what the meeting produces.")
     roster: list[str] = Field(
         description="Agent names invited. Dodo is added automatically by the runner."
@@ -341,6 +351,20 @@ async def run_workflow(
         is_entry = meeting is workflow.entry_meeting
         convenor_directive = directive if is_entry else meeting.convenor_directive
 
+        # Surface the meeting name to the team. The character-shaped
+        # substrate principle says the literary parallel should be
+        # load-bearing, not ornamental — but it can't shape agent
+        # deliberation if agents can't see it. The Dodo-relayed
+        # directive is the team's first utterance on every thread, so
+        # prefixing it with the meeting label and (optional) book-event
+        # name puts the framing in the team's context window.
+        if meeting.name:
+            convenor_directive = (
+                f"**{meeting.label} — {meeting.name}.**\n\n{convenor_directive}"
+            )
+        else:
+            convenor_directive = f"**{meeting.label}.**\n\n{convenor_directive}"
+
         cost_before = runner.total_cost
         calls_before = runner.telemetry.call_count
         artifact_count_before = len(capture.utterances)
@@ -361,7 +385,13 @@ async def run_workflow(
         )
 
         outcome = "RUNNING"
-        async for event in runner.events():
+        # Pass meeting.id as terminal_thread_id so events() only auto-
+        # returns on a `complete` event for *this* meeting. Stale
+        # completes from prior meetings (e.g. M(N-1)'s
+        # mark_thread_complete) are yielded for capture but don't end
+        # the loop. Without this, a leaked complete event ends M(N)'s
+        # events loop before any agent deliberates — see analysis 030.
+        async for event in runner.events(terminal_thread_id=meeting.id):
             if event.kind == "utterance":
                 capture.observe(event.payload["utterance"])
 
@@ -378,9 +408,38 @@ async def run_workflow(
                     outcome = "MEETING_BUDGET"
                     break
 
-            if event.kind in ("complete", "timeout", "aborted"):
+            if event.kind == "complete":
+                # `complete` events carry a thread_id in their payload;
+                # only end this meeting if the event is for *this*
+                # meeting's thread. Without this filter, a leftover
+                # COMPLETE event from a prior meeting (e.g., emitted by
+                # mark_thread_complete on the prior meeting's
+                # MEETING_BUDGET exit) leaks into this meeting's events
+                # loop and ends it before any agent has had a chance to
+                # deliberate. This was the actual root cause of the
+                # 0-calls / 0-cost M5 pattern in analyses 026 and 027 —
+                # not the quiescence-on-startup race the prior fix
+                # targeted (which was real but downstream of this).
+                event_thread_id = (event.payload or {}).get("thread_id")
+                if event_thread_id is not None and event_thread_id != meeting.id:
+                    continue
+                outcome = "COMPLETE"
+                break
+
+            if event.kind in ("timeout", "aborted"):
+                # Global runner events — no thread_id, end the workflow
+                # regardless of which meeting is currently running.
                 outcome = event.kind.upper()
                 break
+
+        # If the meeting exited via a non-COMPLETE terminal outcome, the
+        # convenor never sent the acknowledgment that would transition
+        # the thread to COMPLETE. Force the transition so any agent
+        # whose deliberate() is still in flight gets its late publish
+        # suppressed by the runner's late-publish guard rather than
+        # landing on an abandoned thread.
+        if outcome in ("MEETING_BUDGET", "TIMEOUT", "ABORTED"):
+            runner.mark_thread_complete(meeting.id, f"meeting ended via {outcome}")
 
         elapsed = time.monotonic() - meeting_start
         calls_delta = runner.telemetry.call_count - calls_before

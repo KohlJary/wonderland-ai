@@ -35,6 +35,7 @@ from wonderland.engagement import (
     selectively,
     speaker_is,
 )
+from wonderland.feature import FeaturePayload, FeatureRegistry
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
 from wonderland.parsing import ResponseParseError, extract_and_validate
@@ -124,7 +125,9 @@ def white_rabbit_rules() -> EngagementRules:
 # --------------------------------------------------------------------- #
 
 
-RabbitDecision = Literal["ticket", "concern", "question", "reframe", "deference", "silence"]
+RabbitDecision = Literal[
+    "ticket", "feature", "concern", "question", "reframe", "deference", "silence"
+]
 
 
 class RabbitResponse(BaseModel):
@@ -132,12 +135,14 @@ class RabbitResponse(BaseModel):
 
     When ``decision == "ticket"``, ``tickets`` must contain at least
     one ``TicketPayload`` — a ticket decision without tickets is
-    nonsense. For other decisions, ``tickets`` is ignored.
+    nonsense. Same for ``decision == "feature"`` and ``features``.
+    For other decisions, both lists are ignored.
     """
 
     decision: RabbitDecision
     body: str = ""
     tickets: list[TicketPayload] = Field(default_factory=list)
+    features: list[FeaturePayload] = Field(default_factory=list)
 
     @field_validator("body", mode="before")
     @classmethod
@@ -151,12 +156,23 @@ class RabbitResponse(BaseModel):
     def _tickets_none_to_empty(cls, v: object) -> object:
         return [] if v is None else v
 
+    @field_validator("features", mode="before")
+    @classmethod
+    def _features_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
+
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
         if self.decision == "ticket" and not self.tickets:
             raise ValueError(
                 "RabbitResponse: decision='ticket' requires at least one ticket "
                 "in `tickets`. Choose a different decision (concern/question/etc.) "
                 "or include the tickets you intended to issue."
+            )
+        if self.decision == "feature" and not self.features:
+            raise ValueError(
+                "RabbitResponse: decision='feature' requires at least one feature "
+                "in `features`. Features group constituent tickets into user-facing "
+                "units; emitting feature-decision without features is nonsense."
             )
 
 
@@ -167,7 +183,7 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "ticket" | "concern" | "question" | "reframe" | "deference" | "silence",
+  "decision": "ticket" | "feature" | "concern" | "question" | "reframe" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "tickets": [                        // include ONLY when decision is "ticket"
     {
@@ -185,9 +201,36 @@ The JSON must conform to this schema:
       "acceptance": ["observable conditions of done"],
       "risk": "anything that could blow the estimate"
     }
+  ],
+  "features": [                       // include ONLY when decision is "feature"
+    {
+      "title": "user-facing capability name (e.g. 'sign up and claim a homepage URL')",
+      "description": "what user-facing thing this feature delivers, in plain language",
+      "tickets": ["ticket slugs aggregated into this feature"],
+      "personas": ["persona names from M1 stories that this feature serves"],
+      "stack_span": "frontend" | "backend" | "full-stack",
+      "tier": "v1" | "fast-follow" | "post-launch",
+      "sources": ["story slugs whose intent this feature realizes"]
+    }
   ]
 }
 ```
+
+Two decision modes are decomposition-shaped:
+
+- `ticket`: atomic work units (the M2 "Rabbit's Errand" mode).
+  Tickets are small enough to start, sized for a single owner, with
+  named dependencies. This is your default decomposition output.
+
+- `feature`: tickets *grouped* into user-facing units (the M2.5
+  "Advice from a Caterpillar" mode, when the convenor asks for
+  feature composition). A feature aggregates multiple tickets that
+  ship together as a coherent thing the user notices. Always name
+  the stack span — "full-stack" features mean both Tweedles need to
+  align on the seam in M3, "frontend" or "backend" features can be
+  handled one-sided. Always tie the feature back to the personas
+  from M1 stories: if you can't name a persona this feature serves,
+  the grouping isn't really a feature, it's a bag of tickets.
 
 Silence is a valid and often correct decision. If the trigger doesn't
 implicate scope, sequence, or schedule — and isn't one of your standing
@@ -232,6 +275,7 @@ class WhiteRabbit(WonderlandAgent):
         bus: Caucus,
         llm: LLMClient | None = None,
         ticket_registry: TicketRegistry | None = None,
+        feature_registry: FeatureRegistry | None = None,
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(RABBIT_NAME, root=constitutions_root)
@@ -241,10 +285,15 @@ class WhiteRabbit(WonderlandAgent):
         )
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._ticket_registry = ticket_registry
+        self._feature_registry = feature_registry
 
     @property
     def ticket_registry(self) -> TicketRegistry | None:
         return self._ticket_registry
+
+    @property
+    def feature_registry(self) -> FeatureRegistry | None:
+        return self._feature_registry
 
     async def deliberate(self, context: Context) -> Utterance | None:
         if self.llm is None:
@@ -262,6 +311,8 @@ class WhiteRabbit(WonderlandAgent):
         artifacts: list[Artifact] = []
         if response.decision == "ticket":
             artifacts.extend(self._record_tickets(response.tickets))
+        elif response.decision == "feature":
+            artifacts.extend(self._record_features(response.features))
 
         thread_id, parent_id = self._derive_threading(context)
         return Utterance(
@@ -298,6 +349,33 @@ class WhiteRabbit(WonderlandAgent):
                         "slug": record.slug,
                         "title": record.title,
                         "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_features(self, payloads: list[FeaturePayload]) -> list[Artifact]:
+        """Persist each feature through the registry, return Artifact pointers.
+
+        Same contract as _record_tickets — if no registry was configured,
+        features are dropped silently and the Utterance still carries the
+        decision body.
+        """
+        if self._feature_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._feature_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="feature",
+                    payload={
+                        "number": record.number,
+                        "slug": record.slug,
+                        "title": record.title,
+                        "path": str(record.path),
+                        "stack_span": payload.stack_span.value,
+                        "tickets": list(payload.tickets),
                     },
                 )
             )

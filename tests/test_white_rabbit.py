@@ -17,6 +17,7 @@ from wonderland import (
     AgentMemory,
     Context,
     Engagement,
+    FeatureRegistry,
     InMemoryCaucus,
     LLMClient,
     RabbitResponseParseError,
@@ -75,12 +76,20 @@ async def _rabbit(
     *,
     llm: LLMClient | None = None,
     with_registry: bool = True,
+    with_feature_registry: bool = True,
 ) -> WhiteRabbit:
     bus = InMemoryCaucus()
     memory = AgentMemory.for_project(tmp_path, "white_rabbit")
     await memory.open()
     registry = TicketRegistry(tmp_path) if with_registry else None
-    return WhiteRabbit(memory=memory, bus=bus, llm=llm, ticket_registry=registry)
+    feature_registry = FeatureRegistry(tmp_path) if with_feature_registry else None
+    return WhiteRabbit(
+        memory=memory,
+        bus=bus,
+        llm=llm,
+        ticket_registry=registry,
+        feature_registry=feature_registry,
+    )
 
 
 # ---------- engagement rules ----------
@@ -230,6 +239,67 @@ def test_parse_rejects_ticket_decision_with_no_tickets() -> None:
     """decision=='ticket' but tickets=[] is nonsense."""
     with pytest.raises(RabbitResponseParseError):
         parse_rabbit_response('{"decision": "ticket", "body": "...", "tickets": []}')
+
+
+def test_parse_feature_decision() -> None:
+    """M2.5 'Advice from a Caterpillar' mode — Rabbit groups tickets into features."""
+    payload = {
+        "decision": "feature",
+        "body": "Grouping the v1 ticket set into three user-facing features.",
+        "features": [
+            {
+                "title": "Sign up and claim a homepage URL",
+                "description": "User picks an email and password, gets a homepage at /~username.",
+                "tickets": ["user-registration", "homepage-url-reservation"],
+                "personas": ["Jordan the musician"],
+                "stack_span": "full-stack",
+                "tier": "v1",
+                "sources": ["sign-up-and-claim-a-username"],
+            },
+            {
+                "title": "Edit homepage in markdown",
+                "description": "Authenticated user writes markdown, sees rendered HTML on their public page.",
+                "tickets": ["markdown-editor-backend", "markdown-editor-ui"],
+                "personas": ["Jordan the musician"],
+                "stack_span": "full-stack",
+                "tier": "v1",
+                "sources": ["edit-my-homepage-in-markdown"],
+            },
+        ],
+    }
+    response = parse_rabbit_response(f"```json\n{json.dumps(payload)}\n```")
+    assert response.decision == "feature"
+    assert len(response.features) == 2
+    assert response.features[0].title == "Sign up and claim a homepage URL"
+    assert response.features[0].stack_span.value == "full-stack"
+    assert response.features[1].tickets == ["markdown-editor-backend", "markdown-editor-ui"]
+
+
+def test_parse_rejects_feature_decision_with_no_features() -> None:
+    """decision=='feature' with empty features is nonsense (mirror of ticket validation)."""
+    with pytest.raises(RabbitResponseParseError):
+        parse_rabbit_response(
+            '{"decision": "feature", "body": "...", "features": []}'
+        )
+
+
+def test_parse_rejects_feature_with_no_tickets() -> None:
+    """A feature aggregates tickets — at least one is required."""
+    payload = {
+        "decision": "feature",
+        "body": "...",
+        "features": [
+            {
+                "title": "empty",
+                "description": "no tickets",
+                "tickets": [],
+                "stack_span": "frontend",
+                "tier": "v1",
+            }
+        ],
+    }
+    with pytest.raises(RabbitResponseParseError):
+        parse_rabbit_response(f"```json\n{json.dumps(payload)}\n```")
 
 
 def test_parse_rejects_invalid_decision() -> None:

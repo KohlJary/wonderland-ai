@@ -1,0 +1,381 @@
+Skeleton:     fullstack-fastapi-react → /tmp/wonderland-m25-pomodoro-v2
+
+==============================================================================
+Running workflow 'tdd' live
+==============================================================================
+Project root: /tmp/wonderland-m25-pomodoro-v2
+Directive:    Build a pomodoro tracker. Users start a 25-minute focus session, get a notification when it ends, then take a 5-minute break. Sessions are saved to a personal history that the user can review (today's count, this week, all-time). Settings let the user adjust session and break lengths. No auth — single-user local app, but design with a real database so multi-user can be added later.
+Runner:       budget=$5.50 cap, timeout=1200s, quiescence_fallback=300s
+
+──────────────────────────────────────────────────────────────────────────────
+  M1 (The Caucus Race) START · scoping · roster=['alice', 'cheshire_cat', 'queen_of_hearts'] · seeds=0
+  goal: produce user stories + an architectural ADR + GDPR rulings
+──────────────────────────────────────────────────────────────────────────────
+  [t=  0.00s] dodo               directive      →caucus **M1 — The Caucus Race.**
+  [t= 31.52s] alice              story          →caucus (no body)
+                             ↳ story: Start a focus session and receive completion notification
+                             ↳ story: Take a break and prepare for the next session
+                             ↳ story: Review today's session count and recent activity
+                             ↳ story: View this week's and all-time session statistics
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Understand how long the app has been tracking sessions
+                             ↳ story: Understand the database schema for future multi-user support
+  [t= 31.52s] <thread_monitor> running → quiescent
+  [t= 31.52s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  [t= 31.52s] <thread_monitor> running → complete
+  [t= 31.52s] <complete>
+
+  M1 (The Caucus Race) END · COMPLETE · 31.5s · 2 calls · $0.0356
+  artifacts: story×7
+
+──────────────────────────────────────────────────────────────────────────────
+  M2 (The Rabbit's Errand) START · decomposition · roster=['alice', 'cheshire_cat', 'white_rabbit'] · seeds=1
+  goal: decompose the ADR + stories into v1 tickets, with the user-facing point preserved
+──────────────────────────────────────────────────────────────────────────────
+  [t= 31.52s] alice              story          →caucus (no body)
+                             ↳ story: Start a focus session and receive completion notification
+                             ↳ story: Take a break and prepare for the next session
+                             ↳ story: Review today's session count and recent activity
+                             ↳ story: View this week's and all-time session statistics
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Understand how long the app has been tracking sessions
+                             ↳ story: Understand the database schema for future multi-user support
+  [t= 31.52s] dodo               directive      →caucus **M2 — The Rabbit's Errand.**
+[late-publish] queen_of_hearts → thread 'scoping' (already COMPLETE) — suppressing question: "Seven stories in scope, and I'm reading them as a focus-session timer with notifications, break management, activity rev"
+[late-publish] cheshire_cat → thread 'scoping' (already COMPLETE) — suppressing proposal: ''
+  [t= 68.44s] white_rabbit       ticket         →caucus (no body)
+                             ↳ ticket: Implement session timer UI and start/stop controls
+                             ↳ ticket: Implement session timer backend and state management
+                             ↳ ticket: Implement session completion notification
+                             ↳ ticket: Implement break timer UI and state transitions
+                             ↳ ticket: Implement break timer backend and state management
+                             ↳ ticket: Implement today's session count display
+                             ↳ ticket: Implement session history query (today + recent)
+                             ↳ ticket: Implement recent activity timeline display
+                             ↳ ticket: Implement v1 statistics—this week's session count and total duration
+                             ↳ ticket: Implement all-time statistics—total session count and duration
+                             ↳ ticket: Implement statistics display UI—this week and all-time
+                             ↳ ticket: Implement session and break duration customization UI
+                             ↳ ticket: Implement user preferences backend—session and break durations
+                             ↳ ticket: Implement app launch date tracking and display
+                             ↳ ticket: Implement tracking duration display—'member since' or days tracked
+                             ↳ ticket: Review and document database schema for future multi-user support
+  [t= 68.44s] <thread_monitor> running → quiescent
+  [t= 68.44s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  [t= 68.44s] <thread_monitor> running → complete
+  [t= 68.44s] <complete>
+
+  M2 (The Rabbit's Errand) END · COMPLETE · 36.9s · 5 calls · $0.0593
+  artifacts: story×7, ticket×16
+
+──────────────────────────────────────────────────────────────────────────────
+  M2.5 (Advice from a Caterpillar) START · composition · roster=['alice', 'caterpillar', 'white_rabbit'] · seeds=2
+  goal: group v1 tickets into user-facing features that span the stack coherently
+──────────────────────────────────────────────────────────────────────────────
+  [t= 68.44s] alice              story          →caucus (no body)
+                             ↳ story: Start a focus session and receive completion notification
+                             ↳ story: Take a break and prepare for the next session
+                             ↳ story: Review today's session count and recent activity
+                             ↳ story: View this week's and all-time session statistics
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Understand how long the app has been tracking sessions
+                             ↳ story: Understand the database schema for future multi-user support
+  [t= 68.44s] white_rabbit       ticket         →caucus (no body)
+                             ↳ ticket: Implement session timer UI and start/stop controls
+                             ↳ ticket: Implement session timer backend and state management
+                             ↳ ticket: Implement session completion notification
+                             ↳ ticket: Implement break timer UI and state transitions
+                             ↳ ticket: Implement break timer backend and state management
+                             ↳ ticket: Implement today's session count display
+                             ↳ ticket: Implement session history query (today + recent)
+                             ↳ ticket: Implement recent activity timeline display
+                             ↳ ticket: Implement v1 statistics—this week's session count and total duration
+                             ↳ ticket: Implement all-time statistics—total session count and duration
+                             ↳ ticket: Implement statistics display UI—this week and all-time
+                             ↳ ticket: Implement session and break duration customization UI
+                             ↳ ticket: Implement user preferences backend—session and break durations
+                             ↳ ticket: Implement app launch date tracking and display
+                             ↳ ticket: Implement tracking duration display—'member since' or days tracked
+                             ↳ ticket: Review and document database schema for future multi-user support
+  [t= 68.44s] dodo               directive      →caucus **M2.5 — Advice from a Caterpillar.**
+[white_rabbit] parse error on attempt 1, retrying: RabbitResponseParseError: RabbitResponse response failed schema validation: 4 validation errors for RabbitResponse
+features.0.tickets
+  List should have at least 1 item after validation, not 0 [type=too_short, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.13/v/too_short
+features.1.tickets
+  List should have at least 1 item after validation, not 0 [type=too_short, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.13/v/too_short
+features.2.tickets
+  List should have at least 1 item after validation, not 0 [type=too_short, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.13/v/too_short
+features.3.tickets
+  List should have at least 1 item after validation, not 0 [type=too_short, input_value=[], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.13/v/too_short
+[white_rabbit] parse retry succeeded on attempt 2
+[caterpillar] parse error on attempt 1, retrying: CaterpillarResponseParseError: CaterpillarResponse response failed schema validation: 1 validation error for CaterpillarResponse
+  Value error, CaterpillarResponse: decision='review' requires at least one review in `reviews`. Choose a different decision (concern/question/etc.) or include the review you intended to issue. [type=value_error, input_value={'decision': 'review', 'b...ferred.", 'reviews': []}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.13/v/value_error
+[caterpillar] parse retry succeeded on attempt 2
+  [t=104.20s] caterpillar        concern        →caucus ## Feature Composition
+  [t=104.20s] <thread_monitor> running → stuck
+  [t=104.20s] dodo               nudge          →caucus Thread composition → stuck (1 open expectation(s); all members idle). The team has paused with open …
+  [t=111.11s] white_rabbit       feature        →caucus Caterpillar's grouping is coherent and well-grounded. I've absorbed the feature composition and vali…
+                             ↳ feature: Start a focus session and get notified when it ends
+                             ↳ feature: Take a structured break and transition to the next session
+                             ↳ feature: Review today's focus work and recent sessions
+                             ↳ feature: Track weekly and lifetime focus statistics
+                             ↳ feature: Customize session and break durations
+                             ↳ feature: Understand how long you've been tracking sessions
+                             ↳ feature: Schema design for future multi-user support
+  [t=111.11s] <thread_monitor> running → quiescent
+  [t=111.11s] dodo               acknowledgment →caucus Thread composition → complete. The team has gone quiet with no open expectations; the directive is s…
+  [t=111.11s] <thread_monitor> running → complete
+  [t=111.11s] <complete>
+
+  M2.5 (Advice from a Caterpillar) END · COMPLETE · 42.7s · 12 calls · $0.0982
+  artifacts: feature×7, story×7, ticket×16
+
+──────────────────────────────────────────────────────────────────────────────
+  M3 (Tweedledum and Tweedledee) START · contract-negotiation · roster=['tweedledee', 'tweedledum'] · seeds=1
+  goal: negotiate contracts the Tweedles will implement against
+──────────────────────────────────────────────────────────────────────────────
+  [t=111.11s] white_rabbit       feature        →caucus Caterpillar's grouping is coherent and well-grounded. I've absorbed the feature composition and vali…
+                             ↳ feature: Start a focus session and get notified when it ends
+                             ↳ feature: Take a structured break and transition to the next session
+                             ↳ feature: Review today's focus work and recent sessions
+                             ↳ feature: Track weekly and lifetime focus statistics
+                             ↳ feature: Customize session and break durations
+                             ↳ feature: Understand how long you've been tracking sessions
+                             ↳ feature: Schema design for future multi-user support
+  [t=111.11s] dodo               directive      →caucus **M3 — Tweedledum and Tweedledee.**
+[tweedledee] deliberate() raised BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'messages.18: user messages must have non-empty content'}, 'request_id': 'req_011CaoWabHW32crVPpxbY3Bm'} — treating as silence
+  [t=159.80s] tweedledum         contract_note  →caucus Drafting core seams for M3 v1 features. All contracts proposed as state=proposed with backend impact…
+                             ↳ contract_note: Session lifecycle & timer state
+                             ↳ contract_note: Break lifecycle & state transitions
+                             ↳ contract_note: Session history query & recent activity
+                             ↳ contract_note: Statistics aggregation & temporal boundaries
+                             ↳ contract_note: User preferences & duration customization
+                             ↳ contract_note: App launch date & membership duration
+  [t=231.69s] tweedledee         implementation →caucus Responded to all six proposed contracts with frontend impact assessments. Each note now has client-s…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+  [t=231.69s] <thread_monitor> running → quiescent
+  [t=231.69s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  [t=231.69s] <thread_monitor> running → complete
+  [t=231.69s] <complete>
+
+  M3 (Tweedledum and Tweedledee) END · COMPLETE · 120.6s · 28 calls · $0.2202
+  artifacts: contract_note×6, feature×7, implementation×1
+
+──────────────────────────────────────────────────────────────────────────────
+  M4 (The Mad Tea Party) START · test-scenarios · roster=['alice', 'mad_hatter', 'tweedledee', 'tweedledum'] · seeds=3
+  goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
+──────────────────────────────────────────────────────────────────────────────
+  [t=231.69s] alice              story          →caucus (no body)
+                             ↳ story: Start a focus session and receive completion notification
+                             ↳ story: Take a break and prepare for the next session
+                             ↳ story: Review today's session count and recent activity
+                             ↳ story: View this week's and all-time session statistics
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Understand how long the app has been tracking sessions
+                             ↳ story: Understand the database schema for future multi-user support
+  [t=231.69s] white_rabbit       feature        →caucus Caterpillar's grouping is coherent and well-grounded. I've absorbed the feature composition and vali…
+                             ↳ feature: Start a focus session and get notified when it ends
+                             ↳ feature: Take a structured break and transition to the next session
+                             ↳ feature: Review today's focus work and recent sessions
+                             ↳ feature: Track weekly and lifetime focus statistics
+                             ↳ feature: Customize session and break durations
+                             ↳ feature: Understand how long you've been tracking sessions
+                             ↳ feature: Schema design for future multi-user support
+  [t=231.69s] tweedledum         contract_note  →caucus Drafting core seams for M3 v1 features. All contracts proposed as state=proposed with backend impact…
+                             ↳ contract_note: Session lifecycle & timer state
+                             ↳ contract_note: Break lifecycle & state transitions
+                             ↳ contract_note: Session history query & recent activity
+                             ↳ contract_note: Statistics aggregation & temporal boundaries
+                             ↳ contract_note: User preferences & duration customization
+                             ↳ contract_note: App launch date & membership duration
+  [t=231.69s] dodo               directive      →caucus **M4 — The Mad Tea Party.**
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: TweedleResponse response was not valid JSON: Expecting ',' delimiter: line 26 column 483 (char 5750)
+[tweedledum] parse retry succeeded on attempt 2
+[late-publish] tweedledum → thread 'contract-negotiation' (already COMPLETE) — suppressing contract_note: 'Answered all six blockers with backend specs. Load-bearing decisions: (1) Session 001 — max_pause_duration enforced at 6'
+  [t=275.18s] tweedledum         deference      →caucus This is M4 — the tea party. Alice owns the user-journey scenarios (the WHO-IS-THIS-FOR tests), and t…
+[mad_hatter] parse error on attempt 1, retrying: HatterResponseParseError: no JSON block found in HatterResponse response (len=0 chars, preview: '<empty string>')
+[mad_hatter] parse retry succeeded on attempt 2
+  [t=397.19s] <thread_monitor> running → stuck
+  [t=397.19s] dodo               nudge          →caucus Thread test-scenarios → stuck (1 open expectation(s); all members idle). The team has paused with op…
+  [t=697.72s] <thread_monitor> running → quiescent
+  [t=697.72s] dodo               acknowledgment →caucus Thread test-scenarios → complete. The team has gone quiet with no open expectations; the directive i…
+  [t=697.72s] <thread_monitor> running → complete
+  [t=697.72s] <complete>
+
+  M4 (The Mad Tea Party) END · COMPLETE · 466.0s · 48 calls · $0.6818
+  artifacts: contract_note×6, feature×7, story×7
+
+──────────────────────────────────────────────────────────────────────────────
+  M5 START · implementation · roster=['tweedledee', 'tweedledum'] · seeds=3
+  goal: implement to make Hatter's failing tests pass (red → green)
+──────────────────────────────────────────────────────────────────────────────
+  [t=697.72s] white_rabbit       feature        →caucus Caterpillar's grouping is coherent and well-grounded. I've absorbed the feature composition and vali…
+                             ↳ feature: Start a focus session and get notified when it ends
+                             ↳ feature: Take a structured break and transition to the next session
+                             ↳ feature: Review today's focus work and recent sessions
+                             ↳ feature: Track weekly and lifetime focus statistics
+                             ↳ feature: Customize session and break durations
+                             ↳ feature: Understand how long you've been tracking sessions
+                             ↳ feature: Schema design for future multi-user support
+  [t=697.72s] tweedledum         contract_note  →caucus Drafting core seams for M3 v1 features. All contracts proposed as state=proposed with backend impact…
+                             ↳ contract_note: Session lifecycle & timer state
+                             ↳ contract_note: Break lifecycle & state transitions
+                             ↳ contract_note: Session history query & recent activity
+                             ↳ contract_note: Statistics aggregation & temporal boundaries
+                             ↳ contract_note: User preferences & duration customization
+                             ↳ contract_note: App launch date & membership duration
+  [t=697.72s] alice              story          →caucus (no body)
+                             ↳ story: Start a focus session and receive completion notification
+                             ↳ story: Take a break and prepare for the next session
+                             ↳ story: Review today's session count and recent activity
+                             ↳ story: View this week's and all-time session statistics
+                             ↳ story: Customize session and break lengths
+                             ↳ story: Understand how long the app has been tracking sessions
+                             ↳ story: Understand the database schema for future multi-user support
+  [t=697.72s] dodo               directive      →caucus **M5.**
+[late-publish] mad_hatter → thread 'test-scenarios' (already COMPLETE) — suppressing test_scenario: "Mad Hatter's tea party complete. Failure-mode test surface shipped for M4."
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=759.81s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+  [t=780.52s] tweedledee         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+  [t=780.52s] <thread_monitor> running → quiescent
+  [t=780.52s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  [t=780.52s] <thread_monitor> running → complete
+  [t=780.52s] <complete>
+
+  M5 END · COMPLETE · 82.8s · 43 calls · $0.5849
+  artifacts: contract_note×6, feature×7, implementation×2, story×7
+
+──────────────────────────────────────────────────────────────────────────────
+  M6 (The Trial) START · review · roster=['caterpillar', 'tweedledee', 'tweedledum'] · seeds=3
+  goal: Caterpillar reviews the shipped code; surface findings
+──────────────────────────────────────────────────────────────────────────────
+  [t=780.53s] white_rabbit       feature        →caucus Caterpillar's grouping is coherent and well-grounded. I've absorbed the feature composition and vali…
+                             ↳ feature: Start a focus session and get notified when it ends
+                             ↳ feature: Take a structured break and transition to the next session
+                             ↳ feature: Review today's focus work and recent sessions
+                             ↳ feature: Track weekly and lifetime focus statistics
+                             ↳ feature: Customize session and break durations
+                             ↳ feature: Understand how long you've been tracking sessions
+                             ↳ feature: Schema design for future multi-user support
+  [t=780.53s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=780.53s] tweedledee         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledee's frontend turn
+  [t=780.53s] dodo               directive      →caucus **M6 — The Trial.**
+  [t=810.26s] caterpillar        review         →caucus Code review of v1 implementation. Two critical issues found:
+                             ↳ review: Backend models and API integration
+[late-publish] tweedledee → thread 'implementation' (already COMPLETE) — suppressing implementation: "Fixed backend module loading errors. Tweedledum's API implementations were complete but models.py was missing SessionSta"
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+[late-publish] tweedledum → thread 'implementation' (already COMPLETE) — suppressing implementation: '[bus record coerced to implementation: write_file calls landed for src/backend/api/history.py but the LLM chose `silence'
+  [t=899.78s] tweedledum         implementation →caucus Fix for Caterpillar's block-severity finding on unresolved imports. history.py was importing Session…
+                             ↳ implementation: Fix unresolved enum imports in history.py
+
+  M6 (The Trial) END · MEETING_BUDGET · 119.3s · 69 calls · $0.9720
+  artifacts: feature×7, implementation×3, review×1
+
+==============================================================================
+Summary
+==============================================================================
+Total elapsed:  899.8s
+Total cost:     $2.6520  (cap $5.50)
+Total LLM calls: 207
+
+Per-agent:
+  tweedledee         calls= 73 cost=$0.8552
+  tweedledum         calls= 68 cost=$0.8463
+  mad_hatter         calls= 39 cost=$0.6235
+  caterpillar        calls= 14 cost=$0.2085
+  white_rabbit       calls=  4 cost=$0.0532
+  alice              calls=  5 cost=$0.0307
+  cheshire_cat       calls=  3 cost=$0.0189
+  queen_of_hearts    calls=  1 cost=$0.0158
+
+Artifacts on disk:
+  architecture/ (1 files)
+    adr-001-single-user-pomodoro-tracker-with-multi-user-schema-foundation.md
+  contract-notes/ (6 files)
+    contract-note-001-session-lifecycle-timer-state.md
+    contract-note-002-break-lifecycle-state-transitions.md
+    contract-note-003-session-history-query-recent-activity.md
+    contract-note-004-statistics-aggregation-temporal-boundaries.md
+    contract-note-005-user-preferences-duration-customization.md
+    contract-note-006-app-launch-date-membership-duration.md
+  features/ (7 files)
+    feature-001-start-a-focus-session-and-get-notified-when-it-ends.md
+    feature-002-take-a-structured-break-and-transition-to-the-next-session.md
+    feature-003-review-today-s-focus-work-and-recent-sessions.md
+    feature-004-track-weekly-and-lifetime-focus-statistics.md
+    feature-005-customize-session-and-break-durations.md
+    feature-006-understand-how-long-you-ve-been-tracking-sessions.md
+    feature-007-schema-design-for-future-multi-user-support.md
+  implementations/ (2 files)
+    implementation-001-backend-model-state-constants-and-history-module-import-fix.md
+    implementation-002-fix-unresolved-enum-imports-in-history-py.md
+  reviews/ (1 files)
+    review-001-backend-models-and-api-integration.md
+  stories/ (7 files)
+    story-001-start-a-focus-session-and-receive-completion-notification.md
+    story-002-take-a-break-and-prepare-for-the-next-session.md
+    story-003-review-today-s-session-count-and-recent-activity.md
+    story-004-view-this-week-s-and-all-time-session-statistics.md
+    story-005-customize-session-and-break-lengths.md
+    story-006-understand-how-long-the-app-has-been-tracking-sessions.md
+    story-007-understand-the-database-schema-for-future-multi-user-support.md
+  test-scenarios/ (29 files)
+    scenario-001-client-clock-drift-5s-triggers-resync-to-server-time.md
+    scenario-002-duplicate-session-start-requests-both-arrive-backend-idempotent-returns-same-session.md
+    scenario-003-session-timeout-fires-server-side-while-client-offline-reconnection-sees-completed-state.md
+    scenario-004-completion-timestamp-set-exactly-at-transition-moment-for-precise-duration-calculations.md
+    scenario-005-break-auto-starts-with-user-s-customized-duration-not-hardcoded-default.md
+    scenario-006-skip-break-idempotent-even-if-timeout-fires-simultaneously.md
+    scenario-007-break-duration-in-history-is-configured-duration-not-actual-elapsed-even-if-skipped.md
+    scenario-008-session-history-returned-in-strict-descending-order-by-completed-at-consistent-across-queries.md
+    scenario-009-query-boundary-at-midnight-utc-includes-yesterday-evening-sessions-completed-early-today.md
+    scenario-010-empty-session-history-returns-empty-array-not-error.md
+    scenario-011-weekly-stats-use-monday-sunday-boundaries-inclusive-on-both-ends-in-utc.md
+    scenario-012-week-boundaries-respect-utc-not-user-s-local-timezone.md
+    scenario-013-membership-duration-days-computed-server-side-using-server-time-not-client-time.md
+    scenario-014-settings-validation-rejects-durations-outside-1-180-minute-bounds.md
+    scenario-015-partial-settings-update-preserves-omitted-fields-doesn-t-reset-to-default.md
+    scenario-016-active-session-duration-not-retroactively-changed-when-settings-updated-mid-session.md
+    scenario-017-settings-patch-is-idempotent.md
+    scenario-018-user-launch-date-is-immutable-never-changed-even-after-session-deletion.md
+    scenario-019-launch-date-is-exact-timestamp-of-first-session-not-normalized-to-midnight.md
+    scenario-020-new-user-with-zero-sessions-has-launch-date-null-or-omitted-not-placeholder.md
+    test-scenario-001-client-clock-drift-resync.md
+    test-scenario-001-marcus-starts-session-gets-notification.md
+    test-scenario-002-session-idempotency-duplicate-start.md
+    test-scenario-003-server-time-authority-client-drift.md
+    test-scenario-004-priya-break-auto-starts-after-session.md
+    test-scenario-005-break-skip-idempotency.md
+    test-scenario-006-james-views-today-and-timeline.md
+    test-scenario-007-elena-views-weekly-and-all-time-stats.md
+    test-scenario-suite-m4-hatter.md
+  tickets/ (16 files)
+    ticket-001-implement-session-timer-ui-and-start-stop-controls.md
+    ticket-002-implement-session-timer-backend-and-state-management.md
+    ticket-003-implement-session-completion-notification.md
+    ticket-004-implement-break-timer-ui-and-state-transitions.md
+    ticket-005-implement-break-timer-backend-and-state-management.md
+    ticket-006-implement-today-s-session-count-display.md
+    ticket-007-implement-session-history-query-today-recent.md
+    ticket-008-implement-recent-activity-timeline-display.md
+    ticket-009-implement-v1-statistics-this-week-s-session-count-and-total-duration.md
+    ticket-010-implement-all-time-statistics-total-session-count-and-duration.md
+    ticket-011-implement-statistics-display-ui-this-week-and-all-time.md
+    ticket-012-implement-session-and-break-duration-customization-ui.md
+    ticket-013-implement-user-preferences-backend-session-and-break-durations.md
+    ticket-014-implement-app-launch-date-tracking-and-display.md
+    ticket-015-implement-tracking-duration-display-member-since-or-days-tracked.md
+    ticket-016-review-and-document-database-schema-for-future-multi-user-support.md

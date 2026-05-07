@@ -225,6 +225,13 @@ from wonderland.thread_monitor import (
     ThreadState,
     ThreadStateChange,
 )
+from wonderland.feature import (
+    FeaturePayload,
+    FeatureRecord,
+    FeatureRegistry,
+    StackSpan,
+    render_feature,
+)
 from wonderland.ticket import (
     TicketDependencies,
     TicketPayload,
@@ -369,6 +376,10 @@ __all__ = [
     "ThreadMonitor",
     "ThreadState",
     "ThreadStateChange",
+    "FeaturePayload",
+    "FeatureRecord",
+    "FeatureRegistry",
+    "StackSpan",
     "TicketDependencies",
     "TicketPayload",
     "TicketRecord",
@@ -428,6 +439,7 @@ __all__ = [
     "render_contract_note",
     "render_escalation",
     "render_implementation",
+    "render_feature",
     "render_observation",
     "render_review",
     "render_ruling",

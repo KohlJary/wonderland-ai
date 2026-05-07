@@ -659,6 +659,36 @@
       "status": "backlog",
       "created_at": "2026-05-07T01:41:17.998018",
       "created_by": "daedalus"
+    },
+    {
+      "id": "2b405ec6-cfa3-426d-9931-e3abdfbbf87d",
+      "title": "Holmes/Watson/Moriarty cast \u2014 incident + security workflow",
+      "description": "Second character cast as a separate workflow chain alongside canonical/tdd. Sherlock Holmes deduces from bug reports/diffs (anxious-thoroughness failure mode); Watson is the grounding voice \u2014 Watson:Sherlock structurally :: Alice:Rabbit, the same default-to-silence-with-targeted-intervention pattern Alice fills in M2. Moriarty is the peer-strength red team (intentional adversary, fills the gap between Queen-of-Hearts compliance and Hatter carelessness). Ships as a dedicated workflow YAML (e.g. holmes-watson.yaml, moriarty-redteam.yaml) so the Dodo dynamic orchestrator (29497820) can compose them into incident-response chains. Strongest validation that the Wonderland framework is a reusable substrate for character-bound multi-agent systems, not just one cast doing one job. Depends on 29497820 landing first. See memory project_holmes_cast.md and project_workflow_variants.md.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-07T13:50:19.565071",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "d1f4f2ec-b496-438d-bbee-f64a073f1d99",
+      "title": "Feature-composition phase between M2 and M3",
+      "description": "New meeting (M2.5 in TDD numbering) between decomposition (M2) and contract-negotiation (M3) where Rabbit groups his own tickets into features \u2014 user-facing things that span the stack and ship as a coherent unit. Roster: Rabbit (drives the grouping since he wrote the tickets), Alice (audits user-facing coherence \u2014 extending her M2 grounding-voice role), Caterpillar (his 'what does this feature claim, and do its tickets actually deliver that?' stance is exactly his M6 review move applied one layer earlier). Output: feature artifacts that name the user-facing point, list the tickets they aggregate, and call out cross-stack span (frontend + backend together vs one-side-only). M3's seed query then pulls features instead of a single ticket \u2014 gives Tweedles full feature context up front instead of having to infer cross-stack coordination from a representative ticket. Addresses the inconsistent-frontend-vs-backend-ship pattern observed across analysis runs: when Tweedles only see one ticket they're more likely to ship a half-stack feature. Slots cleanly into the atomic-composable-workflows direction (project_workflow_variants.md) \u2014 could be a separately-named meeting that other workflow chains can reuse. Doesn't need substrate changes.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-07T14:13:27.325357",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "3a06c11e-7df0-4d91-803f-7471013ba7bf",
+      "title": "Sprint-planning substrate: cost estimates + convenor selection + persistent backlog",
+      "description": "Wonderland-as-sprint-planning, not just workflow refinement. Three substrate pieces, can land independently or together. (1) Cost estimates as artifacts \u2014 extends Rabbit's existing time estimates with dollar/token projections per feature (or per ticket), so the convenor sees what each unit of work would cost to ship. Rabbit + Tweedles already have the data implicitly; just needs to surface as an artifact field. (2) Convenor-checkpoint protocol \u2014 between feature-composition (d1f4f2ec) and contract-negotiation, the framework pauses for the convenor to say 'ship X and Y this pass, defer Z'. Could extend the existing Dodo escalation path (39a41906) with a new escalation kind: 'feature_selection_required'. (3) Persistent cross-run backlog state \u2014 generalizes the multi-session memory work (analyses 020-023) from 'agents remember across sessions' to 'the team's planning state persists across sessions'. New substrate: ~/.wonderland/backlog.json (or similar) holding deferred features that future runs can fold into the next sprint. Loads at run start, writes back at run end. Together these turn Wonderland from 'do everything that came up in scoping' into 'ship what the convenor agreed to this pass; let the rest accumulate'. Makes more sense once the framework is being used as actual software-development infrastructure rather than experiment substrate. Depends on d1f4f2ec (feature composition) and 29497820 (Dodo dynamic orchestrator) for the workflow shape; the persistent-backlog piece is independent substrate work.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-07T14:13:44.413033",
+      "created_by": "daedalus"
     }
   ],
   "version": 1
