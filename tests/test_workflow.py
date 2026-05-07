@@ -431,6 +431,30 @@ class TestTDDSpecifics:
             "TDD workflow should add at least one meeting vs canonical"
         )
 
+    def test_m4_directive_requires_both_artifact_and_write_file(self, wf):
+        # Tea-party run exposed: Alice + Hatter shipped 24 markdown
+        # scenarios but NEITHER called write_file to create runnable
+        # .py test files. They treated "ship the scenario" as the
+        # whole test step. Implementation in M5 cannot turn a markdown
+        # artifact red→green; only a .py file. The directive must make
+        # the two-operations-per-scenario requirement explicit, with
+        # the failure mode named so the LLM doesn't skip step 2.
+        ts = wf.meeting_by_id("test-scenarios")
+        assert ts is not None
+        directive = ts.convenor_directive
+        # Must mention both operations
+        assert "write_file" in directive
+        # Must call out that artifact-without-test-file is the failure
+        assert "documentation, not a test" in directive or "without a runnable test file" in directive, (
+            "M4 directive must explicitly name the artifact-without-test-file "
+            "failure mode (Alice + Hatter skip write_file because they treat "
+            "shipping the scenario as the whole step). See tea-party run."
+        )
+        # Must explicitly name the directory the test files go to
+        assert "tests/" in directive, (
+            "M4 directive must name tests/ as the path the .py files go into"
+        )
+
 
 # ---------------------------------------------------------------------------
 # YAML round-trip

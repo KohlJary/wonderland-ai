@@ -118,18 +118,43 @@ meetings:
       **Alice's move** — user-journey scenarios. Read your stories
       from the scoping thread and translate the load-bearing ones
       into concrete happy-path test scenarios: a real persona, the
-      sequence of actions they take, the observable result. Ship
-      `story` artifacts here in journey form (Given/When/Then is
-      fine), AND `write_file` the matching test files. These are
-      the WHO-IS-THIS-FOR tests — what does a real user do, and
+      sequence of actions they take, the observable result. These
+      are the WHO-IS-THIS-FOR tests — what does a real user do, and
       does it work?
 
       **Hatter's move** — failure-mode scenarios. Edge cases first —
-      that's where the system actually lives. Ship `test_scenario`
-      artifacts and `write_file` the matching test files. Security,
-      concurrency, malformed input, GDPR-cascade edges, the things
-      that look fine on the happy path and break on the second
-      Tuesday in March.
+      that's where the system actually lives. Security, concurrency,
+      malformed input, GDPR-cascade edges, the things that look fine
+      on the happy path and break on the second Tuesday in March.
+
+      **CRITICAL: each of you must do TWO things per scenario, not
+      one.** A scenario without a runnable test file is documentation,
+      not a test. Implementation in M5 cannot turn a markdown artifact
+      red→green; it can only turn a `.py` file red→green.
+
+      For EVERY scenario you ship:
+
+      1. Emit the `story` (Alice) or `test_scenario` (Hatter)
+         artifact via the structured response (this lands in
+         `.wonderland/stories/` or `.wonderland/test-scenarios/` as
+         your team-record of *what* the test pins).
+
+      2. **AND** call `write_file` on `tests/test_<descriptive>.py`
+         (or `tests/test_<feature>_<axis>.py` to match the existing
+         conftest convention) with the actual pytest code that
+         encodes the scenario. Multiple scenarios can share a file
+         when they're in the same domain. The test should FAIL right
+         now (no production code exists yet); use `pytest.skip`,
+         `pytest.xfail`, or just import-from-modules-that-don't-exist-
+         yet — whichever expresses the red state most cleanly.
+
+      Skipping step 2 is the most common failure mode of this
+      meeting. If you finish your turn and `tests/` has no new files,
+      you have not done your job.
+
+      Read `tests/conftest.py` first (use `read_file`) to understand
+      the existing pytest fixtures and conventions; the test files
+      you write should plug into the same framework.
 
       Together you produce the test pyramid: Alice pins what real
       users do; Hatter pins what real users *eventually* do that
@@ -146,9 +171,7 @@ meetings:
 
       Tweedledee, Tweedledum: ask Alice or Hatter clarifying
       questions if a test's intent is ambiguous against your
-      contract — you are about to implement against these. Read the
-      existing tests/conftest.py before responding so the tests you
-      ship plug into the existing framework.
+      contract — you are about to implement against these.
     seeds:
       - from: scoping
         kinds: [adr, story]
