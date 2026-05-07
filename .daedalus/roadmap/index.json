@@ -649,6 +649,16 @@
       "status": "backlog",
       "created_at": "2026-05-06T22:18:04.688531",
       "created_by": "daedalus"
+    },
+    {
+      "id": "22018836-64ee-4e5d-b45f-1d020915065d",
+      "title": "Rabbit's tickets organized into development stories with cost estimation",
+      "description": "Once Wonderland transitions to a user-facing program (post-P7, when the TUI/web UI work begins), Rabbit's M2 ticket output should be organized into higher-level 'development stories' \u2014 coherent feature slices the user can pick from like a menu rather than a flat ticket list.\n\nEach story should carry:\n- Cost estimate (based on prior runs of similar shape \u2014 Hatter's test scenario count \u00d7 per-scenario cost in M4 + implementation work in M5)\n- Time estimate (walltime including all meetings)\n- Confidence band (how similar is this to prior runs?)\n- Dependencies (which stories block which)\n- Optional: 'minimum viable slice' vs 'full version' for stories with natural scope dimensions\n\nSurface these to the user as a selection screen \u2014 pick which stories to ship in this run, see the projected cost, kick off. Lets users budget against scope rather than budgeting against an opaque per-meeting cap.\n\nThis is the natural abstraction layer above tickets \u2014 Rabbit ships them, the runner aggregates+estimates them, the user picks. Makes the framework usable by non-developers who don't know what to budget for.\n\nDefer until post-P7 \u2014 the eval harness data is what calibrates the cost-estimation models. Without that, estimates would be guesses.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-07T01:41:17.998018",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

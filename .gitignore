@@ -37,3 +37,7 @@ uv.lock.bak
 # Per-project Wonderland state lives in target projects, not here —
 # but if anyone runs Wonderland against this repo as a sandbox:
 .wonderland/
+
+# Local drafts (showcase skeletons, scratch notes) — kept out of the
+# repo until the underlying work justifies publishing them.
+drafts/

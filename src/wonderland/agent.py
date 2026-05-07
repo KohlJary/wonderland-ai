@@ -816,6 +816,18 @@ class WonderlandAgent:
                 ]
                 result = await self.llm.complete(system=system, messages=retry_messages)
                 response_text = result.text
+                # If the retry hit the output cap, the response is
+                # almost certainly truncated mid-JSON and parse will
+                # fail again with a confusing "no JSON block found".
+                # Log the actual cause so the failure mode is legible.
+                if getattr(result, "stop_reason", None) == "max_tokens":
+                    print(
+                        f"[{self.identity.name}] retry response hit "
+                        f"max_tokens cap (likely truncated mid-JSON) — "
+                        f"raise DEFAULT_MAX_TOKENS or shorten the agent's "
+                        f"response protocol if this recurs",
+                        file=sys.stderr,
+                    )
         # Unreachable: max_retries=N means N+1 attempts, last one re-raises.
         raise last_exc  # type: ignore[misc]  # pragma: no cover
 

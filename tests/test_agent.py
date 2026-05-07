@@ -560,12 +560,26 @@ def _parse_sample(text: str) -> _SampleResponse:
     return extract_and_validate(text, _SampleResponse, _SampleParseError)
 
 
-def _scripted_llm(*texts: str) -> LLMClient:
-    """LLMClient whose .complete() returns the given texts in order."""
+def _scripted_llm(
+    *texts: str,
+    stop_reasons: list[str] | None = None,
+) -> LLMClient:
+    """LLMClient whose .complete() returns the given texts in order.
+
+    ``stop_reasons`` lets callers specify a stop_reason per response;
+    defaults to "end_turn" for every response. Pass "max_tokens" to
+    simulate the truncation case that bit Hatter in the Geocities
+    diagnose run (analysis-pending).
+    """
+    if stop_reasons is None:
+        stop_reasons = ["end_turn"] * len(texts)
+    assert len(stop_reasons) == len(texts), (
+        "stop_reasons length must match texts length"
+    )
     responses = [
         SimpleNamespace(
             content=[SimpleNamespace(type="text", text=text)],
-            stop_reason="end_turn",
+            stop_reason=stop_reason,
             usage=SimpleNamespace(
                 input_tokens=10,
                 output_tokens=5,
@@ -573,7 +587,7 @@ def _scripted_llm(*texts: str) -> LLMClient:
                 cache_read_input_tokens=0,
             ),
         )
-        for text in texts
+        for text, stop_reason in zip(texts, stop_reasons)
     ]
     iterator = iter(responses)
     client = MagicMock()
@@ -661,3 +675,45 @@ async def test_parse_with_retry_max_retries_zero_disables_retry(tmp_path):
             max_retries=0,
         )
     assert agent.llm._client.messages.create.await_count == 0
+
+
+async def test_parse_with_retry_logs_max_tokens_truncation(tmp_path, capsys):
+    """When the retry response has stop_reason='max_tokens' (output
+    truncated mid-JSON), surface a diagnostic line. The Geocities
+    diagnose run hit this when Hatter's wide-directive responses
+    exceeded the 4096-token cap; bumping DEFAULT_MAX_TOKENS fixed the
+    immediate cause but the diagnostic stays so a future recurrence
+    is legible from the run log.
+    """
+    agent = await _agent(tmp_path)
+    # Retry response is also bad JSON AND was cut off at the cap
+    agent.llm = _scripted_llm(
+        '{"truncated": "json with no closing brace',
+        stop_reasons=["max_tokens"],
+    )
+    with pytest.raises(_SampleParseError):
+        await agent._parse_with_retry(
+            _parse_sample,
+            "first attempt — not JSON either",
+            system=[],
+            messages=[],
+        )
+    err = capsys.readouterr().err
+    assert "max_tokens cap" in err
+    assert "truncated mid-JSON" in err
+
+
+def test_default_max_tokens_is_at_least_8k():
+    """Pin against regressing DEFAULT_MAX_TOKENS below the value
+    Hatter's wide-directive responses need. The Geocities diagnose
+    run showed responses around 4000 output tokens hitting the old
+    4096 cap; 8K is the floor below which we'd expect recurrence,
+    16K is the value we landed on for headroom.
+    """
+    from wonderland.llm import DEFAULT_MAX_TOKENS
+
+    assert DEFAULT_MAX_TOKENS >= 8192, (
+        f"DEFAULT_MAX_TOKENS={DEFAULT_MAX_TOKENS} is too low — Hatter's "
+        "wide-directive responses can truncate mid-JSON. See Geocities "
+        "diagnose run analysis."
+    )
