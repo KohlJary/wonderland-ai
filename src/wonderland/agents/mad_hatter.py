@@ -35,7 +35,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
-from wonderland.parsing import extract_and_validate
+from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.test_scenario import TestScenarioPayload, TestScenarioRegistry
 from wonderland.utterance import (
     Artifact,
@@ -237,7 +237,7 @@ test scenario into executable form.
 _OUTPUT_PROTOCOL_WITH_TOOLS = _OUTPUT_PROTOCOL + _TOOLS_SECTION
 
 
-class HatterResponseParseError(ValueError):
+class HatterResponseParseError(ResponseParseError):
     """The Hatter's LLM response did not parse into a valid HatterResponse."""
 
 
@@ -298,7 +298,7 @@ class MadHatter(WonderlandAgent):
         else:
             result = await self.llm.complete(system=system, messages=messages)
             response_text = result.text
-        response = parse_hatter_response(response_text)
+        response = await self._parse_with_retry(parse_hatter_response, response_text, system=system, messages=messages)
         if response.decision == "silence":
             return None
 

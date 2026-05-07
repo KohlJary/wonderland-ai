@@ -42,7 +42,14 @@ if TYPE_CHECKING:
 
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-DEFAULT_MAX_TOKENS = 4096
+# Output token cap. Bumped from 4096 → 16384 after analysis-pending
+# Geocities run: Hatter's wide-directive responses (12+ test scenarios
+# in one turn) hit the 4096 cap mid-JSON, producing truncated output
+# that no parse strategy could recover from (closing `}` and ` ``` `
+# never emitted). 16K gives chatty agents real room; cost-conscious
+# agents emit fewer tokens and pay less. Per-meeting budget caps
+# still bound runaway output spend.
+DEFAULT_MAX_TOKENS = 16384
 
 
 @dataclass(frozen=True)

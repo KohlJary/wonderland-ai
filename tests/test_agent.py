@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import BaseModel
 
 from wonderland import (
     AgentIdentity,
@@ -25,6 +28,8 @@ from wonderland.identity import (
     ConstitutionHeader,
     Identity,
 )
+from wonderland.llm import LLMClient
+from wonderland.parsing import ResponseParseError, extract_and_validate
 
 # ---------- helpers ----------
 
@@ -537,3 +542,178 @@ async def test_end_to_end_with_loaded_constitution(tmp_path: Path) -> None:
     with contextlib_suppress(asyncio.CancelledError):
         await run_task
     await memory.close()
+
+
+# ---------- parse-error retry ----------
+
+
+class _SampleResponse(BaseModel):
+    decision: str
+    body: str = ""
+
+
+class _SampleParseError(ResponseParseError):
+    pass
+
+
+def _parse_sample(text: str) -> _SampleResponse:
+    return extract_and_validate(text, _SampleResponse, _SampleParseError)
+
+
+def _scripted_llm(
+    *texts: str,
+    stop_reasons: list[str] | None = None,
+) -> LLMClient:
+    """LLMClient whose .complete() returns the given texts in order.
+
+    ``stop_reasons`` lets callers specify a stop_reason per response;
+    defaults to "end_turn" for every response. Pass "max_tokens" to
+    simulate the truncation case that bit Hatter in the Geocities
+    diagnose run (analysis-pending).
+    """
+    if stop_reasons is None:
+        stop_reasons = ["end_turn"] * len(texts)
+    assert len(stop_reasons) == len(texts), (
+        "stop_reasons length must match texts length"
+    )
+    responses = [
+        SimpleNamespace(
+            content=[SimpleNamespace(type="text", text=text)],
+            stop_reason=stop_reason,
+            usage=SimpleNamespace(
+                input_tokens=10,
+                output_tokens=5,
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
+            ),
+        )
+        for text, stop_reason in zip(texts, stop_reasons)
+    ]
+    iterator = iter(responses)
+    client = MagicMock()
+    client.messages = MagicMock()
+    client.messages.create = AsyncMock(side_effect=lambda **_: next(iterator))
+    return LLMClient(client=client)
+
+
+async def test_parse_with_retry_returns_immediately_on_first_success(tmp_path):
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm("ignored — only used on retry")
+    parsed = await agent._parse_with_retry(
+        _parse_sample,
+        '{"decision": "story", "body": "ok"}',
+        system=[],
+        messages=[],
+    )
+    assert parsed.decision == "story"
+    # No retry call should have happened
+    assert agent.llm._client.messages.create.await_count == 0
+
+
+async def test_parse_with_retry_recovers_after_one_failure(tmp_path, capsys):
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm('{"decision": "story", "body": "from retry"}')
+    parsed = await agent._parse_with_retry(
+        _parse_sample,
+        "this is prose, not JSON",
+        system=[],
+        messages=[{"role": "user", "content": "go"}],
+    )
+    assert parsed.decision == "story"
+    assert parsed.body == "from retry"
+    # Exactly one retry call
+    assert agent.llm._client.messages.create.await_count == 1
+    captured = capsys.readouterr()
+    assert "parse error on attempt 1" in captured.err
+    assert "parse retry succeeded on attempt 2" in captured.err
+
+
+async def test_parse_with_retry_raises_when_retry_also_fails(tmp_path, capsys):
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm("still not JSON either")
+    with pytest.raises(_SampleParseError):
+        await agent._parse_with_retry(
+            _parse_sample,
+            "first attempt also prose",
+            system=[],
+            messages=[{"role": "user", "content": "go"}],
+        )
+    # Retry happened (one extra LLM call), then both attempts failed
+    assert agent.llm._client.messages.create.await_count == 1
+    assert "parse error on attempt 1" in capsys.readouterr().err
+
+
+async def test_parse_with_retry_handles_empty_response(tmp_path):
+    """Empty original response — assistant message gets a placeholder so
+    the API doesn't reject the retry payload."""
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm('{"decision": "story", "body": "filled in"}')
+    parsed = await agent._parse_with_retry(
+        _parse_sample,
+        "",
+        system=[],
+        messages=[{"role": "user", "content": "go"}],
+    )
+    assert parsed.decision == "story"
+    # Inspect what the retry call sent — assistant content shouldn't be empty
+    call_args = agent.llm._client.messages.create.await_args
+    sent_messages = call_args.kwargs["messages"]
+    assistant_msg = next(m for m in sent_messages if m["role"] == "assistant")
+    assert assistant_msg["content"]  # non-empty
+
+
+async def test_parse_with_retry_max_retries_zero_disables_retry(tmp_path):
+    """max_retries=0 means no retry — fail-fast on the first parse error."""
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm("never called")
+    with pytest.raises(_SampleParseError):
+        await agent._parse_with_retry(
+            _parse_sample,
+            "not JSON",
+            system=[],
+            messages=[],
+            max_retries=0,
+        )
+    assert agent.llm._client.messages.create.await_count == 0
+
+
+async def test_parse_with_retry_logs_max_tokens_truncation(tmp_path, capsys):
+    """When the retry response has stop_reason='max_tokens' (output
+    truncated mid-JSON), surface a diagnostic line. The Geocities
+    diagnose run hit this when Hatter's wide-directive responses
+    exceeded the 4096-token cap; bumping DEFAULT_MAX_TOKENS fixed the
+    immediate cause but the diagnostic stays so a future recurrence
+    is legible from the run log.
+    """
+    agent = await _agent(tmp_path)
+    # Retry response is also bad JSON AND was cut off at the cap
+    agent.llm = _scripted_llm(
+        '{"truncated": "json with no closing brace',
+        stop_reasons=["max_tokens"],
+    )
+    with pytest.raises(_SampleParseError):
+        await agent._parse_with_retry(
+            _parse_sample,
+            "first attempt — not JSON either",
+            system=[],
+            messages=[],
+        )
+    err = capsys.readouterr().err
+    assert "max_tokens cap" in err
+    assert "truncated mid-JSON" in err
+
+
+def test_default_max_tokens_is_at_least_8k():
+    """Pin against regressing DEFAULT_MAX_TOKENS below the value
+    Hatter's wide-directive responses need. The Geocities diagnose
+    run showed responses around 4000 output tokens hitting the old
+    4096 cap; 8K is the floor below which we'd expect recurrence,
+    16K is the value we landed on for headroom.
+    """
+    from wonderland.llm import DEFAULT_MAX_TOKENS
+
+    assert DEFAULT_MAX_TOKENS >= 8192, (
+        f"DEFAULT_MAX_TOKENS={DEFAULT_MAX_TOKENS} is too low — Hatter's "
+        "wide-directive responses can truncate mid-JSON. See Geocities "
+        "diagnose run analysis."
+    )

@@ -1,0 +1,326 @@
+Skeleton:     fullstack-fastapi-react → /tmp/wonderland-geocities-tea-party
+
+==============================================================================
+Running workflow 'tdd' live
+==============================================================================
+Project root: /tmp/wonderland-geocities-tea-party
+Directive:    Build the MVP of a modern Geocities — a self-hosted personal-homepage platform. Anyone can sign up with email + password, get their own editable page at a URL like /~username, and share that URL with others. The editor doesn't need to be fancy (Markdown rendered to HTML is fine, but think about XSS), pages should support some lightweight styling. Pages are public by default. Provide some way for visitors to discover other users' pages — recent activity, a browseable directory, a webring, your call. Three-week MVP scope; keep it simple but complete. EU users in scope so GDPR applies (account deletion must purge all hosted content).
+Runner:       budget=$5.00 cap, timeout=1200s, quiescence_fallback=300s
+
+──────────────────────────────────────────────────────────────────────────────
+  M1 START · scoping · roster=['alice', 'cheshire_cat', 'queen_of_hearts'] · seeds=0
+  goal: produce user stories + an architectural ADR + GDPR rulings
+──────────────────────────────────────────────────────────────────────────────
+  [t=  0.00s] dodo               directive      →caucus Build the MVP of a modern Geocities — a self-hosted personal-homepage platform. Anyone can sign up w…
+  [t=  8.21s] queen_of_hearts    concern        →caucus Scope is clear and well-bounded. Before architecture and implementation begin, the directive touches…
+  [t= 13.91s] cheshire_cat       question       →caucus Before we decompose this into tickets, let me surface what I'm seeing in the shape of the work.
+  [t= 20.65s] cheshire_cat       question       →caucus The Queen has surfaced three load-bearing constraints — account deletion semantics, discovery/enumer…
+  [t= 26.99s] alice              story          →caucus (no body)
+                             ↳ story: Sign up and claim my homepage
+                             ↳ story: Edit my homepage with simple Markdown
+                             ↳ story: Style my page with simple CSS
+                             ↳ story: Discover other people's pages
+                             ↳ story: Delete my account and all my content (GDPR compliance)
+                             ↳ story: Share my page confidently (no surprise tracking or dark patterns)
+  [t= 26.99s] <thread_monitor> running → quiescent
+  [t= 26.99s] dodo               acknowledgment →caucus Thread scoping → complete. The team has gone quiet with no open expectations; the directive is settl…
+  [t= 26.99s] <thread_monitor> running → complete
+  [t= 26.99s] <complete>
+
+  M1 END · COMPLETE · 27.0s · 4 calls · $0.0593
+  artifacts: story×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M2 START · decomposition · roster=['cheshire_cat', 'white_rabbit'] · seeds=1
+  goal: decompose the ADR + stories into v1 tickets
+──────────────────────────────────────────────────────────────────────────────
+  [t= 27.00s] alice              story          →caucus (no body)
+                             ↳ story: Sign up and claim my homepage
+                             ↳ story: Edit my homepage with simple Markdown
+                             ↳ story: Style my page with simple CSS
+                             ↳ story: Discover other people's pages
+                             ↳ story: Delete my account and all my content (GDPR compliance)
+                             ↳ story: Share my page confidently (no surprise tracking or dark patterns)
+  [t= 27.00s] dodo               directive      →caucus Decomposition thread. The stories and ADR(s) in your context
+[late-publish] queen_of_hearts → thread 'scoping' (already COMPLETE) — suppressing question: 'Alice has surfaced six stories that clarify the user personas and their expectations. Three are straightforward product '
+  [t= 44.22s] white_rabbit       ticket         →caucus Decomposing six stories into v1 scope. The critical path runs through sign-up → homepage creation → …
+                             ↳ ticket: Set up authentication and session management
+                             ↳ ticket: Implement homepage CRUD API
+                             ↳ ticket: Build homepage editor frontend (Markdown + CSS)
+                             ↳ ticket: Implement public homepage view
+                             ↳ ticket: Implement account deletion with GDPR compliance
+                             ↳ ticket: Add no-tracking, no-dark-patterns guarantee (documentation + review)
+[late-publish] cheshire_cat → thread 'scoping' (already COMPLETE) — suppressing proposal: "I've read the six stories as a set. They describe a coherent user journey with two distinct trust surfaces: the happy pa"
+  [t= 45.81s] <thread_monitor> running → quiescent
+  [t= 45.82s] dodo               acknowledgment →caucus Thread decomposition → complete. The team has gone quiet with no open expectations; the directive is…
+  [t= 45.82s] <thread_monitor> running → complete
+  [t= 45.82s] <complete>
+
+  M2 END · COMPLETE · 18.8s · 3 calls · $0.0355
+  artifacts: story×6, ticket×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M3 START · contract-negotiation · roster=['tweedledee', 'tweedledum'] · seeds=1
+  goal: negotiate contracts the Tweedles will implement against
+──────────────────────────────────────────────────────────────────────────────
+  [t= 45.82s] white_rabbit       ticket         →caucus Decomposing six stories into v1 scope. The critical path runs through sign-up → homepage creation → …
+                             ↳ ticket: Set up authentication and session management
+                             ↳ ticket: Implement homepage CRUD API
+                             ↳ ticket: Build homepage editor frontend (Markdown + CSS)
+                             ↳ ticket: Implement public homepage view
+                             ↳ ticket: Implement account deletion with GDPR compliance
+                             ↳ ticket: Add no-tracking, no-dark-patterns guarantee (documentation + review)
+  [t= 45.82s] dodo               directive      →caucus Contract negotiation thread. The ADR(s) and ticket in your
+  [t= 67.55s] tweedledee         contract_note  →caucus Drafting the three load-bearing contracts for v1 critical path: session/auth, homepage CRUD, and con…
+                             ↳ contract_note: Session and Authentication Contract
+                             ↳ contract_note: Homepage CRUD Contract and Data Shape
+                             ↳ contract_note: Content Validation Contract (Markdown and CSS)
+  [t= 77.19s] tweedledum         contract_note  →caucus Drafting the load-bearing seams for v1. Starting with authentication/session, then homepage content …
+                             ↳ contract_note: Authentication and Session Contract
+                             ↳ contract_note: Homepage Content Persistence Contract
+                             ↳ contract_note: Markdown and CSS Validation Boundary
+                             ↳ contract_note: Real-time Preview Rendering (Client-Side)
+  [t= 77.19s] <thread_monitor> running → quiescent
+  [t= 77.19s] dodo               acknowledgment →caucus Thread contract-negotiation → complete. The team has gone quiet with no open expectations; the direc…
+  [t= 77.20s] <thread_monitor> running → complete
+  [t= 77.20s] <complete>
+
+  M3 END · COMPLETE · 31.4s · 14 calls · $0.0985
+  artifacts: contract_note×7, ticket×6
+
+──────────────────────────────────────────────────────────────────────────────
+  M4 START · test-scenarios · roster=['alice', 'mad_hatter', 'tweedledee', 'tweedledum'] · seeds=3
+  goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
+──────────────────────────────────────────────────────────────────────────────
+  [t= 77.20s] alice              story          →caucus (no body)
+                             ↳ story: Sign up and claim my homepage
+                             ↳ story: Edit my homepage with simple Markdown
+                             ↳ story: Style my page with simple CSS
+                             ↳ story: Discover other people's pages
+                             ↳ story: Delete my account and all my content (GDPR compliance)
+                             ↳ story: Share my page confidently (no surprise tracking or dark patterns)
+  [t= 77.20s] tweedledee         contract_note  →caucus Drafting the three load-bearing contracts for v1 critical path: session/auth, homepage CRUD, and con…
+                             ↳ contract_note: Session and Authentication Contract
+                             ↳ contract_note: Homepage CRUD Contract and Data Shape
+                             ↳ contract_note: Content Validation Contract (Markdown and CSS)
+  [t= 77.20s] tweedledum         contract_note  →caucus Drafting the load-bearing seams for v1. Starting with authentication/session, then homepage content …
+                             ↳ contract_note: Authentication and Session Contract
+                             ↳ contract_note: Homepage Content Persistence Contract
+                             ↳ contract_note: Markdown and CSS Validation Boundary
+                             ↳ contract_note: Real-time Preview Rendering (Client-Side)
+  [t= 77.20s] dodo               directive      →caucus Test-scenarios thread — the tea party. The contract notes in
+[late-publish] tweedledee → thread 'contract-negotiation' (already COMPLETE) — suppressing concern: 'Session/auth architecture mismatch. I proposed httpOnly cookie (no client-side auth state; GET /auth/me for session rest'
+  [t= 97.66s] alice              story          →caucus Reading the contracts locked from the prior thread and mapping to the stories I produced in scoping.…
+                             ↳ story: Signup and First Post: Monolingual Book Club Joiner
+                             ↳ story: Cross-Language Thread Moderation: Polyglot Moderator
+                             ↳ story: Live Thread with Captions: Deaf User
+  [t=119.81s] tweedledee         deference      →caucus Contracts locked: authentication/session (004), homepage persistence (005), validation boundary (006…
+  [t=145.93s] mad_hatter         test_scenario  →caucus Reading the contracts and stories—I see three load-bearing seams: session/auth, homepage CRUD, and c…
+                             ↳ test_scenario: Sign-up with duplicate username returns 409 and suggests alternatives
+                             ↳ test_scenario: Session cookie survives browser refresh (httpOnly cookie is set correctly)
+                             ↳ test_scenario: Login with wrong password returns 401 and does not set a cookie
+                             ↳ test_scenario: Logout clears the httpOnly cookie server-side
+                             ↳ test_scenario: GET /homepage before login returns 401 (auth required)
+                             ↳ test_scenario: PUT /homepage with empty content is accepted (content is optional)
+                             ↳ test_scenario: PUT /homepage with extremely long content (1MB+) is rejected with 413
+                             ↳ test_scenario: PUT /homepage with raw HTML is escaped, not rendered
+                             ↳ test_scenario: PUT /homepage with unsupported CSS property returns 400 with details
+                             ↳ test_scenario: PUT /homepage with malformed Markdown is rejected with 400
+                             ↳ test_scenario: PUT /homepage updates updated_at timestamp
+                             ↳ test_scenario: DELETE /homepage removes the homepage and returns 204
+                             ↳ test_scenario: Concurrent edits to the same homepage—last-write-wins or conflict detection?
+                             ↳ test_scenario: GDPR deletion: DELETE /account cascades and removes all user content
+                             ↳ test_scenario: Session expires after inactivity (max-age / session timeout)
+  [t=151.11s] alice              concern        →caucus I've read Hatter's fifteen test scenarios against the three contracts. The scenarios are precise and…
+[late-publish] tweedledum → thread 'contract-negotiation' (already COMPLETE) — suppressing implementation: 'Filled in backend impact on all three load-bearing contracts. Auth (001): httpOnly cookies, session table keyed by token'
+  [t=165.93s] tweedledee         question       →caucus Reading Alice's three journey stories — they pin the contract boundaries I need clarity on. Three co…
+  [t=166.52s] mad_hatter         question       →caucus Alice — I'm reading stories 007-009 (Chen posting in a book club thread, Amara moderating cross-lang…
+  [t=186.38s] mad_hatter         question       →caucus Alice called out the contract-completeness issue correctly: stories 007-009 describe a threaded disc…
+  [t=193.37s] mad_hatter         concern        →caucus Alice is surfacing a real coordination gap, and she's spotted it at exactly the right moment. Let me…
+  [t=196.59s] tweedledum         question       →caucus Reading the test scenarios against the locked contracts (001, 002, 006), I found three seams that ne…
+  [t=225.00s] tweedledum         question       →caucus Alice, Hatter—reading scenarios 001, 013, and 015 against the locked contracts, I'm seeing three cla…
+  [t=253.50s] tweedledee         question       →caucus Reading the Hatter's 15 scenarios and Alice's three journey stories against the locked contracts:
+  [t=259.11s] tweedledum         contract_note  →caucus (no body)
+                             ↳ contract_note: Username collision behavior at signup
+                             ↳ contract_note: Concurrent edits to homepage—semantics and conflict handling
+                             ↳ contract_note: Session expiration and inactivity timeout
+  [t=263.23s] tweedledee         question       →caucus Reading your three clarifications—these are contract seams surfacing from the test scenarios, and I …
+  [t=287.53s] tweedledum         question       →caucus Tweedledee, I see you're asking about three contract surfaces. Let me address them:
+  [t=302.90s] tweedledee         contract_note  →caucus Locking all three contracts (008, 009, 010) based on your recommendations. Each is concrete enough f…
+                             ↳ contract_note: Username collision behavior at signup
+                             ↳ contract_note: Concurrent edits to homepage—semantics and conflict handling
+                             ↳ contract_note: Session expiration and inactivity timeout
+  [t=310.92s] tweedledum         question       →caucus Alice, I'm reading stories 007-009 (Chen, Amara, Jordan) against the locked contracts (001-003: auth…
+  [t=315.83s] tweedledee         contract_note  →caucus All three contracts are coherent with the test surface and implementable on my side. Locking all thr…
+                             ↳ contract_note: Username collision behavior at signup
+                             ↳ contract_note: Concurrent edits to homepage—semantics and conflict handling
+                             ↳ contract_note: Session expiration and inactivity timeout
+[tweedledee] deliberate() raised BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'messages.14: user messages must have non-empty content'}, 'request_id': 'req_011CanRPejyANWpbRsmjM7C8'} — treating as silence
+  [t=395.66s] tweedledum         question       →caucus Contracts 008, 009, 010 are already agreed and locked (state=agreed on all three). Let me clarify wh…
+  [t=395.66s] <thread_monitor> running → stuck
+  [t=395.66s] dodo               nudge          →caucus Thread test-scenarios → stuck (1 open expectation(s); all members idle). The team has paused with op…
+  [t=401.17s] tweedledum         contract_note  →caucus All three contracts locked. I confirm: (1) 409 + suggestions for username collision—backend generate…
+                             ↳ contract_note: Username collision behavior at signup
+                             ↳ contract_note: Concurrent edits to homepage—semantics and conflict handling
+                             ↳ contract_note: Session expiration and inactivity timeout
+  [t=411.17s] tweedledee         question       →caucus Tweedledum, I've read contracts 008, 009, 010—all state=agreed. All three are coherent with the test…
+
+  M4 END · MEETING_BUDGET · 334.0s · 155 calls · $1.2074
+  artifacts: contract_note×19, story×9, test_scenario×15
+
+──────────────────────────────────────────────────────────────────────────────
+  M5 START · implementation · roster=['tweedledee', 'tweedledum'] · seeds=5
+  goal: implement to make Hatter's failing tests pass (red → green)
+──────────────────────────────────────────────────────────────────────────────
+  [t=411.17s] tweedledee         contract_note  →caucus Drafting the three load-bearing contracts for v1 critical path: session/auth, homepage CRUD, and con…
+                             ↳ contract_note: Session and Authentication Contract
+                             ↳ contract_note: Homepage CRUD Contract and Data Shape
+                             ↳ contract_note: Content Validation Contract (Markdown and CSS)
+  [t=411.17s] tweedledum         contract_note  →caucus Drafting the load-bearing seams for v1. Starting with authentication/session, then homepage content …
+                             ↳ contract_note: Authentication and Session Contract
+                             ↳ contract_note: Homepage Content Persistence Contract
+                             ↳ contract_note: Markdown and CSS Validation Boundary
+                             ↳ contract_note: Real-time Preview Rendering (Client-Side)
+  [t=411.17s] alice              story          →caucus (no body)
+                             ↳ story: Sign up and claim my homepage
+                             ↳ story: Edit my homepage with simple Markdown
+                             ↳ story: Style my page with simple CSS
+                             ↳ story: Discover other people's pages
+                             ↳ story: Delete my account and all my content (GDPR compliance)
+                             ↳ story: Share my page confidently (no surprise tracking or dark patterns)
+  [t=411.17s] alice              story          →caucus Reading the contracts locked from the prior thread and mapping to the stories I produced in scoping.…
+                             ↳ story: Signup and First Post: Monolingual Book Club Joiner
+                             ↳ story: Cross-Language Thread Moderation: Polyglot Moderator
+                             ↳ story: Live Thread with Captions: Deaf User
+  [t=411.17s] mad_hatter         test_scenario  →caucus Reading the contracts and stories—I see three load-bearing seams: session/auth, homepage CRUD, and c…
+                             ↳ test_scenario: Sign-up with duplicate username returns 409 and suggests alternatives
+                             ↳ test_scenario: Session cookie survives browser refresh (httpOnly cookie is set correctly)
+                             ↳ test_scenario: Login with wrong password returns 401 and does not set a cookie
+                             ↳ test_scenario: Logout clears the httpOnly cookie server-side
+                             ↳ test_scenario: GET /homepage before login returns 401 (auth required)
+                             ↳ test_scenario: PUT /homepage with empty content is accepted (content is optional)
+                             ↳ test_scenario: PUT /homepage with extremely long content (1MB+) is rejected with 413
+                             ↳ test_scenario: PUT /homepage with raw HTML is escaped, not rendered
+                             ↳ test_scenario: PUT /homepage with unsupported CSS property returns 400 with details
+                             ↳ test_scenario: PUT /homepage with malformed Markdown is rejected with 400
+                             ↳ test_scenario: PUT /homepage updates updated_at timestamp
+                             ↳ test_scenario: DELETE /homepage removes the homepage and returns 204
+                             ↳ test_scenario: Concurrent edits to the same homepage—last-write-wins or conflict detection?
+                             ↳ test_scenario: GDPR deletion: DELETE /account cascades and removes all user content
+                             ↳ test_scenario: Session expires after inactivity (max-age / session timeout)
+  [t=411.17s] dodo               directive      →caucus Implementation thread. Hatter shipped failing tests in the
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+  [t=493.66s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=529.66s] tweedledee         implementation →caucus Added HelloMessage model to models.py to resolve missing database model that test_messages.py depend…
+                             ↳ implementation: SQLAlchemy models for messages, users, sessions, and homepages
+  [t=529.66s] <thread_monitor> running → stuck
+  [t=529.66s] dodo               nudge          →caucus Thread test-scenarios → stuck (1 open expectation(s); all members idle). The team has paused with op…
+  [t=529.66s] <thread_monitor> running → quiescent
+  [t=529.66s] dodo               acknowledgment →caucus Thread implementation → complete. The team has gone quiet with no open expectations; the directive i…
+  [t=529.66s] <thread_monitor> running → complete
+  [t=529.66s] <complete>
+
+  M5 END · COMPLETE · 118.5s · 56 calls · $0.4593
+  artifacts: contract_note×7, implementation×2, story×9, test_scenario×15
+
+──────────────────────────────────────────────────────────────────────────────
+  M6 START · review · roster=['caterpillar', 'tweedledee', 'tweedledum'] · seeds=2
+  goal: Caterpillar reviews the shipped code; surface findings
+──────────────────────────────────────────────────────────────────────────────
+  [t=529.66s] tweedledum         implementation →caucus [bus record coerced to implementation: write_file calls landed for src/backend/models.py, src/backen…
+                             ↳ implementation: Files written in tweedledum's backend turn
+  [t=529.66s] tweedledee         implementation →caucus Added HelloMessage model to models.py to resolve missing database model that test_messages.py depend…
+                             ↳ implementation: SQLAlchemy models for messages, users, sessions, and homepages
+  [t=529.66s] dodo               directive      →caucus Review thread. Code was shipped in a prior implementation
+  [t=583.15s] caterpillar        review         →caucus Reviewed auth.py, models.py, validation.py. I have blocking concerns on password handling and sessio…
+                             ↳ review: Authentication endpoints (signup, login, logout, me)
+                             ↳ review: SQLAlchemy models (User, Session, Homepage, HelloMessage)
+                             ↳ review: Validation utilities (passwords, usernames, markdown, CSS)
+[tweedledee] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledee] parse retry succeeded on attempt 2
+[late-publish] tweedledee → thread 'implementation' (already COMPLETE) — suppressing implementation: 'Tweedledum, I need to see what you shipped before I can wire the frontend. Can you post a `bus record` with your files_t'
+[tweedledum] parse error on attempt 1, retrying: TweedleResponseParseError: no JSON block found in TweedleResponse response (len=0 chars, preview: '<empty string>')
+[tweedledum] parse retry succeeded on attempt 2
+[late-publish] tweedledum → thread 'implementation' (already COMPLETE) — suppressing implementation: 'Shipping authentication layer (session management, password hashing, login/logout endpoints) and homepage CRUD endpoints'
+  [t=650.10s] tweedledee         concern        →caucus Contract-note-010 (session expiration) is agreed and locked: inactivity-only timeout (30 min, resets…
+
+  M6 END · MEETING_BUDGET · 120.4s · 64 calls · $0.5275
+  artifacts: implementation×2, review×3
+
+==============================================================================
+Summary
+==============================================================================
+Total elapsed:  650.1s
+Total cost:     $2.3874  (cap $5.00)
+Total LLM calls: 296
+
+Per-agent:
+  tweedledee         calls=138 cost=$1.0290
+  tweedledum         calls=109 cost=$0.9952
+  mad_hatter         calls= 30 cost=$0.1705
+  caterpillar        calls=  7 cost=$0.0701
+  cheshire_cat       calls=  6 cost=$0.0431
+  alice              calls=  3 cost=$0.0372
+  white_rabbit       calls=  1 cost=$0.0217
+  queen_of_hearts    calls=  2 cost=$0.0207
+
+Artifacts on disk:
+  architecture/ (1 files)
+    adr-001-content-safety-and-deletion-model-for-mvp.md
+  contract-notes/ (10 files)
+    contract-note-001-session-and-authentication-contract.md
+    contract-note-002-homepage-crud-contract-and-data-shape.md
+    contract-note-003-content-validation-contract-markdown-and-css.md
+    contract-note-004-authentication-and-session-contract.md
+    contract-note-005-homepage-content-persistence-contract.md
+    contract-note-006-markdown-and-css-validation-boundary.md
+    contract-note-007-real-time-preview-rendering-client-side.md
+    contract-note-008-username-collision-behavior-at-signup.md
+    contract-note-009-concurrent-edits-to-homepage-semantics-and-conflict-handling.md
+    contract-note-010-session-expiration-and-inactivity-timeout.md
+  implementations/ (4 files)
+    implementation-001-sqlalchemy-models-for-messages-users-sessions-and-homepages.md
+    implementation-002-authentication-layer-login-logout-session-management.md
+    implementation-003-homepage-crud-get-put-delete-with-content-validation.md
+    implementation-004-content-validation-markdown-parsing-css-whitelist.md
+  reviews/ (3 files)
+    review-001-authentication-endpoints-signup-login-logout-me.md
+    review-002-sqlalchemy-models-user-session-homepage-hellomessage.md
+    review-003-validation-utilities-passwords-usernames-markdown-css.md
+  stories/ (9 files)
+    story-001-sign-up-and-claim-my-homepage.md
+    story-002-edit-my-homepage-with-simple-markdown.md
+    story-003-style-my-page-with-simple-css.md
+    story-004-discover-other-people-s-pages.md
+    story-005-delete-my-account-and-all-my-content-gdpr-compliance.md
+    story-006-share-my-page-confidently-no-surprise-tracking-or-dark-patterns.md
+    story-007-signup-and-first-post-monolingual-book-club-joiner.md
+    story-008-cross-language-thread-moderation-polyglot-moderator.md
+    story-009-live-thread-with-captions-deaf-user.md
+  test-scenarios/ (15 files)
+    scenario-001-sign-up-with-duplicate-username-returns-409-and-suggests-alternatives.md
+    scenario-002-session-cookie-survives-browser-refresh-httponly-cookie-is-set-correctly.md
+    scenario-003-login-with-wrong-password-returns-401-and-does-not-set-a-cookie.md
+    scenario-004-logout-clears-the-httponly-cookie-server-side.md
+    scenario-005-get-homepage-before-login-returns-401-auth-required.md
+    scenario-006-put-homepage-with-empty-content-is-accepted-content-is-optional.md
+    scenario-007-put-homepage-with-extremely-long-content-1mb-is-rejected-with-413.md
+    scenario-008-put-homepage-with-raw-html-is-escaped-not-rendered.md
+    scenario-009-put-homepage-with-unsupported-css-property-returns-400-with-details.md
+    scenario-010-put-homepage-with-malformed-markdown-is-rejected-with-400.md
+    scenario-011-put-homepage-updates-updated-at-timestamp.md
+    scenario-012-delete-homepage-removes-the-homepage-and-returns-204.md
+    scenario-013-concurrent-edits-to-the-same-homepage-last-write-wins-or-conflict-detection.md
+    scenario-014-gdpr-deletion-delete-account-cascades-and-removes-all-user-content.md
+    scenario-015-session-expires-after-inactivity-max-age-session-timeout.md
+  tickets/ (6 files)
+    ticket-001-set-up-authentication-and-session-management.md
+    ticket-002-implement-homepage-crud-api.md
+    ticket-003-build-homepage-editor-frontend-markdown-css.md
+    ticket-004-implement-public-homepage-view.md
+    ticket-005-implement-account-deletion-with-gdpr-compliance.md
+    ticket-006-add-no-tracking-no-dark-patterns-guarantee-documentation-review.md

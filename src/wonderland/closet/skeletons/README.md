@@ -1,7 +1,12 @@
-# Wonderland project-scaffolding templates
+# `closet/skeletons/` — project-scaffolding skeletons
 
 Project skeletons the Wonderland team can build features on top of,
 rather than inventing the entire stack from a vague directive.
+
+> Renamed from `templates/` and moved under `closet/` (which also
+> houses `workflows/` — the meeting-chain templates the team works
+> through). "Skeleton" reads more honestly: these aren't generic
+> scaffolds, they're working hello-world apps the team extends.
 
 The premise (per analysis 019 follow-up): real engineers don't
 argue about which test framework to use on day 1 — they pick a

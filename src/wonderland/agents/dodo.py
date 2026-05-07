@@ -55,7 +55,7 @@ from wonderland.escalation import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
-from wonderland.parsing import extract_and_validate
+from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.thread_monitor import ThreadMonitor, ThreadState
 from wonderland.utterance import (
     Artifact,
@@ -171,7 +171,7 @@ position of your own.
 """
 
 
-class ConflictResponseParseError(ValueError):
+class ConflictResponseParseError(ResponseParseError):
     """The composition LLM response did not parse into a valid ConflictResponse."""
 
 
@@ -218,7 +218,7 @@ your own to the Brief.
 """
 
 
-class BriefResponseParseError(ValueError):
+class BriefResponseParseError(ResponseParseError):
     """The escalation-brief LLM response did not parse into a valid BriefProseResponse."""
 
 
@@ -611,7 +611,7 @@ class Dodo(WonderlandAgent):
 
         system, messages = self._compose_request(conflict)
         result = await self.llm.complete(system=system, messages=messages)
-        response = parse_conflict_response(result.text)
+        response = await self._parse_with_retry(parse_conflict_response, result.text, system=system, messages=messages)
         return self._resolution_from_response(conflict, response)
 
     async def publish_composition(self, resolution: Resolution) -> Utterance:
@@ -844,7 +844,7 @@ class Dodo(WonderlandAgent):
         assert self.llm is not None
         system, messages = self._brief_request(conflict, resolution, thread_summary)
         result = await self.llm.complete(system=system, messages=messages)
-        prose = parse_brief_response(result.text)
+        prose = await self._parse_with_retry(parse_brief_response, result.text, system=system, messages=messages)
 
         proposals = [
             AgentProposalSchema(

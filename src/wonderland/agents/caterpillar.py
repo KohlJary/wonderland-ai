@@ -38,7 +38,7 @@ from wonderland.engagement import (
 )
 from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
-from wonderland.parsing import extract_and_validate
+from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.review import ReviewPayload, ReviewRegistry
 from wonderland.utterance import (
     Artifact,
@@ -301,7 +301,7 @@ even then, prefer flagging the gap as a finding.
 _OUTPUT_PROTOCOL_WITH_TOOLS = _OUTPUT_PROTOCOL + _TOOLS_SECTION
 
 
-class CaterpillarResponseParseError(ValueError):
+class CaterpillarResponseParseError(ResponseParseError):
     """The Caterpillar's LLM response did not parse into a valid CaterpillarResponse."""
 
 
@@ -361,7 +361,7 @@ class Caterpillar(WonderlandAgent):
         else:
             result = await self.llm.complete(system=system, messages=messages)
             response_text = result.text
-        response = parse_caterpillar_response(response_text)
+        response = await self._parse_with_retry(parse_caterpillar_response, response_text, system=system, messages=messages)
         if response.decision == "silence":
             return None
 
