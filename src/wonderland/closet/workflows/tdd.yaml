@@ -1,30 +1,36 @@
 name: tdd
 description: |
-  Test-first variant of the canonical workflow. Hatter writes
-  failing test scenarios + the actual test files BEFORE Tweedles
-  ship implementation. Tweedles then implement to make Hatter's
-  tests pass.
+  Test-first variant of the canonical workflow. Alice and Hatter
+  pair up (the tea party) to write failing tests + the actual test
+  files BEFORE Tweedles ship implementation. Tweedles then implement
+  to make those tests pass.
 
   Differs from canonical:
-    - 6 meetings instead of 5 — Hatter's test-writing phase (M4)
-      is inserted between contract negotiation (M3) and
+    - 6 meetings instead of 5 — Alice + Hatter's test-writing phase
+      (M4) is inserted between contract negotiation (M3) and
       implementation (M5)
-    - M5 (implementation) directive points Tweedles at the failing
-      tests as the closure criterion rather than just "ship code
+    - Alice ships user-journey scenarios (the WHO-IS-THIS-FOR
+      surface — happy paths, observable user-facing behavior).
+      Hatter ships failure-mode scenarios (security, concurrency,
+      malformed input, the edges where the system actually lives).
+      Together they form the test pyramid; neither alone is enough.
+    - M5 (implementation) directive points Tweedles at both
+      surfaces as the closure criterion rather than just "ship code
       against the contracts"
     - M3 (contract-negotiation) is unchanged — Tweedles still
-      negotiate the seam; Hatter's tests are written *against the
+      negotiate the seam; the test surface is written *against the
       agreed contracts*
 
   Tradeoffs:
-    - More expensive (~+30% — extra meeting, Hatter's calls, plus
-      Tweedles spending more time understanding failing tests)
+    - More expensive (~+40% vs canonical — extra meeting, Alice +
+      Hatter's calls, Tweedles spending more time understanding the
+      failing tests)
     - Stronger guarantees: implementation can't drift from intent
-      because Hatter's tests pin behavior; Tweedles get a concrete
-      red→green target instead of a paragraph of directive
-    - Better for safety-critical or regression-prone surfaces; the
-      canonical workflow is fine for most greenfield work where
-      Hatter's role is review-after-the-fact (canonical M5)
+      because the tests pin behavior on both axes; Tweedles get a
+      concrete red→green target rather than a paragraph of directive
+    - Better for any feature work where regressions matter; the
+      canonical workflow is fine for throwaway prototypes and
+      exploratory work where directive drift is unlikely
 
   Use this for: features where regressions are expensive to find
   later (auth flows, payment paths, security-critical surfaces).
@@ -32,7 +38,7 @@ description: |
 version: 1
 
 defaults:
-  budget_dollars: 4.00   # higher than canonical's $3 — extra meeting + Hatter cost
+  budget_dollars: 5.00   # higher than canonical's $3 — extra meeting + Alice + Hatter pair
   timeout_seconds: 1200.0
   quiescence_seconds: 300.0
 
@@ -98,36 +104,54 @@ meetings:
   # ---------------------------------------------------------------------
   - id: test-scenarios
     label: M4
-    goal: produce failing test scenarios + test files against the agreed contracts
-    roster: [mad_hatter, tweedledee, tweedledum]
-    meeting_budget: 0.80
+    goal: produce failing test scenarios + test files (user journeys + failure modes) against the agreed contracts
+    roster: [alice, mad_hatter, tweedledee, tweedledum]
+    meeting_budget: 1.20
     convenor_directive: |
-      Test-scenarios thread. The contract notes in your context are
-      locked (state=agreed in the prior thread). Hatter, this is
-      your move: ship `test_scenario` artifacts that nail down the
-      contracts in runnable form, AND `write_file` the actual test
-      files against the existing project skeleton's test framework.
-      Edge cases first — that's where the system actually lives. Use
-      property-based shapes when the contract permits.
+      Test-scenarios thread — the tea party. The contract notes in
+      your context are locked (state=agreed in the prior thread).
+      Alice and Hatter, this is the pair's work: between you, you
+      pin the test surface that M5's implementation has to satisfy.
+      Tweedles ask clarifying questions; do NOT write production
+      code in this thread.
 
-      The tests should FAIL right now (no production code exists for
-      the new contracts). That's the point — they're the red in
-      red→green→refactor. Tweedles will turn them green in the next
-      thread.
+      **Alice's move** — user-journey scenarios. Read your stories
+      from the scoping thread and translate the load-bearing ones
+      into concrete happy-path test scenarios: a real persona, the
+      sequence of actions they take, the observable result. Ship
+      `story` artifacts here in journey form (Given/When/Then is
+      fine), AND `write_file` the matching test files. These are
+      the WHO-IS-THIS-FOR tests — what does a real user do, and
+      does it work?
 
-      Tweedledee, Tweedledum: ask Hatter clarifying questions if a
-      test's intent is ambiguous against your contract — you are
-      about to implement against these. Do NOT write production
-      code in this thread; the codebase you'd extend is the test
-      files, not the implementation surface.
+      **Hatter's move** — failure-mode scenarios. Edge cases first —
+      that's where the system actually lives. Ship `test_scenario`
+      artifacts and `write_file` the matching test files. Security,
+      concurrency, malformed input, GDPR-cascade edges, the things
+      that look fine on the happy path and break on the second
+      Tuesday in March.
 
-      Tweedles: read the existing tests/conftest.py to understand
-      the testing conventions before responding to Hatter's
-      scenarios. The tests Hatter ships should plug into the same
-      framework.
+      Together you produce the test pyramid: Alice pins what real
+      users do; Hatter pins what real users *eventually* do that
+      breaks things. Neither alone is enough — Alice without Hatter
+      misses the edges; Hatter without Alice misses the journeys.
+      The Tweedles' implementation in M5 has to satisfy both
+      surfaces. (This pairing is on-brand: the Mad Hatter's tea
+      party in the source material is *Alice's* tea party — she's
+      the visitor who shows up to find the cups laid out.)
+
+      All tests should FAIL right now (no production code exists
+      for the new contracts). That's the point — they're the red in
+      red→green→refactor. M5 turns them green.
+
+      Tweedledee, Tweedledum: ask Alice or Hatter clarifying
+      questions if a test's intent is ambiguous against your
+      contract — you are about to implement against these. Read the
+      existing tests/conftest.py before responding so the tests you
+      ship plug into the existing framework.
     seeds:
       - from: scoping
-        kinds: [adr]
+        kinds: [adr, story]
       - from: contract-negotiation
         kinds: [contract_note]
         where:
@@ -175,7 +199,8 @@ meetings:
       Tweedledee owns frontend; Tweedledum owns backend. Run the
       tests if you have a way to (you can't actually execute
       pytest; rely on your read of the test code to validate
-      coverage). Closure: every test_scenario from M4 has matching
+      coverage). Closure: every test from M4 — Alice's user-journey
+      scenarios AND Hatter's failure-mode scenarios — has matching
       production code that would make it pass.
     seeds:
       - from: scoping
@@ -186,7 +211,7 @@ meetings:
           state: agreed
         fallback: any
       - from: test-scenarios
-        kinds: [test_scenario]
+        kinds: [test_scenario, story]
 
   # ---------------------------------------------------------------------
   # M6 is review — Caterpillar reviews the IMPLEMENTATION (not the

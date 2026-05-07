@@ -389,20 +389,41 @@ class TestTDDSpecifics:
         assert ids.index("test-scenarios") == ids.index("contract-negotiation") + 1
         assert ids.index("implementation") == ids.index("test-scenarios") + 1
 
-    def test_test_scenarios_meeting_includes_hatter(self, wf):
+    def test_test_scenarios_meeting_pairs_alice_and_hatter(self, wf):
+        # The tea-party pairing — Alice for user-journey scenarios,
+        # Hatter for failure-mode scenarios. Together they pin the
+        # test pyramid M5's implementation has to satisfy.
         ts = wf.meeting_by_id("test-scenarios")
         assert ts is not None
         assert "mad_hatter" in ts.roster
+        assert "alice" in ts.roster, (
+            "Alice should be in M4 — without her, Tweedles backfill the "
+            "user-journey test surface for their own implementation, "
+            "which is the test-engineering anti-pattern Geocities v2 "
+            "showed (1798 lines of contract tests written by the "
+            "implementers rather than pinned by a test-engineering "
+            "voice). See SHOWCASE / Geocities run."
+        )
 
     def test_implementation_seeds_from_test_scenarios(self, wf):
-        # The thing that makes this TDD: implementation reads Hatter's
-        # tests as the closure criterion.
+        # The thing that makes this TDD: implementation reads M4's
+        # tests as the closure criterion. After the tea-party pairing,
+        # M5 pulls BOTH Hatter's test_scenarios and Alice's stories
+        # (which she ships in M4 as user-journey form).
         impl = wf.meeting_by_id("implementation")
         assert impl is not None
-        assert any(
-            s.from_meeting == "test-scenarios" and "test_scenario" in s.kinds
-            for s in impl.seeds
-        ), "implementation should seed from test_scenarios"
+        seed = next(
+            (s for s in impl.seeds if s.from_meeting == "test-scenarios"),
+            None,
+        )
+        assert seed is not None, "implementation should seed from test-scenarios"
+        assert "test_scenario" in seed.kinds, (
+            "implementation must pull Hatter's failure-mode scenarios"
+        )
+        assert "story" in seed.kinds, (
+            "implementation must pull Alice's user-journey stories from M4 — "
+            "the user-facing surface Hatter doesn't cover by character"
+        )
 
     def test_has_more_meetings_than_canonical(self, wf):
         canonical = load_workflow("canonical")
