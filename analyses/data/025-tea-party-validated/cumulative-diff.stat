@@ -1,0 +1,15 @@
+ src/backend/api/__init__.py        |   6 +
+ src/backend/api/auth.py            | 125 +++++++++++++++++
+ src/backend/api/homepage.py        | 116 ++++++++++++++++
+ src/backend/api/users.py           |  92 ++++++++++++
+ src/backend/auth.py                |  57 ++++++++
+ src/backend/markdown.py            | 110 +++++++++++++++
+ src/backend/models.py              |  58 +++++++-
+ src/backend/session.py             |  28 ++++
+ tests/test_account_deletion.py     | 210 ++++++++++++++++++++++++++++
+ tests/test_auth_token_expiry.py    | 197 ++++++++++++++++++++++++++
+ tests/test_basic_journey.py        | 217 +++++++++++++++++++++++++++++
+ tests/test_discovery_pagination.py | 278 +++++++++++++++++++++++++++++++++++++
+ tests/test_homepage_xss.py         | 196 ++++++++++++++++++++++++++
+ tests/test_registration_races.py   | 155 +++++++++++++++++++++
+ 14 files changed, 1841 insertions(+), 4 deletions(-)

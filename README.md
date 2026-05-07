@@ -4,6 +4,20 @@
 
 > Generic AI agents perform roles. Identity-native agents inhabit them.
 
+> ### ▶ See it in action
+>
+> [**Building a Geocities — a tour of how Wonderland works**](./SHOWCASE.md).
+> One vague directive. **$2.05.** 7 minutes 38 seconds. The team of
+> ten characters produced 1841 lines of code (auth, per-user pages,
+> Markdown rendering, GDPR-deletion path, session management) plus
+> 1253 lines of tests written *before* the implementation existed —
+> and the team's reviewer caught three real bugs in the result with
+> file paths and line numbers. The artifact tree is a v1 scaffold,
+> not a deployable; the framework's process is what shipped.
+>
+> If you're trying to figure out what this project actually *is*,
+> start there.
+
 Wonderland is a cast of agents — each named after an Alice-in-Wonderland
 character — that collaborate on software development tasks. The Cheshire Cat
 is the architect. The White Rabbit is the project manager. The Mad Hatter is
@@ -104,7 +118,17 @@ In-progress, building in public. Phase 5 of 7 complete.
       data extraction** ([analysis 024](./analyses/024-tdd-validated.md)):
       meeting chains live in `closet/workflows/` as YAML; the TDD variant
       becomes the recommended default for feature work, with canonical
-      retained for fast iteration when directive drift is unlikely. See
+      retained for fast iteration when directive drift is unlikely. **The
+      pair protocol pays off** in
+      [analysis 025](./analyses/025-tea-party-validated.md): Alice and the
+      Mad Hatter are paired in M4 (the tea party — they're already paired
+      in the source material) so Alice writes user-journey scenarios and
+      Hatter writes failure-mode scenarios, each producing both the
+      artifact and a runnable pytest file. The Geocities showcase ships
+      1841 lines from a vague directive in 7m 38s for $2.05, with
+      Caterpillar catching three production-blocking bugs in the diff —
+      the framework's bug-discovery surface working as designed. See
+      [`SHOWCASE.md`](./SHOWCASE.md) for the friend-facing tour and
       [`analyses/`](./analyses) for the full build log of the iteration
       that got the framework here.
 - [ ] **P7 — Evals**
