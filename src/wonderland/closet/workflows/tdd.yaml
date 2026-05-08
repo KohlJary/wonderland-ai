@@ -289,9 +289,34 @@ meetings:
       for the new contracts). That's the point — they're the red in
       red→green→refactor. M5 turns them green.
 
-      Tweedledee, Tweedledum: ask Alice or Hatter clarifying
-      questions if a test's intent is ambiguous against your
-      contract — you are about to implement against these.
+      **Tweedledee and Tweedledum — your M4 contribution is bounded
+      and reactive, not proactive.** This thread is Alice and
+      Hatter's pair work. Your role is to answer their questions if
+      they ask, and — at most ONCE per feature in scope, only if
+      needed — raise a `concern` about a contract gap that genuinely
+      blocks M5's ability to make a feature's tests pass. Examples
+      of genuinely-blocking gaps: a state transition the test
+      exercises that no contract names; a payload field the test
+      asserts on that the contract doesn't define; an error path
+      the test describes that the contract is silent on.
+
+      **Bound your concerns to ONE per feature in scope.** If you
+      find a second potential gap, sit with it — most contract gaps
+      surface cleanly in M5 when you actually start implementing,
+      and M5 already has an explicit "raise as a concern, don't
+      silently work around it" escape valve for exactly this.
+      Surfacing every ambiguity preemptively in M4 expands the
+      meeting without proportional benefit; M5 is the natural place
+      to discover what the implementation actually needs.
+
+      **Do NOT call `write_file` in this thread — at all.** No
+      production code, AND no test files. Test authorship is Alice
+      and Hatter's domain in this meeting; if you see a test surface
+      gap, raise it as a concern (within your one-per-feature
+      budget) and let them write it. M5 is your turf for shipping
+      both implementation AND any complementary tests that
+      implementation reveals are needed. This thread, you read and
+      respond.
 
       **Hatter — stay in your lane.** Your job here is to ship
       failure-mode scenarios for features. Two things you do NOT do:

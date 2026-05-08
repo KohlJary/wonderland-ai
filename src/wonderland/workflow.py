@@ -124,6 +124,21 @@ class Meeting(BaseModel):
         default_factory=list,
         description="How to seed this meeting from prior meetings' artifacts.",
     )
+    per_item: str | None = Field(
+        default=None,
+        description=(
+            "If set, this meeting runs once per artifact of the named kind "
+            "from prior meetings (e.g. ``per_item: feature``). The runner "
+            "convenes the meeting N times, with iteration thread_ids of the "
+            "form ``{meeting.id}-{item.slug}``. Seed bindings whose kinds "
+            "include the per_item kind get sliced to just the current item; "
+            "bindings whose ``from`` references another per_item meeting "
+            "get sliced to the iteration thread that matches the current "
+            "item's slug. Used to scope expensive meetings (e.g. M4/M5 in "
+            "TDD-serial) to one feature at a time rather than fanning out "
+            "across all features in a single shot."
+        ),
+    )
 
 
 class WorkflowDefaults(BaseModel):
@@ -233,28 +248,64 @@ class WorkflowCapture:
 def resolve_seeds(
     bindings: list[SeedBinding],
     capture: WorkflowCapture,
+    *,
+    per_item_meetings: dict[str, str] | None = None,
+    current_item_kind: str | None = None,
+    current_item_slug: str | None = None,
 ) -> list[Utterance]:
     """Apply seed-binding rules to produce the seed utterance list for
     a meeting. Mirrors the hand-rolled filtering in T38 scripts.
 
     For each binding:
-      1. Pick candidates: utterances from the named prior meeting, OR
-         all captured utterances when ``from: any``.
+      1. Pick candidates:
+         - ``from: any`` → all captured utterances.
+         - ``from: <id>`` where the named meeting was per_item → all
+           utterances whose thread_id starts with ``<id>-`` (across all
+           iterations); if we're currently in a per_item iteration,
+           additionally slice to the iteration thread_id matching the
+           current item's slug when that thread has matching artifacts.
+         - otherwise → utterances captured under that exact thread_id.
       2. Filter by ``kinds`` — keep utterances carrying at least one
          artifact of a matching kind.
-      3. Apply ``where`` — payload key→value match against the matching
+      3. If we're currently in a per_item iteration AND the binding's
+         ``kinds`` include the iteration kind, slice to artifacts whose
+         payload slug matches the current item's slug. This is the rule
+         that gives M4 iteration N just feature N's spec rather than all
+         of them.
+      4. Apply ``where`` — payload key→value match against the matching
          artifact's payload. If filter yields zero AND ``fallback: any``,
          drop the where clause.
-      4. Apply ``limit`` — keep first N.
+      5. Apply ``limit`` — keep first N.
 
     Bindings are processed in order; the union of their results becomes
     the seed list, deduplicated by utterance id.
+
+    ``per_item_meetings`` maps meeting_id → per_item kind for every
+    meeting in the workflow that uses per_item. ``current_item_kind`` /
+    ``current_item_slug`` describe the iteration the caller is currently
+    inside (None when the meeting is not per_item).
     """
+    per_item_meetings = per_item_meetings or {}
     out: list[Utterance] = []
     seen_ids: set[str] = set()
     for binding in bindings:
         if binding.from_meeting == "any":
             candidates = capture.utterances
+        elif binding.from_meeting in per_item_meetings:
+            # Source meeting was per_item — gather utterances from any
+            # of its iteration threads (thread_ids prefixed with
+            # ``<meeting_id>-``).
+            prefix = f"{binding.from_meeting}-"
+            candidates = [u for u in capture.utterances if u.thread_id.startswith(prefix)]
+            # If we're currently in a per_item iteration, slice to the
+            # paired iteration's thread_id when present. Falls through
+            # to the full per_item-meeting candidate set if no exact
+            # match (e.g., the paired iteration produced no artifacts).
+            if current_item_slug is not None:
+                paired_thread_id = f"{binding.from_meeting}-{current_item_slug}"
+                paired = [u for u in candidates if u.thread_id == paired_thread_id]
+                if paired:
+                    candidates = paired
         else:
             candidates = capture.utterances_for(binding.from_meeting)
 
@@ -263,6 +314,54 @@ def resolve_seeds(
             for u in candidates
             if any(a.kind in binding.kinds for a in u.content.artifacts)
         ]
+
+        # If we're inside a per_item iteration AND this binding pulls
+        # the iteration kind, slice to the current item's payload slug.
+        # Without this, M4 iteration N would see every feature in its
+        # context, not just feature N.
+        #
+        # Two-step slice: (1) drop utterances whose iteration-kind
+        # artifacts don't match the slug; (2) for the kept utterances,
+        # rewrite their artifact list to keep only iteration-kind
+        # artifacts matching the current slug (other kinds pass through
+        # untouched). The rewrite step matters when one utterance
+        # carries multiple iteration-kind artifacts (e.g., Rabbit ships
+        # all six features in one M2.5 utterance) — without it the
+        # iteration sees every feature in its context.
+        if (
+            current_item_kind is not None
+            and current_item_slug is not None
+            and current_item_kind in binding.kinds
+        ):
+            sliced: list[Utterance] = []
+            for u in kinded:
+                matching = [
+                    a
+                    for a in u.content.artifacts
+                    if a.kind == current_item_kind
+                    and a.payload.get("slug") == current_item_slug
+                ]
+                if not matching:
+                    continue
+                kept = [
+                    a
+                    for a in u.content.artifacts
+                    if a.kind != current_item_kind
+                    or a.payload.get("slug") == current_item_slug
+                ]
+                if len(kept) == len(u.content.artifacts):
+                    sliced.append(u)
+                else:
+                    sliced.append(
+                        u.model_copy(
+                            update={
+                                "content": u.content.model_copy(
+                                    update={"artifacts": kept}
+                                )
+                            }
+                        )
+                    )
+            kinded = sliced
 
         if binding.where:
             filtered = [
@@ -292,17 +391,30 @@ def resolve_seeds(
 
 @dataclass
 class MeetingStartEvent:
-    """Emitted by run_workflow before convening each meeting."""
+    """Emitted by run_workflow before convening each meeting.
+
+    For per_item meetings, one event fires per iteration. ``thread_id``
+    is the actual bus thread the meeting convened on (``meeting.id``
+    for non-per_item meetings; ``{meeting.id}-{item.slug}`` for
+    iterations). ``iteration_index`` / ``iteration_total`` /
+    ``iteration_label`` are populated for per_item iterations and None
+    otherwise.
+    """
 
     meeting: Meeting
     seeds: list[Utterance]
+    thread_id: str | None = None
+    iteration_index: int | None = None
+    iteration_total: int | None = None
+    iteration_label: str | None = None
 
 
 @dataclass
 class MeetingEndEvent:
     """Emitted by run_workflow after each meeting terminates. The
     outcome is one of: COMPLETE, MEETING_BUDGET, GLOBAL_BUDGET, TIMEOUT,
-    ABORTED."""
+    ABORTED. Same iteration fields as MeetingStartEvent for per_item
+    meetings."""
 
     meeting: Meeting
     outcome: str
@@ -310,6 +422,10 @@ class MeetingEndEvent:
     calls_delta: int
     cost_delta: float
     artifact_kinds: dict[str, int]
+    thread_id: str | None = None
+    iteration_index: int | None = None
+    iteration_total: int | None = None
+    iteration_label: str | None = None
 
 
 # Type alias for the union of events the workflow runner yields.
@@ -343,124 +459,256 @@ async def run_workflow(
     the meeting and emits MeetingEndEvent(outcome='MEETING_BUDGET') but
     the workflow continues to the next meeting (the caller may also
     short-circuit if it sees the global budget tightening).
+
+    Per_item meetings (e.g., M4/M5 in tdd-serial) are convened once per
+    matching artifact found in the capture. Each iteration emits its own
+    MeetingStart/MeetingEnd events with iteration metadata populated.
     """
     capture = WorkflowCapture()
 
-    for meeting in workflow.meetings:
-        seeds = resolve_seeds(meeting.seeds, capture)
-        is_entry = meeting is workflow.entry_meeting
-        convenor_directive = directive if is_entry else meeting.convenor_directive
+    # Map of meeting_id → per_item kind for every per_item meeting.
+    # Used by resolve_seeds to know when to look across iteration
+    # threads vs a single thread_id.
+    per_item_meetings: dict[str, str] = {
+        m.id: m.per_item for m in workflow.meetings if m.per_item is not None
+    }
 
-        # Surface the meeting name to the team. The character-shaped
-        # substrate principle says the literary parallel should be
-        # load-bearing, not ornamental — but it can't shape agent
-        # deliberation if agents can't see it. The Dodo-relayed
-        # directive is the team's first utterance on every thread, so
-        # prefixing it with the meeting label and (optional) book-event
-        # name puts the framing in the team's context window.
+    for meeting in workflow.meetings:
+        is_entry = meeting is workflow.entry_meeting
+
+        if meeting.per_item is None:
+            outcome = "RUNNING"
+            async for event in _convene_one(
+                meeting=meeting,
+                runner=runner,
+                capture=capture,
+                directive=directive if is_entry else None,
+                per_item_meetings=per_item_meetings,
+                current_item_kind=None,
+                current_item_slug=None,
+                thread_id=meeting.id,
+                iteration_index=None,
+                iteration_total=None,
+                iteration_label=None,
+            ):
+                if isinstance(event, _OutcomeSentinel):
+                    outcome = event.outcome
+                    continue
+                yield event
+            if outcome == "GLOBAL_BUDGET":
+                return
+            continue
+
+        # Per_item meeting — find every artifact of the iteration kind
+        # already captured, dedupe by slug, convene once per item.
+        items: list[dict[str, Any]] = []
+        seen_slugs: set[str] = set()
+        for u in capture.utterances:
+            for a in u.content.artifacts:
+                if a.kind != meeting.per_item:
+                    continue
+                slug = a.payload.get("slug")
+                if not slug or slug in seen_slugs:
+                    continue
+                seen_slugs.add(slug)
+                items.append(a.payload)
+
+        if not items:
+            # Nothing to iterate over — emit a synthetic skip so the
+            # consumer sees the meeting was acknowledged. Fail-loud
+            # rather than silently eating the meeting.
+            yield MeetingStartEvent(
+                meeting=meeting,
+                seeds=[],
+                thread_id=meeting.id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label="(no items)",
+            )
+            yield MeetingEndEvent(
+                meeting=meeting,
+                outcome="COMPLETE",
+                elapsed_s=0.0,
+                calls_delta=0,
+                cost_delta=0.0,
+                artifact_kinds={},
+                thread_id=meeting.id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label="(no items)",
+            )
+            continue
+
+        for idx, item in enumerate(items):
+            slug = item["slug"]
+            iteration_thread_id = f"{meeting.id}-{slug}"
+            label = item.get("title") or slug
+            outcome = "RUNNING"
+            async for event in _convene_one(
+                meeting=meeting,
+                runner=runner,
+                capture=capture,
+                directive=None,  # per_item meetings can't be entry
+                per_item_meetings=per_item_meetings,
+                current_item_kind=meeting.per_item,
+                current_item_slug=slug,
+                thread_id=iteration_thread_id,
+                iteration_index=idx + 1,
+                iteration_total=len(items),
+                iteration_label=label,
+            ):
+                if isinstance(event, _OutcomeSentinel):
+                    outcome = event.outcome
+                    continue
+                yield event
+            if outcome == "GLOBAL_BUDGET":
+                return
+
+
+@dataclass
+class _OutcomeSentinel:
+    """Internal sentinel: ``_convene_one`` yields this as its final
+    event so ``run_workflow`` can read the meeting's outcome without
+    having to peek at MeetingEndEvent attributes. Filtered out before
+    events reach the caller."""
+
+    outcome: str
+
+
+async def _convene_one(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    capture: WorkflowCapture,
+    directive: str | None,
+    per_item_meetings: dict[str, str],
+    current_item_kind: str | None,
+    current_item_slug: str | None,
+    thread_id: str,
+    iteration_index: int | None,
+    iteration_total: int | None,
+    iteration_label: str | None,
+) -> AsyncIterator[Any]:
+    """Convene a single meeting (or one per_item iteration) and drain
+    its events. Async iterator; yields MeetingStartEvent, then runner
+    events as they fire, then MeetingEndEvent, then a final
+    _OutcomeSentinel so the caller knows the final outcome.
+
+    Pulled out of run_workflow so the per_item and plain-meeting paths
+    share the convene + event-loop logic without duplication.
+    """
+    seeds = resolve_seeds(
+        meeting.seeds,
+        capture,
+        per_item_meetings=per_item_meetings,
+        current_item_kind=current_item_kind,
+        current_item_slug=current_item_slug,
+    )
+
+    convenor_directive = directive if directive is not None else meeting.convenor_directive
+
+    # Surface the meeting label, name, and iteration metadata to the
+    # team. Iteration label puts the current feature's title into the
+    # context window so the agents anchor on it.
+    if iteration_label is not None and iteration_total:
         if meeting.name:
-            convenor_directive = (
-                f"**{meeting.label} — {meeting.name}.**\n\n{convenor_directive}"
+            header = (
+                f"**{meeting.label} — {meeting.name}** "
+                f"(iteration {iteration_index}/{iteration_total}: {iteration_label})"
             )
         else:
-            convenor_directive = f"**{meeting.label}.**\n\n{convenor_directive}"
+            header = (
+                f"**{meeting.label}** "
+                f"(iteration {iteration_index}/{iteration_total}: {iteration_label})"
+            )
+    elif meeting.name:
+        header = f"**{meeting.label} — {meeting.name}.**"
+    else:
+        header = f"**{meeting.label}.**"
+    convenor_directive = f"{header}\n\n{convenor_directive}"
 
-        cost_before = runner.total_cost
-        calls_before = runner.telemetry.call_count
-        artifact_count_before = len(capture.utterances)
-        meeting_start = time.monotonic()
+    cost_before = runner.total_cost
+    calls_before = runner.telemetry.call_count
+    artifact_count_before = len(capture.utterances)
+    meeting_start = time.monotonic()
 
-        yield MeetingStartEvent(meeting=meeting, seeds=seeds)
+    yield MeetingStartEvent(
+        meeting=meeting,
+        seeds=seeds,
+        thread_id=thread_id,
+        iteration_index=iteration_index,
+        iteration_total=iteration_total,
+        iteration_label=iteration_label,
+    )
 
-        # Reset per-thread completion tracking so the runner can fire
-        # complete again for this new thread.
-        runner._completed = False
+    # Reset per-thread completion tracking so the runner can fire
+    # complete again for this new thread.
+    runner._completed = False
 
-        await runner.convene(
-            thread_id=meeting.id,
-            goal=meeting.goal,
-            roster=meeting.roster,
-            seed_utterances=seeds,
-            convenor_directive=convenor_directive,
-        )
+    await runner.convene(
+        thread_id=thread_id,
+        goal=meeting.goal,
+        roster=meeting.roster,
+        seed_utterances=seeds,
+        convenor_directive=convenor_directive,
+    )
 
-        outcome = "RUNNING"
-        # Pass meeting.id as terminal_thread_id so events() only auto-
-        # returns on a `complete` event for *this* meeting. Stale
-        # completes from prior meetings (e.g. M(N-1)'s
-        # mark_thread_complete) are yielded for capture but don't end
-        # the loop. Without this, a leaked complete event ends M(N)'s
-        # events loop before any agent deliberates — see analysis 030.
-        async for event in runner.events(terminal_thread_id=meeting.id):
-            if event.kind == "utterance":
-                capture.observe(event.payload["utterance"])
+    outcome = "RUNNING"
+    # terminal_thread_id ensures complete events from prior meetings
+    # don't end this iteration's loop. See analysis 030.
+    async for event in runner.events(terminal_thread_id=thread_id):
+        if event.kind == "utterance":
+            capture.observe(event.payload["utterance"])
 
-            yield event
+        yield event
 
-            if event.kind == "budget_exceeded":
-                outcome = "GLOBAL_BUDGET"
+        if event.kind == "budget_exceeded":
+            outcome = "GLOBAL_BUDGET"
+            break
+
+        if meeting.meeting_budget is not None:
+            spent = runner.total_cost - cost_before
+            if spent >= meeting.meeting_budget:
+                outcome = "MEETING_BUDGET"
                 break
 
-            # Per-meeting budget cap — soft, but ends the meeting early.
-            if meeting.meeting_budget is not None:
-                spent = runner.total_cost - cost_before
-                if spent >= meeting.meeting_budget:
-                    outcome = "MEETING_BUDGET"
-                    break
+        if event.kind == "complete":
+            event_thread_id = (event.payload or {}).get("thread_id")
+            if event_thread_id is not None and event_thread_id != thread_id:
+                continue
+            outcome = "COMPLETE"
+            break
 
-            if event.kind == "complete":
-                # `complete` events carry a thread_id in their payload;
-                # only end this meeting if the event is for *this*
-                # meeting's thread. Without this filter, a leftover
-                # COMPLETE event from a prior meeting (e.g., emitted by
-                # mark_thread_complete on the prior meeting's
-                # MEETING_BUDGET exit) leaks into this meeting's events
-                # loop and ends it before any agent has had a chance to
-                # deliberate. This was the actual root cause of the
-                # 0-calls / 0-cost M5 pattern in analyses 026 and 027 —
-                # not the quiescence-on-startup race the prior fix
-                # targeted (which was real but downstream of this).
-                event_thread_id = (event.payload or {}).get("thread_id")
-                if event_thread_id is not None and event_thread_id != meeting.id:
-                    continue
-                outcome = "COMPLETE"
-                break
+        if event.kind in ("timeout", "aborted"):
+            outcome = event.kind.upper()
+            break
 
-            if event.kind in ("timeout", "aborted"):
-                # Global runner events — no thread_id, end the workflow
-                # regardless of which meeting is currently running.
-                outcome = event.kind.upper()
-                break
+    if outcome in ("MEETING_BUDGET", "TIMEOUT", "ABORTED"):
+        runner.mark_thread_complete(thread_id, f"meeting ended via {outcome}")
 
-        # If the meeting exited via a non-COMPLETE terminal outcome, the
-        # convenor never sent the acknowledgment that would transition
-        # the thread to COMPLETE. Force the transition so any agent
-        # whose deliberate() is still in flight gets its late publish
-        # suppressed by the runner's late-publish guard rather than
-        # landing on an abandoned thread.
-        if outcome in ("MEETING_BUDGET", "TIMEOUT", "ABORTED"):
-            runner.mark_thread_complete(meeting.id, f"meeting ended via {outcome}")
+    elapsed = time.monotonic() - meeting_start
+    calls_delta = runner.telemetry.call_count - calls_before
+    cost_delta = runner.total_cost - cost_before
+    new_utterances = capture.utterances[artifact_count_before:]
+    kinds_count: dict[str, int] = {}
+    for u in new_utterances:
+        for a in u.content.artifacts:
+            kinds_count[a.kind] = kinds_count.get(a.kind, 0) + 1
 
-        elapsed = time.monotonic() - meeting_start
-        calls_delta = runner.telemetry.call_count - calls_before
-        cost_delta = runner.total_cost - cost_before
-        new_utterances = capture.utterances[artifact_count_before:]
-        kinds_count: dict[str, int] = {}
-        for u in new_utterances:
-            for a in u.content.artifacts:
-                kinds_count[a.kind] = kinds_count.get(a.kind, 0) + 1
+    yield MeetingEndEvent(
+        meeting=meeting,
+        outcome=outcome,
+        elapsed_s=elapsed,
+        calls_delta=calls_delta,
+        cost_delta=cost_delta,
+        artifact_kinds=kinds_count,
+        thread_id=thread_id,
+        iteration_index=iteration_index,
+        iteration_total=iteration_total,
+        iteration_label=iteration_label,
+    )
 
-        yield MeetingEndEvent(
-            meeting=meeting,
-            outcome=outcome,
-            elapsed_s=elapsed,
-            calls_delta=calls_delta,
-            cost_delta=cost_delta,
-            artifact_kinds=kinds_count,
-        )
-
-        if outcome == "GLOBAL_BUDGET":
-            return
+    yield _OutcomeSentinel(outcome=outcome)
 
 
 __all__ = [

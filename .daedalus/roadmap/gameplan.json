@@ -1,5 +1,5 @@
 {
-  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions — a fresh session can pick up by reading this file.",
   "phases": [
     {
       "id": "p1-foundation",
@@ -14,7 +14,7 @@
         "9c25e87c",
         "e7dfa848"
       ],
-      "notes": "Schema, bus, episodic memory, agent base. Nothing alive yet \u2014 just the substrate everything else hangs off."
+      "notes": "Schema, bus, episodic memory, agent base. Nothing alive yet — just the substrate everything else hangs off."
     },
     {
       "id": "p2-first-voice",
@@ -76,7 +76,7 @@
     {
       "id": "p6-real-threads",
       "title": "Real Threads",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [
         "75b74948",
         "292ea917",
@@ -84,7 +84,56 @@
         "19c13c2d",
         "21e3fafe"
       ],
-      "notes": "The hard showcases \u2014 translation chat MVP, security recovery, multi-session persistence. Transcript annotation tooling lets us publish them. Token telemetry confirms the engagement_policy is paying for itself."
+      "notes": "The hard showcases — translation chat MVP, security recovery, multi-session persistence. Transcript annotation tooling lets us publish them. Token telemetry confirms the engagement_policy is paying for itself. Closed out 2026-05-08; substrate-convergence work in analyses 026-030 + the Geocities showcase landed the \"Tweedles don't ship\" bug class. P7 evals deferred behind P8 (operator interface) so the eval harness has a usable surface to run against."
+    },
+    {
+      "id": "p8.1-observer",
+      "title": "Observer API",
+      "status": "done",
+      "roadmapItems": [],
+      "notes": "HistoricalRunHandle reads any captured snapshot directory — parses run.log, reads the per-agent SQLite databases, loads the telemetry JSON, exposes summary() / meetings() / utterances() / per_agent_telemetry() / artifacts(). The replay-side surface that everything else in P8 sits on. Shipped 2026-05-07 alongside P8.2."
+    },
+    {
+      "id": "p8.2-inspector",
+      "title": "TUI Inspector",
+      "status": "done",
+      "roadmapItems": [],
+      "notes": "Textual-based read-only TUI: snapshot library, run summary, meeting detail with body preview + speaker filter + utterance modal, artifact browser (global + meeting-scoped, attribution via bus not mtime), cast view, theme cycling, app-wide vim navigation. First public release — wonderland-ai 0.0.1 on PyPI 2026-05-08."
+    },
+    {
+      "id": "p8.3-streaming-mock-turtle",
+      "title": "Streaming + Mock Turtle",
+      "status": "in_progress",
+      "roadmapItems": [],
+      "notes": "Foundation for live-watch UX. Extend RunHandle with stream_events() async iterator; HistoricalRunHandle defaults to yield-now (no behavior change for inspector); MockTurtleHandle replays a snapshot's events with compressed timing + dwell cap so we iterate live-watch UI against a free testbed. After P8.3 the TUI can subscribe to \"events as they arrive\" without caring whether the source is replay, mock, or eventually a real bus."
+    },
+    {
+      "id": "p8.4-live-watch",
+      "title": "Live-watch screen",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "New LiveRunScreen that consumes the streaming API — meeting cells fill in as events arrive, current speaker indicator, live cost ticker, drill-down into in-progress meetings shows partial transcripts. Iterated entirely against Mock Turtle replay so zero API spend during UX iteration. The screen that turns Wonderland from \"things happen and you read transcripts later\" into \"things happen and you watch them happen.\""
+    },
+    {
+      "id": "p8.5-directive-issuing",
+      "title": "Directive issuing + LiveRunHandle",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "NewRunScreen — directive textarea, workflow picker (TDD/canonical/smoke), project-root picker. LiveRunHandle wraps a real Runner+Caucus, emits via the same streaming API as MockTurtleHandle so the live-watch screen consumes both interchangeably. The leap from \"replay testbed\" to \"actually launches a real run.\" First end-to-end test: directive → live watch → artifacts → done."
+    },
+    {
+      "id": "p8.6-spinup",
+      "title": "New-project spinup (the rabbit hole)",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Three entry paths converging on a single project-context capture: greenfield (skeleton picker + scaffold), existing-Wonderland (already covered by P8.5's project picker), adopt-existing (wonderland init + stack-detection routine that pre-fills the context form from manifest files). Persists .wonderland/project-context.md in a forward-compatible shape so future workflow-context injection has one input format to read. The on-ramp that turns \"pip install\" into \"team's ready to start.\""
+    },
+    {
+      "id": "p8.7-polish",
+      "title": "First-use polish",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": "Welcome/home screen (new run / browse snapshots / cast / configure), error states (missing API key, no project root, run failure), abort flow (clean shutdown of running threads), quiescence indicator (M5's long pauses need \"still working, just thinking\"), README + SHOWCASE updates with the TUI flow. The rough-edges sweep that closes the gap between \"works for the developer\" and \"works for someone who just installed it.\""
     },
     {
       "id": "p7-evals",
@@ -93,71 +142,45 @@
       "roadmapItems": [
         "87b2ec9c"
       ],
-      "notes": "Generic-baseline vs Wonderland comparison. The compounding-curve plot is the legibility-of-value mitigation from \u00a711. Without this the philosophy stays assertion."
+      "notes": "Generic-baseline vs Wonderland comparison. The compounding-curve plot is the legibility-of-value mitigation from §11. Without this the philosophy stays assertion."
     }
   ],
   "activePhase": {
-    "id": "p6-real-threads",
-    "title": "Real Threads",
-    "started": "2026-05-05",
-    "goal": "Real Threads \u2014 the hard showcases (translation chat MVP, security recovery, multi-session persistence) plus the substrate work that makes them affordable, observable, and *terminating*. Three prerequisites land first: (1) the Cat cache-miss anomaly from analysis 006 (53 calls, 2.59M uncached input tokens \u2014 every other agent caches; Cat doesn't) gets diagnosed and fixed; (2) the polite-deadlock pattern from analyses 006/007 gets a structural mitigation (Dodo's nudge wired to ThreadMonitor STUCK transitions); (3) token telemetry + per-run cost reporting so each showcase produces budget evidence. Then the showcases themselves, then transcript annotation tooling for publishing them as analyses. By end of P6 the framework has run three substantive showcases under bounded cost, the polite-deadlock failure mode is either fixed or documented as P7 work, and the publishing surface is ready for P7's identity-native-vs-generic-baseline eval.",
-    "sequencing": "Diagnostics + anti-deadlock first, before any showcase. The full-cast race in analysis 006 burned 4.5M input tokens not settling; running showcases without the fixes would compound the cost waste and produce unreadable transcripts. T32 (Cat cache fix) is a small surgical diagnostic that reduces all subsequent costs by ~10\u00d7 on Cat's per-call input \u2014 cheapest win, do first. T33 (Dodo nudge ladder on STUCK) is the structural anti-deadlock fix the analyses named as top P6 priority. T34 (token telemetry) makes per-showcase cost observable so we know whether subsequent showcases need further mitigation. T35 (Contract Note artifact, Pair Protocol \u00a7V) is the should-have \u2014 addresses the Tweedle-dance failure mode where the pair converges on substance but never transitions to shipping. Then the three showcases T36-T38 in order of complexity: Showcase 2 (translation chat MVP) is bounded but rich, Showcase 3 (security recovery) exercises the conflict ladder, Showcase 4 (multi-session) exercises memory persistence \u2014 the compounding-curve evidence the thesis depends on. T39 (transcript annotation tooling) lands last, so the publishing surface is ready for P7's evals.",
+    "id": "p8.3-streaming-mock-turtle",
+    "title": "Streaming + Mock Turtle",
+    "started": "2026-05-08",
+    "goal": "Lay the streaming foundation that the live-watch UI sits on, and build the Mock Turtle replay testbed so subsequent UI iteration costs zero in API calls. After P8.3 the TUI can subscribe to \"events as they arrive\" against a snapshot replayed in compressed clock time, identical to the surface that LiveRunHandle will eventually expose. Definition of done: (a) RunHandle.stream_events() exists as an async iterator, (b) HistoricalRunHandle keeps current behavior by yielding everything immediately, (c) MockTurtleHandle replays a captured snapshot with configurable speed and a dwell cap on quiet periods, (d) tests verify same events come out of both handles in the same order with appropriate timing, (e) a smoke test in the TUI consumes MockTurtleHandle to prove the streaming surface composes. P8.4 picks up from there with the live-watch screen — by then the substrate is settled and the work is pure UX iteration.",
+    "sequencing": "Interface first, before any implementation, because both HistoricalRunHandle and MockTurtleHandle implement the same protocol and they need to agree on event shape. T40 (RunEvent dataclass + RunHandle.stream_events signature) lands first as the contract. T41 (HistoricalRunHandle.stream_events default) is the no-behavior-change implementation that ensures the existing inspector keeps working — it's load-bearing because if T40+T41 don't preserve current TUI behavior, P8.2 regresses. T42 (MockTurtleHandle) is the substantive new code; built once T41 is green so the existing replay code can be reused as the event source, just with timing logic layered on top. T43 (tests) covers all three concerns: event identity (same events come out), order preservation, and timing semantics (compression factor, dwell cap). Lands alongside T42 because the timing logic is hard to verify by eye. T44 (TUI smoke test that consumes MockTurtle) is the integration check that proves the streaming surface composes — pulls a known snapshot through MockTurtle at high speed and verifies the same row counts the existing tests expect from HistoricalRunHandle. Naming: \"Mock Turtle\" is on the nose for the chapter — he's literally not-a-turtle (mock turtle soup = veal pretending), and his chapter is melancholy retelling of his \"education.\" Replay-with-compression is exactly his vibe.",
     "tasks": [
       {
-        "id": "T32",
-        "title": "Diagnose + fix Cat cache miss",
-        "status": "done",
-        "details": "Per analysis 006: every other agent in the full-cast race saw cache hits (Tweedles 250k+ combined, Caterpillar 182k, Rabbit 115k); Cat made 53 LLM calls with zero cache hits across 2.59M input tokens. Same pattern reproduces in analysis 007 (Cat 23 calls, 0 cache hits). Other agents cache reliably because their cached prefix (constitution + protocol) is invariant per-call; something in CheshireCat's prompt assembly is varying *before* the cached portion's natural boundary. Investigation: instrument CheshireCat.deliberate to log the cached prefix length + content hash per call across a synthetic multi-turn scenario; compare against a known-caching agent (Caterpillar). Likely culprits: (a) the protocol block being inserted at a position that breaks cache; (b) some agent-specific identity field being recomputed each call; (c) an output-protocol formatting difference. Fix: re-order the cached prefix so the invariant portion is contiguous and prefix-stable. Acceptance: re-run full_cast_showcase.py and confirm Cat shows >50% cache hit rate by call 3+. Expected cost reduction: ~10\u00d7 on Cat's per-call input, which dominated the analysis 006 spend.",
-        "resolution": "Diagnosed via /tmp/measure_prefix.py token-counting against each agent's constitution + protocol. Confirmed analysis 001's hypothesis: Haiku 4.5 needs ~7000 tokens of cached prefix to engage caching reliably; before the fix Cat (3317 tokens) and Alice (3989 tokens) sat below the threshold, while Caterpillar/Queen/Dormouse/Tweedles cleared it organically due to their larger constitutions. cache_w=0 in analysis 006 was the API silently refusing to attempt caching. Fix: src/wonderland/primer.py with FRAMEWORK_PRIMER constant (~3361 tokens) containing useful invariant context \u2014 the cast list with characteristic moves + characteristic artifacts, the speech-act bicameral split (substantive vs procedural), the engagement-grade semantics (always/selectively/rarely/almost_never), the artifact-registry layout with each character's grin equivalent, the conflict-resolution domain-primacy table, the memory-layer model, a \u00a7VIII failure-mode summary across all characters, and the disposition framing. Wired into Context.to_llm_request() as the first CachedBlock; per-agent deliberate() insert positions updated from system.insert(1, ...) to system.insert(2, ...) to keep the protocol after the constitution. Result: every agent's cached prefix now exceeds the threshold (Cat 6678 \u2192 cache_w=6489 confirmed live, full read on call 2). All 923 tests pass after updating index assertions in 8 agent test files + test_agent.py to reflect the new layered structure (primer at 0, constitution at 1, protocol at 2). Smoke test in /tmp/cache_smoke.py confirms Cat now reads cache reliably \u2014 call 1 writes 6489 tokens, call 2 reads all 6489 back. Note: this is a temporary content-padding approach; per Kohl's followup, tool definitions can replace the primer once we add tool-use to the agents (tool defs naturally pad the cached prefix while being substantively useful). Documented as such in the primer module docstring."
+        "id": "T40",
+        "title": "RunEvent + RunHandle.stream_events() interface",
+        "status": "pending",
+        "details": "Define RunEvent as a typed envelope around the things that arrive on the bus: utterances, meeting starts/ends, artifact ships, telemetry updates. Probably a sealed dataclass union (RunEvent.Utterance(utterance), RunEvent.MeetingStart(meeting), RunEvent.MeetingEnd(meeting, outcome), RunEvent.Artifact(artifact), RunEvent.TelemetryDelta(...)). Each event carries the timestamp it occurred at. Add stream_events() -> AsyncIterator[RunEvent] to RunHandle as an abstract method. Choose between async iterator vs callback-based observer pattern — async iterator is cleaner for the consumer (just async for) and aligns with how the runner already produces events. Acceptance: types are imported from wonderland.observer; mypy-clean; existing RunHandle subclasses get a default `async def stream_events` that raises NotImplementedError until T41/T42 fill them in."
       },
       {
-        "id": "T33",
-        "title": "Wire Dodo nudge ladder to STUCK transitions",
-        "status": "done",
-        "details": "Per analyses 006 and 007: the polite-deadlock pattern produces lots of utterances + few artifacts + concern-dominant traffic. The ThreadMonitor already detects STUCK mechanically; the Dodo's existing engagement rules (\u00a7III) only catch concerns carrying explicit conflict-keywords (conflict/disagree/deadlock/blocked/stuck/tension/incompatible/cannot proceed), and the team's polite-deadlock concerns use constitutionally-correct hedging language instead. Result: Dodo made 0 LLM calls in the full-cast race. Fix: add a state-driven Dodo behavior that consumes monitor.transitions() and on running\u2192stuck transitions emits a procedural NUDGE utterance (per \u00a7IV) asking the implicated agents to commit provisionally. Existing nudge_count threshold then escalates to deadlocked \u2192 escalation flow per T20. Acceptance: re-run the full-cast scenario from analysis 006; Dodo emits a NUDGE within 60s of the first STUCK transition; the team either ships an artifact in response or the thread escalates to human review per the existing flow. Should NOT require re-tuning the conflict-keywords rule (keep it as a complementary trigger) \u2014 STUCK transition is the additional surface.",
-        "resolution": "src/wonderland/agents/dodo.py \u2014 added Dodo.nudge() (publishes NUDGE utterance, templated body if not provided), Dodo.escalate_deadlock() (templated EscalationBrief for the polite-deadlock case where there's no Conflict to compose), and Dodo.watch_thread_states(monitor) (consumes monitor.transitions() and dispatches STUCK\u2192nudge+record_nudge, DEADLOCKED\u2192escalate_deadlock, QUIESCENT\u2192acknowledge). 8 new tests in tests/test_dodo.py covering nudge + watch + escalate_deadlock. scripts/full_cast_showcase.py state_watcher rewritten to delegate to the new Dodo methods inline so the script still does transition logging while the procedural acts are Dodo-owned.\n\nAcceptance criterion (Dodo emits NUDGE within 60s of first STUCK transition) MET \u2014 re-ran full-cast scenario, STUCK at t=313.30s + Dodo NUDGE at t=313.30s; second STUCK at t=365.35s + second NUDGE at t=365.35s; thread reached COMPLETE. **But the deeper goal of breaking the polite-deadlock cascade was NOT met** \u2014 the team published more concerns after each nudge (304 total LLM calls vs 144 in analysis 006, 8.3M input tokens vs 4.5M, ~$8-9 cost vs ~$5). T32's cache fix worked at the per-call level (Cat got 285k cache reads vs 0 in analysis 006) but activity nearly doubled because the deadlock pattern persisted, so total cost went UP.\n\nThe mechanism is correctly wired; the calibration is what needs further work. Specifically: nudge content is templated and asks 'commit provisionally' \u2014 but that's just another concern-shaped utterance the team interprets through their constitutions. Each agent's \u00a7VIII guards keep them refusing to commit. T33 ships the surface; T34 (now restructured) is the calibration task. 933 tests pass, ruff clean."
+        "id": "T41",
+        "title": "HistoricalRunHandle.stream_events() — yield-everything-now",
+        "status": "pending",
+        "details": "Default implementation that yields every event the snapshot contains in chronological order, with no sleeping. Preserves current inspector behavior — anything that was sync before stays effectively sync. The implementation walks meetings(), utterances(), artifacts() in timestamp order and yields RunEvents. Acceptance: existing TUI tests pass unchanged; a new test confirms stream_events yields a count equal to len(meetings)*2 + len(utterances) + len(artifacts) (rough; depends on event taxonomy from T40). The inspector continues to use the non-streaming methods (.summary(), .meetings(), etc.) — stream_events is for the live-watch consumer."
       },
       {
-        "id": "T34",
-        "title": "Polite-deadlock calibration: budget caps, threshold tuning, nudge content",
-        "status": "done",
-        "details": "Per the T33 result + analyses 006/007 + Kohl's exponential-failure-mode framing: the Dodo nudge mechanism is wired correctly but the templated nudge content does not break the polite-deadlock cascade. The full-cast race after T32+T33 cost ~$8-9 (8.3M input tokens, 304 LLM calls) \u2014 cache fix + nudges shipped, but team activity doubled because the deadlock pattern persisted. T34 fixes the calibration before P6 showcases ship.\n\n**Three deliverables. Must use synthetic transcripts + mocks for validation rather than live full-cast runs (live re-runs are ~$8 each; we cannot afford to debug by re-running). Live verification ONLY after mocks pass.**\n\n1. **Token telemetry + per-run reporting** (the original T34 scope). TokenTelemetry aggregator runs alongside showcases, tracks per-call usage by agent + speech_act + cache write/read split. Computes running cost using the actual Haiku 4.5 prices ($1/MTok input, $5/MTok output, $1.25/MTok 5m cache write, $0.10/MTok cache read) sourced from reference_haiku_pricing memory. Writes structured per-run record under <project_root>/.wonderland/telemetry/run-NNN.json that subsequent analyses cite.\n\n2. **Budget caps with auto-escalation**. Configurable threshold (e.g., $2 or 1M input tokens per thread) that, when crossed, causes the Dodo to publish an IMMEDIATE escalate_deadlock regardless of nudge_count. This is the runaway-cost circuit breaker \u2014 the polite-deadlock cascade is exponential and a budget cap is the last-resort guard. Acceptance: a synthetic transcript that publishes mock token-usage events crossing the budget produces an ESCALATION utterance within one check interval.\n\n3. **Deadlock-threshold tuning + nudge calibration**. ThreadMonitor.deadlock_after_nudges currently defaults to 2 \u2014 a thread has to go STUCK twice with nudges in between before DEADLOCKED fires. The full-cast re-run never reached DEADLOCKED because the team's nudge response (more concerns from new speakers) reset state to RUNNING instead of staying STUCK. Two candidate fixes: (a) lower threshold to 1 (escalate to human after first nudge that doesn't produce an artifact); (b) make nudge content LLM-shaped + directive (Dodo names specific agents and asks specific questions, e.g., 'Cat: provisional architecture please. Rabbit: timebox spike to 2 days.'). Option (a) is cheap; option (b) adds Dodo LLM cost but might actually break the cascade. Probably ship (a) first as the safety net, evaluate (b) against synthetic transcripts before committing.\n\nAcceptance overall: a re-run of the full-cast scenario from analysis 006 (the same scenario, after T32+T33+T34) either reaches COMPLETE within bounded cost (target <$3 \u2014 half the prior cost) OR escalates to human review within 60s of the first STUCK. The exponential-cascade failure mode no longer produces $8 surprises.",
-        "resolution": "Three-layer fix landed in c36a842: (1) Telemetry \u2014 per-call cost attribution at actual Haiku 4.5 prices with per-run JSON record under .wonderland/telemetry/. (2) Runner \u2014 durable orchestration class owning bus+monitor+agents+consensus+telemetry+budget cap; emits structured RunnerEvent stream. State-driven anti-deadlock dispatch (T33) lives here too. (3) wonderland run CLI \u2014 first consumer; renders events to stdout, three escalation modes (prompt/abort/auto). Budget defaults to $1.00 so dashboard surprises become recoverable events. Tests: 25 for telemetry+runner, 10 for CLI run subcommand, all mocked-LLM. Follow-on primer trim landed in 012a2e5 after first end-to-end smoke test exposed primer-amplified chattiness \u2014 A/B tested, run B at $0.15 vs A at $0.59, q+concern share dropped from 56% to 36%, full evidence in analyses/009. Three calibration items moved to roadmap as P1/P2 follow-ups: aa65d2d7 hard budget cap, ac3c6dc5 distinguish budget-vs-deadlock brief, 313b3f52 closed by primer follow-on commit."
+        "id": "T42",
+        "title": "MockTurtleHandle — compressed-time replay",
+        "status": "pending",
+        "details": "New class src/wonderland/observer/mock_turtle.py that loads a snapshot via the existing HistoricalRunHandle and exposes stream_events() that yields events with timing compression. Constructor: MockTurtleHandle(snapshot_dir, *, speed=5.0, max_dwell_seconds=2.0). The async iterator computes delta = event.timestamp - prev_event.timestamp, sleeps min(delta / speed, max_dwell_seconds), then yields the event. First event yields immediately. The dwell cap is what keeps M5's long implementation pause from stalling demos — a 6-minute pause at speed=5x would still be 72 seconds; the cap collapses any pause longer than max_dwell into max_dwell wall-clock seconds regardless of source delta. Other RunHandle methods (summary, meetings, utterances, artifacts) just delegate to the wrapped HistoricalRunHandle since they're snapshot-static. Acceptance: a test runs a known snapshot through MockTurtleHandle at speed=10x and verifies (a) all events come out in order, (b) total wall-clock duration is between (run_duration / 10) and (run_duration / 10 + max_dwell × num_quiet_periods), (c) no event is skipped."
       },
       {
-        "id": "T35",
-        "title": "Contract Note artifact (Pair Protocol \u00a7V)",
-        "status": "done",
-        "details": "Per analysis 007: the Tweedles converged on substantive contract decisions (mutation model with revision counter, silent staleness annotation, ordered message-edited then message-translated events) but never transitioned to shipping implementations because the framework has no explicit \"we have agreed; now ship\" inflection point. Pair Protocol \u00a7V documents a Contract Note artifact (current shape / proposed change / source / frontend impact / backend impact / resolution); add it to the runtime: src/wonderland/contract_note.py \u2014 ContractNotePayload + ContractNoteRegistry mirroring the established pattern. ContractNoteState enum (proposed | agreed | escalated | deferred). Either Tweedle can publish a Contract Note proposing a contract version; the counterpart Tweedle responds with their impact assessment; either side can mark agreed (state transitions to agreed and contract version locks) or escalate to Cat. Both Tweedles' implementation_registry.write() can then reference the locked contract version explicitly per the existing ImplementationPayload.contract field. Acceptance: re-run tweedle_dance_demo.py; the pair produces at least one Contract Note that reaches state=agreed within 120s; both publish implementations referencing the locked contract version. Should-have rather than must-have \u2014 analysis 007 named T33 alone as potentially sufficient if Dodo nudges them to commit.",
-        "resolution": "Contract Note artifact landed in b05242c (registry + Tweedle wiring + speech act + skeleton + 26 unit tests). Live tweedle_dance_demo acceptance met after two engagement-layer fixes in a32afb2: (1) sibling CONTRACT_NOTE engagement rule was missing, (2) format_utterance dropped artifact payloads so receivers couldn't learn the canonical slug. Three live runs surfaced one gap each \u2014 useful evidence the failure modes are layered. Final run: 22 LLM calls (~$0.20), 1 of 3 contract notes reached AGREED with locked `Message Editing Contract v2`, both Tweedles shipped implementations citing that version. Two-layer fix is the pattern: new artifacts need registry+speech_act+dispatch (caught by unit tests) AND engagement rules + context rendering (only caught by live tests). Three open follow-ups in analysis 010: duplicate-proposal mitigation, Cat re-opening converged threads, implementation artifact sprawl on iteration. None block T36."
+        "id": "T43",
+        "title": "Tests — event identity, order, timing semantics",
+        "status": "pending",
+        "details": "Three test categories. (1) Event identity: stream_events from HistoricalRunHandle and MockTurtleHandle yield the same sequence of events for the same snapshot — same RunEvent instances, same order, just different timing. (2) Order preservation: events come out in chronological order regardless of which subsystem (utterances, artifacts, meeting boundaries) they originate from. (3) Timing semantics: at speed=1.0 (real-time), events arrive at their original cadence within tolerance; at speed=10.0, total elapsed time is ~run_duration/10; max_dwell_seconds collapses long pauses; first event arrives near-immediately. Use `tests/test_mock_turtle.py` and probably one of the smaller v6 banner snapshots so the test runs in seconds even at speed=1.0. Acceptance: ≥6 tests passing; coverage of the timing edge cases (dwell cap, speed=∞, speed=0.1)."
       },
       {
-        "id": "T36",
-        "title": "Showcase 2: translation chat MVP",
-        "status": "done",
-        "details": "Per WONDERLAND_SPEC \u00a710. The first showcase to run with all 10 agents AND the polite-deadlock fixes from T33/T35. Same root scenario as the voices sweep + full-cast race (translation chat, GDPR, three-week target) so the comparison is direct. Build: scripts/translation_chat_showcase.py \u2014 full cast, ThreadMonitor with quiescence detection, SyntheticConsensusGuard wired in, T34 telemetry capturing per-run cost. Expectation per analyses 005/006: substantive moves land in the first ~50s (Alice stories, Cat ADRs, Rabbit tickets, Queen rulings), then the polite-deadlock fix (T33) keeps the team progressing rather than cascading. Acceptance: thread reaches COMPLETE within reasonable time (target 5min); \u22653 implementations ship from the Tweedles (the post-T33/T35 outcome the prior runs couldn't reach); per-run cost from T34 telemetry is bounded (target <$2); transcript captured + analysis ships as analysis 009. Riskiest of the three showcases \u2014 if T33 doesn't fix the deadlock cleanly, this surfaces it loudly.",
-        "resolution": "Showcase 2 (translation chat MVP) ran across analyses 015-018, then re-ran post-substrate-fixes in 023-split-validation: 1539-line MVP shipped end-to-end (backend models + translation service + auth + endpoints + frontend App + api client + tests) at $1.33 / 7.8 min. The bug class that was costing this showcase is closed (turn-based quiescence + split design/impl phases)."
-      },
-      {
-        "id": "T37",
-        "title": "Showcase 3: security recovery",
-        "status": "done",
-        "details": "Per WONDERLAND_SPEC \u00a710. Exercises the conflict ladder (T19/T20) and the Queen + Dormouse alliance (queen_of_hearts.md \u00a7I, dormouse.md \u00a7VII). Scenario: a synthesized incident (e.g., 'production telemetry shows an unusual auth failure pattern from a single IP \u2014 possible credential stuffing in progress') that requires the Queen to rule on immediate mitigation, the Dormouse to surface the production reality, the Tweedles to ship the fix, the Cat to confirm architecture isn't compromised, the Hatter to scenario-test for recurrence. Build: scripts/security_recovery_showcase.py \u2014 full cast, scenario primer published as a Dormouse observation (his \u00a7III always-engages on incident words). Acceptance: Queen issues \u22651 critical-severity ruling; Tweedles ship at least one implementation responding to the ruling; Caterpillar reviews; Hatter publishes test scenarios for the recurrence class; thread reaches COMPLETE within 8min; per-run cost <$3. Transcript + analysis as analysis 010. Tests the conflict ladder if Tweedles' implementation conflicts with Queen's ruling \u2014 first time we'd see composition + escalation fire end-to-end.",
-        "resolution": "Showcase 3 (security recovery) ran in analysis 019. Validated the conflict ladder (Queen domain primacy + Caterpillar review). No follow-up issues from this showcase specifically."
-      },
-      {
-        "id": "T38",
-        "title": "Showcase 4: multi-session persistence",
-        "status": "done",
-        "details": "Per WONDERLAND_SPEC \u00a710 + the central thesis claim. The compounding-curve evidence the framework's identity-native claim depends on: same project, two runs, the second run benefits from the first run's compactions. Build: scripts/multi_session_showcase.py \u2014 runs the same showcase scenario twice in sequence against the same project root. Between runs: each agent runs compact() to produce semantic + relational memory updates from the first run. Second run: agents start with that compacted memory in their cached prefix, should produce faster + more focused responses on the same scenario. Measure: first-run time + cost vs second-run time + cost; first-run artifact count vs second-run artifact count; whether agents reference earlier-run decisions in their second-run artifacts (e.g., Rabbit's second-run tickets cite the first-run tickets). Acceptance: second run produces measurably different output than first (smaller artifact set, faster settlement, references to prior decisions); per-run cost dropped via memory caching; transcript + analysis as analysis 011. This is the closest the framework gets to evidence-of-compounding before P7's eval harness \u2014 the analysis should be honest about what it does and doesn't prove.",
-        "resolution": "Showcase 4 (multi-session persistence) ran across analyses 020-023. Final state: turn-based quiescence (305d3b2) + split phases + working-tree-as-implementation-artifact framing land cleanly. Multi-session validation is conceptually done; rerunning Session 2 against the new substrate is a confirmation, not a discovery \u2014 left for Kohl to call. Open polish items: c664d71b (race fix) + 611378d9 (parse-error retry)."
-      },
-      {
-        "id": "T39",
-        "title": "Transcript annotation tooling for publishing",
-        "status": "done",
-        "details": "Per WONDERLAND_SPEC \u00a711 and the analyses 005-008 pattern: each showcase's transcript is the artifact a reader needs to evaluate the thesis. Manual analysis writeups (005-008) work for low N; for higher-throughput publishing (P7 eval harness, ongoing showcases) we need tooling. Build: scripts/annotate_transcript.py \u2014 given a captured showcase transcript + per-run telemetry (T34), produces a structured analysis stub with: (1) speech-act distribution table, (2) per-agent token usage table, (3) artifact summary, (4) thread-state log, (5) consensus-alert log, (6) cost summary, (7) auto-detected interesting patterns (polite-deadlock signature, sycophancy signature, Cat-cache-miss signature, etc). Output is markdown analysis stub that a human + Daedalus then add interpretation to. Acceptance: run against an existing showcase transcript (e.g., the analysis 006 raw output) and produce a markdown that contains all the structural sections the manual analyses include. Lands last so it benefits from all the patterns the prior showcases revealed.",
-        "resolution": "Built scripts/annotate_transcript.py with 14 unit tests. Validated against analyses/data/023-split-validation/run.log \u2014 produces all required structural sections (headline numbers, per-meeting breakdown, speech-act distribution, per-agent token usage, artifact summary, thread-state log, late-publish + parse-error catalogs, code-shipped diffstat, auto-detected patterns, interpretation stub). Pattern detector covers polite-deadlock, late-publish, parse-error, Cat-cache-miss, and deference-heavy signatures."
+        "id": "T44",
+        "title": "TUI smoke test — consume MockTurtle through a streaming subscriber",
+        "status": "pending",
+        "details": "Stub-level integration check that proves the streaming surface composes before P8.4 builds against it. A new test in tests/test_tui_smoke.py that creates a MockTurtleHandle for the v6 banner at speed=20, async-for's over its events, and accumulates them into a list. Asserts the list contains the expected counts (matching what HistoricalRunHandle.summary() / .meetings() / etc. report). Doesn't need a UI screen yet — just proves the consumer-side ergonomics work and the streaming API is callable from inside Textual's event loop without deadlock. Acceptance: test passes in <30s wall clock; the consumer code in this test is the shape P8.4's LiveRunScreen will reuse."
       }
     ],
     "deferred": []

@@ -1446,3 +1446,412 @@ class TestRunWorkflow:
         for call, meeting in zip(runner.convene_calls[1:], wf.meetings[1:]):
             assert meeting.convenor_directive in call["convenor_directive"]
             assert call["convenor_directive"].startswith(f"**{meeting.label}")
+
+
+# ---------------------------------------------------------------------------
+# per_item — schema, seed slicing, iteration logic
+# ---------------------------------------------------------------------------
+
+
+class TestPerItemSchema:
+    def test_meeting_accepts_per_item(self):
+        m = Meeting(
+            id="test-scenarios",
+            label="M4",
+            goal="g",
+            roster=["alice"],
+            per_item="feature",
+        )
+        assert m.per_item == "feature"
+
+    def test_meeting_per_item_defaults_to_none(self):
+        m = Meeting(id="m", label="M1", goal="g", roster=["alice"])
+        assert m.per_item is None
+
+
+class TestPerItemSeedResolution:
+    """resolve_seeds gains iteration awareness when per_item is in play.
+
+    The two slicing rules under test:
+      1) seed bindings whose kinds include the iteration kind get sliced
+         to artifacts whose payload.slug matches the current item;
+      2) seed bindings whose ``from`` references another per_item
+         meeting get sliced to the iteration thread that pairs with
+         the current item.
+    """
+
+    def _capture_with_features(self, slugs: list[str]) -> WorkflowCapture:
+        """Build a capture containing one composition utterance per
+        feature slug, each carrying a single feature artifact."""
+        cap = WorkflowCapture()
+        for slug in slugs:
+            cap.observe(
+                _utt(
+                    thread_id="composition",
+                    artifacts=[_art("feature", slug=slug, title=slug.title())],
+                )
+            )
+        return cap
+
+    def test_iteration_kind_filter_slices_to_current_slug(self):
+        cap = self._capture_with_features(["sessions", "breaks", "history"])
+        # M4 iteration for "breaks" — seed binding pulls features.
+        out = resolve_seeds(
+            [SeedBinding(**{"from": "composition", "kinds": ["feature"]})],
+            cap,
+            per_item_meetings={"test-scenarios": "feature", "implementation": "feature"},
+            current_item_kind="feature",
+            current_item_slug="breaks",
+        )
+        assert len(out) == 1
+        feature_arts = [a for a in out[0].content.artifacts if a.kind == "feature"]
+        assert feature_arts[0].payload["slug"] == "breaks"
+
+    def test_no_slicing_when_not_in_iteration(self):
+        # Same capture, but resolved without iteration context — caller
+        # is a non-per_item meeting like M3 contract negotiation. All
+        # features come through.
+        cap = self._capture_with_features(["sessions", "breaks", "history"])
+        out = resolve_seeds(
+            [SeedBinding(**{"from": "composition", "kinds": ["feature"]})],
+            cap,
+        )
+        assert len(out) == 3
+
+    def test_paired_iteration_thread_filter(self):
+        """M5 iteration for feature N pulls from M4 iteration N's
+        thread, not from M4 iterations for other features."""
+        cap = WorkflowCapture()
+        # Three M4 iterations, each emitting test_scenario artifacts
+        # under their feature-scoped thread_id.
+        for slug in ("sessions", "breaks", "history"):
+            cap.observe(
+                _utt(
+                    thread_id=f"test-scenarios-{slug}",
+                    artifacts=[_art("test_scenario", title=f"{slug}-scenario")],
+                )
+            )
+
+        out = resolve_seeds(
+            [
+                SeedBinding(
+                    **{"from": "test-scenarios", "kinds": ["test_scenario"]}
+                )
+            ],
+            cap,
+            per_item_meetings={"test-scenarios": "feature", "implementation": "feature"},
+            current_item_kind="feature",
+            current_item_slug="breaks",
+        )
+        # Only the breaks-iteration thread contributes
+        assert len(out) == 1
+        assert out[0].thread_id == "test-scenarios-breaks"
+
+    def test_per_item_source_without_paired_iteration_falls_through(self):
+        """If the source meeting was per_item but the paired iteration
+        thread produced no matching artifacts, fall through to the
+        union of all iteration threads. This is the ``no scenarios for
+        this feature yet`` case — better to seed with adjacent context
+        than nothing."""
+        cap = WorkflowCapture()
+        cap.observe(
+            _utt(
+                thread_id="test-scenarios-sessions",
+                artifacts=[_art("test_scenario", title="sessions-scenario")],
+            )
+        )
+        # No artifacts under test-scenarios-breaks
+        out = resolve_seeds(
+            [
+                SeedBinding(
+                    **{"from": "test-scenarios", "kinds": ["test_scenario"]}
+                )
+            ],
+            cap,
+            per_item_meetings={"test-scenarios": "feature", "implementation": "feature"},
+            current_item_kind="feature",
+            current_item_slug="breaks",
+        )
+        assert len(out) == 1
+        assert out[0].thread_id == "test-scenarios-sessions"
+
+
+class TestPerItemIteration:
+    """run_workflow loops a per_item meeting once per matching artifact."""
+
+    @pytest.fixture
+    def per_item_workflow(self) -> Workflow:
+        # Two-meeting workflow: composition emits features, then
+        # test-scenarios runs per_item on them.
+        return Workflow(
+            name="per-item-test",
+            description="d",
+            meetings=[
+                Meeting(
+                    id="composition",
+                    label="M2.5",
+                    goal="ship features",
+                    roster=["alice"],
+                    meeting_budget=1.0,
+                ),
+                Meeting(
+                    id="test-scenarios",
+                    label="M4",
+                    goal="scenarios per feature",
+                    roster=["alice", "mad_hatter"],
+                    meeting_budget=0.5,
+                    per_item="feature",
+                    seeds=[
+                        SeedBinding(**{"from": "composition", "kinds": ["feature"]})
+                    ],
+                ),
+            ],
+        )
+
+    async def test_iterates_once_per_feature(self, per_item_workflow):
+        # composition emits 3 features; test-scenarios runs 3 times.
+        scripts = {
+            "composition": [
+                FakeEvent(
+                    "utterance",
+                    {
+                        "utterance": _utt(
+                            thread_id="composition",
+                            artifacts=[
+                                _art("feature", slug="sessions", title="Sessions"),
+                                _art("feature", slug="breaks", title="Breaks"),
+                                _art("feature", slug="history", title="History"),
+                            ],
+                        )
+                    },
+                ),
+                FakeEvent("complete"),
+            ],
+            "test-scenarios-sessions": [FakeEvent("complete", {"thread_id": "test-scenarios-sessions"})],
+            "test-scenarios-breaks": [FakeEvent("complete", {"thread_id": "test-scenarios-breaks"})],
+            "test-scenarios-history": [FakeEvent("complete", {"thread_id": "test-scenarios-history"})],
+        }
+        runner = FakeRunner(scripts)
+        starts: list[MeetingStartEvent] = []
+        ends: list[MeetingEndEvent] = []
+        async for ev in run_workflow(per_item_workflow, runner, "go"):
+            if isinstance(ev, MeetingStartEvent):
+                starts.append(ev)
+            elif isinstance(ev, MeetingEndEvent):
+                ends.append(ev)
+
+        # 1 (composition) + 3 (test-scenarios iterations) = 4
+        assert len(starts) == 4
+        assert len(ends) == 4
+        # All four convene calls happened
+        thread_ids = [c["thread_id"] for c in runner.convene_calls]
+        assert thread_ids == [
+            "composition",
+            "test-scenarios-sessions",
+            "test-scenarios-breaks",
+            "test-scenarios-history",
+        ]
+        # Iteration metadata present on the M4 events
+        m4_starts = [s for s in starts if s.meeting.id == "test-scenarios"]
+        assert len(m4_starts) == 3
+        for idx, s in enumerate(m4_starts):
+            assert s.iteration_index == idx + 1
+            assert s.iteration_total == 3
+            assert s.thread_id == f"test-scenarios-{['sessions', 'breaks', 'history'][idx]}"
+            assert s.iteration_label in ("Sessions", "Breaks", "History")
+
+    async def test_each_iteration_seeded_with_only_its_feature(
+        self, per_item_workflow
+    ):
+        # Verify the slicing rule from TestPerItemSeedResolution at the
+        # run_workflow level: each iteration's convene_call seeds list
+        # contains exactly one feature artifact, and it's the one
+        # matching the current iteration's slug.
+        scripts = {
+            "composition": [
+                FakeEvent(
+                    "utterance",
+                    {
+                        "utterance": _utt(
+                            thread_id="composition",
+                            artifacts=[
+                                _art("feature", slug=s, title=s.title())
+                                for s in ("sessions", "breaks", "history")
+                            ],
+                        )
+                    },
+                ),
+                FakeEvent("complete"),
+            ],
+            "test-scenarios-sessions": [
+                FakeEvent("complete", {"thread_id": "test-scenarios-sessions"})
+            ],
+            "test-scenarios-breaks": [
+                FakeEvent("complete", {"thread_id": "test-scenarios-breaks"})
+            ],
+            "test-scenarios-history": [
+                FakeEvent("complete", {"thread_id": "test-scenarios-history"})
+            ],
+        }
+        runner = FakeRunner(scripts)
+        async for _ in run_workflow(per_item_workflow, runner, "go"):
+            pass
+        # Skip composition; check the three iteration calls
+        for call in runner.convene_calls[1:]:
+            seeds = call["seeds"]
+            # Each iteration should see exactly one utterance whose
+            # feature artifact matches the iteration's slug.
+            slug_in_thread = call["thread_id"].removeprefix("test-scenarios-")
+            assert len(seeds) == 1
+            feature_arts = [a for a in seeds[0].content.artifacts if a.kind == "feature"]
+            assert len(feature_arts) == 1
+            assert feature_arts[0].payload["slug"] == slug_in_thread
+
+    async def test_per_item_with_no_matching_items_emits_synthetic_skip(self):
+        # If a per_item meeting runs but no matching artifacts were
+        # ever captured, emit a synthetic MeetingStart/End so the
+        # consumer sees the meeting was acknowledged (fail-loud).
+        wf = Workflow(
+            name="no-features",
+            description="d",
+            meetings=[
+                Meeting(
+                    id="composition",
+                    label="M2.5",
+                    goal="g",
+                    roster=["alice"],
+                    meeting_budget=1.0,
+                ),
+                Meeting(
+                    id="test-scenarios",
+                    label="M4",
+                    goal="g",
+                    roster=["alice"],
+                    per_item="feature",
+                ),
+            ],
+        )
+        scripts = {
+            # composition ships nothing of kind=feature
+            "composition": [FakeEvent("complete")],
+        }
+        runner = FakeRunner(scripts)
+        events = []
+        async for ev in run_workflow(wf, runner, "go"):
+            events.append(ev)
+        m4_starts = [
+            e
+            for e in events
+            if isinstance(e, MeetingStartEvent) and e.meeting.id == "test-scenarios"
+        ]
+        m4_ends = [
+            e
+            for e in events
+            if isinstance(e, MeetingEndEvent) and e.meeting.id == "test-scenarios"
+        ]
+        assert len(m4_starts) == 1
+        assert len(m4_ends) == 1
+        assert m4_starts[0].iteration_label == "(no items)"
+        assert m4_ends[0].outcome == "COMPLETE"
+        # Critically: no convene was issued for an empty iteration set
+        thread_ids = [c["thread_id"] for c in runner.convene_calls]
+        assert "test-scenarios" not in thread_ids
+        assert all(not t.startswith("test-scenarios-") for t in thread_ids)
+
+
+class TestTddSerialWorkflow:
+    """The bundled tdd-serial.yaml is structurally runnable."""
+
+    def test_loads(self):
+        wf = load_workflow("tdd-serial")
+        assert wf.name == "tdd-serial"
+        per_item_meetings = [m for m in wf.meetings if m.per_item is not None]
+        # M4 and M5 both per_item: feature
+        assert {m.id for m in per_item_meetings} == {
+            "test-scenarios",
+            "implementation",
+        }
+        assert all(m.per_item == "feature" for m in per_item_meetings)
+
+    async def test_can_be_driven_to_completion(self):
+        # Drive the full tdd-serial workflow against a fake runner.
+        # composition emits two features; M4/M5 each iterate twice;
+        # other meetings run once. Verifies the YAML + run_workflow
+        # + per_item iteration glue all fit.
+        wf = load_workflow("tdd-serial")
+        feature_slugs = ["sessions", "breaks"]
+
+        def _ship_features(thread_id):
+            return _utt(
+                thread_id=thread_id,
+                artifacts=[
+                    _art("feature", slug=s, title=s.title()) for s in feature_slugs
+                ],
+            )
+
+        scripts: dict[str, list[FakeEvent]] = {}
+        for m in wf.meetings:
+            if m.per_item is None:
+                # Plain meeting ships representative artifacts based
+                # on what its directive expects to produce.
+                if m.id == "composition":
+                    arts = {"utterance": _ship_features("composition")}
+                else:
+                    arts = {
+                        "utterance": _utt(
+                            thread_id=m.id,
+                            artifacts=[
+                                _art("story"),
+                                _art("ticket"),
+                                _art("contract_note", state="agreed"),
+                                _art("implementation"),
+                            ],
+                        )
+                    }
+                scripts[m.id] = [FakeEvent("utterance", arts), FakeEvent("complete")]
+            else:
+                # per_item meeting — script each iteration thread_id
+                # to ship a feature-relevant artifact + complete.
+                for slug in feature_slugs:
+                    iter_tid = f"{m.id}-{slug}"
+                    scripts[iter_tid] = [
+                        FakeEvent(
+                            "utterance",
+                            {
+                                "utterance": _utt(
+                                    thread_id=iter_tid,
+                                    artifacts=[
+                                        _art("test_scenario" if m.id == "test-scenarios" else "implementation"),
+                                    ],
+                                )
+                            },
+                        ),
+                        FakeEvent("complete", {"thread_id": iter_tid}),
+                    ]
+
+        runner = FakeRunner(scripts)
+        starts: list[MeetingStartEvent] = []
+        ends: list[MeetingEndEvent] = []
+        async for ev in run_workflow(wf, runner, "directive"):
+            if isinstance(ev, MeetingStartEvent):
+                starts.append(ev)
+            elif isinstance(ev, MeetingEndEvent):
+                ends.append(ev)
+
+        # 5 plain meetings (M1, M2, M2.5, M3, M6) + 2 M4 iterations
+        # + 2 M5 iterations = 9 starts + 9 ends.
+        assert len(starts) == 9
+        assert len(ends) == 9
+        # All ends are COMPLETE
+        assert all(e.outcome == "COMPLETE" for e in ends), (
+            [e.outcome for e in ends]
+        )
+        # Iteration thread_ids are the expected per-feature pattern
+        m4_threads = [
+            s.thread_id for s in starts if s.meeting.id == "test-scenarios"
+        ]
+        m5_threads = [
+            s.thread_id for s in starts if s.meeting.id == "implementation"
+        ]
+        assert m4_threads == ["test-scenarios-sessions", "test-scenarios-breaks"]
+        assert m5_threads == ["implementation-sessions", "implementation-breaks"]
