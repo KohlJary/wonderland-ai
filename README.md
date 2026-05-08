@@ -93,6 +93,32 @@ between those channels. The literary parallel keeps earning its keep
 — the recovery pattern works *because* the agents have characters
 with intentions, not despite it.
 
+A fourth corollary, which is really the architectural commitment the
+other three sit on top of: **friction is the substrate, not the
+inefficiency.** Most multi-agent systems engineer friction *out* —
+consensus-seeking loops, reflection passes that smooth dissent, voting
+mechanisms that median competing positions toward agreement. The
+result reads fluently and ships nothing real, because nothing in the
+loop has the standing or the constitutional grounding to say *no,
+that's wrong, and here's the persona-shaped reason why.* Wonderland
+inverts that move: every meeting in the workflow is engineered
+friction with a specific shape. M1 is multiple stakeholder voices
+arguing about scope; M2 is Alice grounding the White Rabbit's
+compression; M2.5 is the Caterpillar auditing Rabbit's features
+against Alice's stories; M3 is the Tweedles negotiating contract
+boundaries; M4 is the Mad Hatter's failure-mode scenarios pulling
+against Alice's happy paths; M6 is the Trial — explicit adversarial
+review. The implementation in M5 is what crystallizes out *because*
+the prior meetings ground each other against each other. And §VIII
+is the meta-move: each character carries internal friction between
+their virtues and their named failure modes, so the agents aren't
+only generating friction with each other — they carry it inside
+their own constitutions. That's why a character can recognize when
+it's about to go off the rails: the rails are constitutionally
+specified. Generic "AI agents collaborate" stacks have nothing
+analogous because they have roles, not characters; goals, not voices;
+consensus, not constitutions.
+
 The framing the project is building around: *failures are how software
 gets built.* The iterative cycle of ship-then-discover-then-fix depends
 on recognizing what went wrong; agents whose failure modes are part of
@@ -178,6 +204,48 @@ uv run python scripts/two_agent_demo.py --compact
 Both scripts publish a translation-chat directive by default; pass
 `--directive "..."` to use your own.
 
+## The TUI
+
+A terminal interface ships with the project as the long-term home for
+operating Wonderland — issuing directives, watching live runs, and
+inspecting past ones. The first cut focuses on the inspection half,
+since it's the cheapest place to iterate (snapshots run for free); the
+directive-issuing and live-watching halves arrive in later sub-phases.
+
+```bash
+pip install 'wonderland-ai[tui]'
+wonderland-tui                       # opens the snapshot library
+```
+
+What's in it today:
+
+- **Snapshot library** — every captured run under `analyses/data/`,
+  with workflow, outcome, duration, call count, and cost.
+- **Run summary** — per-meeting cost, agent telemetry, and a
+  meetings table you can drill into.
+- **Meeting detail** — full transcript with body preview as you
+  navigate; press Enter on an utterance for the expanded view, with
+  attached artifacts you can drill into.
+- **Speaker filter** — `f`/`F` cycle the meeting transcript by
+  speaker.
+- **Artifact browser** — every artifact the team produced for a run,
+  globally or scoped to a single meeting (`a` from a meeting).
+- **Cast view** — `c` from the library opens the team roster, with
+  each character's role summary and constitution side-by-side.
+- **Theme cycling** — `t` rotates through Wonderland-flavored
+  palettes (Tea Party, Looking Glass, Trial, Caucus); built-in
+  Textual themes (gruvbox, dracula, nord, …) remain available.
+- **Vim navigation** throughout — `j`/`k` to move, `g`/`G` for
+  top/bottom, `Enter` to drill in, `Escape` to back out.
+
+The current build is replay-first by design: it consumes the same
+snapshots the analyses are written from, so smoke tests double as
+exercise of the historical-run observer API. Issuing directives from
+the TUI and watching live runs are the next two sub-phases — the
+goal is for `wonderland-tui` to be the way most users interact with
+the framework, with the demo scripts above remaining as minimal
+"hello world" entry points.
+
 ## Project layout
 
 ```
@@ -211,11 +279,14 @@ existing artifacts and a user-edited README are left alone.
 
 ## Install
 
-Core install pulls only what the in-process bus needs:
+Distribution name on PyPI is `wonderland-ai`; the import path stays
+`import wonderland`. Core install pulls only what the in-process bus
+needs:
 
 ```bash
-pip install wonderland          # InMemoryCaucus only
-pip install 'wonderland[redis]' # adds RedisCaucus
+pip install wonderland-ai           # InMemoryCaucus only
+pip install 'wonderland-ai[redis]'  # adds RedisCaucus
+pip install 'wonderland-ai[tui]'    # adds the TUI (Textual)
 ```
 
 `RedisCaucus` requires the `redis` extra; constructing one without it

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "wonderland"
+name = "wonderland-ai"
 version = "0.0.1"
 description = "An identity-native multi-agent development system."
 readme = "README.md"
@@ -15,10 +15,16 @@ authors = [
 keywords = ["agents", "multi-agent", "anthropic", "claude", "identity"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
 dependencies = [
     "anthropic>=0.40",
     "pydantic>=2.10",
@@ -28,18 +34,31 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/KohlJary/wonderland-ai"
+Repository = "https://github.com/KohlJary/wonderland-ai"
+Issues = "https://github.com/KohlJary/wonderland-ai/issues"
+Documentation = "https://github.com/KohlJary/wonderland-ai/blob/main/WONDERLAND_SPEC.md"
+
 [project.scripts]
 wonderland = "wonderland.cli:main"
+wonderland-tui = "wonderland.tui.app:main"
 
 [project.optional-dependencies]
 redis = [
     "redis>=5.2",
+]
+tui = [
+    # P8 user-facing interface — TUI now, web later. Theme API
+    # (textual.theme.Theme) is a v8.x feature.
+    "textual>=8.0",
 ]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "redis>=5.2",  # full test coverage includes the Redis path
+    "textual>=8.0",  # so tests can exercise the TUI module
 ]
 
 [tool.hatch.build.targets.wheel]

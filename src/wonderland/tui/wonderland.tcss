@@ -1,0 +1,135 @@
+/* Wonderland TUI stylesheet.
+ *
+ * Uses Textual design tokens ($primary, $secondary, $accent, $surface,
+ * $panel, $boost, $foreground, $background) so a theme switch via
+ * the `t` binding propagates without the stylesheet caring. The
+ * concrete palettes live in src/wonderland/tui/themes.py. */
+
+Screen {
+    layers: base overlay;
+    background: $background;
+    color: $foreground;
+}
+
+Header {
+    background: $panel;
+    color: $accent;
+}
+
+Footer {
+    background: $boost;
+    color: $primary;
+}
+
+Footer > .footer--key {
+    color: $accent;
+    background: $boost;
+}
+
+Footer > .footer--description {
+    color: $foreground;
+}
+
+#library-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $accent;
+}
+
+#summary-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $foreground;
+    height: auto;
+}
+
+#meetings-label,
+#agents-label,
+#utterances-label {
+    padding: 1 2 0 2;
+    margin-top: 1;
+    color: $primary;
+}
+
+DataTable {
+    margin: 0 2 1 2;
+    background: $background;
+    color: $foreground;
+}
+
+DataTable > .datatable--header {
+    background: $panel;
+    color: $accent;
+}
+
+DataTable > .datatable--cursor {
+    background: $accent;
+    color: $background;
+}
+
+DataTable > .datatable--hover {
+    background: $surface;
+}
+
+#preview-label {
+    padding: 1 2 0 2;
+    margin-top: 1;
+    color: $primary;
+}
+
+#preview-scroll {
+    height: 1fr;
+    margin: 0 2 1 2;
+    border: round $panel;
+    padding: 1;
+}
+
+#preview-body {
+    color: $foreground;
+}
+
+/* In meeting detail and artifact browser: give the table a fixed-ish
+ * height so the preview pane below has room to breathe. */
+MeetingDetailScreen #utterance-table,
+ArtifactBrowserScreen #artifact-table {
+    height: 50%;
+}
+
+/* Cast view */
+#cast-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $accent;
+}
+
+#member-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $foreground;
+    height: auto;
+}
+
+#member-summary {
+    padding: 1 2;
+    margin: 0 2 1 2;
+    color: $foreground;
+    border: round $panel;
+    height: auto;
+}
+
+#constitution-label {
+    padding: 0 2;
+    margin-top: 1;
+    color: $primary;
+}
+
+#constitution-scroll {
+    height: 1fr;
+    margin: 0 2 1 2;
+    border: round $panel;
+    padding: 1;
+}
