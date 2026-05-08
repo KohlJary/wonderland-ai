@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from wonderland.cast import cast
+from wonderland.observer import HistoricalRunHandle, MockTurtleHandle
 from wonderland.tui import WonderlandApp
 from wonderland.tui.screens.artifact_browser import (
     ArtifactBrowserScreen,
@@ -534,6 +535,104 @@ async def test_t_cycles_through_wonderland_themes() -> None:
             await pilot.press("t")
             await pilot.pause()
             assert app.theme == expected
+        await pilot.press("q")
+
+
+# ---------- streaming surface composition (T44 / P8.3 prep) ----------
+
+
+async def test_mock_turtle_stream_composes_inside_textual_runtime() -> None:
+    """Sanity check that ``MockTurtleHandle.stream_events()`` is
+    callable from inside Textual's async runtime without deadlock,
+    and that the consumer-side ergonomics work as expected.
+
+    P8.4's LiveRunScreen will use this exact pattern: inside the
+    Textual app's event loop, async-iterate a RunHandle's
+    stream_events() and update the UI as events arrive. This test
+    proves the surface composes before any UI is built on top.
+
+    Speed=1000 + max_dwell=0.05 means the v6 banner (~1300s source)
+    drains in well under a couple of seconds — the timing semantics
+    of the Mock Turtle are tested in test_mock_turtle.py; this test
+    only needs the events to flow.
+    """
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+
+    expected = sum(1 for _ in HistoricalRunHandle(_V6_BANNER).utterances())
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        mock = MockTurtleHandle(
+            _V6_BANNER, speed=1000.0, max_dwell_seconds=0.05
+        )
+        utterance_count = 0
+        meeting_starts = 0
+        meeting_ends = 0
+        run_started_seen = False
+        run_ended_seen = False
+        async for event in mock.stream_events():
+            kind = type(event).__name__
+            if kind == "RunStarted":
+                run_started_seen = True
+            elif kind == "RunEnded":
+                run_ended_seen = True
+            elif kind == "MeetingStarted":
+                meeting_starts += 1
+            elif kind == "MeetingEnded":
+                meeting_ends += 1
+            elif kind == "UtteranceEmitted":
+                utterance_count += 1
+        # Bookends fired
+        assert run_started_seen
+        assert run_ended_seen
+        # Meeting bookends balance
+        assert meeting_starts == meeting_ends
+        assert meeting_starts > 0
+        # Utterance count parity with the wrapped HistoricalRunHandle
+        assert utterance_count == expected
+        await pilot.press("q")
+
+
+async def test_streaming_consumer_does_not_starve_textual_event_loop() -> None:
+    """While async-iterating the Mock Turtle, the Textual app's
+    event loop must remain responsive — keystrokes through ``pilot``
+    should still fire and update screens.
+
+    A naive blocking implementation of stream_events would starve
+    the event loop and pilot.press would hang. This test asserts the
+    coroutine yielding pattern is non-blocking by interleaving
+    pilot interactions with stream consumption.
+    """
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # Open the snapshot library, navigate a row, then start
+        # consuming a mock turtle stream — the navigation should still
+        # work after the stream is opened (proves no deadlock between
+        # Textual's loop and the streaming async iterator).
+        mock = MockTurtleHandle(
+            _V6_BANNER, speed=1000.0, max_dwell_seconds=0.05
+        )
+        gen = mock.stream_events()
+        # Pull the first event (RunStarted) — yields immediately.
+        first = await gen.__anext__()
+        assert type(first).__name__ == "RunStarted"
+        # Now interact with the running app — should not hang.
+        await pilot.press("j")
+        await pilot.pause()
+        await pilot.press("k")
+        await pilot.pause()
+        # Consume the rest of the stream — proves we can resume after
+        # interleaving.
+        remaining = 0
+        async for _ in gen:
+            remaining += 1
+        assert remaining > 0
         await pilot.press("q")
 
 

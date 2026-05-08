@@ -769,6 +769,16 @@
       "status": "backlog",
       "created_at": "2026-05-08T17:36:43.644678",
       "created_by": "daedalus"
+    },
+    {
+      "id": "7a5ff815-d163-4ab7-9981-cbc13bb437e7",
+      "title": "Surface per_item iteration metadata in HistoricalRunHandle.meetings()",
+      "description": "Existing meetings() parser walks run.log META START lines and dedups by label ('M4' \u2192 'M4'), so per_item iterations of the same meeting collapse into a single RunMeeting record. Visible against v3+ snapshots where M4 and M5 each ran 3 iterations: meetings() returns 7 records instead of the actual 11 (M1 + M2 + M2.5 + M3 + M4\u00d73 + M5\u00d73 + M6).\n\nConcrete evidence: tdd-serial v3 snapshot at analyses/data/032-tdd-serial-v3/. SQLite has thread_ids like 'test-scenarios-focus-session-with-visual-countdown' (per-iteration), 'implementation-break-timer-with-user-configuration' (per-iteration). Run.log META lines show only 'test-scenarios' and 'implementation' as the base meeting ids.\n\nFix shape:\n1. Drop the label-dedup in the parser; emit one RunMeeting per encountered META START.\n2. Parse the Dodo directive line that follows each META START (format: '**M{label} \u2014 {name}** (iteration {idx}/{total}: {iter_label})'). When it matches, populate iteration metadata on the RunMeeting.\n3. Derive the iteration thread_id by slugifying iter_label and prefixing with the base meeting id ('test-scenarios' + '-' + slugify('Focus session with visual countdown') \u2192 'test-scenarios-focus-session-with-visual-countdown'). Match what's already in SQLite.\n4. RunMeeting.id remains the canonical thread_id used for utterance lookup. Per_item iterations get unique ids; non-per_item meetings keep their base id.\n\nWhy it matters:\n1. The TUI's Snapshot Inspector + Run Summary screens currently miss per_item iterations on v3+ snapshots \u2014 the meetings table shows 7 rows for a run that had 11 actual meeting threads.\n2. T41's stream_events() (P8.3) wants iteration metadata on MeetingStarted/MeetingEnded events. Currently scoped to leave iteration_* fields as None as a follow-on; this fix lights them up.\n3. Cost analyses and per-iteration reports require the per_item granularity \u2014 analysis 032's per-iteration cost table was built by hand from the run.log; this fix makes meetings() the single source of truth.\n\nAcceptance: v3 snapshot's HistoricalRunHandle.meetings() returns 11 RunMeeting records with iteration metadata populated correctly on the M4/M5 entries. v6 banner (no per_item) still returns 7 records unchanged. Inspector shows the full set in the Run Summary's meetings table.",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-08T18:48:54.818781",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

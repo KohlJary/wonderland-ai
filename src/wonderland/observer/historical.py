@@ -34,7 +34,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -291,6 +291,181 @@ class HistoricalRunHandle(RunHandle):
         out.sort(key=lambda a: a.cost, reverse=True)
         return out
 
+    async def stream_events(self):
+        """Streaming view of the snapshot — yields RunEvents in
+        chronological order with no sleeping (the snapshot is finished;
+        the consumer just wants the chronology).
+
+        Order:
+          1. RunStarted with the run's summary.
+          2. For each meeting (detected via utterance thread_id
+             transitions): MeetingStarted, then UtteranceEmitted /
+             ArtifactShipped events for each utterance on that
+             thread, then MeetingEnded.
+          3. AgentTelemetryDelta for each agent with the final
+             accumulated calls + cost.
+          4. RunEnded with the final summary.
+
+        Per_item iteration metadata (iteration_index, iteration_total,
+        iteration_label) on MeetingStarted/MeetingEnded is left None
+        in T41. Lighting it up depends on the meetings() parser
+        learning about per_item iterations — filed as roadmap
+        7a5ff815. Until that ships, consumers can derive iteration
+        identity from the thread_id (e.g. ``test-scenarios-foo``).
+
+        Substrate divergence (artifacts written via tool call without
+        a corresponding bus speech-act emission, per roadmap 92cec468)
+        means some on-disk artifacts won't appear as ArtifactShipped
+        events here. The non-streaming ``artifacts()`` method remains
+        authoritative for "what shipped to disk" — this stream is
+        "what landed on the bus."
+        """
+        # Lazy imports to avoid circular dep at module-load time.
+        from wonderland.observer.events import (
+            AgentTelemetryDelta,
+            ArtifactShipped,
+            MeetingEnded,
+            MeetingStarted,
+            RunEnded,
+            RunStarted,
+            UtteranceEmitted,
+        )
+
+        summary = self.summary()
+        # Anchor timestamp for events that don't have a natural one
+        # (RunStarted before the first utterance, RunEnded after the
+        # last). Falls back to epoch only if the snapshot has no
+        # timing info at all.
+        run_start_ts = summary.started_at or datetime.fromtimestamp(0, tz=timezone.utc)
+        run_end_ts = summary.ended_at or run_start_ts
+
+        yield RunStarted(timestamp=run_start_ts, summary=summary)
+
+        # Build a thread_id → RunMeeting map for label/name lookup.
+        # The current meetings() parser dedups by label, so per_item
+        # iterations all map to the same RunMeeting; that's a known
+        # limitation tracked separately. The fallback for a thread_id
+        # not present in the map is a synthetic RunMeeting derived
+        # from the thread_id alone.
+        meeting_lookup: dict[str, RunMeeting] = {m.id: m for m in self.meetings()}
+
+        # For per_item iterations whose thread_id has the form
+        # ``{base_id}-{slug}``, fall back to looking up by the base id
+        # so we still get the M4 / M5 label/name even if iteration
+        # metadata is None.
+        def _meeting_for(thread_id: str) -> RunMeeting:
+            if thread_id in meeting_lookup:
+                return meeting_lookup[thread_id]
+            for base_id, m in meeting_lookup.items():
+                if thread_id.startswith(f"{base_id}-"):
+                    # Synthesize a RunMeeting carrying the base
+                    # meeting's label/name but the iteration's id.
+                    return RunMeeting(
+                        id=thread_id,
+                        label=m.label,
+                        name=m.name,
+                        started_at=None,
+                        ended_at=None,
+                        outcome=None,
+                        elapsed_seconds=None,
+                        calls=0,
+                        cost=0.0,
+                    )
+            # Unknown thread_id — emit a minimal synthetic meeting.
+            return RunMeeting(
+                id=thread_id,
+                label=thread_id,
+                name=None,
+                started_at=None,
+                ended_at=None,
+                outcome=None,
+                elapsed_seconds=None,
+                calls=0,
+                cost=0.0,
+            )
+
+        # Index disk artifacts by basename for resolving bus-attached
+        # artifacts to their on-disk RunArtifact equivalent. Matches
+        # the resolution pattern used by the TUI's modal-artifact-link.
+        artifacts_by_basename = {a.path.name: a for a in self.artifacts()}
+
+        current_thread_id: str | None = None
+        meeting_open_ts: datetime | None = None
+        last_event_ts: datetime = run_start_ts
+
+        for u in self.utterances():
+            last_event_ts = u.timestamp
+
+            # Meeting transition?
+            if u.thread_id != current_thread_id:
+                # Close the prior meeting.
+                if current_thread_id is not None and meeting_open_ts is not None:
+                    prev = _meeting_for(current_thread_id)
+                    elapsed = (u.timestamp - meeting_open_ts).total_seconds()
+                    yield MeetingEnded(
+                        timestamp=u.timestamp,
+                        meeting=prev,
+                        thread_id=current_thread_id,
+                        outcome=prev.outcome or "COMPLETE",
+                        elapsed_seconds=elapsed,
+                        calls_delta=0,
+                        cost_delta=0.0,
+                        artifact_kinds={},
+                    )
+                # Open the new one.
+                new_meeting = _meeting_for(u.thread_id)
+                yield MeetingStarted(
+                    timestamp=u.timestamp,
+                    meeting=new_meeting,
+                    thread_id=u.thread_id,
+                )
+                current_thread_id = u.thread_id
+                meeting_open_ts = u.timestamp
+
+            yield UtteranceEmitted(timestamp=u.timestamp, utterance=u)
+
+            for attached in u.content.artifacts or []:
+                payload = (
+                    attached.payload if isinstance(attached.payload, dict) else {}
+                )
+                raw_path = payload.get("path")
+                if not raw_path:
+                    continue
+                run_artifact = artifacts_by_basename.get(Path(raw_path).name)
+                if run_artifact is not None:
+                    yield ArtifactShipped(
+                        timestamp=u.timestamp,
+                        artifact=run_artifact,
+                    )
+
+        # Close the final meeting.
+        if current_thread_id is not None and meeting_open_ts is not None:
+            final = _meeting_for(current_thread_id)
+            elapsed = (last_event_ts - meeting_open_ts).total_seconds()
+            yield MeetingEnded(
+                timestamp=last_event_ts,
+                meeting=final,
+                thread_id=current_thread_id,
+                outcome=final.outcome or "COMPLETE",
+                elapsed_seconds=elapsed,
+                calls_delta=0,
+                cost_delta=0.0,
+                artifact_kinds={},
+            )
+
+        # Per-agent telemetry deltas — the final accumulated values.
+        # In T41 we emit these once at the end of the stream rather
+        # than continuously throughout (no per-call timing in the
+        # snapshot to attribute to). Live and Mock-Turtle handles
+        # may emit deltas more frequently.
+        for telemetry in self.per_agent_telemetry():
+            yield AgentTelemetryDelta(
+                timestamp=run_end_ts,
+                telemetry=telemetry,
+            )
+
+        yield RunEnded(timestamp=run_end_ts, summary=summary)
+
     def artifacts(self, *, kind: str | None = None) -> list[RunArtifact]:
         out: list[RunArtifact] = []
         for dir_name, canonical_kind in _ARTIFACT_DIR_TO_KIND.items():
@@ -306,8 +481,6 @@ class HistoricalRunHandle(RunHandle):
                 title = _parse_title_from_markdown(path, fallback=stem)
                 # tz-aware UTC for consistency with utterance timestamps
                 # (which are tz-aware UTC). Mixing the two throws.
-                from datetime import timezone
-
                 created_at = datetime.fromtimestamp(
                     path.stat().st_mtime, tz=timezone.utc
                 )

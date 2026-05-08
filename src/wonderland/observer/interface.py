@@ -20,12 +20,18 @@ bypass it.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 from wonderland.utterance import Utterance
+
+if TYPE_CHECKING:
+    # Imported lazily to avoid a circular import — events.py imports
+    # the dataclasses defined in this module.
+    from wonderland.observer.events import RunEvent
 
 
 @dataclass(frozen=True)
@@ -135,6 +141,27 @@ class RunHandle(ABC):
         ``"feature"``, ``"contract_note"``). When ``None``, returns
         all artifacts across all kinds, sorted by ``created_at``
         ascending so the result reads as a timeline.
+        """
+
+    @abstractmethod
+    def stream_events(self) -> AsyncIterator["RunEvent"]:
+        """Stream the run as a chronologically ordered sequence of
+        ``RunEvent`` instances. The streaming surface for live-watch
+        UIs (and for the Mock Turtle replay testbed).
+
+        Each implementation chooses its own pacing:
+
+        - ``HistoricalRunHandle.stream_events()`` yields everything
+          immediately (the snapshot is finished; consumer just
+          wants the chronology).
+        - ``MockTurtleHandle.stream_events()`` yields with
+          compressed-time sleeping so a UI can be tested against
+          real captured runs without API spend.
+        - ``LiveRunHandle.stream_events()`` (P8.5) subscribes to a
+          live runner and yields as events occur.
+
+        Consumers iterate via ``async for``; UI code never branches
+        on which subclass produced the events.
         """
 
 

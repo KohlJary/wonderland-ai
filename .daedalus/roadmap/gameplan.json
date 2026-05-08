@@ -1,5 +1,5 @@
 {
-  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions — a fresh session can pick up by reading this file.",
+  "description": "Multi-phase plans currently in flight. Each phase references roadmap item ids; the activePhase section breaks the current phase into concrete tasks with status. Survives conversation compactions \u2014 a fresh session can pick up by reading this file.",
   "phases": [
     {
       "id": "p1-foundation",
@@ -14,7 +14,7 @@
         "9c25e87c",
         "e7dfa848"
       ],
-      "notes": "Schema, bus, episodic memory, agent base. Nothing alive yet — just the substrate everything else hangs off."
+      "notes": "Schema, bus, episodic memory, agent base. Nothing alive yet \u2014 just the substrate everything else hangs off."
     },
     {
       "id": "p2-first-voice",
@@ -84,42 +84,42 @@
         "19c13c2d",
         "21e3fafe"
       ],
-      "notes": "The hard showcases — translation chat MVP, security recovery, multi-session persistence. Transcript annotation tooling lets us publish them. Token telemetry confirms the engagement_policy is paying for itself. Closed out 2026-05-08; substrate-convergence work in analyses 026-030 + the Geocities showcase landed the \"Tweedles don't ship\" bug class. P7 evals deferred behind P8 (operator interface) so the eval harness has a usable surface to run against."
+      "notes": "The hard showcases \u2014 translation chat MVP, security recovery, multi-session persistence. Transcript annotation tooling lets us publish them. Token telemetry confirms the engagement_policy is paying for itself. Closed out 2026-05-08; substrate-convergence work in analyses 026-030 + the Geocities showcase landed the \"Tweedles don't ship\" bug class. P7 evals deferred behind P8 (operator interface) so the eval harness has a usable surface to run against."
     },
     {
       "id": "p8.1-observer",
       "title": "Observer API",
       "status": "done",
       "roadmapItems": [],
-      "notes": "HistoricalRunHandle reads any captured snapshot directory — parses run.log, reads the per-agent SQLite databases, loads the telemetry JSON, exposes summary() / meetings() / utterances() / per_agent_telemetry() / artifacts(). The replay-side surface that everything else in P8 sits on. Shipped 2026-05-07 alongside P8.2."
+      "notes": "HistoricalRunHandle reads any captured snapshot directory \u2014 parses run.log, reads the per-agent SQLite databases, loads the telemetry JSON, exposes summary() / meetings() / utterances() / per_agent_telemetry() / artifacts(). The replay-side surface that everything else in P8 sits on. Shipped 2026-05-07 alongside P8.2."
     },
     {
       "id": "p8.2-inspector",
       "title": "TUI Inspector",
       "status": "done",
       "roadmapItems": [],
-      "notes": "Textual-based read-only TUI: snapshot library, run summary, meeting detail with body preview + speaker filter + utterance modal, artifact browser (global + meeting-scoped, attribution via bus not mtime), cast view, theme cycling, app-wide vim navigation. First public release — wonderland-ai 0.0.1 on PyPI 2026-05-08."
+      "notes": "Textual-based read-only TUI: snapshot library, run summary, meeting detail with body preview + speaker filter + utterance modal, artifact browser (global + meeting-scoped, attribution via bus not mtime), cast view, theme cycling, app-wide vim navigation. First public release \u2014 wonderland-ai 0.0.1 on PyPI 2026-05-08."
     },
     {
       "id": "p8.3-streaming-mock-turtle",
       "title": "Streaming + Mock Turtle",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [],
       "notes": "Foundation for live-watch UX. Extend RunHandle with stream_events() async iterator; HistoricalRunHandle defaults to yield-now (no behavior change for inspector); MockTurtleHandle replays a snapshot's events with compressed timing + dwell cap so we iterate live-watch UI against a free testbed. After P8.3 the TUI can subscribe to \"events as they arrive\" without caring whether the source is replay, mock, or eventually a real bus."
     },
     {
       "id": "p8.4-live-watch",
       "title": "Live-watch screen",
-      "status": "planned",
+      "status": "in_progress",
       "roadmapItems": [],
-      "notes": "New LiveRunScreen that consumes the streaming API — meeting cells fill in as events arrive, current speaker indicator, live cost ticker, drill-down into in-progress meetings shows partial transcripts. Iterated entirely against Mock Turtle replay so zero API spend during UX iteration. The screen that turns Wonderland from \"things happen and you read transcripts later\" into \"things happen and you watch them happen.\""
+      "notes": "New LiveRunScreen that consumes the streaming API \u2014 meeting cells fill in as events arrive, current speaker indicator, live cost ticker, drill-down into in-progress meetings shows partial transcripts. Iterated entirely against Mock Turtle replay so zero API spend during UX iteration. The screen that turns Wonderland from \"things happen and you read transcripts later\" into \"things happen and you watch them happen.\""
     },
     {
       "id": "p8.5-directive-issuing",
       "title": "Directive issuing + LiveRunHandle",
       "status": "planned",
       "roadmapItems": [],
-      "notes": "NewRunScreen — directive textarea, workflow picker (TDD/canonical/smoke), project-root picker. LiveRunHandle wraps a real Runner+Caucus, emits via the same streaming API as MockTurtleHandle so the live-watch screen consumes both interchangeably. The leap from \"replay testbed\" to \"actually launches a real run.\" First end-to-end test: directive → live watch → artifacts → done."
+      "notes": "NewRunScreen \u2014 directive textarea, workflow picker (TDD/canonical/smoke), project-root picker. LiveRunHandle wraps a real Runner+Caucus, emits via the same streaming API as MockTurtleHandle so the live-watch screen consumes both interchangeably. The leap from \"replay testbed\" to \"actually launches a real run.\" First end-to-end test: directive \u2192 live watch \u2192 artifacts \u2192 done."
     },
     {
       "id": "p8.6-spinup",
@@ -142,47 +142,16 @@
       "roadmapItems": [
         "87b2ec9c"
       ],
-      "notes": "Generic-baseline vs Wonderland comparison. The compounding-curve plot is the legibility-of-value mitigation from §11. Without this the philosophy stays assertion."
+      "notes": "Generic-baseline vs Wonderland comparison. The compounding-curve plot is the legibility-of-value mitigation from \u00a711. Without this the philosophy stays assertion."
     }
   ],
   "activePhase": {
-    "id": "p8.3-streaming-mock-turtle",
-    "title": "Streaming + Mock Turtle",
+    "id": "p8.4-live-watch",
+    "title": "Live-watch screen",
     "started": "2026-05-08",
-    "goal": "Lay the streaming foundation that the live-watch UI sits on, and build the Mock Turtle replay testbed so subsequent UI iteration costs zero in API calls. After P8.3 the TUI can subscribe to \"events as they arrive\" against a snapshot replayed in compressed clock time, identical to the surface that LiveRunHandle will eventually expose. Definition of done: (a) RunHandle.stream_events() exists as an async iterator, (b) HistoricalRunHandle keeps current behavior by yielding everything immediately, (c) MockTurtleHandle replays a captured snapshot with configurable speed and a dwell cap on quiet periods, (d) tests verify same events come out of both handles in the same order with appropriate timing, (e) a smoke test in the TUI consumes MockTurtleHandle to prove the streaming surface composes. P8.4 picks up from there with the live-watch screen — by then the substrate is settled and the work is pure UX iteration.",
-    "sequencing": "Interface first, before any implementation, because both HistoricalRunHandle and MockTurtleHandle implement the same protocol and they need to agree on event shape. T40 (RunEvent dataclass + RunHandle.stream_events signature) lands first as the contract. T41 (HistoricalRunHandle.stream_events default) is the no-behavior-change implementation that ensures the existing inspector keeps working — it's load-bearing because if T40+T41 don't preserve current TUI behavior, P8.2 regresses. T42 (MockTurtleHandle) is the substantive new code; built once T41 is green so the existing replay code can be reused as the event source, just with timing logic layered on top. T43 (tests) covers all three concerns: event identity (same events come out), order preservation, and timing semantics (compression factor, dwell cap). Lands alongside T42 because the timing logic is hard to verify by eye. T44 (TUI smoke test that consumes MockTurtle) is the integration check that proves the streaming surface composes — pulls a known snapshot through MockTurtle at high speed and verifies the same row counts the existing tests expect from HistoricalRunHandle. Naming: \"Mock Turtle\" is on the nose for the chapter — he's literally not-a-turtle (mock turtle soup = veal pretending), and his chapter is melancholy retelling of his \"education.\" Replay-with-compression is exactly his vibe.",
-    "tasks": [
-      {
-        "id": "T40",
-        "title": "RunEvent + RunHandle.stream_events() interface",
-        "status": "pending",
-        "details": "Define RunEvent as a typed envelope around the things that arrive on the bus: utterances, meeting starts/ends, artifact ships, telemetry updates. Probably a sealed dataclass union (RunEvent.Utterance(utterance), RunEvent.MeetingStart(meeting), RunEvent.MeetingEnd(meeting, outcome), RunEvent.Artifact(artifact), RunEvent.TelemetryDelta(...)). Each event carries the timestamp it occurred at. Add stream_events() -> AsyncIterator[RunEvent] to RunHandle as an abstract method. Choose between async iterator vs callback-based observer pattern — async iterator is cleaner for the consumer (just async for) and aligns with how the runner already produces events. Acceptance: types are imported from wonderland.observer; mypy-clean; existing RunHandle subclasses get a default `async def stream_events` that raises NotImplementedError until T41/T42 fill them in."
-      },
-      {
-        "id": "T41",
-        "title": "HistoricalRunHandle.stream_events() — yield-everything-now",
-        "status": "pending",
-        "details": "Default implementation that yields every event the snapshot contains in chronological order, with no sleeping. Preserves current inspector behavior — anything that was sync before stays effectively sync. The implementation walks meetings(), utterances(), artifacts() in timestamp order and yields RunEvents. Acceptance: existing TUI tests pass unchanged; a new test confirms stream_events yields a count equal to len(meetings)*2 + len(utterances) + len(artifacts) (rough; depends on event taxonomy from T40). The inspector continues to use the non-streaming methods (.summary(), .meetings(), etc.) — stream_events is for the live-watch consumer."
-      },
-      {
-        "id": "T42",
-        "title": "MockTurtleHandle — compressed-time replay",
-        "status": "pending",
-        "details": "New class src/wonderland/observer/mock_turtle.py that loads a snapshot via the existing HistoricalRunHandle and exposes stream_events() that yields events with timing compression. Constructor: MockTurtleHandle(snapshot_dir, *, speed=5.0, max_dwell_seconds=2.0). The async iterator computes delta = event.timestamp - prev_event.timestamp, sleeps min(delta / speed, max_dwell_seconds), then yields the event. First event yields immediately. The dwell cap is what keeps M5's long implementation pause from stalling demos — a 6-minute pause at speed=5x would still be 72 seconds; the cap collapses any pause longer than max_dwell into max_dwell wall-clock seconds regardless of source delta. Other RunHandle methods (summary, meetings, utterances, artifacts) just delegate to the wrapped HistoricalRunHandle since they're snapshot-static. Acceptance: a test runs a known snapshot through MockTurtleHandle at speed=10x and verifies (a) all events come out in order, (b) total wall-clock duration is between (run_duration / 10) and (run_duration / 10 + max_dwell × num_quiet_periods), (c) no event is skipped."
-      },
-      {
-        "id": "T43",
-        "title": "Tests — event identity, order, timing semantics",
-        "status": "pending",
-        "details": "Three test categories. (1) Event identity: stream_events from HistoricalRunHandle and MockTurtleHandle yield the same sequence of events for the same snapshot — same RunEvent instances, same order, just different timing. (2) Order preservation: events come out in chronological order regardless of which subsystem (utterances, artifacts, meeting boundaries) they originate from. (3) Timing semantics: at speed=1.0 (real-time), events arrive at their original cadence within tolerance; at speed=10.0, total elapsed time is ~run_duration/10; max_dwell_seconds collapses long pauses; first event arrives near-immediately. Use `tests/test_mock_turtle.py` and probably one of the smaller v6 banner snapshots so the test runs in seconds even at speed=1.0. Acceptance: ≥6 tests passing; coverage of the timing edge cases (dwell cap, speed=∞, speed=0.1)."
-      },
-      {
-        "id": "T44",
-        "title": "TUI smoke test — consume MockTurtle through a streaming subscriber",
-        "status": "pending",
-        "details": "Stub-level integration check that proves the streaming surface composes before P8.4 builds against it. A new test in tests/test_tui_smoke.py that creates a MockTurtleHandle for the v6 banner at speed=20, async-for's over its events, and accumulates them into a list. Asserts the list contains the expected counts (matching what HistoricalRunHandle.summary() / .meetings() / etc. report). Doesn't need a UI screen yet — just proves the consumer-side ergonomics work and the streaming API is callable from inside Textual's event loop without deadlock. Acceptance: test passes in <30s wall clock; the consumer code in this test is the shape P8.4's LiveRunScreen will reuse."
-      }
-    ],
+    "goal": "Build the TUI live-watch screen against MockTurtleHandle. Per analysis 032 + the P8.3 work that just closed: the streaming foundation exists, MockTurtle provides snapshot replay at clock time without API spend, and the consumer-side ergonomics work inside Textual's runtime (verified by T44). P8.4 builds the LiveRunScreen on top of that \u2014 meeting cells fill in as events arrive, current speaker indicator updates per UtteranceEmitted, live cost ticker accumulates from AgentTelemetryDelta events. Drill-down into in-progress meetings shows partial transcripts. Iterated entirely against Mock Turtle replay. After P8.4: pivot to P8.5 (directive issuing + LiveRunHandle) for the leap to real runs.",
+    "sequencing": "Layout first, before behavior. The screen has three primary regions: a meetings ribbon (one cell per meeting, filling in as MeetingStarted/Ended events fire), a transcript pane (the active meeting's utterances scrolling in real-time), and a status bar (current speaker, live cost, time elapsed). Iteration cadence: layout sketch + minimal data flow \u2192 drill-into-meeting on click/Enter \u2192 cost ticker \u2192 speaker indicator \u2192 polish. Each iteration ships against the v6 banner (parallel TDD, no per_item) AND v3 (tdd-serial, 11 per_item iterations) so per_item handling is exercised throughout. Per_item iteration metadata on MeetingStarted/Ended is currently None (roadmap 7a5ff815 fixes the meetings() parser); design the UI so it degrades gracefully when iteration_label is missing \u2014 show base meeting label with a discriminator from thread_id slug suffix until that lands.",
+    "tasks": [],
     "deferred": []
   }
 }
