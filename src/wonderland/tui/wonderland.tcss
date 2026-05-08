@@ -97,6 +97,75 @@ ArtifactBrowserScreen #artifact-table {
     height: 50%;
 }
 
+/* Live-watch screen — lazygit-style multi-pane layout (T48):
+ * Meetings on the left, Transcript + Artifacts stacked on the right.
+ * Tab cycles focus; meeting selection drives panel filtering. */
+#live-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $accent;
+}
+
+#live-main-row {
+    height: 1fr;
+}
+
+LiveRunScreen #left-pane {
+    width: 38%;
+    height: 1fr;
+    margin: 0 1 0 0;
+}
+
+LiveRunScreen #right-pane {
+    width: 1fr;
+    height: 1fr;
+}
+
+LiveRunScreen #live-meetings-table {
+    height: 1fr;
+    margin: 0 0 1 2;
+}
+
+#transcript-label,
+#transcript-body-label,
+#artifacts-label {
+    padding: 0 2;
+    color: $primary;
+    height: auto;
+}
+
+LiveRunScreen #transcript-table {
+    height: 35%;
+    margin: 0 2 0 0;
+    border: round $panel;
+}
+
+LiveRunScreen #transcript-body-scroll {
+    height: 30%;
+    margin: 0 2 0 0;
+    border: round $panel;
+    padding: 1;
+}
+
+LiveRunScreen #transcript-body {
+    color: $foreground;
+}
+
+LiveRunScreen #live-artifacts-table {
+    height: 35%;
+    margin: 0 2 1 0;
+    border: round $panel;
+}
+
+#live-status {
+    padding: 0 2;
+    margin: 0 2 1 2;
+    background: $boost;
+    color: $foreground;
+    height: auto;
+}
+
 /* Cast view */
 #cast-header {
     padding: 1 2;

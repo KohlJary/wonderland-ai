@@ -21,6 +21,7 @@ from textual.widgets import DataTable, Footer, Header, Static
 
 from wonderland.observer import HistoricalRunHandle
 from wonderland.tui.screens.cast import CastBrowserScreen
+from wonderland.tui.screens.live_run import LiveRunScreen
 from wonderland.tui.screens.run_summary import RunSummaryScreen
 
 
@@ -59,6 +60,7 @@ class SnapshotLibraryScreen(Screen[None]):
 
     BINDINGS = [
         Binding("enter", "open_selected", "Open", show=True),
+        Binding("w", "watch_selected", "Watch", show=True),
         Binding("c", "open_cast", "The Cast", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         # Vim nav (j/k/g/G) is provided by WonderlandApp.
@@ -131,6 +133,15 @@ class SnapshotLibraryScreen(Screen[None]):
 
     def action_open_cast(self) -> None:
         self.app.push_screen(CastBrowserScreen())
+
+    def action_watch_selected(self) -> None:
+        """Open the selected snapshot in the live-watch screen
+        (replay mode via Mock Turtle)."""
+        table = self.query_one("#snapshot-table", DataTable)
+        row = table.cursor_row
+        if row is None or row >= len(self._snapshot_paths):
+            return
+        self.app.push_screen(LiveRunScreen(self._snapshot_paths[row]))
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         self.action_open_selected()

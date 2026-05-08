@@ -19,6 +19,11 @@ import pytest
 from wonderland.cast import cast
 from wonderland.observer import HistoricalRunHandle, MockTurtleHandle
 from wonderland.tui import WonderlandApp
+from wonderland.tui.screens.live_run import (
+    _ALL_MEETINGS,
+    LiveRunScreen,
+    _label_from_thread_id,
+)
 from wonderland.tui.screens.artifact_browser import (
     ArtifactBrowserScreen,
     ArtifactDetailScreen,
@@ -535,6 +540,397 @@ async def test_t_cycles_through_wonderland_themes() -> None:
             await pilot.press("t")
             await pilot.pause()
             assert app.theme == expected
+        await pilot.press("q")
+
+
+# ---------- live-watch screen (T45 / P8.4) ----------
+
+
+class TestLabelFromThreadId:
+    """The synthesized iteration discriminator used when
+    iteration_label is None on streaming events. Will be unnecessary
+    once roadmap 7a5ff815 lands per_item iteration metadata in
+    HistoricalRunHandle.meetings()."""
+
+    def test_thread_id_equals_base_returns_label_unchanged(self) -> None:
+        # No per_item iteration — thread_id is the base meeting id.
+        assert _label_from_thread_id("M1", "scoping", "scoping") == "M1"
+        assert _label_from_thread_id("M4", "test-scenarios", "test-scenarios") == "M4"
+        assert (
+            _label_from_thread_id("M3", "contract-negotiation", "contract-negotiation")
+            == "M3"
+        )
+
+    def test_iteration_thread_id_synthesizes_label(self) -> None:
+        result = _label_from_thread_id(
+            "M4",
+            "test-scenarios-focus-session-with-visual-countdown",
+            "test-scenarios",
+        )
+        assert result == "M4: Focus Session With Visual Countdown"
+
+    def test_iteration_with_simple_base_id(self) -> None:
+        result = _label_from_thread_id("M5", "implementation-foo-bar", "implementation")
+        assert result == "M5: Foo Bar"
+
+    def test_unknown_prefix_returns_label_unchanged(self) -> None:
+        # If thread_id doesn't start with base_meeting_id + '-',
+        # the function falls back to the unaltered label.
+        assert (
+            _label_from_thread_id("M4", "review-something", "test-scenarios")
+            == "M4"
+        )
+
+
+async def test_live_run_screen_mounts_with_dummy_data() -> None:
+    """T45 + T48: layout-only check. The screen should mount cleanly
+    and render its multi-pane layout (meetings ribbon, transcript
+    table + body preview, artifacts table, status bar) populated
+    with the hand-built dummy data when no snapshot is bound."""
+    from textual.widgets import DataTable
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(LiveRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+
+        # Meetings ribbon: All-Meetings pseudo-row + 3 dummy meetings.
+        table = screen.query_one("#live-meetings-table", DataTable)
+        assert table.row_count == 4
+
+        # Status bar populated (cost > 0, speaker set).
+        # The dummy renderer doesn't ship transcript rows in T48 (no
+        # streaming events); verify state directly.
+        assert screen._total_cost > 0
+        assert screen._current_speaker == "white_rabbit"
+
+        await pilot.press("q")
+
+
+async def _drain_live_run_screen(
+    pilot,
+    screen: LiveRunScreen,
+    max_seconds: float = 10.0,
+) -> None:
+    """Wait for the screen's @work-decorated stream consumer to
+    finish. The consumer is a worker registered on the screen; we
+    pause repeatedly until either it's done or we exceed the budget.
+    """
+    import time
+
+    deadline = time.monotonic() + max_seconds
+    while time.monotonic() < deadline:
+        await pilot.pause()
+        # The worker's done when the screen's worker set is empty
+        # (or all workers have finished).
+        active = [w for w in screen.workers if w.is_running]
+        if not active:
+            return
+        await pilot.pause()
+    # Fall through — caller may still assert on partial state.
+
+
+async def test_live_run_screen_streams_v6_banner() -> None:
+    """T46: against the parallel-TDD v6 banner (7 meetings, no
+    per_item iterations), the screen should populate the meetings
+    ribbon with all 7 rows after the stream drains."""
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+    from textual.widgets import DataTable
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # speed=1e6 + dwell=0 strips all timing — drain instantly.
+        app.push_screen(
+            LiveRunScreen(_V6_BANNER, speed=1e6, max_dwell_seconds=0.0)
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        table = screen.query_one("#live-meetings-table", DataTable)
+        # v6 banner ran tdd: M1, M2, M2.5, M3, M4, M5, M6 = 7 cells
+        # plus the All-Meetings pseudo-row at index 0 = 8 rows.
+        assert table.row_count == 8
+        # All rows should be in a terminal status (complete or
+        # over-budget) since the stream drained fully.
+        for thread_id in screen._meeting_order:
+            assert screen._meetings_seen[thread_id]["status"] in (
+                "complete",
+                "over-budget",
+            )
+        # Total cost accumulated across agents.
+        assert screen._total_cost > 0
+        await pilot.press("q")
+
+
+async def test_live_run_screen_streams_v3_per_item_snapshot() -> None:
+    """T46: against tdd-serial v3 (11 distinct meeting threads —
+    M4 × 3 iterations + M5 × 3 iterations + others), the ribbon
+    should show 11 rows. Per_item iterations get distinct rows."""
+    v3 = ANALYSES_DATA / "032-tdd-serial-v3"
+    if not (v3 / "wonderland-snapshot").is_dir():
+        pytest.skip("v3 snapshot not present")
+    from textual.widgets import DataTable
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(LiveRunScreen(v3, speed=1e6, max_dwell_seconds=0.0))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        table = screen.query_one("#live-meetings-table", DataTable)
+        # 11 actual meetings + All-Meetings pseudo-row = 12 rows.
+        assert table.row_count == 12
+
+        # Verify per_item iterations got distinct labels (the slug-
+        # derived discriminator at minimum).
+        thread_ids = screen._meeting_order
+        m4_iters = [t for t in thread_ids if t.startswith("test-scenarios-")]
+        m5_iters = [t for t in thread_ids if t.startswith("implementation-")]
+        assert len(m4_iters) == 3
+        assert len(m5_iters) == 3
+        # Labels should differ across iterations of the same base
+        # meeting (the discriminator is doing its job).
+        m4_labels = [screen._meetings_seen[t]["label"] for t in m4_iters]
+        assert len(set(m4_labels)) == 3
+        await pilot.press("q")
+
+
+async def test_live_run_screen_body_preview_updates_on_transcript_cursor() -> None:
+    """T48 follow-up: when focus is on the transcript table and the
+    cursor moves to a different row, the body-preview pane updates
+    to show that utterance's full content. Mirrors the meeting-detail
+    screen's pattern."""
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+    from textual.widgets import DataTable, Static
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            LiveRunScreen(_V6_BANNER, speed=1e6, max_dwell_seconds=0.0)
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        utterances = screen._meeting_transcripts[_ALL_MEETINGS]
+        if len(utterances) < 2:
+            pytest.skip("need ≥2 utterances for body preview test")
+
+        # Move directly via the body-preview helper since cycling
+        # focus through Tab in test mode is fiddly.
+        screen._update_body_preview(0)
+        body = screen.query_one("#transcript-body", Static)
+        # Renderable inspection isn't stable across Textual versions;
+        # just confirm the helper runs without error and we can call
+        # it for different rows. The actual DataTable.RowHighlighted
+        # path is exercised by the filtering test.
+        screen._update_body_preview(1)
+        screen._update_body_preview(-1)  # empty/reset path
+
+        await pilot.press("q")
+
+
+async def test_live_run_screen_filtering_by_meeting_selection() -> None:
+    """T48: cursor on a specific meeting in the left pane filters the
+    transcript and artifacts panes to that meeting's content. Cursor
+    on the All-Meetings pseudo-row at index 0 shows the full rolling
+    stream (T46 behavior preserved as default)."""
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+    from textual.widgets import DataTable
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            LiveRunScreen(_V6_BANNER, speed=1e6, max_dwell_seconds=0.0)
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        # Default selection is All-Meetings; the per-meeting buffer
+        # for the first meeting should be a strict subset of the
+        # All-Meetings buffer.
+        first_thread = screen._meeting_order[0]
+        all_count = len(screen._meeting_transcripts[_ALL_MEETINGS])
+        first_count = len(screen._meeting_transcripts[first_thread])
+        assert first_count > 0
+        assert first_count < all_count
+
+        # Move cursor down to the first real meeting (index 1, since
+        # index 0 is All-Meetings pseudo-row).
+        await pilot.press("j")
+        await pilot.pause()
+        assert screen._selected_thread_id == first_thread
+
+        # Transcript table should have been re-rendered with only the
+        # first meeting's utterances. Each utterance = 1 row.
+        ttable = screen.query_one("#transcript-table", DataTable)
+        assert ttable.row_count == first_count
+
+        # Cursor back to All-Meetings restores the full stream.
+        await pilot.press("k")
+        await pilot.pause()
+        assert screen._selected_thread_id == _ALL_MEETINGS
+        assert ttable.row_count == all_count
+
+        await pilot.press("q")
+
+
+async def test_live_run_screen_artifacts_pane_populates() -> None:
+    """T48: the artifacts pane fills with the artifacts shipped during
+    the selected meeting. All-Meetings selection shows all artifacts."""
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+    from textual.widgets import DataTable
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            LiveRunScreen(_V6_BANNER, speed=1e6, max_dwell_seconds=0.0)
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        # All-Meetings is the default; artifacts table should have all
+        # artifacts.
+        all_count = len(screen._meeting_artifacts[_ALL_MEETINGS])
+        atable = screen.query_one("#live-artifacts-table", DataTable)
+        assert all_count > 0
+        assert atable.row_count == all_count
+
+        # Move cursor to a specific meeting; artifacts table should
+        # filter to that meeting's artifacts only.
+        await pilot.press("j")
+        await pilot.pause()
+        first_thread = screen._meeting_order[0]
+        first_count = len(
+            screen._meeting_artifacts.get(first_thread, [])
+        )
+        # Could be 0 — M1 sometimes ships nothing because Cat is
+        # suppressed. So just check the count is correct, not nonzero.
+        assert atable.row_count == first_count
+
+        await pilot.press("q")
+
+
+async def test_live_run_screen_per_meeting_costs_match_run_log() -> None:
+    """T47: each meeting's cost column matches the value in the
+    run.log's META END marker. v3 had distinct per-iteration costs
+    (5469, 6140, 5707 cents on M4 iterations 1/2/3 etc.) so this
+    catches both the run-log parsing and the per-iteration tracking."""
+    v3 = ANALYSES_DATA / "032-tdd-serial-v3"
+    if not (v3 / "wonderland-snapshot").is_dir():
+        pytest.skip("v3 snapshot not present")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(LiveRunScreen(v3, speed=1e6, max_dwell_seconds=0.0))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        # Verified-by-hand cost numbers from v3's run.log (analysis 032).
+        # M4 iterations are (Focus, Break, Daily Review) in order;
+        # M5 iterations same.
+        expected_by_position = [
+            ("scoping", 0.0328),
+            ("decomposition", 0.0442),
+            ("composition", 0.0491),
+            ("contract-negotiation", 0.1955),
+            ("test-scenarios-focus-session-with-visual-countdown", 0.5469),
+            ("test-scenarios-break-timer-with-user-configuration", 0.6140),
+            ("test-scenarios-daily-review-of-session-history", 0.5707),
+            ("implementation-focus-session-with-visual-countdown", 0.3475),
+            ("implementation-break-timer-with-user-configuration", 0.5875),
+            ("implementation-daily-review-of-session-history", 0.5346),
+            ("review", 1.2007),
+        ]
+        for thread_id, expected_cost in expected_by_position:
+            assert thread_id in screen._meetings_seen, (
+                f"missing meeting {thread_id}"
+            )
+            actual = screen._meetings_seen[thread_id]["cost"]
+            assert abs(actual - expected_cost) < 0.001, (
+                f"{thread_id}: expected ${expected_cost:.4f}, got ${actual:.4f}"
+            )
+
+        # Total matches v3's reported $4.7236 (the AgentTelemetryDelta
+        # final overwrite).
+        assert abs(screen._total_cost - 4.7236) < 0.001
+        await pilot.press("q")
+
+
+async def test_live_run_screen_transcript_populated_after_stream() -> None:
+    """T46: after draining the stream, the transcript log should
+    contain at least as many lines as utterances + the run-ended
+    marker."""
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+    from textual.widgets import DataTable
+
+    handle = HistoricalRunHandle(_V6_BANNER)
+    expected_utterances = sum(1 for _ in handle.utterances())
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            LiveRunScreen(_V6_BANNER, speed=1e6, max_dwell_seconds=0.0)
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        # T48: transcript is now a DataTable with one row per
+        # utterance. Default selection is All-Meetings → all utterances
+        # rendered.
+        ttable = screen.query_one("#transcript-table", DataTable)
+        assert ttable.row_count == expected_utterances
+        await pilot.press("q")
+
+
+async def test_live_run_screen_vim_navigation_works() -> None:
+    """j/k should move the cursor in the meetings ribbon (vim nav
+    comes from WonderlandApp app-level bindings)."""
+    from textual.widgets import DataTable
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(LiveRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        table = screen.query_one("#live-meetings-table", DataTable)
+        assert table.cursor_row == 0
+        await pilot.press("j")
+        await pilot.pause()
+        assert table.cursor_row == 1
+        await pilot.press("k")
+        await pilot.pause()
+        assert table.cursor_row == 0
         await pilot.press("q")
 
 

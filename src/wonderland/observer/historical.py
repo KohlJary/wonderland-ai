@@ -291,6 +291,33 @@ class HistoricalRunHandle(RunHandle):
         out.sort(key=lambda a: a.cost, reverse=True)
         return out
 
+    def _parse_end_markers(self) -> list[dict[str, Any]]:
+        """Parse all META END lines from run.log in chronological
+        order. Each entry carries the cost/calls/outcome/elapsed for
+        that meeting (or per_item iteration). Used by stream_events
+        to populate MeetingEnded.cost_delta / calls_delta / outcome
+        which the run.log captures but the meetings() dedup-by-label
+        loses for per_item iterations.
+        """
+        out: list[dict[str, Any]] = []
+        with self._log_path.open(encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = _MEETING_END_RE.match(line)
+                if not m:
+                    continue
+                label, name, outcome, elapsed, calls, cost = m.groups()
+                out.append(
+                    {
+                        "label": label,
+                        "name": name,
+                        "outcome": outcome,
+                        "elapsed_s": float(elapsed),
+                        "calls": int(calls),
+                        "cost": float(cost),
+                    }
+                )
+        return out
+
     async def stream_events(self):
         """Streaming view of the snapshot — yields RunEvents in
         chronological order with no sleeping (the snapshot is finished;
@@ -312,6 +339,11 @@ class HistoricalRunHandle(RunHandle):
         learning about per_item iterations — filed as roadmap
         7a5ff815. Until that ships, consumers can derive iteration
         identity from the thread_id (e.g. ``test-scenarios-foo``).
+
+        T47 update: MeetingEnded.cost_delta / calls_delta / outcome
+        now populate from the run.log's META END markers, in
+        chronological order. Per_item iterations get their per-
+        iteration cost rather than 0.
 
         Substrate divergence (artifacts written via tool call without
         a corresponding bus speech-act emission, per roadmap 92cec468)
@@ -389,6 +421,28 @@ class HistoricalRunHandle(RunHandle):
         # the resolution pattern used by the TUI's modal-artifact-link.
         artifacts_by_basename = {a.path.name: a for a in self.artifacts()}
 
+        # Pre-parse the run.log's META END markers in chronological
+        # order. Each MeetingEnded event consumes the next marker that
+        # matches its meeting's label, populating cost_delta /
+        # calls_delta / outcome with the actual numbers from the log
+        # rather than zeros (T47 fix).
+        end_markers = self._parse_end_markers()
+        # Track the next marker index per label so per_item iterations
+        # of the same meeting consume their END markers in order.
+        marker_cursor: dict[str, int] = {}
+
+        def _next_end_marker(label: str) -> dict[str, Any] | None:
+            """Pop the next chronologically-ordered END marker that
+            matches ``label``. Returns None if none remain (shouldn't
+            happen in well-formed snapshots, but tolerated)."""
+            cursor = marker_cursor.get(label, 0)
+            for i in range(cursor, len(end_markers)):
+                if end_markers[i]["label"] == label:
+                    marker_cursor[label] = i + 1
+                    return end_markers[i]
+            marker_cursor[label] = len(end_markers)
+            return None
+
         current_thread_id: str | None = None
         meeting_open_ts: datetime | None = None
         last_event_ts: datetime = run_start_ts
@@ -398,18 +452,32 @@ class HistoricalRunHandle(RunHandle):
 
             # Meeting transition?
             if u.thread_id != current_thread_id:
-                # Close the prior meeting.
+                # Close the prior meeting with its actual cost/calls
+                # /outcome from the run.log END marker.
                 if current_thread_id is not None and meeting_open_ts is not None:
                     prev = _meeting_for(current_thread_id)
-                    elapsed = (u.timestamp - meeting_open_ts).total_seconds()
+                    end_data = _next_end_marker(prev.label)
+                    if end_data is not None:
+                        outcome = end_data["outcome"]
+                        elapsed = end_data["elapsed_s"]
+                        calls = end_data["calls"]
+                        cost = end_data["cost"]
+                    else:
+                        # Fall back to inferred values when no marker
+                        # is available (rare; only happens if the run
+                        # was killed before the END was logged).
+                        outcome = prev.outcome or "COMPLETE"
+                        elapsed = (u.timestamp - meeting_open_ts).total_seconds()
+                        calls = 0
+                        cost = 0.0
                     yield MeetingEnded(
                         timestamp=u.timestamp,
                         meeting=prev,
                         thread_id=current_thread_id,
-                        outcome=prev.outcome or "COMPLETE",
+                        outcome=outcome,
                         elapsed_seconds=elapsed,
-                        calls_delta=0,
-                        cost_delta=0.0,
+                        calls_delta=calls,
+                        cost_delta=cost,
                         artifact_kinds={},
                     )
                 # Open the new one.
@@ -438,18 +506,28 @@ class HistoricalRunHandle(RunHandle):
                         artifact=run_artifact,
                     )
 
-        # Close the final meeting.
+        # Close the final meeting (same end-marker lookup as above).
         if current_thread_id is not None and meeting_open_ts is not None:
             final = _meeting_for(current_thread_id)
-            elapsed = (last_event_ts - meeting_open_ts).total_seconds()
+            end_data = _next_end_marker(final.label)
+            if end_data is not None:
+                outcome = end_data["outcome"]
+                elapsed = end_data["elapsed_s"]
+                calls = end_data["calls"]
+                cost = end_data["cost"]
+            else:
+                outcome = final.outcome or "COMPLETE"
+                elapsed = (last_event_ts - meeting_open_ts).total_seconds()
+                calls = 0
+                cost = 0.0
             yield MeetingEnded(
                 timestamp=last_event_ts,
                 meeting=final,
                 thread_id=current_thread_id,
-                outcome=final.outcome or "COMPLETE",
+                outcome=outcome,
                 elapsed_seconds=elapsed,
-                calls_delta=0,
-                cost_delta=0.0,
+                calls_delta=calls,
+                cost_delta=cost,
                 artifact_kinds={},
             )
 
