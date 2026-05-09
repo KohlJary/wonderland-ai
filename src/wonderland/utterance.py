@@ -50,6 +50,11 @@ class SpeechAct(StrEnum):
     ACKNOWLEDGMENT = "acknowledgment"
     # Procedural — any agent can issue (roster mutation, Block 2c)
     INVITE = "invite"
+    # Procedural — first-class "I have nothing load-bearing to add"
+    # signal in phased meetings (analysis 033 / P9). Distinct from
+    # silence: silence means "engagement policy didn't fire"; PASS
+    # means "I had a priority window and chose not to act."
+    PASS = "pass"
 
 
 SUBSTANTIVE_ACTS: frozenset[SpeechAct] = frozenset(
@@ -79,6 +84,7 @@ PROCEDURAL_ACTS: frozenset[SpeechAct] = frozenset(
         SpeechAct.ESCALATION,
         SpeechAct.ACKNOWLEDGMENT,
         SpeechAct.INVITE,
+        SpeechAct.PASS,
     }
 )
 
@@ -171,3 +177,14 @@ class Utterance(BaseModel):
     without reacting as if they were just spoken. Engagement rules
     short-circuit to ALMOST_NEVER for seeded utterances; deliberate()
     still has the body and any artifacts in its prompt window."""
+
+    recipients: frozenset[str] | None = None
+    """When set, the bus delivers this utterance only to subscribers
+    whose name is in the set, regardless of the thread's roster. None
+    (the default) preserves the existing roster-only fan-out.
+
+    This is the priority-gate primitive for phased meetings (analysis
+    033 / P9). The phase orchestrator publishes a window-open utterance
+    with ``recipients={priority_agent}`` so only that agent sees it.
+    Observer-tier subscribers (``bypass_roster=True``) still see every
+    utterance — measurement isn't affected, only delivery."""

@@ -1,0 +1,33 @@
+name: smoke-phased
+description: |
+  One-meeting smoke-test workflow with phases declared (analysis 033 /
+  P9). Alice gets a two-phase meeting — opening + closing — to verify
+  the phased orchestrator wires up end-to-end against a real Runner.
+  Same shape as the smoke workflow, plus the phases: opt-in.
+
+  Typical cost: ~$0.20 / ~60 seconds. Use this for "did I break the
+  phased path?" sanity checks. Use ``smoke`` for the legacy
+  engagement-policy path baseline.
+
+version: 1
+
+defaults:
+  budget_dollars: 0.75
+  timeout_seconds: 600.0
+  quiescence_seconds: 60.0
+
+meetings:
+  - id: scoping
+    label: M1
+    name: The Caucus Race
+    goal: produce a user story from the directive
+    roster: [alice]
+    meeting_budget: 0.50
+    # convenor_directive omitted: entry meeting, runtime fills with
+    # the user's directive
+    seeds: []
+    phases:
+      # Two rotations to give Alice space to draft + refine the
+      # story (or pass the second window if the first was sufficient).
+      - name: discussion
+        max_rotations: 2

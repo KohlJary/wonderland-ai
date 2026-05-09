@@ -169,6 +169,16 @@ class RedisCaucus:
                         continue
                     if utterance.speech_act not in interests:
                         continue
+                    # Recipients filter (analysis 033 / T58a): when set,
+                    # only those names should receive this utterance.
+                    # Subscriber-side here because Redis Streams fan out
+                    # everything; the InMemory backend filters at publish
+                    # time. Same guarantee from the caller's perspective.
+                    if (
+                        utterance.recipients is not None
+                        and agent_name not in utterance.recipients
+                    ):
+                        continue
                     yield utterance
 
     @staticmethod
@@ -228,12 +238,21 @@ class InMemoryCaucus:
         entry_id = f"0-{self._counter}"
         self._history.append(utterance)
         for sub_name, queues in list(self._subscribers.items()):
-            if (
-                self._roster is not None
-                and sub_name not in self._bypass_roster
-                and not self._roster.is_member(utterance.thread_id, sub_name)
-            ):
-                continue
+            if sub_name not in self._bypass_roster:
+                # Recipients filter (analysis 033 / T58a): when set,
+                # only those names see this utterance. Bypass-roster
+                # subscribers still see everything — observers must
+                # remain whole-bus visible for telemetry/replay.
+                if (
+                    utterance.recipients is not None
+                    and sub_name not in utterance.recipients
+                ):
+                    continue
+                if (
+                    self._roster is not None
+                    and not self._roster.is_member(utterance.thread_id, sub_name)
+                ):
+                    continue
             for queue in queues:
                 queue.put_nowait(utterance)
         return entry_id

@@ -44,10 +44,16 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from wonderland.observer.events import (
+    AgentActed,
+    AgentPassed,
     AgentTelemetryDelta,
     ArtifactShipped,
     MeetingEnded,
     MeetingStarted,
+    PhaseEnded,
+    PhaseStarted,
+    PriorityWindowOpened,
+    RotationCompleted,
     RunEnded,
     RunStarted,
     UtteranceEmitted,
@@ -121,6 +127,14 @@ class LiveRunHandle(RunHandle):
         # Lazy imports to avoid the workflow → observer dep being
         # required at module-import time for code that doesn't run
         # live.
+        from wonderland.meeting import (
+            AgentActEvent,
+            AgentPassEvent,
+            PhaseEndEvent,
+            PhaseStartEvent,
+            PriorityWindowOpenEvent,
+            RotationCompleteEvent,
+        )
         from wonderland.workflow import (
             MeetingEndEvent,
             MeetingStartEvent,
@@ -212,6 +226,60 @@ class LiveRunHandle(RunHandle):
                         iteration_index=event.iteration_index,
                         iteration_total=event.iteration_total,
                         iteration_label=event.iteration_label,
+                    )
+                elif isinstance(event, PhaseStartEvent):
+                    yield PhaseStarted(
+                        timestamp=datetime.now(tz=timezone.utc),
+                        meeting_thread_id=event.thread_id,
+                        phase_name=event.phase.name,
+                        max_rotations=event.phase.max_rotations,
+                        cast=event.cast,
+                        exit_condition_artifact=event.phase.exit_condition_artifact,
+                    )
+                elif isinstance(event, PhaseEndEvent):
+                    yield PhaseEnded(
+                        timestamp=datetime.now(tz=timezone.utc),
+                        meeting_thread_id=event.thread_id,
+                        phase_name=event.phase_name,
+                        reason=event.reason,
+                        rotations_used=event.rotations_used,
+                        total_windows=event.total_windows,
+                        passes_per_agent=event.passes_per_agent,
+                        acts_per_agent=event.acts_per_agent,
+                    )
+                elif isinstance(event, PriorityWindowOpenEvent):
+                    yield PriorityWindowOpened(
+                        timestamp=datetime.now(tz=timezone.utc),
+                        meeting_thread_id=event.thread_id,
+                        phase_name=event.phase_name,
+                        agent_id=event.agent_id,
+                        rotation_index=event.rotation_index,
+                        window_index_in_phase=event.window_index,
+                    )
+                elif isinstance(event, AgentActEvent):
+                    yield AgentActed(
+                        timestamp=datetime.now(tz=timezone.utc),
+                        meeting_thread_id=event.thread_id,
+                        phase_name=event.phase_name,
+                        agent_id=event.agent_id,
+                        rotation_index=event.rotation_index,
+                        utterance_id=event.utterance_id,
+                    )
+                elif isinstance(event, AgentPassEvent):
+                    yield AgentPassed(
+                        timestamp=datetime.now(tz=timezone.utc),
+                        meeting_thread_id=event.thread_id,
+                        phase_name=event.phase_name,
+                        agent_id=event.agent_id,
+                        rotation_index=event.rotation_index,
+                        reason=event.reason,
+                    )
+                elif isinstance(event, RotationCompleteEvent):
+                    yield RotationCompleted(
+                        timestamp=datetime.now(tz=timezone.utc),
+                        meeting_thread_id=event.thread_id,
+                        phase_name=event.phase_name,
+                        rotation_index=event.rotation_index,
                     )
                 else:
                     # Everything else is a RunnerEvent (kind-tagged).

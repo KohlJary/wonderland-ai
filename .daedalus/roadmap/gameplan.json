@@ -156,6 +156,15 @@
         "d0bdd371"
       ],
       "notes": "Per analysis 033 (analyses/033-meeting-as-mtg-turn.md): lift phases + priority rotation + turns-as-budget from MtG into the meeting engine; skip the stack. Sequenced as a substrate phase that alternates with P8's interface track per the back-and-forth-stays-fresh rhythm. Engine work is bigger than P8's per-task shape and benefits from its own phase boundary. Engine + workflow schema + observer events are P1 (load-bearing); rotation counter + failure-mode detectors are P2 (instrumentation that lands once the structure exists)."
+    },
+    {
+      "id": "p9.5-two-headed-giant",
+      "title": "Two-Headed Giant: team windows",
+      "status": "planned",
+      "roadmapItems": [
+        "dbf88619"
+      ],
+      "notes": "Per the live r35-tdd-serial-phased observation: strict-serial priority within a rotation imposes ~N\u00d7 cast size wall-clock cost on constitutionally-paired agents (Tweedledee/Tweedledum, Alice/Hatter) who in legacy mode would have deliberated concurrently. Phase 9.5 generalizes phases by adding team_groupings: list[list[str]] per phase. A team window opens concurrently for all team members via asyncio.gather; structural cap preserved (rotation budget \u00d7 team count = bounded deliberations); \u00a7VIII observability preserved (per-agent WindowOutcome unchanged). Maps onto MtG's Two-Headed Giant format \u2014 paired players take their team turn together. The natural design follow-up to P9; lands once analysis 034 quantifies the wall-clock penalty of the strict-serial baseline."
     }
   ],
   "activePhase": {
@@ -189,13 +198,14 @@
       {
         "id": "T58",
         "title": "Engine: re-scope engagement policy to act-or-pass per priority window",
-        "status": "pending",
-        "details": "The big one. In src/wonderland/meeting.py \u2014 replace the current 'who speaks next' loop with a phase-driven priority rotation. For each phase: rotate priority through cast in declared order, on each window the agent acts (one utterance + tool calls) OR passes (explicit no-op), advance window. Phase ends when (a) all-pass-in-succession (every agent passed without an act between them), (b) max_rotations reached, or (c) workflow exit_condition_artifact ships. Engagement policy stays heuristic-then-LLM but the LLM prompt becomes 'given your priority window, do you have something load-bearing to say or do you pass?' rather than 'should you speak now?'. Emit T56 events at the right moments. Constitutions UNCHANGED. Tests: act-or-pass invariants, phase advance triggers, rotation budget exhaustion, all-pass-in-succession detection, observer event emission."
+        "status": "done",
+        "details": "The big one. In src/wonderland/meeting.py \u2014 replace the current 'who speaks next' loop with a phase-driven priority rotation. For each phase: rotate priority through cast in declared order, on each window the agent acts (one utterance + tool calls) OR passes (explicit no-op), advance window. Phase ends when (a) all-pass-in-succession (every agent passed without an act between them), (b) max_rotations reached, or (c) workflow exit_condition_artifact ships. Engagement policy stays heuristic-then-LLM but the LLM prompt becomes 'given your priority window, do you have something load-bearing to say or do you pass?' rather than 'should you speak now?'. Emit T56 events at the right moments. Constitutions UNCHANGED. Tests: act-or-pass invariants, phase advance triggers, rotation budget exhaustion, all-pass-in-succession detection, observer event emission.",
+        "resolution": "T58a/b/c complete. Phased meeting engine ships end-to-end behind workflow opt-in (meeting.phases declaration). Priority gate via Utterance.recipients filter at the bus level; orchestrator drives compose_context+deliberate directly bypassing autonomous engagement; SpeechAct.PASS as first-class action; per-window asyncio.wait_for timeout (300s default); both meeting_budget and rotation budget apply; PhaseEnded events carry passes_per_agent + acts_per_agent for \u00a7VIII observability primitives. smoke-phased.yaml available for live verification. Live run + analysis 034 banner is T59."
       },
       {
         "id": "T59",
         "title": "First opt-in run: phases: in tdd-serial.yaml, A/B vs 032 banner",
-        "status": "pending",
+        "status": "in_progress",
         "details": "Add phases: declarations to src/wonderland/closet/workflows/tdd-serial.yaml \u2014 M3 (negotiate / settle), M4 (clarify / red-tests / wait), M5 (implement / verify), M6 (present / review / defend / verdict). Pick max_rotations per phase based on what 032 telemetry showed needed (M5 ran 3 iterations averaging 56 calls each \u2014 match that with rotation_budget=3 not call counts). Run pomodoro through it. Compare against 032 banner: per-agent cost (Tweedles were 71.9%, Hatter 19.1%), per-meeting cost (M4: $1.73, M5: $1.47 across 3 iterations), output volume (1080 LOC, 10 test files). Headline metric: Hatter call count drops without test quality dropping. Document outcome as analysis 034 (banner if good, post-mortem if not)."
       },
       {
@@ -203,6 +213,27 @@
         "title": "Failure-mode detectors: never-passes (sprawl), always-passes-after-first (withdrawal)",
         "status": "pending",
         "details": "Now that the engine emits AgentPassed events, write detectors that piggyback on the existing synthetic-consensus guard pattern. In src/wonderland/guards/ (or wherever the synthetic-consensus guard lives) \u2014 never_passes_detector flags an agent who never passes a priority window across N rotations (sprawl shape, Hatter \u00a7VIII). always_passes_after_first_detector flags an agent who acts once then passes every subsequent window for the rest of the meeting (withdrawal shape, Cat \u00a7VIII). Detectors emit ObserverWarnings rather than failing the run \u2014 they're measurement, not enforcement. Tests with synthetic event streams covering both detection shapes + happy-path."
+      },
+      {
+        "id": "T58a",
+        "title": "Priority-gate primitive: SpeechAct.PASS + Utterance.recipients + bus filter",
+        "status": "done",
+        "details": "Smallest substrate addition for option A. Add SpeechAct.PASS to utterance.py (procedural, not substantive). Add Utterance.recipients: frozenset[str] | None = None \u2014 when set, bus delivers only to those subscriber names regardless of thread roster. Update InMemoryCaucus.publish to apply the recipients filter (additional check after roster). Tests cover: PASS speech act constructs, default recipients=None preserves existing fan-out, recipients={'hatter'} delivers only to hatter.",
+        "resolution": "Shipped priority-gate primitive: SpeechAct.PASS (procedural, partition test count bumped 5\u21926), Utterance.recipients: frozenset[str] | None field. InMemoryCaucus.publish filters delivery by recipients before roster check (bypass-roster observers still see everything \u2014 measurement remains whole-bus). RedisCaucus._consume applies recipients subscriber-side because Redis Streams fan out unconditionally \u2014 same caller guarantee. Tests cover: PASS classification, recipients=None preserves fan-out, recipients={hatter} delivers only to hatter, observer (bypass_roster=True) sees targeted utterances, JSONL round-trip preserves recipients (snapshots/replay safe). Full suite: 1453 pass."
+      },
+      {
+        "id": "T58b",
+        "title": "Phase orchestrator: act-or-pass loop with T56 events",
+        "status": "done",
+        "details": "New module src/wonderland/meeting.py with run_phased_meeting(meeting, runner, ...) async generator. For each PhaseSpec: build PhaseState, loop while not is_complete: pick next_agent, publish a window-open Dodo utterance with recipients={agent}, watch for the agent's response (single utterance), classify as ACT (any speech act except PASS) or PASS, append WindowOutcome, emit T56 events at the right moments. Tests use a FakeRunner that scripts agent responses.",
+        "resolution": "Shipped src/wonderland/meeting.py: 6 workflow-level event dataclasses (PhaseStartEvent, PhaseEndEvent, PriorityWindowOpenEvent, AgentActEvent, AgentPassEvent, RotationCompleteEvent \u2014 translated to T56 RunEvents by LiveRunHandle in T58c), helpers (_build_window_open_utterance with recipients={agent_id}, _classify_response, _phase_end_reason, _check_exit_condition), main run_phased_meeting async generator. Drives the act-or-pass loop end-to-end: opens windows in cast-rotation order, builds Dodo\u2192agent window-open utterance, calls compose_context+deliberate directly via asyncio.wait_for(timeout=300s default), classifies response (None or PASS speech act \u2192 AgentPassEvent; else \u2192 AgentActEvent), advances PhaseState, emits RotationCompleteEvent at boundaries, ends phases via the four reasons (succession/exhausted/exit_condition/aborted). Uses setattr(agent, '_orchestrator_owned', True/False) defensively \u2014 the runtime flag for T58c's Runner integration. Both meeting_budget and rotation budget apply (Decision 4). 13 tests cover the orchestration shape end-to-end against FakePhaseRunner with scripted FakePhaseAgent responses. Full suite: 1466 pass."
+      },
+      {
+        "id": "T58c",
+        "title": "run_workflow integration + first end-to-end smoke",
+        "status": "done",
+        "details": "In workflow.py's run_workflow / _convene_one: gate on meeting.phases \u2014 if non-empty, call run_phased_meeting; otherwise the existing path. Add a phased variant of the smoke workflow (or new test workflow) so we can run the full pipeline end-to-end. Verify against the existing smoke test pattern.",
+        "resolution": "Shipped end-to-end phased meeting integration: WonderlandAgent._orchestrator_owned flag (listen() records to memory but skips pending.put when set, preventing autonomous deliberation during phased meetings); _run_one_meeting dispatcher in workflow.py routes to run_phased_meeting when meeting.phases is non-empty, _convene_one otherwise (strictly opt-in, legacy path unchanged); LiveRunHandle gains 6 isinstance branches translating PhaseStartEvent/PhaseEndEvent/PriorityWindowOpenEvent/AgentActEvent/AgentPassEvent/RotationCompleteEvent \u2192 T56 RunEvents (PhaseStarted/PhaseEnded/PriorityWindowOpened/AgentActed/AgentPassed/RotationCompleted). New bundled workflow smoke-phased.yaml \u2014 single-meeting two-rotation phased workflow for live verification. Integration test confirms run_workflow correctly dispatches phased meetings and event ordering: MeetingStartEvent < PhaseStartEvent < PhaseEndEvent < MeetingEndEvent. Full suite: 1475 pass. Snapshot persistence (writing phase events to disk for HistoricalRunHandle replay) deferred as follow-up."
       }
     ],
     "deferred": []

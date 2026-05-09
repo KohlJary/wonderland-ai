@@ -385,6 +385,12 @@ class WonderlandAgent:
         # working tree is the artifact, the bus utterance is the
         # team's record of what happened).
         self._last_write_file_paths: list[str] = []
+        # Phase orchestrator gate (analysis 033 / P9 T58c). When True,
+        # listen() records bus traffic to memory but does NOT enqueue
+        # for deliberation — the orchestrator drives compose_context +
+        # deliberate directly. False = autonomous engagement (the
+        # original behavior).
+        self._orchestrator_owned: bool = False
         # Turn-based quiescence support (analysis 022 follow-up). The
         # speak() loop and tool loop call _set_state to mark the agent's
         # current activity; the Runner installs a state-change handler
@@ -436,6 +442,15 @@ class WonderlandAgent:
             # EngagementRules.categorize, so seeds don't queue for
             # deliberate(); they just become readable history.
             if utterance.is_seed:
+                await self.memory.record(utterance)
+                continue
+            if self._orchestrator_owned:
+                # Phased meetings (P9): the phase orchestrator drives
+                # deliberation directly. Record bus traffic to memory
+                # so compose_context sees it as thread history, but
+                # don't enqueue — the orchestrator never reads the
+                # pending queue, and unbounded queueing across
+                # back-to-back phased meetings could leak.
                 await self.memory.record(utterance)
                 continue
             if self.should_engage(utterance):

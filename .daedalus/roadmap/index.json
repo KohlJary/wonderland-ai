@@ -839,6 +839,26 @@
       "status": "backlog",
       "created_at": "2026-05-09T02:42:23.717655",
       "created_by": "daedalus"
+    },
+    {
+      "id": "dbf88619-274f-4f35-84ff-222aae504679",
+      "title": "Two-Headed Giant: team windows for constitutional pairs",
+      "description": "Per the live r35-tdd-serial-phased run: strict-serial priority gate inside a rotation accidentally serializes constitutional pairs that are complementary, not adversarial (Tweedledee:frontend :: Tweedledum:backend; Alice:user-journey :: Hatter:failure-mode). Wall-clock cost ~N\u00d7 cast size for the same deliberation depth. Fix: extend PhaseSpec with team_groupings: list[list[str]], default one-agent-per-team (current behavior). A team window opens concurrently for all members via asyncio.gather; per-agent WindowOutcome preserves \u00a7VIII observability primitives. Phase advances when all teams pass in succession. Maps onto MtG's Two-Headed Giant format. Substantive but local: orchestrator changes, no new event surface needed.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T03:57:42.429716",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "9aae11bc-2548-419e-9391-a7dc70a56a93",
+      "title": "Agent-to-user questions: ask_user / interactive escalation",
+      "description": "Per the live r35-tdd-serial-phased run: Alice's grounding instinct produced a coherent reframe of the daily-review feature (Pomodoro session review \u2192 reflective journaling), accumulated across stories 015-017. The reframe is actually a product insight worth surfacing \u2014 but the substrate has no channel for 'this might be a different product than you specified, does that resonate?' before the team commits to the new direction. Build agent \u2192 user question affordance: agent emits a question addressed to the user (likely a new speech_act QUESTION_TO_USER or a tool ask_user(prompt)->answer), runtime pauses, TUI surfaces with text-input prompt, answer reflows into the agent's deliberation context. Builds on existing Runner._pending_escalations machinery and human-in-the-loop escalation already done in P2 (39a91906). For phased meetings, the window resolves as act/pass/ask; ask pauses without consuming the window, agent re-deliberates with the answer. Solves a class of problems: Alice's product reframes, Tweedles' contract ambiguities, Caterpillar's actionable-vs-fast-follow judgment calls.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T04:10:20.872541",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

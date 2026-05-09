@@ -558,7 +558,7 @@ async def run_workflow(
 
         if meeting.per_item is None:
             outcome = "RUNNING"
-            async for event in _convene_one(
+            async for event in _run_one_meeting(
                 meeting=meeting,
                 runner=runner,
                 capture=capture,
@@ -624,7 +624,7 @@ async def run_workflow(
             iteration_thread_id = f"{meeting.id}-{slug}"
             label = item.get("title") or slug
             outcome = "RUNNING"
-            async for event in _convene_one(
+            async for event in _run_one_meeting(
                 meeting=meeting,
                 runner=runner,
                 capture=capture,
@@ -653,6 +653,67 @@ class _OutcomeSentinel:
     events reach the caller."""
 
     outcome: str
+
+
+async def _run_one_meeting(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    capture: WorkflowCapture,
+    directive: str | None,
+    per_item_meetings: dict[str, str],
+    current_item_kind: str | None,
+    current_item_slug: str | None,
+    thread_id: str,
+    iteration_index: int | None,
+    iteration_total: int | None,
+    iteration_label: str | None,
+) -> AsyncIterator[Any]:
+    """Dispatch a single meeting (or per_item iteration) onto either
+    the legacy engagement-policy path (``_convene_one``) or the
+    phased orchestrator (``meeting.run_phased_meeting``) based on
+    whether ``meeting.phases`` is non-empty.
+
+    Phase semantics are strictly opt-in (analysis 033 / P9 T57):
+    workflows without a ``phases:`` declaration retain the original
+    parallel-multicast behavior unchanged.
+    """
+    if meeting.phases:
+        # Local import to avoid the meeting ↔ workflow circular at
+        # module-load time (meeting.py imports MeetingStartEvent /
+        # MeetingEndEvent / resolve_seeds from workflow).
+        from wonderland.meeting import run_phased_meeting
+
+        async for event in run_phased_meeting(
+            meeting=meeting,
+            runner=runner,
+            capture=capture,
+            directive=directive,
+            per_item_meetings=per_item_meetings,
+            current_item_kind=current_item_kind,
+            current_item_slug=current_item_slug,
+            thread_id=thread_id,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+            iteration_label=iteration_label,
+        ):
+            yield event
+        return
+
+    async for event in _convene_one(
+        meeting=meeting,
+        runner=runner,
+        capture=capture,
+        directive=directive,
+        per_item_meetings=per_item_meetings,
+        current_item_kind=current_item_kind,
+        current_item_slug=current_item_slug,
+        thread_id=thread_id,
+        iteration_index=iteration_index,
+        iteration_total=iteration_total,
+        iteration_label=iteration_label,
+    ):
+        yield event
 
 
 async def _convene_one(
