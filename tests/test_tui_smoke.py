@@ -928,6 +928,105 @@ async def test_live_run_screen_phase_events_pane_populates_via_stream() -> None:
             await pilot.press("q")
 
 
+async def test_live_run_screen_auto_sentinel_cycle_advances_through_states() -> None:
+    """The T keybind cycles through: off → 15m → 5m → 1m → instant
+    → off. Status bar shows the current state when on."""
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = LiveRunScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        # Default: off (None)
+        assert screen._auto_sentinel_seconds is None
+
+        # Cycle: off → 15m
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 900.0
+
+        # 15m → 5m
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 300.0
+
+        # 5m → 1m
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 60.0
+
+        # 1m → instant (0)
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 0.0
+
+        # instant → off (wraps around)
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds is None
+
+        await pilot.press("q")
+
+
+async def test_live_run_screen_auto_sentinel_instant_skips_modal() -> None:
+    """With auto_sentinel set to 0, _handle_user_question returns
+    None immediately without showing the modal — the watcher then
+    publishes the sentinel reply."""
+    from wonderland import AgentIdentity, SpeechAct, Utterance, UtteranceContent
+    from wonderland.utterance import operator_identity
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = LiveRunScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        screen._auto_sentinel_seconds = 0.0
+
+        question = Utterance(
+            thread_id="m",
+            speaker=AgentIdentity(name="tweedledee", constitution_version="0.1"),
+            addressed_to=[operator_identity()],
+            speech_act=SpeechAct.QUESTION,
+            content=UtteranceContent(body="client-only or with backend?"),
+        )
+
+        # Should resolve immediately with None (sentinel) — no
+        # modal pushed.
+        answer = await screen._handle_user_question(question)
+        assert answer is None
+
+        await pilot.press("q")
+
+
+async def test_ask_user_modal_auto_dismiss_after_timeout() -> None:
+    """When auto_dismiss_after is set and the operator doesn't
+    answer in time, the modal self-dismisses with None."""
+    import asyncio
+
+    from wonderland.tui.screens.ask_user_modal import AskUserModal
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        results: list[str | None] = []
+
+        def _on_dismissed(answer: str | None) -> None:
+            results.append(answer)
+
+        # Use a tight timeout so the test runs fast.
+        modal = AskUserModal(
+            asking_agent="tweedledee",
+            question="A or B?",
+            auto_dismiss_after=0.05,
+        )
+        app.push_screen(modal, _on_dismissed)
+        await pilot.pause()
+        # Wait past the timeout
+        await asyncio.sleep(0.15)
+        await pilot.pause()
+
+        assert results == [None]
+
+
 async def test_live_run_screen_phase_events_pane_populates() -> None:
     """T64/T65 surface check: the new phase-events pane in
     LiveRunScreen renders rows for each of the six phase event

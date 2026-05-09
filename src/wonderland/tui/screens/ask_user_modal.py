@@ -84,10 +84,26 @@ class AskUserModal(ModalScreen[str | None]):
     }
     """
 
-    def __init__(self, *, asking_agent: str, question: str) -> None:
+    def __init__(
+        self,
+        *,
+        asking_agent: str,
+        question: str,
+        auto_dismiss_after: float | None = None,
+    ) -> None:
+        """Construct the modal.
+
+        ``auto_dismiss_after`` (T69 follow-up): if set to a positive
+        number of seconds, the modal self-dismisses with None
+        (sentinel reply) after that interval if the operator
+        hasn't submitted an answer. ``None`` (default) waits
+        indefinitely. The LiveRunScreen's auto-sentinel toggle
+        passes the configured timeout through here.
+        """
         super().__init__()
         self._asking_agent = asking_agent
         self._question = question
+        self._auto_dismiss_after = auto_dismiss_after
 
     def compose(self) -> ComposeResult:
         with Vertical(id="ask-user-container"):
@@ -113,6 +129,28 @@ class AskUserModal(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         self.query_one("#ask-user-input", Input).focus()
+        # Schedule the auto-dismiss timer if configured. Textual's
+        # set_timer auto-cancels when the screen unmounts, so a
+        # manual submit/skip before the timer fires cleans up
+        # naturally. We don't try to surface a visible countdown —
+        # the operator's experience is "modal appeared, type or
+        # let it go"; the precise remaining seconds aren't
+        # actionable.
+        if (
+            self._auto_dismiss_after is not None
+            and self._auto_dismiss_after > 0
+        ):
+            self.set_timer(self._auto_dismiss_after, self._auto_dismiss)
+
+    def _auto_dismiss(self) -> None:
+        """Timer callback: dismiss with sentinel reply if the modal
+        is still mounted (i.e., operator didn't submit/skip in
+        time)."""
+        # Defensive: only dismiss if we're still the active screen
+        # — Textual's timer might fire shortly after a manual
+        # dismiss already removed us. is_mounted checks for that.
+        if self.is_mounted:
+            self.dismiss(None)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "ask-user-submit":

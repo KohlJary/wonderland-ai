@@ -112,8 +112,24 @@ class LiveRunScreen(Screen[None]):
     BINDINGS = [
         Binding("escape", "back", "Back", show=True),
         Binding("enter", "open_meeting", "Open meeting", show=True),
+        Binding("T", "cycle_auto_sentinel", "Auto-sentinel", show=True),
         # Vim nav (j/k/g/G/H/L) is provided by WonderlandApp.
     ]
+
+    # Cycle of auto-sentinel timeouts, in seconds. ``None`` = wait
+    # forever for the operator (the default). ``0`` = skip the modal
+    # entirely and feed the agent the sentinel reply immediately.
+    # Values in between = show the modal but auto-dismiss with
+    # sentinel after that many seconds. Cycle order is "tighten as
+    # you press T" — most operators want longer wait → shorter wait
+    # → instant, in that direction.
+    _AUTO_SENTINEL_CYCLE: tuple[float | None, ...] = (
+        None,    # off — wait indefinitely (current default)
+        900.0,   # 15 minutes
+        300.0,   # 5 minutes
+        60.0,    # 1 minute
+        0.0,     # instant — skip modal, sentinel immediately
+    )
 
     def __init__(
         self,
@@ -145,6 +161,14 @@ class LiveRunScreen(Screen[None]):
         self.handle = handle
         self.speed = speed
         self.max_dwell_seconds = max_dwell_seconds
+        # Auto-sentinel state (T69 follow-up): operator can toggle
+        # mid-run with the `T` keybind to cycle through wait
+        # durations. ``None`` = wait indefinitely (default);
+        # ``0`` = skip modal, sentinel immediately; otherwise
+        # auto-dismiss after that many seconds. Status bar
+        # surfaces the current setting so operators don't forget
+        # they left it on.
+        self._auto_sentinel_seconds: float | None = None
         # Internal state — populated via on_mount stub for T45,
         # rewired to streaming subscription in T46.
         self._meetings_seen: dict[str, dict] = {}
@@ -506,6 +530,38 @@ class LiveRunScreen(Screen[None]):
             self._total_cost = self._meeting_cost_total
         self._render_meetings_ribbon()
 
+    def action_cycle_auto_sentinel(self) -> None:
+        """Cycle through the auto-sentinel timeouts. Press T
+        repeatedly to tighten: off → 15m → 5m → 1m → instant → off.
+
+        Off (the default) makes the modal wait indefinitely for
+        operator input. Instant skips the modal entirely and feeds
+        the agent the sentinel reply immediately — useful for
+        unattended test runs. The intermediate values auto-dismiss
+        the modal with sentinel after the named timeout if the
+        operator hasn't answered."""
+        cycle = self._AUTO_SENTINEL_CYCLE
+        try:
+            current_idx = cycle.index(self._auto_sentinel_seconds)
+        except ValueError:
+            current_idx = 0
+        next_idx = (current_idx + 1) % len(cycle)
+        self._auto_sentinel_seconds = cycle[next_idx]
+        self._render_status_bar()
+
+    def _auto_sentinel_label(self) -> str:
+        """Human-readable label for the current auto-sentinel
+        setting, used in the status bar so operators see at a
+        glance whether they've left the toggle on."""
+        v = self._auto_sentinel_seconds
+        if v is None:
+            return "off"
+        if v == 0:
+            return "instant"
+        if v >= 60:
+            return f"{int(v / 60)}m"
+        return f"{int(v)}s"
+
     async def _handle_user_question(self, question_utterance) -> str | None:
         """Surface a QUESTION-to-operator utterance via AskUserModal
         and await the operator's reply (T69).
@@ -515,10 +571,24 @@ class LiveRunScreen(Screen[None]):
         addressed to the operator identity. Returns the reply text,
         or None on skip — the watcher publishes a sentinel
         OBSERVATION on None so the team can proceed.
+
+        Behavior depends on the auto-sentinel toggle (cycled via
+        the ``T`` keybind):
+          - None (default): push modal, await indefinitely.
+          - 0: skip modal entirely, return None immediately so the
+            watcher publishes the sentinel reply.
+          - >0: push modal with auto_dismiss_after; if operator
+            doesn't answer in time, modal self-dismisses with None.
         """
         import asyncio
 
         from wonderland.tui.screens.ask_user_modal import AskUserModal
+
+        timeout = self._auto_sentinel_seconds
+
+        # Instant-sentinel path: don't even show the modal.
+        if timeout == 0:
+            return None
 
         # Future bridges the modal's async dismiss callback back
         # into the awaiting coroutine.
@@ -532,6 +602,7 @@ class LiveRunScreen(Screen[None]):
             AskUserModal(
                 asking_agent=question_utterance.speaker.name,
                 question=question_utterance.content.body,
+                auto_dismiss_after=timeout,
             ),
             _on_dismissed,
         )
@@ -825,9 +896,24 @@ class LiveRunScreen(Screen[None]):
         else:
             source_part = ""
 
+        # Auto-sentinel toggle indicator (T69 follow-up). Hidden
+        # when off (the default) so the bar stays clean for
+        # standard runs; visible whenever the operator has cycled
+        # it on, so they don't forget questions are being
+        # answered automatically.
+        sentinel_part: str | None = None
+        if self._auto_sentinel_seconds is not None:
+            label = self._auto_sentinel_label()
+            color = "yellow" if self._auto_sentinel_seconds == 0 else "dim"
+            sentinel_part = (
+                f"[b][{color}]auto-sentinel: {label}[/{color}][/b]"
+            )
+
         parts = [speaker_part, cost_part, elapsed_part]
         if source_part:
             parts.append(source_part)
+        if sentinel_part:
+            parts.append(sentinel_part)
         bar.update("    ".join(parts))
 
     # ------------------------------------------------------------------ #
