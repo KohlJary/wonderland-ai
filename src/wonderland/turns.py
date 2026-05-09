@@ -177,10 +177,41 @@ class PhaseState:
 
     def next_agent(self) -> str | None:
         """The agent whose priority window comes next, or ``None`` if
-        the phase is complete."""
+        the phase is complete. Equivalent to ``next_team()[0]`` —
+        kept for backward compatibility with single-agent rotation
+        callers."""
+        team = self.next_team()
+        return team[0] if team else None
+
+    def next_team(self) -> tuple[str, ...] | None:
+        """The team whose window comes next, or ``None`` if the
+        phase is complete. When ``team_groupings`` is empty (the
+        default), each agent is their own team — this returns a
+        single-member tuple matching ``next_agent()``'s historical
+        behavior. When ``team_groupings`` is set (Two-Headed Giant
+        / P9.5), the returned tuple has multiple members and the
+        orchestrator opens windows for them concurrently."""
         if self.is_complete():
             return None
-        return self.cast[len(self.outcomes) % len(self.cast)]
+        teams = self._effective_teams()
+        pos_in_rotation = len(self.outcomes) % len(self.cast)
+        cumulative = 0
+        for team in teams:
+            cumulative += len(team)
+            if pos_in_rotation < cumulative:
+                return team
+        # Defensive: cumulative coverage of cast guaranteed by
+        # PhaseDefinition validation, so this is unreachable.
+        return teams[0]
+
+    def _effective_teams(self) -> tuple[tuple[str, ...], ...]:
+        """Resolve the team partition for rotation logic. When
+        ``team_groupings`` is empty (the default), each cast member
+        is their own team — preserves the original P9 single-agent
+        rotation. When set, return as-is."""
+        if self.definition.team_groupings:
+            return self.definition.team_groupings
+        return tuple((agent,) for agent in self.cast)
 
     def passes_per_agent(self) -> dict[str, int]:
         """Count of PASSED outcomes per agent, across the phase.

@@ -859,6 +859,36 @@
       "status": "backlog",
       "created_at": "2026-05-09T04:10:20.872541",
       "created_by": "daedalus"
+    },
+    {
+      "id": "6fdc15fd-bcb1-46df-ac81-2ec28f7d7681",
+      "title": "Decouple structural cap from meeting_budget in phased runs",
+      "description": "Per analysis 035 F2: meeting_budget gate fires inside run_phased_meeting's inner loop and truncates phases mid-flight (10 of 18 phases in r36 aborted this way; M6 defend never opened). Phases should run to structural completion (rotation cap / succession / exit_condition); meeting_budget moves to _run_one_meeting as a between-meetings check. Lets the TDD red\u2192green\u2192fix-on-review loop actually complete on review findings. Operator's stated preference: quality > cost, so deferring is fine; flagged P2.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T19:01:46.599865",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "6a11b29e-cebf-483f-b64a-e4303d966ea5",
+      "title": "Phased orchestrator: respect runner.budget_dollars global cap",
+      "description": "Per analysis 035 F7: runner.budget_dollars is enforced via budget_exceeded events on runner.events() in legacy _convene_one, but run_phased_meeting doesn't drain runner.events() \u2014 it owns deliberation via compose_context + deliberate. r36 declared 5 cap and hit 8.85 (77% over); r35 hit 7.88 (58% over). Fix: ~10 LOC, check runner.total_cost >= runner.budget_dollars at top of phased inner loop, set outcome=GLOBAL_BUDGET, break+propagate. Operators who declare 5 should be able to trust 5 is the ceiling.",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-09T19:01:46.686319",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "384e18ce-cfc1-4400-a3ae-0a48fb9bddc5",
+      "title": "Housekeeping: scrub trademarked 'Two-Headed Giant' refs to 'team windows'",
+      "description": "Per a public-PR readiness pass: 'Two-Headed Giant' is a Wizards of the Coast trademark (MtG format name); the project's references should use a generic 'team windows' or 'Teams' framing. Sweep needed across: filename analyses/035-tdd-phased-teams-2hg-first-run.md (rename to drop -2hg); analyses 033 + 034 prose where I introduced the term; gameplan phase id p9.5-two-headed-giant (rename to p9.5-team-windows); roadmap item dbf88619 title; closet/workflows/tdd-serial-phased.yaml comments; src/wonderland/meeting.py + turns.py code comments (a handful of MtG / 2HG mentions). Functional behavior unchanged; this is rename-only.",
+      "priority": "P3",
+      "item_type": "task",
+      "status": "backlog",
+      "created_at": "2026-05-09T19:04:04.890759",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

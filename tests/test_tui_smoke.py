@@ -811,6 +811,224 @@ async def test_live_run_screen_mounts_with_dummy_data() -> None:
         await pilot.press("q")
 
 
+async def test_live_run_screen_phase_events_pane_populates_via_stream() -> None:
+    """Integration check: phase events flow end-to-end from
+    run_phased_meeting → LiveRunHandle (workflow → RunEvent
+    translation) → LiveRunScreen (dispatch → table). Catches
+    bugs the direct-dispatch test below would miss (e.g.,
+    missing translation cases, CSS clipping, screen wiring)."""
+    import asyncio
+    from pathlib import Path
+    from textual.widgets import DataTable
+
+    from wonderland import (
+        AgentIdentity,
+        InMemoryCaucus,
+        SpeechAct,
+        Utterance,
+        UtteranceContent,
+    )
+    from wonderland.agent import Context
+    from wonderland.observer.live import LiveRunHandle
+    from wonderland.workflow import Meeting, PhaseSpec, Workflow
+
+    class _FakeAgent:
+        def __init__(self, name: str) -> None:
+            self.identity = AgentIdentity(
+                name=name, constitution_version="0.1"
+            )
+
+        async def compose_context(self, triggers):
+            return Context(
+                constitution=f"<{self.identity.name}>",
+                triggers=tuple(triggers),
+            )
+
+        async def deliberate(self, ctx):
+            return Utterance(
+                thread_id="m",
+                speaker=self.identity,
+                addressed_to="caucus",
+                speech_act=SpeechAct.PROPOSAL,
+                content=UtteranceContent(body="hi"),
+            )
+
+    class _FakeTel:
+        def __init__(self) -> None:
+            self.call_count = 0
+
+    class _FakeRunner:
+        def __init__(self, project_root: Path) -> None:
+            self.bus = InMemoryCaucus()
+            self.dodo = _FakeAgent("dodo")
+            self.agents = {"a": _FakeAgent("a"), "b": _FakeAgent("b")}
+            self.telemetry = _FakeTel()
+            self.total_cost = 0.0
+            self.budget_dollars = 5.0
+            self.project_root = project_root
+            self.run_id = "stream-test"
+            self._completed = False
+
+        async def setup(self):
+            pass
+
+        async def teardown(self):
+            pass
+
+        async def convene(self, **kw):
+            pass
+
+        def mark_thread_complete(self, *a):
+            pass
+
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        wf = Workflow(
+            name="t",
+            description="",
+            meetings=[
+                Meeting(
+                    id="m",
+                    label="M1",
+                    goal="g",
+                    roster=["a", "b"],
+                    phases=[PhaseSpec(name="discussion", max_rotations=1)],
+                ),
+            ],
+        )
+        runner = _FakeRunner(Path(td))
+        handle = LiveRunHandle(
+            workflow=wf,
+            runner=runner,  # type: ignore[arg-type]
+            directive="test",
+        )
+
+        app = WonderlandApp()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = LiveRunScreen(handle=handle)
+            app.push_screen(screen)
+            # Drain the stream — small workflow, finishes quickly
+            await asyncio.sleep(0.3)
+            await pilot.pause()
+            await asyncio.sleep(0.3)
+            await pilot.pause()
+
+            ptable = screen.query_one(
+                "#live-phase-events-table", DataTable
+            )
+            # Expected events for 1 phase × 2 cast × 1 rotation:
+            # PhaseStart + 2 windows + 2 acts + RotationComplete + PhaseEnd = 7
+            assert ptable.row_count >= 5, (
+                f"phase events table only has {ptable.row_count} "
+                "rows; expected >= 5 for a 2-agent / 1-rotation phase"
+            )
+
+            await pilot.press("q")
+
+
+async def test_live_run_screen_phase_events_pane_populates() -> None:
+    """T64/T65 surface check: the new phase-events pane in
+    LiveRunScreen renders rows for each of the six phase event
+    types (PhaseStarted/Ended, PriorityWindowOpened, AgentActed/
+    Passed, RotationCompleted) when they flow through the event
+    stream."""
+    from datetime import datetime, timezone
+    from textual.widgets import DataTable
+
+    from wonderland.observer import (
+        AgentActed,
+        AgentPassed,
+        PhaseEnded,
+        PhaseStarted,
+        PriorityWindowOpened,
+        RotationCompleted,
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = LiveRunScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        # The screen's _dispatch_event wires phase events to the
+        # phase-events table; feed it directly.
+        now = datetime.now(tz=timezone.utc)
+        screen._dispatch_event(
+            PhaseStarted(
+                timestamp=now,
+                meeting_thread_id="m4",
+                phase_name="clarify",
+                max_rotations=1,
+                cast=("alice", "mad_hatter", "td", "tdm"),
+            ),
+            base_meeting_ids=[],
+        )
+        screen._dispatch_event(
+            PriorityWindowOpened(
+                timestamp=now,
+                meeting_thread_id="m4",
+                phase_name="clarify",
+                agent_id="alice",
+                rotation_index=0,
+                window_index_in_phase=0,
+            ),
+            base_meeting_ids=[],
+        )
+        screen._dispatch_event(
+            AgentActed(
+                timestamp=now,
+                meeting_thread_id="m4",
+                phase_name="clarify",
+                agent_id="alice",
+                rotation_index=0,
+                utterance_id="01HXYZABC",
+            ),
+            base_meeting_ids=[],
+        )
+        screen._dispatch_event(
+            AgentPassed(
+                timestamp=now,
+                meeting_thread_id="m4",
+                phase_name="clarify",
+                agent_id="td",
+                rotation_index=0,
+                reason=None,
+            ),
+            base_meeting_ids=[],
+        )
+        screen._dispatch_event(
+            RotationCompleted(
+                timestamp=now,
+                meeting_thread_id="m4",
+                phase_name="clarify",
+                rotation_index=0,
+            ),
+            base_meeting_ids=[],
+        )
+        screen._dispatch_event(
+            PhaseEnded(
+                timestamp=now,
+                meeting_thread_id="m4",
+                phase_name="clarify",
+                reason="succession",
+                rotations_used=1,
+                total_windows=4,
+                passes_per_agent={"alice": 0, "mad_hatter": 0, "td": 1, "tdm": 1},
+                acts_per_agent={"alice": 1, "mad_hatter": 1, "td": 0, "tdm": 0},
+            ),
+            base_meeting_ids=[],
+        )
+        await pilot.pause()
+
+        ptable = screen.query_one("#live-phase-events-table", DataTable)
+        assert ptable.row_count == 6
+
+        await pilot.press("q")
+
+
 async def _drain_live_run_screen(
     pilot,
     screen: LiveRunScreen,

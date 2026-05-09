@@ -86,6 +86,77 @@ def test_phase_definition_empty_team_rejected() -> None:
         PhaseDefinition(name="clarify", team_groupings=(("alice",), ()))
 
 
+def test_next_team_default_is_single_agent_tuples() -> None:
+    """When team_groupings is empty (the default), next_team
+    returns single-member tuples — same shape as next_agent
+    historically returned."""
+    s = _state(cast=("a", "b", "c"))
+    # Initial team = ("a",), single-member.
+    assert s.next_team() == ("a",)
+    assert s.next_agent() == "a"
+
+
+def test_next_team_advances_through_teams() -> None:
+    """With explicit team_groupings, next_team rotates through
+    teams in declared order. Each team window resolves all its
+    members before the next team's window opens."""
+    s = PhaseState(
+        definition=PhaseDefinition(
+            name="clarify",
+            max_rotations=2,
+            team_groupings=(("alice", "hatter"), ("td", "tdm")),
+        ),
+        cast=("alice", "hatter", "td", "tdm"),
+    )
+    # Rotation 0, team 0
+    assert s.next_team() == ("alice", "hatter")
+    # Resolve both members of team 0
+    s.outcomes.append(
+        WindowOutcome(rotation_index=0, agent_id="alice", action=WindowAction.PASSED)
+    )
+    s.outcomes.append(
+        WindowOutcome(rotation_index=0, agent_id="hatter", action=WindowAction.PASSED)
+    )
+    # Rotation 0, team 1
+    assert s.next_team() == ("td", "tdm")
+    # Resolve both
+    s.outcomes.append(
+        WindowOutcome(rotation_index=0, agent_id="td", action=WindowAction.PASSED)
+    )
+    s.outcomes.append(
+        WindowOutcome(rotation_index=0, agent_id="tdm", action=WindowAction.PASSED)
+    )
+    # Rotation 0 complete; rotation 1, team 0 next
+    assert s.current_rotation == 1
+    # All-passed-in-succession (last len(cast)=4 windows all PASSED)
+    assert s.is_complete()
+    assert s.next_team() is None
+
+
+def test_next_team_handles_uneven_teams() -> None:
+    """Teams of different sizes (e.g. solo + paired) advance
+    correctly: 1 + 2 = 3 windows per rotation; the rotation
+    boundary respects the team sizes."""
+    s = PhaseState(
+        definition=PhaseDefinition(
+            name="m6-defend",
+            max_rotations=2,
+            team_groupings=(("caterpillar",), ("td", "tdm")),
+        ),
+        cast=("caterpillar", "td", "tdm"),
+    )
+    # First window: solo caterpillar team
+    assert s.next_team() == ("caterpillar",)
+    s.outcomes.append(
+        WindowOutcome(
+            rotation_index=0, agent_id="caterpillar", action=WindowAction.ACTED,
+            utterance_id="u-1",
+        )
+    )
+    # Second window: paired Tweedles team
+    assert s.next_team() == ("td", "tdm")
+
+
 # --- WindowOutcome ---
 
 
