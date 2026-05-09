@@ -155,14 +155,19 @@ LiveRunScreen #live-meetings-table {
     height: auto;
 }
 
+/* Right-pane vertical stack: 4 tables (transcript, body, artifacts,
+ * phase events) share the available space via 1fr each. Using
+ * percentages would overflow because of the 4 auto-height labels;
+ * flex sizing lets the labels eat their natural lines first and the
+ * tables divide what's left. */
 LiveRunScreen #transcript-table {
-    height: 35%;
+    height: 1fr;
     margin: 0 2 0 0;
     border: round $panel;
 }
 
 LiveRunScreen #transcript-body-scroll {
-    height: 30%;
+    height: 1fr;
     margin: 0 2 0 0;
     border: round $panel;
     padding: 1;
@@ -173,7 +178,13 @@ LiveRunScreen #transcript-body {
 }
 
 LiveRunScreen #live-artifacts-table {
-    height: 35%;
+    height: 1fr;
+    margin: 0 2 0 0;
+    border: round $panel;
+}
+
+LiveRunScreen #live-phase-events-table {
+    height: 1fr;
     margin: 0 2 1 0;
     border: round $panel;
 }

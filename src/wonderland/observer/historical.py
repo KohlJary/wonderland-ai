@@ -120,15 +120,32 @@ class HistoricalRunHandle(RunHandle):
 
     def __init__(self, snapshot_dir: str | Path) -> None:
         self._dir = Path(snapshot_dir)
-        self._wonderland_dir = self._dir / "wonderland-snapshot"
-        self._log_path = self._dir / "run.log"
-
-        if not self._wonderland_dir.is_dir():
+        # Two snapshot layouts are accepted:
+        #   1. Script-driven (analyses/data/...) — contains
+        #      ``wonderland-snapshot/`` and ``run.log`` at the top.
+        #   2. TUI-driven (project_root/.wonderland/) — contains
+        #      ``.wonderland/`` and no run.log (TUI runs don't yet
+        #      write the verbose log; telemetry.json carries the
+        #      cost + outcome data).
+        # Both layouts have the same internal structure inside the
+        # wonderland directory (memory/, telemetry/, stories/, etc.),
+        # so once we resolve which one is present, the rest of the
+        # accessors work uniformly.
+        wonderland_snapshot = self._dir / "wonderland-snapshot"
+        dot_wonderland = self._dir / ".wonderland"
+        if wonderland_snapshot.is_dir():
+            self._wonderland_dir = wonderland_snapshot
+        elif dot_wonderland.is_dir():
+            self._wonderland_dir = dot_wonderland
+        else:
             raise FileNotFoundError(
-                f"snapshot missing wonderland-snapshot/: {self._dir}"
+                f"snapshot missing wonderland-snapshot/ or "
+                f".wonderland/: {self._dir}"
             )
-        if not self._log_path.is_file():
-            raise FileNotFoundError(f"snapshot missing run.log: {self._dir}")
+        # run.log is optional. Methods that depend on it (summary's
+        # directive/workflow header, meetings()) gracefully degrade
+        # when it's absent.
+        self._log_path = self._dir / "run.log"
 
         self._summary_cache: RunSummary | None = None
         self._meetings_cache: list[RunMeeting] | None = None
@@ -152,31 +169,39 @@ class HistoricalRunHandle(RunHandle):
         total_cost = 0.0
         elapsed_seconds: float | None = None
 
-        with self._log_path.open(encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if directive is None:
-                    m = _DIRECTIVE_RE.match(line)
+        if self._log_path.is_file():
+            with self._log_path.open(encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if directive is None:
+                        m = _DIRECTIVE_RE.match(line)
+                        if m:
+                            directive = m.group(1).strip()
+                            continue
+                    if workflow is None:
+                        m = _WORKFLOW_RE.match(line)
+                        if m:
+                            workflow = m.group(1)
+                            continue
+                    if project_root is None:
+                        m = _PROJECT_ROOT_RE.match(line)
+                        if m:
+                            project_root = Path(m.group(1).strip())
+                            continue
+                    m = _TOTAL_COST_RE.match(line)
                     if m:
-                        directive = m.group(1).strip()
+                        total_cost = float(m.group(1))
                         continue
-                if workflow is None:
-                    m = _WORKFLOW_RE.match(line)
+                    m = _TOTAL_ELAPSED_RE.match(line)
                     if m:
-                        workflow = m.group(1)
+                        elapsed_seconds = float(m.group(1))
                         continue
-                if project_root is None:
-                    m = _PROJECT_ROOT_RE.match(line)
-                    if m:
-                        project_root = Path(m.group(1).strip())
-                        continue
-                m = _TOTAL_COST_RE.match(line)
-                if m:
-                    total_cost = float(m.group(1))
-                    continue
-                m = _TOTAL_ELAPSED_RE.match(line)
-                if m:
-                    elapsed_seconds = float(m.group(1))
-                    continue
+        else:
+            # TUI runs don't write run.log yet — fall back to the
+            # snapshot directory itself as project_root so the UI
+            # has something coherent to display. Directive and
+            # workflow_name remain None until the TUI writes them
+            # (forward-looking work).
+            project_root = self._dir
 
         telemetry = self._load_telemetry()
         run_id = telemetry.get("run_id")
@@ -208,6 +233,15 @@ class HistoricalRunHandle(RunHandle):
         starts: dict[str, dict[str, Any]] = {}  # label → metadata
         ends: dict[str, dict[str, Any]] = {}
         order: list[str] = []  # labels in encounter order
+
+        if not self._log_path.is_file():
+            # TUI runs without run.log can't reconstruct the per-
+            # meeting START/END timeline. Future work: derive from
+            # phase-events.jsonl + telemetry. For now, return empty
+            # so callers (TUI run summary) display "0 meetings"
+            # rather than crashing.
+            self._meetings_cache = []
+            return self._meetings_cache
 
         with self._log_path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -300,6 +334,11 @@ class HistoricalRunHandle(RunHandle):
         loses for per_item iterations.
         """
         out: list[dict[str, Any]] = []
+        if not self._log_path.is_file():
+            # TUI runs predate the log writer; stream_events still
+            # works for utterances + meetings (degraded), just no
+            # per-iteration end markers to attach.
+            return out
         with self._log_path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
                 m = _MEETING_END_RE.match(line)

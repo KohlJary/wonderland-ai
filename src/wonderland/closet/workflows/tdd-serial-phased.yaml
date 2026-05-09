@@ -28,9 +28,26 @@ description: |
     splits into "Caterpillar surfaces findings" then "Tweedles
     respond"; phases formalize that.
 
-  Other than ``phases:`` additions, the YAML is identical to
-  tdd-serial. Original tdd-serial stays as the legacy 032 baseline —
-  switch workflow names to A/B without code archaeology.
+  Other than ``phases:`` (and ``team_groupings:`` after T64) additions,
+  the YAML is identical to tdd-serial. Original tdd-serial stays as
+  the legacy 032 baseline — switch workflow names to A/B without
+  code archaeology.
+
+  Team partition (analysis 034 F2 / P9.5 / T65) maps constitutional
+  pairs onto MtG-style team windows: members of the same team
+  deliberate concurrently within one team window via asyncio.gather,
+  recovering the parallelism r35 lost to strict-serial priority.
+
+    - M3:  [[tweedledee, tweedledum]]
+    - M4:  [[alice, mad_hatter], [tweedledee, tweedledum]]
+    - M5:  [[tweedledee, tweedledum]]
+    - M6:  [[caterpillar], [tweedledee, tweedledum]]
+
+  Solo Caterpillar in M6 is a degenerate single-member team — the
+  team-window primitive collapses to one priority window at a time
+  for solo teams. The role split (Caterpillar leads in review,
+  Tweedles lead in defend) is implicit in the convenor directive;
+  team_groupings formalizes the partition for the orchestrator.
 
   Serial variant of the TDD workflow: M4 (test scenarios) and M5
   (implementation) loop per feature instead of fanning across all
@@ -264,15 +281,17 @@ meetings:
         kinds: [adr]
       - from: composition
         kinds: [feature]
-    # Single phase — M3 doesn't need internal structure beyond a
-    # rotation cap. Cast=2 (Tweedles), 3 rotations gives 6 max
-    # deliberations vs the 19 calls 032 saw — modest compression
-    # at the structural-cap layer; the §VIII observability is the
-    # main win here (e.g., a Tweedle who never passes is the
-    # categorical-force shape).
+    # Single phase, single team — Tweedles are constitutionally
+    # paired (frontend/backend complementary split), not adversarial
+    # competitors. team_groupings collapses what would have been 2
+    # serial windows per rotation into 1 team window where both
+    # deliberate concurrently via asyncio.gather. Wall-clock for
+    # M3 should drop ~halfway toward 032's pre-phase baseline.
     phases:
       - name: discussion
         max_rotations: 3
+        team_groupings:
+          - [tweedledee, tweedledum]
 
   # ---------------------------------------------------------------------
   # M4 — per-feature test scenarios. Iteration N convenes with the
@@ -424,19 +443,23 @@ meetings:
         where:
           state: agreed
         fallback: any
-    # Two phases — clarify is one rotation for Tweedles to surface
-    # contract gaps before Alice + Hatter ship tests, then red-tests
-    # is the main work. Cast=4 (alice, hatter, tweedledee,
-    # tweedledum); 1 + 3 rotations = 16 max deliberations vs the
-    # 54 calls 032 saw per iteration. The structural cap bounds
-    # Hatter's primary sprawl locus (analyses 029 F5 + 030 F3 + 031
-    # F3-F4): once Hatter's used his deliberations across the cap,
-    # next-rotation passes are the only option.
+    # Two phases, two teams per phase — Alice and Hatter are the
+    # Tea Party's complementary pair (user-journey + failure-mode);
+    # Tweedles are the bounded-reactive observers. With 2-of-2
+    # teams, each rotation has 2 team windows; deliberations within
+    # each team run concurrently via asyncio.gather. Wall-clock cost
+    # drops roughly half vs r35's strict-serial 4-agent rotation.
     phases:
       - name: clarify
         max_rotations: 1
+        team_groupings:
+          - [alice, mad_hatter]
+          - [tweedledee, tweedledum]
       - name: red-tests
         max_rotations: 3
+        team_groupings:
+          - [alice, mad_hatter]
+          - [tweedledee, tweedledum]
 
   # ---------------------------------------------------------------------
   # M5 — per-feature implementation. Iteration N convenes with the
@@ -548,19 +571,18 @@ meetings:
         fallback: any
       - from: test-scenarios
         kinds: [test_scenario, story]
-    # Single phase — M5's iterate-red-green loop is naturally
-    # iterative; the rotation cap bounds total deliberations not
-    # tool calls (each deliberation can do its own write_file +
-    # run_tests + write_file loop). Cast=2 (Tweedles), 4 rotations
-    # = 8 max deliberations vs the ~28 deliberations/Tweedle 032
-    # showed (56 calls / 2 agents). This is the most aggressive
-    # cap in the workflow; the bet is each constrained window
-    # pressures the LLM to do more inside its tool loop. If 8 is
-    # too few we'll see MEETING_BUDGET reasons land cleanly and
-    # know to bump.
+    # Single phase, single team — same constitutional pairing as
+    # M3, applied to the iterate-red-green loop. Tweedledee:frontend
+    # + Tweedledum:backend deliberate concurrently inside each
+    # team window; per-window tool loop (read_file → write_file →
+    # run_tests → repeat) still runs unbounded inside each
+    # deliberation. Wall-clock recovery is meaningful here because
+    # M5 iterates 5× per_item across features.
     phases:
       - name: implement
         max_rotations: 4
+        team_groupings:
+          - [tweedledee, tweedledum]
 
   # ---------------------------------------------------------------------
   # M6 — single review meeting at the end. Sees the combined working
@@ -623,17 +645,23 @@ meetings:
         kinds: [feature]
       - from: implementation
         kinds: [implementation]
-    # Two phases — review is Caterpillar surfacing findings (Tweedles
-    # naturally pass while she works), defend is Tweedles responding
-    # to findings (Caterpillar naturally passes once findings are
-    # surfaced). Phases formalize the structural turn-taking already
-    # implicit in the convenor directive. Cast=3, 2 + 2 rotations =
-    # 12 max deliberations vs 99 calls 032 saw (27 per agent). The
-    # passes_per_agent map at PhaseEnded tells us whether the role
-    # split actually held: review-phase passes for Tweedles + defend-
-    # phase passes for Caterpillar = clean phase semantics.
+    # Two phases — review is Caterpillar surfacing findings,
+    # defend is Tweedles responding. Two teams per phase: solo
+    # Caterpillar + paired Tweedles. The role split (Caterpillar
+    # leads in review, naturally passes in defend; Tweedles
+    # naturally pass in review, lead in defend) is implicit in the
+    # convenor directive — the team partition formalizes it. Solo
+    # teams just open one window at a time (degenerate case of the
+    # team-window primitive); the Tweedle pair deliberates
+    # concurrently within their team window.
     phases:
       - name: review
         max_rotations: 2
+        team_groupings:
+          - [caterpillar]
+          - [tweedledee, tweedledum]
       - name: defend
         max_rotations: 2
+        team_groupings:
+          - [caterpillar]
+          - [tweedledee, tweedledum]

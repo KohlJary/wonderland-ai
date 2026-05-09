@@ -44,6 +44,14 @@ class PhaseDefinition:
     """If set, the phase ends when an artifact of this kind ships.
     Lets a phase be 'until the contract is signed' rather than
     'for N rotations.'"""
+    team_groupings: tuple[tuple[str, ...], ...] = ()
+    """Two-Headed Giant team partition (analysis 034 F2 / P9.5).
+    Empty tuple = one-agent-per-team (each agent gets their own
+    serial priority window — the original P9 behavior). Non-empty =
+    explicit teams; agents within the same team open their windows
+    concurrently inside one team window, recovering the parallelism
+    that constitutional pairs deserve. Frozen-tuple-of-tuples (not
+    list-of-lists) so PhaseDefinition stays hashable."""
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -52,6 +60,24 @@ class PhaseDefinition:
             raise ValueError(
                 f"max_rotations must be >= 1, got {self.max_rotations}"
             )
+        # Basic team_groupings sanity. Cast-coverage validation
+        # (every cast member in exactly one team) lives at the
+        # workflow / Meeting level since PhaseDefinition doesn't
+        # carry the cast.
+        if self.team_groupings:
+            seen: set[str] = set()
+            for team in self.team_groupings:
+                if not team:
+                    raise ValueError(
+                        "team_groupings cannot contain empty teams"
+                    )
+                for member in team:
+                    if member in seen:
+                        raise ValueError(
+                            f"agent {member!r} appears in multiple "
+                            f"teams in phase {self.name!r}"
+                        )
+                    seen.add(member)
 
 
 @dataclass(frozen=True)
@@ -151,10 +177,41 @@ class PhaseState:
 
     def next_agent(self) -> str | None:
         """The agent whose priority window comes next, or ``None`` if
-        the phase is complete."""
+        the phase is complete. Equivalent to ``next_team()[0]`` —
+        kept for backward compatibility with single-agent rotation
+        callers."""
+        team = self.next_team()
+        return team[0] if team else None
+
+    def next_team(self) -> tuple[str, ...] | None:
+        """The team whose window comes next, or ``None`` if the
+        phase is complete. When ``team_groupings`` is empty (the
+        default), each agent is their own team — this returns a
+        single-member tuple matching ``next_agent()``'s historical
+        behavior. When ``team_groupings`` is set (Two-Headed Giant
+        / P9.5), the returned tuple has multiple members and the
+        orchestrator opens windows for them concurrently."""
         if self.is_complete():
             return None
-        return self.cast[len(self.outcomes) % len(self.cast)]
+        teams = self._effective_teams()
+        pos_in_rotation = len(self.outcomes) % len(self.cast)
+        cumulative = 0
+        for team in teams:
+            cumulative += len(team)
+            if pos_in_rotation < cumulative:
+                return team
+        # Defensive: cumulative coverage of cast guaranteed by
+        # PhaseDefinition validation, so this is unreachable.
+        return teams[0]
+
+    def _effective_teams(self) -> tuple[tuple[str, ...], ...]:
+        """Resolve the team partition for rotation logic. When
+        ``team_groupings`` is empty (the default), each cast member
+        is their own team — preserves the original P9 single-agent
+        rotation. When set, return as-is."""
+        if self.definition.team_groupings:
+            return self.definition.team_groupings
+        return tuple((agent,) for agent in self.cast)
 
     def passes_per_agent(self) -> dict[str, int]:
         """Count of PASSED outcomes per agent, across the phase.

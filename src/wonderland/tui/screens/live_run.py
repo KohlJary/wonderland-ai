@@ -33,11 +33,17 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
 from wonderland.observer import (
+    AgentActed,
+    AgentPassed,
     AgentTelemetryDelta,
     ArtifactShipped,
     MeetingEnded,
     MeetingStarted,
     MockTurtleHandle,
+    PhaseEnded,
+    PhaseStarted,
+    PriorityWindowOpened,
+    RotationCompleted,
     RunArtifact,
     RunEnded,
     RunHandle,
@@ -222,6 +228,14 @@ class LiveRunScreen(Screen[None]):
                         id="live-artifacts-table",
                         cursor_type="row",
                     )
+                    yield Static(
+                        "[b]Phase events[/b]",
+                        id="phase-events-label",
+                    )
+                    yield DataTable(
+                        id="live-phase-events-table",
+                        cursor_type="row",
+                    )
             yield Static(id="live-status")
         yield Footer()
 
@@ -241,6 +255,12 @@ class LiveRunScreen(Screen[None]):
         atable = self.query_one("#live-artifacts-table", DataTable)
         atable.clear(columns=True)
         atable.add_columns("Kind", "Title")
+        # Initialize phase-events table — surfaces the orchestrator's
+        # priority-gate mechanics in real time (P9 / T58c on the
+        # observer side; T64-65 now flow through it).
+        ptable = self.query_one("#live-phase-events-table", DataTable)
+        ptable.clear(columns=True)
+        ptable.add_columns("Time", "Phase", "Event", "Agent", "Detail")
         # Initial body preview + status bar — dashes until events flow.
         self.query_one("#transcript-body", Static).update(
             "[dim](no utterance selected)[/dim]"
@@ -340,6 +360,18 @@ class LiveRunScreen(Screen[None]):
             self._handle_meeting_ended(event)
         elif isinstance(event, RunEnded):
             self._handle_run_ended(event)
+        elif isinstance(
+            event,
+            (
+                PhaseStarted,
+                PhaseEnded,
+                PriorityWindowOpened,
+                AgentActed,
+                AgentPassed,
+                RotationCompleted,
+            ),
+        ):
+            self._handle_phase_event(event)
 
         # Status bar updates after every event so the elapsed timer
         # stays current.
@@ -467,6 +499,67 @@ class LiveRunScreen(Screen[None]):
         # fired just before this carried final cost numbers. Freeze
         # the watching counter at the moment RunEnded fires.
         self._wall_clock_ended_at = datetime.now(tz=timezone.utc)
+
+    def _handle_phase_event(self, event: object) -> None:
+        """Append a row to the live phase-events table (T58c surface
+        / T64 team windows). Each row carries time, phase, event
+        type, agent (if applicable), and a short detail string. The
+        table fills in real time so the operator can watch the
+        priority-gate mechanics: which agent's window opened,
+        whether they acted or passed, when rotations completed,
+        and how each phase ended (succession / exhausted /
+        exit_condition / aborted)."""
+        ptable = self.query_one("#live-phase-events-table", DataTable)
+        elapsed = self._format_elapsed(event.timestamp)  # type: ignore[attr-defined]
+
+        # The thread_id field on phase events identifies the
+        # meeting; surface it as part of the Phase column for
+        # disambiguation across per_item iterations.
+        if isinstance(event, PhaseStarted):
+            phase = f"{event.meeting_thread_id}.{event.phase_name}"
+            kind = "▶ start"
+            agent = ""
+            detail = (
+                f"cast={','.join(event.cast)} "
+                f"max_rot={event.max_rotations}"
+            )
+        elif isinstance(event, PriorityWindowOpened):
+            phase = f"{event.meeting_thread_id}.{event.phase_name}"
+            kind = f"⊙ window R{event.rotation_index}"
+            agent = event.agent_id
+            detail = f"W{event.window_index_in_phase}"
+        elif isinstance(event, AgentActed):
+            phase = f"{event.meeting_thread_id}.{event.phase_name}"
+            kind = "✓ acted"
+            agent = event.agent_id
+            detail = f"u={event.utterance_id[:8]}…"
+        elif isinstance(event, AgentPassed):
+            phase = f"{event.meeting_thread_id}.{event.phase_name}"
+            kind = "× passed"
+            agent = event.agent_id
+            detail = (event.reason or "")[:40]
+        elif isinstance(event, RotationCompleted):
+            phase = f"{event.meeting_thread_id}.{event.phase_name}"
+            kind = "─ rotation"
+            agent = ""
+            detail = f"R{event.rotation_index} done"
+        elif isinstance(event, PhaseEnded):
+            phase = f"{event.meeting_thread_id}.{event.phase_name}"
+            kind = f"■ end ({event.reason})"
+            agent = ""
+            detail = (
+                f"rot={event.rotations_used} "
+                f"win={event.total_windows} "
+                f"acts={dict(event.acts_per_agent)} "
+                f"pass={dict(event.passes_per_agent)}"
+            )
+        else:
+            return
+
+        ptable.add_row(elapsed, phase, kind, agent, detail)
+        # Auto-scroll to the latest row so the live stream stays
+        # visible without manual paging.
+        ptable.action_scroll_end()
 
     # ------------------------------------------------------------------ #
     # Helpers

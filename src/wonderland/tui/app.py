@@ -20,9 +20,12 @@ from wonderland.tui.themes import (
 # whatever wonderland-ai checkout the TUI is running in. Resolved
 # relative to this file's location so it works whether installed via
 # `pip install -e .` or run from a fresh clone.
-_DEFAULT_SNAPSHOT_ROOT = (
-    Path(__file__).resolve().parents[3] / "analyses" / "data"
-)
+# Default snapshot root covers both the curated corpus
+# (analyses/data/...) and any TUI-driven runs (runs/...) by
+# pointing at the wonderland-ai project root. _discover_snapshots
+# recursively finds both layouts (wonderland-snapshot/ for script
+# runs, .wonderland/ for TUI runs).
+_DEFAULT_SNAPSHOT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class WonderlandApp(App):

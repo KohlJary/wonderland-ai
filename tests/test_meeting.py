@@ -11,6 +11,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -105,6 +106,12 @@ class FakePhaseRunner:
     convene_calls: list[dict[str, Any]] = field(default_factory=list)
     thread_completes: list[dict[str, str]] = field(default_factory=list)
     _completed: bool = False
+    # T58d: phase-event persistence writes to project_root/.wonderland/
+    # — provide a tmp dir-friendly default that callers can override
+    # per test (run_workflow path uses this).
+    project_root: Path = field(
+        default_factory=lambda: Path("/tmp") / "wonderland-test"
+    )
     # Each ACTED window costs $0.05 by default; tests can override
     # by mutating runner.total_cost directly between yields.
     cost_per_act: float = 0.05
@@ -597,7 +604,187 @@ async def test_convene_called_before_phase_loop() -> None:
     assert runner.convene_calls[0]["roster"] == ["a"]
 
 
-async def test_run_workflow_dispatches_phased_meetings_to_orchestrator() -> None:
+# ---------------------------------------------------------------------
+# Two-Headed Giant — concurrent team windows (T64 / P9.5)
+# ---------------------------------------------------------------------
+
+
+async def test_team_window_opens_for_all_members_concurrently() -> None:
+    """A team window emits one PriorityWindowOpenEvent per team
+    member, all before any deliberation runs (events fire upfront,
+    deliberations happen in parallel via asyncio.gather)."""
+    runner = _make_runner(
+        cast=["alice", "hatter"],
+        scripts={
+            "alice": [_ScriptedResponse(utterance=_utt("alice"))],
+            "hatter": [_ScriptedResponse(utterance=_utt("hatter"))],
+        },
+    )
+    meeting = _meeting(
+        roster=["alice", "hatter"],
+        phases=[
+            PhaseSpec(
+                name="clarify",
+                max_rotations=1,
+                team_groupings=[["alice", "hatter"]],
+            ),
+        ],
+    )
+    events = await _drive(meeting, runner)
+
+    pwos = [e for e in events if isinstance(e, PriorityWindowOpenEvent)]
+    # One rotation × one team of 2 = 2 windows
+    assert len(pwos) == 2
+    # Both share the same rotation_index and consecutive
+    # window_index slots in cast order
+    assert pwos[0].agent_id == "alice"
+    assert pwos[0].rotation_index == 0
+    assert pwos[0].window_index == 0
+    assert pwos[1].agent_id == "hatter"
+    assert pwos[1].rotation_index == 0
+    assert pwos[1].window_index == 1
+
+
+async def test_team_window_resolves_in_cast_order_regardless_of_completion_order() -> None:
+    """asyncio.gather may complete deliberations in any order, but
+    AgentActedEvents fire in cast order so the transcript stays
+    deterministic."""
+    runner = _make_runner(
+        cast=["alice", "hatter"],
+        scripts={
+            "alice": [_ScriptedResponse(utterance=_utt("alice"))],
+            "hatter": [_ScriptedResponse(utterance=_utt("hatter"))],
+        },
+    )
+    meeting = _meeting(
+        roster=["alice", "hatter"],
+        phases=[
+            PhaseSpec(
+                name="clarify",
+                max_rotations=1,
+                team_groupings=[["alice", "hatter"]],
+            ),
+        ],
+    )
+    events = await _drive(meeting, runner)
+
+    acts = [e for e in events if isinstance(e, AgentActEvent)]
+    assert [a.agent_id for a in acts] == ["alice", "hatter"]
+
+
+async def test_two_teams_advance_in_declaration_order() -> None:
+    """With multiple teams declared, each rotation cycles through
+    teams in order. Team 0's full window resolves before team 1
+    opens."""
+    runner = _make_runner(
+        cast=["alice", "hatter", "td", "tdm"],
+        scripts={
+            "alice": [_ScriptedResponse(utterance=_utt("alice"))],
+            "hatter": [_ScriptedResponse(utterance=_utt("hatter"))],
+            "td": [_ScriptedResponse(utterance=_utt("td"))],
+            "tdm": [_ScriptedResponse(utterance=_utt("tdm"))],
+        },
+    )
+    meeting = _meeting(
+        roster=["alice", "hatter", "td", "tdm"],
+        phases=[
+            PhaseSpec(
+                name="clarify",
+                max_rotations=1,
+                team_groupings=[["alice", "hatter"], ["td", "tdm"]],
+            ),
+        ],
+    )
+    events = await _drive(meeting, runner)
+
+    pwos = [e for e in events if isinstance(e, PriorityWindowOpenEvent)]
+    assert [p.agent_id for p in pwos] == ["alice", "hatter", "td", "tdm"]
+    # All in rotation 0
+    assert all(p.rotation_index == 0 for p in pwos)
+    # window_index is monotonic across both teams
+    assert [p.window_index for p in pwos] == [0, 1, 2, 3]
+
+
+async def test_team_window_continues_when_one_member_raises() -> None:
+    """asyncio.gather(return_exceptions=True) means a single
+    member's failure doesn't poison the rest. The failing member
+    is treated as PASS (no AgentActed for them); the other member
+    still acts normally."""
+
+    class _RaisingAgent(FakePhaseAgent):
+        async def deliberate(self, context: Context) -> Utterance | None:
+            raise RuntimeError("simulated deliberate failure")
+
+    runner = _make_runner(
+        cast=["alice", "hatter"],
+        scripts={
+            "alice": [_ScriptedResponse(utterance=_utt("alice"))],
+        },
+    )
+    # Replace hatter with the raising agent
+    runner.agents["hatter"] = _RaisingAgent("hatter")
+
+    meeting = _meeting(
+        roster=["alice", "hatter"],
+        phases=[
+            PhaseSpec(
+                name="clarify",
+                max_rotations=1,
+                team_groupings=[["alice", "hatter"]],
+            ),
+        ],
+    )
+    events = await _drive(meeting, runner)
+
+    acts = [e for e in events if isinstance(e, AgentActEvent)]
+    passes = [e for e in events if isinstance(e, AgentPassEvent)]
+    assert len(acts) == 1
+    assert acts[0].agent_id == "alice"
+    assert len(passes) == 1
+    assert passes[0].agent_id == "hatter"
+
+
+async def test_team_windows_recover_parallelism_via_gather() -> None:
+    """Wall-clock smoke check: when two team members each take ~50ms
+    to deliberate, the team window completes in ~50ms (parallel),
+    not ~100ms (serial)."""
+
+    class _SlowAgent(FakePhaseAgent):
+        def __init__(self, name: str, delay: float) -> None:
+            super().__init__(name)
+            self._delay = delay
+
+        async def deliberate(self, context: Context) -> Utterance | None:
+            await asyncio.sleep(self._delay)
+            return _utt(self.identity.name)
+
+    runner = _make_runner(cast=["alice", "hatter"], scripts={})
+    runner.agents["alice"] = _SlowAgent("alice", 0.05)
+    runner.agents["hatter"] = _SlowAgent("hatter", 0.05)
+
+    meeting = _meeting(
+        roster=["alice", "hatter"],
+        phases=[
+            PhaseSpec(
+                name="clarify",
+                max_rotations=1,
+                team_groupings=[["alice", "hatter"]],
+            ),
+        ],
+    )
+    start = time.monotonic()
+    await _drive(meeting, runner)
+    elapsed = time.monotonic() - start
+    # Sequential would be ~0.10s; parallel should land near 0.05s.
+    # Allow generous slack for CI flakiness — the assertion is
+    # "we're closer to parallel than serial."
+    assert elapsed < 0.09, (
+        f"team window took {elapsed:.3f}s; expected near 0.05s "
+        "(parallel via gather), not 0.10s (serial)"
+    )
+
+
+async def test_run_workflow_dispatches_phased_meetings_to_orchestrator(tmp_path) -> None:
     """A workflow with a phased meeting routes through
     run_phased_meeting; phase events appear in run_workflow's
     yielded event stream alongside meeting events."""
@@ -610,6 +797,9 @@ async def test_run_workflow_dispatches_phased_meetings_to_orchestrator() -> None
             "b": [_ScriptedResponse(utterance=_utt("b"))],
         },
     )
+    # T58d wires a phase-event writer based on runner.project_root;
+    # use the test's tmp dir to keep the JSONL out of /tmp/.
+    runner.project_root = tmp_path
     workflow = Workflow(
         name="phased-test",
         description="d",
@@ -652,6 +842,176 @@ async def test_run_workflow_dispatches_phased_meetings_to_orchestrator() -> None
         i for i, e in enumerate(events) if isinstance(e, PhaseEndEvent)
     )
     assert meeting_start < phase_start < phase_end < meeting_end
+
+
+async def test_phase_event_writer_called_for_every_phase_event(tmp_path) -> None:
+    """T58d — when a phase_event_writer is supplied, every phase
+    event the orchestrator yields is also passed to the writer in
+    order. Validates the persistence hook before checking on-disk
+    format separately."""
+    runner = _make_runner(
+        cast=["a", "b"],
+        scripts={
+            "a": [_ScriptedResponse(utterance=_utt("a"))],
+            "b": [_ScriptedResponse(utterance=_utt("b"))],
+        },
+    )
+    meeting = _meeting(
+        roster=["a", "b"],
+        phases=[PhaseSpec(name="discussion", max_rotations=1)],
+    )
+
+    captured: list[Any] = []
+
+    async def writer(event: Any) -> None:
+        captured.append(event)
+
+    events: list[Any] = []
+    async for event in run_phased_meeting(
+        meeting=meeting,
+        runner=runner,  # type: ignore[arg-type]
+        capture=WorkflowCapture(),
+        directive=None,
+        per_item_meetings={},
+        current_item_kind=None,
+        current_item_slug=None,
+        thread_id="t",
+        iteration_index=None,
+        iteration_total=None,
+        iteration_label=None,
+        phase_event_writer=writer,
+    ):
+        events.append(event)
+
+    # Every phase event from `events` appears in `captured` in the
+    # same order. (Other event types — RunnerEvent, MeetingStart/End
+    # — are not phase events and aren't written.)
+    from wonderland.meeting import (
+        AgentActEvent,
+        AgentPassEvent,
+        PhaseEndEvent,
+        PhaseStartEvent,
+        PriorityWindowOpenEvent,
+        RotationCompleteEvent,
+    )
+
+    phase_event_types = (
+        PhaseStartEvent,
+        PhaseEndEvent,
+        PriorityWindowOpenEvent,
+        AgentActEvent,
+        AgentPassEvent,
+        RotationCompleteEvent,
+    )
+    yielded_phase_events = [e for e in events if isinstance(e, phase_event_types)]
+    assert captured == yielded_phase_events
+    assert len(captured) >= 5  # PhaseStart + 2 windows + 2 acts + RotationComplete + PhaseEnd at minimum
+
+
+async def test_jsonl_phase_event_writer_round_trip(tmp_path) -> None:
+    """T58d — write phase events through jsonl_phase_event_writer,
+    then read them back via read_phase_events. Should round-trip
+    every event type exactly."""
+    from datetime import datetime, timezone
+
+    from wonderland.meeting import (
+        AgentActEvent,
+        AgentPassEvent,
+        PhaseEndEvent,
+        PhaseStartEvent,
+        PriorityWindowOpenEvent,
+        RotationCompleteEvent,
+        jsonl_phase_event_writer,
+        read_phase_events,
+    )
+    from wonderland.turns import PhaseDefinition
+
+    path = tmp_path / "phase-events.jsonl"
+    write = jsonl_phase_event_writer(path)
+
+    now = datetime(2026, 5, 9, 12, 0, 0, tzinfo=timezone.utc)
+    events = [
+        PhaseStartEvent(
+            thread_id="m4",
+            phase=PhaseDefinition(name="red-tests", max_rotations=3),
+            cast=("alice", "hatter"),
+            timestamp=now,
+        ),
+        PriorityWindowOpenEvent(
+            thread_id="m4",
+            phase_name="red-tests",
+            agent_id="alice",
+            rotation_index=0,
+            window_index=0,
+            timestamp=now,
+        ),
+        AgentActEvent(
+            thread_id="m4",
+            phase_name="red-tests",
+            agent_id="alice",
+            rotation_index=0,
+            utterance_id="u-1",
+            timestamp=now,
+        ),
+        AgentPassEvent(
+            thread_id="m4",
+            phase_name="red-tests",
+            agent_id="hatter",
+            rotation_index=0,
+            reason=None,
+            timestamp=now,
+        ),
+        RotationCompleteEvent(
+            thread_id="m4",
+            phase_name="red-tests",
+            rotation_index=0,
+            timestamp=now,
+        ),
+        PhaseEndEvent(
+            thread_id="m4",
+            phase_name="red-tests",
+            reason="succession",
+            rotations_used=1,
+            total_windows=2,
+            passes_per_agent={"alice": 0, "hatter": 1},
+            acts_per_agent={"alice": 1, "hatter": 0},
+            timestamp=now,
+        ),
+    ]
+    for ev in events:
+        await write(ev)
+
+    read_back = read_phase_events(path)
+    assert read_back == events
+
+
+async def test_jsonl_phase_event_writer_creates_parent_dir(tmp_path) -> None:
+    """The writer must create the .wonderland/ parent directory if
+    it doesn't exist — fresh project roots won't have it."""
+    from wonderland.meeting import (
+        PhaseStartEvent,
+        jsonl_phase_event_writer,
+    )
+    from wonderland.turns import PhaseDefinition
+
+    nested = tmp_path / "fresh" / ".wonderland" / "phase-events.jsonl"
+    write = jsonl_phase_event_writer(nested)
+    await write(
+        PhaseStartEvent(
+            thread_id="m",
+            phase=PhaseDefinition(name="d"),
+            cast=("a",),
+        )
+    )
+    assert nested.is_file()
+
+
+async def test_read_phase_events_missing_file_returns_empty(tmp_path) -> None:
+    """Older snapshots predate T58d and won't have phase-events.jsonl
+    — read_phase_events returns an empty list, not an error."""
+    from wonderland.meeting import read_phase_events
+
+    assert read_phase_events(tmp_path / "nonexistent.jsonl") == []
 
 
 async def test_orchestrator_owned_flag_cleared_in_finally() -> None:

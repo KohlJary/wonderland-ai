@@ -26,9 +26,12 @@ Per the design decisions sketched in T58 review:
 from __future__ import annotations
 
 import asyncio
+import json
 import time
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wonderland.turns import (
@@ -70,6 +73,7 @@ class PhaseStartEvent:
     thread_id: str
     phase: PhaseDefinition
     cast: tuple[str, ...]
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,7 @@ class PhaseEndEvent:
     total_windows: int
     passes_per_agent: dict[str, int]
     acts_per_agent: dict[str, int]
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -95,6 +100,7 @@ class PriorityWindowOpenEvent:
     agent_id: str
     rotation_index: int
     window_index: int
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -106,6 +112,7 @@ class AgentActEvent:
     agent_id: str
     rotation_index: int
     utterance_id: str
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -117,6 +124,7 @@ class AgentPassEvent:
     agent_id: str
     rotation_index: int
     reason: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -127,6 +135,119 @@ class RotationCompleteEvent:
     thread_id: str
     phase_name: str
     rotation_index: int
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+# ---------------------------------------------------------------------
+# Phase-event persistence (T58d / analysis 034 F6)
+# ---------------------------------------------------------------------
+# Phased runs need their phase events on disk so post-run analysis can
+# measure deliberations (the unit phases bound) rather than just LLM
+# calls (what telemetry tracks). Without this, every phased run has
+# the same measurement gap r35 had — we know a phase ended via
+# `succession` vs `exhausted` etc., but only on the live wire.
+
+PhaseEvent = (
+    PhaseStartEvent
+    | PhaseEndEvent
+    | PriorityWindowOpenEvent
+    | AgentActEvent
+    | AgentPassEvent
+    | RotationCompleteEvent
+)
+
+PhaseEventWriter = Callable[[PhaseEvent], Awaitable[None]]
+"""Coroutine that persists a phase event somewhere (default: JSONL on
+disk). Async so writers can use aiofiles or batched flushes if needed;
+the default writer is synchronous-disguised-as-async (a bare file
+write + flush per event)."""
+
+
+_EVENT_KINDS: dict[str, type] = {
+    "PhaseStartEvent": PhaseStartEvent,
+    "PhaseEndEvent": PhaseEndEvent,
+    "PriorityWindowOpenEvent": PriorityWindowOpenEvent,
+    "AgentActEvent": AgentActEvent,
+    "AgentPassEvent": AgentPassEvent,
+    "RotationCompleteEvent": RotationCompleteEvent,
+}
+
+
+def serialize_phase_event(event: PhaseEvent) -> dict[str, Any]:
+    """Convert a phase event to a JSON-friendly dict.
+
+    Adds a ``_kind`` discriminator so the reader knows which event
+    type to reconstruct. ``datetime`` fields serialize as ISO 8601.
+    Nested dataclasses (PhaseDefinition inside PhaseStartEvent)
+    serialize via ``dataclasses.asdict``. Tuples serialize as lists
+    (JSON-native); the deserializer restores tuples for fields that
+    require them.
+    """
+    payload = asdict(event)
+    payload["_kind"] = type(event).__name__
+    # asdict converts datetime as-is (not JSON-friendly); fix up.
+    if isinstance(event.timestamp, datetime):
+        payload["timestamp"] = event.timestamp.isoformat()
+    return payload
+
+
+def deserialize_phase_event(payload: dict[str, Any]) -> PhaseEvent:
+    """Reconstruct a phase event from its on-disk dict form."""
+    kind = payload.pop("_kind", None)
+    if kind not in _EVENT_KINDS:
+        raise ValueError(f"unknown phase-event kind: {kind!r}")
+    cls = _EVENT_KINDS[kind]
+    if isinstance(payload.get("timestamp"), str):
+        payload["timestamp"] = datetime.fromisoformat(payload["timestamp"])
+    if kind == "PhaseStartEvent":
+        # ``phase`` is a nested dataclass; ``cast`` was a tuple
+        # serialized as a list. ``team_groupings`` was a tuple-of-
+        # tuples on the engine side; JSON gives us list-of-lists,
+        # restore tuple shape so equality holds.
+        phase_payload = dict(payload["phase"])
+        if "team_groupings" in phase_payload:
+            phase_payload["team_groupings"] = tuple(
+                tuple(team) for team in phase_payload["team_groupings"]
+            )
+        payload["phase"] = PhaseDefinition(**phase_payload)
+        payload["cast"] = tuple(payload["cast"])
+    return cls(**payload)
+
+
+def jsonl_phase_event_writer(path: Path) -> PhaseEventWriter:
+    """Build a writer that appends one JSON line per phase event to
+    ``path``. The parent directory is created if missing. Each call
+    opens, appends, and flushes — small overhead per event but
+    guarantees the line is on disk before the next event fires (so
+    a crash mid-meeting still leaves a partial-but-readable log).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    async def _write(event: PhaseEvent) -> None:
+        line = json.dumps(serialize_phase_event(event)) + "\n"
+        # Open-append-close per event for crash safety. Phased
+        # meetings emit a few events per second at most, so the
+        # syscall overhead is negligible.
+        with path.open("a") as f:
+            f.write(line)
+
+    return _write
+
+
+def read_phase_events(path: Path) -> list[PhaseEvent]:
+    """Read a phase-events.jsonl file and return the events in
+    write order. Returns an empty list if the file doesn't exist
+    (older snapshots predate T58d)."""
+    if not path.is_file():
+        return []
+    events: list[PhaseEvent] = []
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            events.append(deserialize_phase_event(json.loads(line)))
+    return events
 
 
 # ---------------------------------------------------------------------
@@ -233,6 +354,7 @@ async def run_phased_meeting(
     iteration_total: int | None,
     iteration_label: str | None,
     window_timeout_seconds: float = DEFAULT_WINDOW_TIMEOUT_SECONDS,
+    phase_event_writer: PhaseEventWriter | None = None,
 ) -> AsyncIterator[Any]:
     """Drive one phased meeting end-to-end.
 
@@ -324,13 +446,44 @@ async def run_phased_meeting(
             cast = tuple(meeting.roster)
             state = PhaseState(definition=phase_def, cast=cast)
 
-            yield PhaseStartEvent(
+            phase_start = PhaseStartEvent(
                 thread_id=thread_id,
                 phase=phase_def,
                 cast=cast,
             )
+            if phase_event_writer is not None:
+                await phase_event_writer(phase_start)
+            yield phase_start
 
             meeting_budget_hit = False
+
+            # Local helper: Identity → AgentIdentity coercion. Real
+            # agents store ``Identity`` (constitution-carrying); test
+            # fakes hand back ``AgentIdentity`` directly. The
+            # ``as_agent_identity`` method exists on the former.
+            def _aid(identity: Any) -> Any:
+                if hasattr(identity, "as_agent_identity"):
+                    return identity.as_agent_identity()
+                return identity
+
+            dodo_aid = _aid(runner.dodo.identity)
+
+            # Per-window deliberation helper. Wraps the per-agent
+            # compose_context + deliberate + timeout pattern so the
+            # team window can run all members concurrently via
+            # asyncio.gather.
+            async def _deliberate_window(
+                agent_id: str, window_open: Utterance
+            ) -> Utterance | None:
+                target = runner.agents[agent_id]
+                try:
+                    context = await target.compose_context([window_open])
+                    return await asyncio.wait_for(
+                        target.deliberate(context),
+                        timeout=window_timeout_seconds,
+                    )
+                except (asyncio.TimeoutError, TimeoutError):
+                    return None
 
             while not state.is_complete():
                 # Meeting budget gate (Decision 4).
@@ -343,135 +496,166 @@ async def run_phased_meeting(
                         meeting_budget_hit = True
                         break
 
-                next_agent_id = state.next_agent()
-                # is_complete() returned False, so next_agent is set.
-                assert next_agent_id is not None
-                window_idx = state.windows_opened
+                team = state.next_team()
+                # is_complete() returned False, so next_team is set.
+                assert team is not None
                 rotation_idx = state.current_rotation
+                base_window_idx = state.windows_opened
 
-                yield PriorityWindowOpenEvent(
-                    thread_id=thread_id,
-                    phase_name=phase_def.name,
-                    agent_id=next_agent_id,
-                    rotation_index=rotation_idx,
-                    window_index=window_idx,
-                )
-
-                target_agent = runner.agents[next_agent_id]
-                # ``runner.dodo.identity`` and ``agent.identity`` are
-                # ``Identity`` objects (the heavyweight constitution-
-                # carrying form). Utterance speakers/recipients use
-                # the lightweight ``AgentIdentity`` (name +
-                # constitution_version) — the conversion lives on
-                # Identity.
-                dodo_aid = (
-                    runner.dodo.identity.as_agent_identity()
-                    if hasattr(runner.dodo.identity, "as_agent_identity")
-                    else runner.dodo.identity
-                )
-                target_aid = (
-                    target_agent.identity.as_agent_identity()
-                    if hasattr(target_agent.identity, "as_agent_identity")
-                    else target_agent.identity
-                )
-                window_open = _build_window_open_utterance(
-                    thread_id=thread_id,
-                    phase_name=phase_def.name,
-                    agent_id=next_agent_id,
-                    dodo_identity=dodo_aid,
-                    target_identity=target_aid,
-                )
-                await runner.bus.publish(window_open)
-                yield RunnerEvent(
-                    kind="utterance",
-                    elapsed=time.monotonic() - meeting_start,
-                    payload={"utterance": window_open},
-                )
-
-                # Drive deliberation directly.
-                response: Utterance | None
-                try:
-                    context = await target_agent.compose_context(
-                        [window_open]
+                # ---- Open the team window ----
+                # Publish window-open utterances + emit
+                # PriorityWindowOpenEvents for each team member
+                # before any deliberation runs. Deliberation then
+                # happens concurrently for all members of the team.
+                # In single-agent teams (the default when
+                # team_groupings is empty), this collapses to the
+                # original P9 behavior.
+                window_opens: list[Utterance] = []
+                for team_offset, agent_id in enumerate(team):
+                    window_idx = base_window_idx + team_offset
+                    pwo_evt = PriorityWindowOpenEvent(
+                        thread_id=thread_id,
+                        phase_name=phase_def.name,
+                        agent_id=agent_id,
+                        rotation_index=rotation_idx,
+                        window_index=window_idx,
                     )
-                    response = await asyncio.wait_for(
-                        target_agent.deliberate(context),
-                        timeout=window_timeout_seconds,
-                    )
-                except (asyncio.TimeoutError, TimeoutError):
-                    response = None
+                    if phase_event_writer is not None:
+                        await phase_event_writer(pwo_evt)
+                    yield pwo_evt
 
-                action = _classify_response(response)
-
-                if action == WindowAction.ACTED:
-                    assert response is not None
-                    await runner.bus.publish(response)
-                    capture.observe(response)
-                    state.outcomes.append(
-                        WindowOutcome(
-                            rotation_index=rotation_idx,
-                            agent_id=next_agent_id,
-                            action=WindowAction.ACTED,
-                            utterance_id=response.id,
-                        )
+                    target_aid = _aid(runner.agents[agent_id].identity)
+                    window_open = _build_window_open_utterance(
+                        thread_id=thread_id,
+                        phase_name=phase_def.name,
+                        agent_id=agent_id,
+                        dodo_identity=dodo_aid,
+                        target_identity=target_aid,
                     )
+                    await runner.bus.publish(window_open)
+                    window_opens.append(window_open)
                     yield RunnerEvent(
                         kind="utterance",
                         elapsed=time.monotonic() - meeting_start,
-                        payload={"utterance": response},
+                        payload={"utterance": window_open},
                     )
-                    yield AgentActEvent(
-                        thread_id=thread_id,
-                        phase_name=phase_def.name,
-                        agent_id=next_agent_id,
-                        rotation_index=rotation_idx,
-                        utterance_id=response.id,
-                    )
-                else:
-                    pass_reason: str | None = None
-                    if response is not None:
-                        # Agent emitted PASS explicitly — publish it
-                        # so the meeting record carries the rationale.
+
+                # ---- Concurrent team deliberation ----
+                # asyncio.gather lets all team members deliberate at
+                # once. Wall-clock for the team window =
+                # max(member_deliberations) + small serialization
+                # overhead for the per-member publish + event emit
+                # below. This is the Two-Headed Giant
+                # parallelism-recovery (analysis 034 F2 / P9.5).
+                # return_exceptions=True so a single member's
+                # failure doesn't poison the rest of the team.
+                results = await asyncio.gather(
+                    *[
+                        _deliberate_window(agent_id, window_opens[i])
+                        for i, agent_id in enumerate(team)
+                    ],
+                    return_exceptions=True,
+                )
+
+                # ---- Resolve windows in cast order ----
+                # Even though deliberations completed in arbitrary
+                # order via gather, we publish + emit in cast order
+                # so the bus transcript and event stream are
+                # deterministic regardless of LLM call timing.
+                for team_offset, (agent_id, raw_response) in enumerate(
+                    zip(team, results)
+                ):
+                    response: Utterance | None
+                    if isinstance(raw_response, BaseException):
+                        # Treat raised exceptions as PASS — the
+                        # window slot is consumed, and the §VIII
+                        # observability still counts a window even
+                        # when the agent's deliberation crashed.
+                        response = None
+                    else:
+                        response = raw_response
+
+                    action = _classify_response(response)
+
+                    if action == WindowAction.ACTED:
+                        assert response is not None
                         await runner.bus.publish(response)
                         capture.observe(response)
-                        pass_reason = response.content.body or None
+                        state.outcomes.append(
+                            WindowOutcome(
+                                rotation_index=rotation_idx,
+                                agent_id=agent_id,
+                                action=WindowAction.ACTED,
+                                utterance_id=response.id,
+                            )
+                        )
                         yield RunnerEvent(
                             kind="utterance",
                             elapsed=time.monotonic() - meeting_start,
                             payload={"utterance": response},
                         )
-                    state.outcomes.append(
-                        WindowOutcome(
+                        act_evt = AgentActEvent(
+                            thread_id=thread_id,
+                            phase_name=phase_def.name,
+                            agent_id=agent_id,
                             rotation_index=rotation_idx,
-                            agent_id=next_agent_id,
-                            action=WindowAction.PASSED,
+                            utterance_id=response.id,
                         )
-                    )
-                    yield AgentPassEvent(
-                        thread_id=thread_id,
-                        phase_name=phase_def.name,
-                        agent_id=next_agent_id,
-                        rotation_index=rotation_idx,
-                        reason=pass_reason,
-                    )
+                        if phase_event_writer is not None:
+                            await phase_event_writer(act_evt)
+                        yield act_evt
+                    else:
+                        pass_reason: str | None = None
+                        if response is not None:
+                            await runner.bus.publish(response)
+                            capture.observe(response)
+                            pass_reason = response.content.body or None
+                            yield RunnerEvent(
+                                kind="utterance",
+                                elapsed=time.monotonic() - meeting_start,
+                                payload={"utterance": response},
+                            )
+                        state.outcomes.append(
+                            WindowOutcome(
+                                rotation_index=rotation_idx,
+                                agent_id=agent_id,
+                                action=WindowAction.PASSED,
+                            )
+                        )
+                        pass_evt = AgentPassEvent(
+                            thread_id=thread_id,
+                            phase_name=phase_def.name,
+                            agent_id=agent_id,
+                            rotation_index=rotation_idx,
+                            reason=pass_reason,
+                        )
+                        if phase_event_writer is not None:
+                            await phase_event_writer(pass_evt)
+                        yield pass_evt
 
+                # Exit condition checked once per team window — any
+                # member's act could have shipped the artifact.
                 _check_exit_condition(
                     state=state,
                     capture=capture,
                     artifact_count_before=artifact_count_before,
                 )
 
-                # Rotation boundary — emit RotationCompleteEvent at
-                # the end of every full pass (regardless of how the
-                # rotation concluded).
-                if (window_idx + 1) % len(cast) == 0:
-                    yield RotationCompleteEvent(
+                # Rotation boundary — fires when all teams in this
+                # rotation have had a window. windows_opened modulo
+                # cast size catches this regardless of team shape
+                # (sum of team sizes per rotation = len(cast)).
+                if state.windows_opened % len(cast) == 0:
+                    rot_evt = RotationCompleteEvent(
                         thread_id=thread_id,
                         phase_name=phase_def.name,
                         rotation_index=rotation_idx,
                     )
+                    if phase_event_writer is not None:
+                        await phase_event_writer(rot_evt)
+                    yield rot_evt
 
-            yield PhaseEndEvent(
+            phase_end = PhaseEndEvent(
                 thread_id=thread_id,
                 phase_name=phase_def.name,
                 reason=_phase_end_reason(
@@ -483,6 +667,9 @@ async def run_phased_meeting(
                 passes_per_agent=state.passes_per_agent(),
                 acts_per_agent=state.acts_per_agent(),
             )
+            if phase_event_writer is not None:
+                await phase_event_writer(phase_end)
+            yield phase_end
 
             if meeting_budget_hit:
                 break
@@ -530,8 +717,14 @@ __all__ = [
     "AgentPassEvent",
     "DEFAULT_WINDOW_TIMEOUT_SECONDS",
     "PhaseEndEvent",
+    "PhaseEvent",
+    "PhaseEventWriter",
     "PhaseStartEvent",
     "PriorityWindowOpenEvent",
     "RotationCompleteEvent",
+    "deserialize_phase_event",
+    "jsonl_phase_event_writer",
+    "read_phase_events",
     "run_phased_meeting",
+    "serialize_phase_event",
 ]

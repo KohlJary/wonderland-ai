@@ -56,11 +56,27 @@ def test_rejects_missing_snapshot_dir(tmp_path: Path) -> None:
         HistoricalRunHandle(tmp_path)
 
 
-def test_rejects_missing_run_log(tmp_path: Path) -> None:
-    """A directory with wonderland-snapshot/ but no run.log should fail fast."""
+def test_run_log_now_optional_for_tui_layouts(tmp_path: Path) -> None:
+    """Pre-T58d behavior required run.log; TUI runs don't write it
+    (yet), so HistoricalRunHandle now accepts the wonderland-snapshot
+    or .wonderland directory alone. summary() degrades gracefully:
+    directive/workflow_name come back None but the handle constructs
+    cleanly so the snapshot library can list it."""
     (tmp_path / "wonderland-snapshot").mkdir()
-    with pytest.raises(FileNotFoundError, match="run.log"):
-        HistoricalRunHandle(tmp_path)
+    handle = HistoricalRunHandle(tmp_path)
+    summary = handle.summary()
+    assert summary.directive is None
+    assert summary.workflow_name is None
+    assert summary.project_root == tmp_path
+
+
+def test_accepts_dot_wonderland_layout(tmp_path: Path) -> None:
+    """TUI runs use ``.wonderland/`` instead of ``wonderland-snapshot/``;
+    HistoricalRunHandle accepts both."""
+    (tmp_path / ".wonderland").mkdir()
+    handle = HistoricalRunHandle(tmp_path)
+    summary = handle.summary()
+    assert summary.project_root == tmp_path
 
 
 def test_constructs_against_v6_banner() -> None:
