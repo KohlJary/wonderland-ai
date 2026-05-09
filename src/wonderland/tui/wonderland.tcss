@@ -295,6 +295,34 @@ NewRunScreen #description-composer {
     min-width: 16;
 }
 
+/* Analyses view — single-page lazygit shape: list at top,
+ * markdown viewer below filtered by cursor selection. */
+#analyses-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $accent;
+}
+
+AnalysesScreen #analyses-table {
+    height: 35%;
+    margin: 0 2 0 2;
+}
+
+#analysis-meta {
+    padding: 0 2;
+    margin: 1 2 0 2;
+    color: $foreground;
+    height: auto;
+}
+
+#analysis-scroll {
+    height: 1fr;
+    margin: 0 2 1 2;
+    border: round $panel;
+    padding: 1;
+}
+
 /* Settings screen — user-level config form */
 #settings-header {
     padding: 1 2;

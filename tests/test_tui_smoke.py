@@ -98,6 +98,54 @@ async def test_app_launches_with_custom_root(tmp_path: Path) -> None:
         await pilot.press("q")
 
 
+async def test_home_view_has_analyses_button() -> None:
+    """The home view exposes a visible Analyses button alongside
+    New run / Cast / Settings. Pressing it opens the AnalysesScreen
+    which lazygit-shapes the field-notes corpus."""
+    from textual.widgets import Button, DataTable
+
+    from wonderland.tui.screens.analyses import AnalysesScreen
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, SnapshotLibraryScreen)
+
+        analyses_btn = screen.query_one("#analyses-button", Button)
+        assert "Analyses" in str(analyses_btn.label)
+
+        screen.post_message(Button.Pressed(analyses_btn))
+        await pilot.pause()
+        assert isinstance(app.screen, AnalysesScreen)
+
+        # Table populated with the field-notes corpus
+        table = app.screen.query_one("#analyses-table", DataTable)
+        assert table.row_count > 0
+
+        # Press 'escape' to pop back
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SnapshotLibraryScreen)
+        await pilot.press("q")
+
+
+async def test_analyses_screen_a_keybind_opens_it() -> None:
+    """`a` from the home view opens the analyses screen, parallel to
+    `c` for cast and `S` for settings."""
+    from wonderland.tui.screens.analyses import AnalysesScreen
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        assert isinstance(app.screen, AnalysesScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("q")
+
+
 async def test_home_view_has_settings_button(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

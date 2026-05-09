@@ -20,6 +20,7 @@ from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from wonderland.observer import HistoricalRunHandle
+from wonderland.tui.screens.analyses import AnalysesScreen
 from wonderland.tui.screens.cast import CastBrowserScreen
 from wonderland.tui.screens.live_run import LiveRunScreen
 from wonderland.tui.screens.new_run import NewRunScreen
@@ -64,6 +65,7 @@ class SnapshotLibraryScreen(Screen[None]):
         Binding("enter", "open_selected", "Open", show=True),
         Binding("w", "watch_selected", "Watch", show=True),
         Binding("n", "new_run", "New run", show=True),
+        Binding("a", "open_analyses", "Analyses", show=True),
         Binding("c", "open_cast", "The Cast", show=True),
         Binding("S", "open_settings", "Settings", show=True),
         Binding("r", "refresh", "Refresh", show=True),
@@ -86,6 +88,10 @@ class SnapshotLibraryScreen(Screen[None]):
                     variant="primary",
                 )
                 yield Button(
+                    "📖 Analyses",
+                    id="analyses-button",
+                )
+                yield Button(
                     "👤 The Cast",
                     id="cast-button",
                 )
@@ -101,11 +107,11 @@ class SnapshotLibraryScreen(Screen[None]):
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Route the home view's prominent buttons. New run opens the
-        composer; Cast opens the team browser; Settings opens the
-        config form."""
+        """Route the home view's prominent buttons."""
         if event.button.id == "new-run-button":
             self.action_new_run()
+        elif event.button.id == "analyses-button":
+            self.action_open_analyses()
         elif event.button.id == "cast-button":
             self.action_open_cast()
         elif event.button.id == "settings-button":
@@ -181,6 +187,11 @@ class SnapshotLibraryScreen(Screen[None]):
     def action_new_run(self) -> None:
         """Open the new-run composer for kicking off a fresh run."""
         self.app.push_screen(NewRunScreen())
+
+    def action_open_analyses(self) -> None:
+        """Open the analyses corpus — the project's field-notes
+        collection, browsable inline."""
+        self.app.push_screen(AnalysesScreen())
 
     def action_open_settings(self) -> None:
         """Open the user-level settings screen (API key + model)."""
