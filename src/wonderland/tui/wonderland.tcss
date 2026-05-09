@@ -334,6 +334,60 @@ AnalysesScreen #analyses-table {
     padding: 1;
 }
 
+/* Skeleton picker (T71 / P8.6) — pre-launch step for bare project
+ * roots. Lazygit-shape: list left, preview right, action row at
+ * the bottom. */
+#skeleton-picker-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $accent;
+}
+#skeleton-picker-blurb {
+    padding: 0 2;
+    margin-bottom: 1;
+    color: $foreground;
+    height: auto;
+}
+#skeleton-picker-row {
+    height: 1fr;
+}
+SkeletonPickerScreen #skeleton-list-pane {
+    width: 38%;
+    height: 1fr;
+    margin: 0 1 0 0;
+}
+SkeletonPickerScreen #skeleton-preview-pane {
+    width: 1fr;
+    height: 1fr;
+}
+SkeletonPickerScreen #skeleton-list-table {
+    height: 1fr;
+    margin: 0 0 1 2;
+}
+SkeletonPickerScreen #skeleton-preview-scroll {
+    height: 1fr;
+    margin: 0 2 1 0;
+    border: round $panel;
+    padding: 1;
+}
+#skeleton-list-label,
+#skeleton-preview-label {
+    padding: 0 2;
+    color: $primary;
+    height: auto;
+}
+#skeleton-action-row {
+    height: auto;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    align: center middle;
+}
+#skeleton-action-row Button {
+    margin: 0 1;
+    min-width: 22;
+}
+
 /* Settings screen — user-level config form */
 #settings-header {
     padding: 1 2;
