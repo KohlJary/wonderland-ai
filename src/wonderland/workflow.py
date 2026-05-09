@@ -132,6 +132,42 @@ class PhaseSpec(BaseModel):
             "against."
         ),
     )
+    team_groupings: list[list[str]] = Field(
+        default_factory=list,
+        description=(
+            "Two-Headed Giant team partition (analysis 034 F2 / "
+            "P9.5). Empty list = one-agent-per-team (each agent "
+            "gets their own serial priority window, the original "
+            "P9 behavior). Non-empty = explicit teams; agents in "
+            "the same team deliberate concurrently within one team "
+            "window. Validated against the meeting's roster at the "
+            "Meeting level: every cast member must appear in "
+            "exactly one team, no overlap, no orphans."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_team_groupings_no_overlap(self) -> "PhaseSpec":
+        """Phase-local check: no agent appears in more than one team
+        within this phase. Cast-coverage validation runs at the
+        Meeting level."""
+        if not self.team_groupings:
+            return self
+        seen: set[str] = set()
+        for team in self.team_groupings:
+            if not team:
+                raise ValueError(
+                    f"phase {self.name!r}: team_groupings cannot "
+                    "contain empty teams"
+                )
+            for member in team:
+                if member in seen:
+                    raise ValueError(
+                        f"phase {self.name!r}: agent {member!r} "
+                        "appears in multiple teams"
+                    )
+                seen.add(member)
+        return self
 
     def to_phase_definition(self) -> PhaseDefinition:
         """Convert the workflow-side spec into the engine-side data
@@ -140,6 +176,7 @@ class PhaseSpec(BaseModel):
             name=self.name,
             max_rotations=self.max_rotations,
             exit_condition_artifact=self.exit_condition_artifact,
+            team_groupings=tuple(tuple(team) for team in self.team_groupings),
         )
 
 
@@ -218,6 +255,37 @@ class Meeting(BaseModel):
             raise ValueError(
                 f"meeting {self.id!r} has duplicate phase names: {dupes}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_team_groupings_cover_roster(self) -> "Meeting":
+        """For each phase that declares team_groupings, every cast
+        member (= meeting roster) must appear in exactly one team —
+        no orphans, no extras. Phases without team_groupings (empty
+        list) skip this check; they get one-agent-per-team at
+        runtime."""
+        if not self.phases:
+            return self
+        roster_set = set(self.roster)
+        for phase in self.phases:
+            if not phase.team_groupings:
+                continue
+            covered: set[str] = set()
+            for team in phase.team_groupings:
+                covered.update(team)
+            orphans = roster_set - covered
+            extras = covered - roster_set
+            if orphans:
+                raise ValueError(
+                    f"meeting {self.id!r} phase {phase.name!r}: "
+                    f"team_groupings missing cast members: {sorted(orphans)}"
+                )
+            if extras:
+                raise ValueError(
+                    f"meeting {self.id!r} phase {phase.name!r}: "
+                    f"team_groupings reference non-cast members: "
+                    f"{sorted(extras)}"
+                )
         return self
 
 
@@ -682,7 +750,21 @@ async def _run_one_meeting(
         # Local import to avoid the meeting ↔ workflow circular at
         # module-load time (meeting.py imports MeetingStartEvent /
         # MeetingEndEvent / resolve_seeds from workflow).
-        from wonderland.meeting import run_phased_meeting
+        from wonderland.meeting import (
+            jsonl_phase_event_writer,
+            run_phased_meeting,
+        )
+
+        # Phase-event persistence (T58d / analysis 034 F6). Writes
+        # one JSON line per phase event to
+        # ``<project_root>/.wonderland/phase-events.jsonl`` for
+        # post-run analysis (deliberation counts, phase-end reasons,
+        # per-agent §VIII shapes). Multiple meetings share the same
+        # file and append in run order — readers can group by
+        # thread_id when needed.
+        phase_writer = jsonl_phase_event_writer(
+            runner.project_root / ".wonderland" / "phase-events.jsonl"
+        )
 
         async for event in run_phased_meeting(
             meeting=meeting,
@@ -696,6 +778,7 @@ async def _run_one_meeting(
             iteration_index=iteration_index,
             iteration_total=iteration_total,
             iteration_label=iteration_label,
+            phase_event_writer=phase_writer,
         ):
             yield event
         return

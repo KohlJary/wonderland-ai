@@ -26,9 +26,12 @@ Per the design decisions sketched in T58 review:
 from __future__ import annotations
 
 import asyncio
+import json
 import time
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wonderland.turns import (
@@ -70,6 +73,7 @@ class PhaseStartEvent:
     thread_id: str
     phase: PhaseDefinition
     cast: tuple[str, ...]
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,7 @@ class PhaseEndEvent:
     total_windows: int
     passes_per_agent: dict[str, int]
     acts_per_agent: dict[str, int]
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -95,6 +100,7 @@ class PriorityWindowOpenEvent:
     agent_id: str
     rotation_index: int
     window_index: int
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -106,6 +112,7 @@ class AgentActEvent:
     agent_id: str
     rotation_index: int
     utterance_id: str
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -117,6 +124,7 @@ class AgentPassEvent:
     agent_id: str
     rotation_index: int
     reason: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -127,6 +135,119 @@ class RotationCompleteEvent:
     thread_id: str
     phase_name: str
     rotation_index: int
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
+
+
+# ---------------------------------------------------------------------
+# Phase-event persistence (T58d / analysis 034 F6)
+# ---------------------------------------------------------------------
+# Phased runs need their phase events on disk so post-run analysis can
+# measure deliberations (the unit phases bound) rather than just LLM
+# calls (what telemetry tracks). Without this, every phased run has
+# the same measurement gap r35 had — we know a phase ended via
+# `succession` vs `exhausted` etc., but only on the live wire.
+
+PhaseEvent = (
+    PhaseStartEvent
+    | PhaseEndEvent
+    | PriorityWindowOpenEvent
+    | AgentActEvent
+    | AgentPassEvent
+    | RotationCompleteEvent
+)
+
+PhaseEventWriter = Callable[[PhaseEvent], Awaitable[None]]
+"""Coroutine that persists a phase event somewhere (default: JSONL on
+disk). Async so writers can use aiofiles or batched flushes if needed;
+the default writer is synchronous-disguised-as-async (a bare file
+write + flush per event)."""
+
+
+_EVENT_KINDS: dict[str, type] = {
+    "PhaseStartEvent": PhaseStartEvent,
+    "PhaseEndEvent": PhaseEndEvent,
+    "PriorityWindowOpenEvent": PriorityWindowOpenEvent,
+    "AgentActEvent": AgentActEvent,
+    "AgentPassEvent": AgentPassEvent,
+    "RotationCompleteEvent": RotationCompleteEvent,
+}
+
+
+def serialize_phase_event(event: PhaseEvent) -> dict[str, Any]:
+    """Convert a phase event to a JSON-friendly dict.
+
+    Adds a ``_kind`` discriminator so the reader knows which event
+    type to reconstruct. ``datetime`` fields serialize as ISO 8601.
+    Nested dataclasses (PhaseDefinition inside PhaseStartEvent)
+    serialize via ``dataclasses.asdict``. Tuples serialize as lists
+    (JSON-native); the deserializer restores tuples for fields that
+    require them.
+    """
+    payload = asdict(event)
+    payload["_kind"] = type(event).__name__
+    # asdict converts datetime as-is (not JSON-friendly); fix up.
+    if isinstance(event.timestamp, datetime):
+        payload["timestamp"] = event.timestamp.isoformat()
+    return payload
+
+
+def deserialize_phase_event(payload: dict[str, Any]) -> PhaseEvent:
+    """Reconstruct a phase event from its on-disk dict form."""
+    kind = payload.pop("_kind", None)
+    if kind not in _EVENT_KINDS:
+        raise ValueError(f"unknown phase-event kind: {kind!r}")
+    cls = _EVENT_KINDS[kind]
+    if isinstance(payload.get("timestamp"), str):
+        payload["timestamp"] = datetime.fromisoformat(payload["timestamp"])
+    if kind == "PhaseStartEvent":
+        # ``phase`` is a nested dataclass; ``cast`` was a tuple
+        # serialized as a list. ``team_groupings`` was a tuple-of-
+        # tuples on the engine side; JSON gives us list-of-lists,
+        # restore tuple shape so equality holds.
+        phase_payload = dict(payload["phase"])
+        if "team_groupings" in phase_payload:
+            phase_payload["team_groupings"] = tuple(
+                tuple(team) for team in phase_payload["team_groupings"]
+            )
+        payload["phase"] = PhaseDefinition(**phase_payload)
+        payload["cast"] = tuple(payload["cast"])
+    return cls(**payload)
+
+
+def jsonl_phase_event_writer(path: Path) -> PhaseEventWriter:
+    """Build a writer that appends one JSON line per phase event to
+    ``path``. The parent directory is created if missing. Each call
+    opens, appends, and flushes — small overhead per event but
+    guarantees the line is on disk before the next event fires (so
+    a crash mid-meeting still leaves a partial-but-readable log).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    async def _write(event: PhaseEvent) -> None:
+        line = json.dumps(serialize_phase_event(event)) + "\n"
+        # Open-append-close per event for crash safety. Phased
+        # meetings emit a few events per second at most, so the
+        # syscall overhead is negligible.
+        with path.open("a") as f:
+            f.write(line)
+
+    return _write
+
+
+def read_phase_events(path: Path) -> list[PhaseEvent]:
+    """Read a phase-events.jsonl file and return the events in
+    write order. Returns an empty list if the file doesn't exist
+    (older snapshots predate T58d)."""
+    if not path.is_file():
+        return []
+    events: list[PhaseEvent] = []
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            events.append(deserialize_phase_event(json.loads(line)))
+    return events
 
 
 # ---------------------------------------------------------------------
@@ -233,6 +354,7 @@ async def run_phased_meeting(
     iteration_total: int | None,
     iteration_label: str | None,
     window_timeout_seconds: float = DEFAULT_WINDOW_TIMEOUT_SECONDS,
+    phase_event_writer: PhaseEventWriter | None = None,
 ) -> AsyncIterator[Any]:
     """Drive one phased meeting end-to-end.
 
@@ -324,11 +446,14 @@ async def run_phased_meeting(
             cast = tuple(meeting.roster)
             state = PhaseState(definition=phase_def, cast=cast)
 
-            yield PhaseStartEvent(
+            phase_start = PhaseStartEvent(
                 thread_id=thread_id,
                 phase=phase_def,
                 cast=cast,
             )
+            if phase_event_writer is not None:
+                await phase_event_writer(phase_start)
+            yield phase_start
 
             meeting_budget_hit = False
 
@@ -349,13 +474,16 @@ async def run_phased_meeting(
                 window_idx = state.windows_opened
                 rotation_idx = state.current_rotation
 
-                yield PriorityWindowOpenEvent(
+                window_open_evt = PriorityWindowOpenEvent(
                     thread_id=thread_id,
                     phase_name=phase_def.name,
                     agent_id=next_agent_id,
                     rotation_index=rotation_idx,
                     window_index=window_idx,
                 )
+                if phase_event_writer is not None:
+                    await phase_event_writer(window_open_evt)
+                yield window_open_evt
 
                 target_agent = runner.agents[next_agent_id]
                 # ``runner.dodo.identity`` and ``agent.identity`` are
@@ -420,13 +548,16 @@ async def run_phased_meeting(
                         elapsed=time.monotonic() - meeting_start,
                         payload={"utterance": response},
                     )
-                    yield AgentActEvent(
+                    act_evt = AgentActEvent(
                         thread_id=thread_id,
                         phase_name=phase_def.name,
                         agent_id=next_agent_id,
                         rotation_index=rotation_idx,
                         utterance_id=response.id,
                     )
+                    if phase_event_writer is not None:
+                        await phase_event_writer(act_evt)
+                    yield act_evt
                 else:
                     pass_reason: str | None = None
                     if response is not None:
@@ -447,13 +578,16 @@ async def run_phased_meeting(
                             action=WindowAction.PASSED,
                         )
                     )
-                    yield AgentPassEvent(
+                    pass_evt = AgentPassEvent(
                         thread_id=thread_id,
                         phase_name=phase_def.name,
                         agent_id=next_agent_id,
                         rotation_index=rotation_idx,
                         reason=pass_reason,
                     )
+                    if phase_event_writer is not None:
+                        await phase_event_writer(pass_evt)
+                    yield pass_evt
 
                 _check_exit_condition(
                     state=state,
@@ -465,13 +599,16 @@ async def run_phased_meeting(
                 # the end of every full pass (regardless of how the
                 # rotation concluded).
                 if (window_idx + 1) % len(cast) == 0:
-                    yield RotationCompleteEvent(
+                    rot_evt = RotationCompleteEvent(
                         thread_id=thread_id,
                         phase_name=phase_def.name,
                         rotation_index=rotation_idx,
                     )
+                    if phase_event_writer is not None:
+                        await phase_event_writer(rot_evt)
+                    yield rot_evt
 
-            yield PhaseEndEvent(
+            phase_end = PhaseEndEvent(
                 thread_id=thread_id,
                 phase_name=phase_def.name,
                 reason=_phase_end_reason(
@@ -483,6 +620,9 @@ async def run_phased_meeting(
                 passes_per_agent=state.passes_per_agent(),
                 acts_per_agent=state.acts_per_agent(),
             )
+            if phase_event_writer is not None:
+                await phase_event_writer(phase_end)
+            yield phase_end
 
             if meeting_budget_hit:
                 break
@@ -530,8 +670,14 @@ __all__ = [
     "AgentPassEvent",
     "DEFAULT_WINDOW_TIMEOUT_SECONDS",
     "PhaseEndEvent",
+    "PhaseEvent",
+    "PhaseEventWriter",
     "PhaseStartEvent",
     "PriorityWindowOpenEvent",
     "RotationCompleteEvent",
+    "deserialize_phase_event",
+    "jsonl_phase_event_writer",
+    "read_phase_events",
     "run_phased_meeting",
+    "serialize_phase_event",
 ]

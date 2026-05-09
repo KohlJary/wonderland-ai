@@ -44,6 +44,14 @@ class PhaseDefinition:
     """If set, the phase ends when an artifact of this kind ships.
     Lets a phase be 'until the contract is signed' rather than
     'for N rotations.'"""
+    team_groupings: tuple[tuple[str, ...], ...] = ()
+    """Two-Headed Giant team partition (analysis 034 F2 / P9.5).
+    Empty tuple = one-agent-per-team (each agent gets their own
+    serial priority window — the original P9 behavior). Non-empty =
+    explicit teams; agents within the same team open their windows
+    concurrently inside one team window, recovering the parallelism
+    that constitutional pairs deserve. Frozen-tuple-of-tuples (not
+    list-of-lists) so PhaseDefinition stays hashable."""
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -52,6 +60,24 @@ class PhaseDefinition:
             raise ValueError(
                 f"max_rotations must be >= 1, got {self.max_rotations}"
             )
+        # Basic team_groupings sanity. Cast-coverage validation
+        # (every cast member in exactly one team) lives at the
+        # workflow / Meeting level since PhaseDefinition doesn't
+        # carry the cast.
+        if self.team_groupings:
+            seen: set[str] = set()
+            for team in self.team_groupings:
+                if not team:
+                    raise ValueError(
+                        "team_groupings cannot contain empty teams"
+                    )
+                for member in team:
+                    if member in seen:
+                        raise ValueError(
+                            f"agent {member!r} appears in multiple "
+                            f"teams in phase {self.name!r}"
+                        )
+                    seen.add(member)
 
 
 @dataclass(frozen=True)

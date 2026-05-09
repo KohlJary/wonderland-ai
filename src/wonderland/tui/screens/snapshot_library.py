@@ -31,17 +31,51 @@ from wonderland.tui.screens.settings import SettingsScreen
 def _discover_snapshots(root: Path) -> list[Path]:
     """Find all valid snapshot directories under ``root``.
 
-    A directory is a valid snapshot if it contains both
-    ``wonderland-snapshot/`` and ``run.log``. Searches at any depth
-    so nested layouts (e.g. ``analyses/data/029/v6/``) work.
+    Two layouts are accepted:
+
+      1. Script-driven snapshots — directories that contain
+         ``wonderland-snapshot/`` (with or without ``run.log``).
+         These are the analyses/data/ corpus.
+      2. TUI-driven runs — directories that contain ``.wonderland/``.
+         These are TUI run project roots; they don't have run.log
+         yet but HistoricalRunHandle handles the absence
+         gracefully.
+
+    Searches at any depth so nested layouts (analyses/data/029/v6/)
+    and runs/r35-tdd-serial-phased/ both surface.
     """
     if not root.is_dir():
         return []
+    seen: set[Path] = set()
     out: list[Path] = []
-    for run_log in root.rglob("run.log"):
-        snapshot_dir = run_log.parent
-        if (snapshot_dir / "wonderland-snapshot").is_dir():
-            out.append(snapshot_dir)
+
+    # Script-driven layout (rglob wonderland-snapshot/).
+    for snapshot in root.rglob("wonderland-snapshot"):
+        if snapshot.is_dir():
+            parent = snapshot.parent
+            if parent not in seen:
+                seen.add(parent)
+                out.append(parent)
+
+    # TUI-driven layout (rglob .wonderland/, but skip nested ones
+    # under wonderland-ai source itself, e.g. .git/.wonderland which
+    # rglob shouldn't hit anyway, and .wonderland/memory/<agent>/...
+    # which we don't want to double-count).
+    for dot in root.rglob(".wonderland"):
+        if not dot.is_dir():
+            continue
+        # Don't double-count when the snapshot already showed up
+        # under the script-driven path.
+        parent = dot.parent
+        if parent in seen:
+            continue
+        # Don't pick up nested .wonderland/ dirs that live INSIDE
+        # another snapshot (memory subdirs).
+        if any(p in seen for p in parent.parents):
+            continue
+        seen.add(parent)
+        out.append(parent)
+
     out.sort(key=lambda p: str(p))
     return out
 

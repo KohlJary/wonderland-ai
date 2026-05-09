@@ -226,6 +226,139 @@ class TestPhaseSpec:
         assert d.max_rotations == 4
         assert d.exit_condition_artifact == "test_scenario"
 
+    # --- Two-Headed Giant team_groupings (T63 / P9.5) ---
+
+    def test_team_groupings_default_empty(self):
+        """Default is empty list = one-agent-per-team (current
+        behavior preserved for any workflow that doesn't opt in)."""
+        from wonderland.workflow import PhaseSpec
+
+        p = PhaseSpec(name="discussion")
+        assert p.team_groupings == []
+
+    def test_team_groupings_round_trip_to_phase_definition(self):
+        from wonderland.workflow import PhaseSpec
+
+        spec = PhaseSpec(
+            name="clarify",
+            team_groupings=[["alice", "mad_hatter"], ["tweedledee", "tweedledum"]],
+        )
+        d = spec.to_phase_definition()
+        # Engine-side stores tuple-of-tuples for hashability.
+        assert d.team_groupings == (
+            ("alice", "mad_hatter"),
+            ("tweedledee", "tweedledum"),
+        )
+
+    def test_team_groupings_overlap_rejected(self):
+        from pydantic import ValidationError
+
+        from wonderland.workflow import PhaseSpec
+
+        with pytest.raises(ValidationError, match="multiple teams"):
+            PhaseSpec(
+                name="clarify",
+                team_groupings=[["alice", "hatter"], ["alice", "tweedledee"]],
+            )
+
+    def test_team_groupings_empty_team_rejected(self):
+        from pydantic import ValidationError
+
+        from wonderland.workflow import PhaseSpec
+
+        with pytest.raises(ValidationError, match="empty teams"):
+            PhaseSpec(name="clarify", team_groupings=[["alice"], []])
+
+
+class TestMeetingTeamGroupingValidation:
+    """Cast-coverage validation runs at the Meeting level — every
+    cast member must appear in exactly one team for any phase that
+    declares team_groupings."""
+
+    def test_team_groupings_cover_roster_passes(self):
+        from wonderland.workflow import Meeting, PhaseSpec
+
+        m = Meeting.model_validate(
+            {
+                "id": "tea-party",
+                "label": "M4",
+                "goal": "test surface",
+                "roster": ["alice", "mad_hatter", "tweedledee", "tweedledum"],
+                "phases": [
+                    {
+                        "name": "clarify",
+                        "team_groupings": [
+                            ["alice", "mad_hatter"],
+                            ["tweedledee", "tweedledum"],
+                        ],
+                    }
+                ],
+            }
+        )
+        assert len(m.phases[0].team_groupings) == 2
+
+    def test_team_groupings_orphan_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="missing cast"):
+            Meeting.model_validate(
+                {
+                    "id": "tea-party",
+                    "label": "M4",
+                    "goal": "g",
+                    "roster": ["alice", "mad_hatter", "tweedledee", "tweedledum"],
+                    "phases": [
+                        {
+                            "name": "clarify",
+                            # tweedledee orphaned (not in any team)
+                            "team_groupings": [
+                                ["alice", "mad_hatter"],
+                                ["tweedledum"],
+                            ],
+                        }
+                    ],
+                }
+            )
+
+    def test_team_groupings_extra_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="non-cast members"):
+            Meeting.model_validate(
+                {
+                    "id": "m3",
+                    "label": "M3",
+                    "goal": "g",
+                    "roster": ["tweedledee", "tweedledum"],
+                    "phases": [
+                        {
+                            "name": "discussion",
+                            # caterpillar isn't on the roster
+                            "team_groupings": [
+                                ["tweedledee", "tweedledum", "caterpillar"]
+                            ],
+                        }
+                    ],
+                }
+            )
+
+    def test_team_groupings_empty_phase_skips_check(self):
+        """Phases without team_groupings declared (empty list)
+        don't trigger cast-coverage validation — they get
+        one-agent-per-team at runtime."""
+        from wonderland.workflow import Meeting
+
+        m = Meeting.model_validate(
+            {
+                "id": "m5",
+                "label": "M5",
+                "goal": "g",
+                "roster": ["tweedledee", "tweedledum"],
+                "phases": [{"name": "implement", "max_rotations": 4}],
+            }
+        )
+        assert m.phases[0].team_groupings == []
+
 
 class TestWorkflow:
     def test_minimal_workflow(self):

@@ -56,6 +56,36 @@ def test_phase_definition_is_frozen() -> None:
         p.name = "other"  # type: ignore[misc]
 
 
+# --- Two-Headed Giant team_groupings (T63 / P9.5) ---
+
+
+def test_phase_definition_team_groupings_default_empty() -> None:
+    p = PhaseDefinition(name="discussion")
+    assert p.team_groupings == ()
+
+
+def test_phase_definition_with_team_groupings() -> None:
+    p = PhaseDefinition(
+        name="clarify",
+        team_groupings=(("alice", "hatter"), ("tweedledee", "tweedledum")),
+    )
+    assert len(p.team_groupings) == 2
+    assert p.team_groupings[0] == ("alice", "hatter")
+
+
+def test_phase_definition_team_overlap_rejected() -> None:
+    with pytest.raises(ValueError, match="multiple teams"):
+        PhaseDefinition(
+            name="clarify",
+            team_groupings=(("alice", "hatter"), ("alice", "tweedledee")),
+        )
+
+
+def test_phase_definition_empty_team_rejected() -> None:
+    with pytest.raises(ValueError, match="empty teams"):
+        PhaseDefinition(name="clarify", team_groupings=(("alice",), ()))
+
+
 # --- WindowOutcome ---
 
 
