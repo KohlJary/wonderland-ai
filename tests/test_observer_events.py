@@ -18,12 +18,18 @@ from typing import get_args
 import pytest
 
 from wonderland.observer import (
+    AgentActed,
+    AgentPassed,
     AgentTelemetry,
     AgentTelemetryDelta,
     ArtifactShipped,
     HistoricalRunHandle,
     MeetingEnded,
     MeetingStarted,
+    PhaseEnded,
+    PhaseStarted,
+    PriorityWindowOpened,
+    RotationCompleted,
     RunArtifact,
     RunEnded,
     RunEvent,
@@ -156,6 +162,115 @@ class TestEventConstruction:
         ev = RunEnded(timestamp=_NOW, summary=s)
         assert ev.summary is s
 
+    # --- Phase + priority + rotation events (P9 / T56) ---
+
+    def test_phase_started_minimal(self) -> None:
+        ev = PhaseStarted(
+            timestamp=_NOW,
+            meeting_thread_id="tea-party-pomodoro",
+            phase_name="red-tests",
+            max_rotations=3,
+            cast=("hatter", "tweedledum", "tweedledee"),
+        )
+        assert ev.phase_name == "red-tests"
+        assert ev.cast == ("hatter", "tweedledum", "tweedledee")
+        assert ev.exit_condition_artifact is None
+
+    def test_phase_started_with_exit_condition(self) -> None:
+        ev = PhaseStarted(
+            timestamp=_NOW,
+            meeting_thread_id="negotiate",
+            phase_name="settle",
+            max_rotations=5,
+            cast=("tweedledum", "tweedledee"),
+            exit_condition_artifact="contract",
+        )
+        assert ev.exit_condition_artifact == "contract"
+
+    def test_phase_ended_with_count_maps(self) -> None:
+        ev = PhaseEnded(
+            timestamp=_NOW,
+            meeting_thread_id="tea-party-pomodoro",
+            phase_name="red-tests",
+            reason="succession",
+            rotations_used=2,
+            total_windows=6,
+            passes_per_agent={"hatter": 0, "tweedledum": 1, "tweedledee": 1},
+            acts_per_agent={"hatter": 2, "tweedledum": 1, "tweedledee": 1},
+        )
+        assert ev.reason == "succession"
+        assert ev.passes_per_agent["hatter"] == 0
+        assert ev.acts_per_agent["hatter"] == 2
+
+    def test_phase_ended_reason_values(self) -> None:
+        """Sanity: the four reason values from analysis 033 all
+        construct cleanly."""
+        for reason in ("succession", "exhausted", "exit_condition", "aborted"):
+            PhaseEnded(
+                timestamp=_NOW,
+                meeting_thread_id="m",
+                phase_name="p",
+                reason=reason,
+                rotations_used=1,
+                total_windows=3,
+                passes_per_agent={"a": 1},
+                acts_per_agent={"a": 0},
+            )
+
+    def test_priority_window_opened(self) -> None:
+        ev = PriorityWindowOpened(
+            timestamp=_NOW,
+            meeting_thread_id="tea-party-pomodoro",
+            phase_name="red-tests",
+            agent_id="hatter",
+            rotation_index=0,
+            window_index_in_phase=0,
+        )
+        assert ev.agent_id == "hatter"
+        assert ev.rotation_index == 0
+        assert ev.window_index_in_phase == 0
+
+    def test_agent_acted(self) -> None:
+        ev = AgentActed(
+            timestamp=_NOW,
+            meeting_thread_id="tea-party-pomodoro",
+            phase_name="red-tests",
+            agent_id="hatter",
+            rotation_index=0,
+            utterance_id="u-42",
+        )
+        assert ev.utterance_id == "u-42"
+
+    def test_agent_passed_no_reason(self) -> None:
+        ev = AgentPassed(
+            timestamp=_NOW,
+            meeting_thread_id="tea-party-pomodoro",
+            phase_name="red-tests",
+            agent_id="cheshire_cat",
+            rotation_index=1,
+        )
+        assert ev.reason is None
+
+    def test_agent_passed_with_reason(self) -> None:
+        ev = AgentPassed(
+            timestamp=_NOW,
+            meeting_thread_id="tea-party-pomodoro",
+            phase_name="red-tests",
+            agent_id="cheshire_cat",
+            rotation_index=1,
+            reason="No new ground to cover.",
+        )
+        assert ev.reason == "No new ground to cover."
+
+    def test_rotation_completed(self) -> None:
+        ev = RotationCompleted(
+            timestamp=_NOW,
+            meeting_thread_id="tea-party-pomodoro",
+            phase_name="red-tests",
+            rotation_index=0,
+        )
+        assert ev.rotation_index == 0
+
 
 # ---------------------------------------------------------------------
 # Frozen-ness
@@ -194,6 +309,13 @@ class TestRunEventUnion:
             AgentTelemetryDelta,
             MeetingEnded,
             RunEnded,
+            # Phase + priority + rotation events (P9 / T56)
+            PhaseStarted,
+            PhaseEnded,
+            PriorityWindowOpened,
+            AgentActed,
+            AgentPassed,
+            RotationCompleted,
         }
 
     def test_union_members_are_frozen_dataclasses(self) -> None:

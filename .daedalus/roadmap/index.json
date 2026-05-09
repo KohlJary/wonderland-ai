@@ -789,6 +789,56 @@
       "status": "backlog",
       "created_at": "2026-05-08T22:11:03.641961",
       "created_by": "daedalus"
+    },
+    {
+      "id": "41a1d99a-c4fc-4117-bfaa-5240812d6c9d",
+      "title": "Meeting engine: phases + priority rotation",
+      "description": "Lift MtG turn structure into the meeting engine per analysis 033. Add phases (workflow-defined sequence within a meeting) and priority rotation (each cast member gets one priority window per phase, can act or pass, phase advances when all pass in succession or rotation-budget exhausts). Pass becomes first-class action. Skip the stack \u2014 single utterance per window suffices for collaborative 3-5 agent meetings.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:10.850229",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "15a0df95-c216-41f7-b019-6e8e5cc87d90",
+      "title": "Workflow YAML: phases schema + opt-in",
+      "description": "Per analysis 033 \u2014 extend workflow YAML to declare phases per meeting block (e.g. M4: red/green/refactor; M6: present/review/defend/verdict). Default: single 'discussion' phase preserves backward compat. First implementation ships behind opt-in on tdd-serial so we can A/B against the 032 banner with controlled variables.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.474807",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "bf358a75-12c3-4ba3-970f-544db0803feb",
+      "title": "Observer: phase + priority RunEvents",
+      "description": "Per analysis 033 \u2014 add PhaseStarted/PhaseEnded/PriorityWindowOpened/AgentPassed RunEvents. All three RunHandle implementations (HistoricalRunHandle, MockTurtleHandle, LiveRunHandle) need to emit + replay them. TUI live view gets a phase indicator. Pass-vs-not-asked distinction is what makes Cat withdrawal observable from outside the agent.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.556645",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "3ea7b281-1380-4d4e-b1e4-e7692bcc2c7f",
+      "title": "Turns-as-budget: rotation counter + telemetry",
+      "description": "Per analysis 033 \u2014 meetings get a rotation budget (e.g. 'this meeting is 3 rotations') alongside the existing dollar soft-cap. Telemetry adds per-phase + per-window cost attribution. Mitigation against the 030 F1 anchoring lesson: rotation count is engine-side only, never surfaced in agent context.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.636176",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "d0bdd371-3731-4db0-9a70-c3e381ef1162",
+      "title": "Failure-mode measurement primitives",
+      "description": "Per analysis 033 \u2014 under phases + priority, the engine can count passes per agent per phase per meeting. Wire this into the synthetic-consensus guard (already exists) and add new detectors: never-passes (sprawl shape), always-passes-after-first-utterance (withdrawal shape). The substrate gains an outside-the-agent measurement primitive for \u00a7VIII failure modes that currently can only be inferred post-hoc from the transcript.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.717655",
+      "created_by": "daedalus"
     }
   ],
   "version": 1
