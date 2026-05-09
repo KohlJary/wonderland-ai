@@ -93,8 +93,36 @@ between those channels. The literary parallel keeps earning its keep
 — the recovery pattern works *because* the agents have characters
 with intentions, not despite it.
 
-A fourth corollary, which is really the architectural commitment the
-other three sit on top of: **friction is the substrate, not the
+A fourth corollary, surfacing across analyses 034 and 035 once the
+phased orchestrator made the team's per-meeting work legible: **what the
+team produces is shaped like what a small team would produce, including
+things the directive never asked for.** A generic LLM given a sparse
+directive ("Build a Pomodoro timer app: focus sessions, configurable
+breaks, daily review, persistent settings") ships what was literally
+asked — a working single-file MVP. Wonderland on the same directive
+ships a different shape: an ADR with named tradeoffs and open questions,
+persona-driven user stories with confusion-flags, test scenarios that
+distinguish failure modes from happy paths, a review pass that catches
+real bugs by file and line, and — notably — accessibility coverage that
+the directive never requested. In
+[analysis 034](./analyses/034-tdd-serial-phased-first-run.md) the team
+produced an explicit deaf-user persona (Priya, *"29, deaf software
+engineer"*) and visual + haptic alert scenarios; in
+[analysis 035](./analyses/035-tdd-phased-teams-2hg-first-run.md), a
+different run on the same directive surfaced voice-input accessibility
+scenarios instead. Neither was asked for. The mechanism is
+constitutional: Alice grounds in personas, and a persona-grounded view
+of "who actually uses this software" includes users with disabilities by
+default. The broader effect — accessibility, architecture,
+persona-shaped specs, review-pass discipline — is **production-shape as
+a derived property of constitutional grounding, rather than a feature
+you have to remember to ask for.** Vibe-coded MVPs on a sparse directive
+are throwaway by default; Wonderland's output is shaped like what a
+junior team's couple-day TDD push would produce, with the artifact trail
+that lets someone else maintain the result.
+
+A fifth corollary, which is really the architectural commitment the
+other four sit on top of: **friction is the substrate, not the
 inefficiency.** Most multi-agent systems engineer friction *out* —
 consensus-seeking loops, reflection passes that smooth dissent, voting
 mechanisms that median competing positions toward agreement. The

@@ -372,8 +372,16 @@ class Runner:
         # architecture, Caterpillar to actually look at code under
         # review, Hatter to write real test files alongside scenarios).
         # All four share the same Tools instance — same sandbox, no
-        # duplicate path-resolution state.
-        shared_tools = Tools(project_root)
+        # duplicate path-resolution state. The on_tool_call writer
+        # captures every invocation as a JSONL event for post-run
+        # cost attribution (P10 / T66). Goes to the same .wonderland/
+        # directory as phase events.
+        from wonderland.tools import jsonl_tool_call_writer
+
+        tool_call_writer = jsonl_tool_call_writer(
+            project_root / ".wonderland" / "tool-calls.jsonl"
+        )
+        shared_tools = Tools(project_root, on_tool_call=tool_call_writer)
         # Initialize project_root as a git repo with an empty initial
         # commit so the working tree IS the implementation artifact:
         # Tweedles ship code; Caterpillar reviews via git_diff against

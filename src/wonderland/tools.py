@@ -29,10 +29,14 @@ the list to pass as ``tools=[...]`` to ``messages.create``.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+import time
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +63,158 @@ MAX_GREP_HITS = 100
 MAX_LIST_ENTRIES = 200
 
 
+# ---------------------------------------------------------------------
+# Tool-call observability (P10 / T66 / roadmap 33e29f5c)
+# ---------------------------------------------------------------------
+# Per analyses 032 + 035: Tweedles are 78.8% of total run cost with
+# ~13-15 LLM calls per deliberation, almost all of those being
+# write_file / read_file / run_tests tool loops. Surfacing each tool
+# call as a timestamped event lets post-run analysis quantify exactly
+# which tool calls drive cost (vs inferring from per-agent telemetry).
+# Also unblocks the diff-tool A/B test (T67/T68): we can measure the
+# input-token compression directly instead of estimating.
+
+
+@dataclass(frozen=True)
+class ToolCallEvent:
+    """One tool invocation observed at the dispatch layer.
+
+    Captures the timing, the agent who called it, and the input/output
+    sizes — enough to answer 'what fraction of Tweedle cost is
+    write_file?' post-run without re-reading the bus log. Sensitive
+    content (write_file body, read_file result) is summarized by
+    byte size, not stored verbatim — full content lives in the
+    working tree + utterance bus already.
+    """
+
+    timestamp: datetime
+    tool_name: str
+    agent_id: str | None
+    """The agent who invoked the tool, when known. The phased
+    orchestrator and most agent-driven calls populate this; synthetic
+    or test-harness calls leave it None."""
+    args_summary: dict[str, Any]
+    """Sanitized arguments — small fields verbatim (path, pattern,
+    ignore_case), large fields summarized as ``{kind}_bytes`` (the
+    ``content`` arg of write_file becomes ``content_bytes``)."""
+    input_bytes: int
+    """Total bytes of all input args combined. Catches the cost of a
+    write_file call that re-sends a 10K-line file just to flip one
+    line."""
+    elapsed_ms: float
+    """Wall-clock for the dispatch. Includes any subprocess overhead
+    (run_tests' pytest invocation, git_status' git invocation)."""
+    result_bytes: int
+    """Bytes of the returned string. None on error."""
+    error: str | None = None
+    """ToolError message if the dispatch raised, else None."""
+    file_size_after_bytes: int | None = None
+    """For diff-write operations (str_replace, insert): the byte size
+    of the file *after* the patch. Lets post-run analysis compute
+    bytes saved vs a hypothetical full ``write_file``: a write_file
+    of the patched file would have consumed
+    ``file_size_after_bytes`` of input; the diff op consumed
+    ``input_bytes``. Savings = file_size_after_bytes - input_bytes.
+    None for read-only ops + write_file (where input_bytes already
+    captures the full file size, no comparison needed)."""
+
+
+ToolCallWriter = Callable[[ToolCallEvent], None]
+"""Callback signature for tool-call observers. Synchronous because
+``Tools.execute`` is itself sync — no async surface to plumb through
+the dispatch path. The default writer (jsonl_tool_call_writer) does
+a per-event open-append-close for crash safety."""
+
+
+def _serialize_tool_call_event(event: ToolCallEvent) -> dict[str, Any]:
+    """JSON-friendly form of a ToolCallEvent."""
+    payload = asdict(event)
+    if isinstance(event.timestamp, datetime):
+        payload["timestamp"] = event.timestamp.isoformat()
+    return payload
+
+
+def _deserialize_tool_call_event(payload: dict[str, Any]) -> ToolCallEvent:
+    """Round-trip a tool-call event from its on-disk dict form."""
+    if isinstance(payload.get("timestamp"), str):
+        payload["timestamp"] = datetime.fromisoformat(payload["timestamp"])
+    return ToolCallEvent(**payload)
+
+
+def jsonl_tool_call_writer(path: Path) -> ToolCallWriter:
+    """Build a writer that appends one JSON line per tool call to
+    ``path``. Parent dir is created if missing. Same shape as the
+    phase-events writer for consistency — open-append-close per
+    event so a crash mid-meeting still leaves a partial-but-readable
+    log."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _write(event: ToolCallEvent) -> None:
+        line = json.dumps(_serialize_tool_call_event(event)) + "\n"
+        with path.open("a") as f:
+            f.write(line)
+
+    return _write
+
+
+def read_tool_calls(path: Path) -> list[ToolCallEvent]:
+    """Read a tool-calls.jsonl file and return events in write
+    order. Empty list for missing files (older snapshots predate
+    T66)."""
+    if not path.is_file():
+        return []
+    events: list[ToolCallEvent] = []
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            events.append(_deserialize_tool_call_event(json.loads(line)))
+    return events
+
+
+def _summarize_tool_args(
+    tool_name: str, tool_input: dict[str, Any]
+) -> tuple[dict[str, Any], int]:
+    """Build a sanitized args summary + total input-byte count.
+
+    Small string fields (path, pattern, directory) round-trip
+    verbatim because they're useful for post-run analysis (e.g.
+    'how often did Tweedledum write_file to src/api.py'). Large
+    string fields (content for write_file) are replaced with a
+    byte-count entry so the JSONL stays small. Boolean / int
+    fields round-trip verbatim.
+    """
+    summary: dict[str, Any] = {}
+    total_bytes = 0
+    for key, value in tool_input.items():
+        if value is None:
+            summary[key] = None
+            continue
+        if isinstance(value, str):
+            byte_size = len(value.encode("utf-8"))
+            total_bytes += byte_size
+            # Keep small fields verbatim; summarize large blobs by
+            # size. The "content" field of write_file is the load-
+            # bearing case here — it can be many KB and would bloat
+            # the JSONL unhelpfully.
+            if key == "content" or byte_size > 256:
+                summary[f"{key}_bytes"] = byte_size
+            else:
+                summary[key] = value
+        elif isinstance(value, (int, float, bool)):
+            summary[key] = value
+        elif isinstance(value, list):
+            # paths=[...] in run_tests gets kept verbatim; small.
+            summary[key] = value
+            for item in value:
+                if isinstance(item, str):
+                    total_bytes += len(item.encode("utf-8"))
+        else:
+            summary[key] = repr(value)
+    return summary, total_bytes
+
+
 @dataclass(frozen=True)
 class ToolError(Exception):
     """Tool execution failed (sandbox violation, missing path, encoding error).
@@ -82,8 +238,25 @@ class Tools:
     available.
     """
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        on_tool_call: ToolCallWriter | None = None,
+    ) -> None:
         self._root = project_root.resolve()
+        # Tool-call observability hook (T66). When set, each
+        # ``execute()`` invocation calls this with a ToolCallEvent
+        # capturing timing + sizes + error. The runner installs a
+        # default writer pointing at .wonderland/tool-calls.jsonl;
+        # tests can install their own writer to assert dispatch
+        # behavior without disk I/O.
+        self._on_tool_call = on_tool_call
+        # Per-call metadata stash (T67). Diff-write methods
+        # (str_replace, insert) write here before returning so
+        # ``execute()`` can include file_size_after_bytes in the
+        # observability event. Cleared at the start of each
+        # execute() call.
+        self._last_op_metadata: dict[str, Any] | None = None
 
     @property
     def project_root(self) -> Path:
@@ -160,6 +333,136 @@ class Tools:
         except OSError as exc:
             raise ToolError(f"write failed for {path}: {exc}") from exc
         return f"wrote {len(content)} chars to {path}"
+
+    def str_replace(self, path: str, old: str, new: str) -> str:
+        """Replace exactly one occurrence of ``old`` with ``new`` in
+        ``path``. Token-cheap diff primitive (P10 / T67 / roadmap
+        0858a936).
+
+        Per analysis 032's estimate: a 250-line file iterated 4 times
+        via full ``write_file`` costs ~1180 lines of input across 4
+        calls; the same iteration via ``str_replace`` costs ~340 lines
+        — roughly 3.5× compression on iterative file authoring.
+
+        Validation is strict on purpose: ``old`` must match exactly
+        once. Zero matches → ToolError (the LLM's anchor was wrong;
+        worth re-reading and trying again rather than silently
+        creating garbage). Multiple matches → ToolError (ambiguous;
+        the LLM must include enough surrounding context to make the
+        match unique). Empty ``old`` → ToolError (use ``insert``
+        instead). Deletion is supported via ``new=""`` — strict
+        match still applies.
+        """
+        if not old:
+            raise ToolError(
+                "str_replace: 'old' cannot be empty (use insert for "
+                "additions, write_file for whole-file rewrites)"
+            )
+        full = self._resolve(path)
+        if not full.exists():
+            raise ToolError(f"file not found: {path}")
+        if not full.is_file():
+            raise ToolError(f"not a file: {path}")
+        try:
+            text = full.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ToolError(
+                f"file {path} is not valid UTF-8: {exc}"
+            ) from exc
+        match_count = text.count(old)
+        if match_count == 0:
+            raise ToolError(
+                f"str_replace: 'old' not found in {path}. The text "
+                "may have been edited since you last read it; "
+                "re-read the file and try again with current "
+                "context."
+            )
+        if match_count > 1:
+            raise ToolError(
+                f"str_replace: 'old' matches {match_count} times in "
+                f"{path} — must be unique. Include more surrounding "
+                "context (preceding/following lines) until the "
+                "match is unique."
+            )
+        new_text = text.replace(old, new, 1)
+        try:
+            full.write_text(new_text, encoding="utf-8")
+        except OSError as exc:
+            raise ToolError(f"write failed for {path}: {exc}") from exc
+        # Stash post-patch size for the observability hook —
+        # comparison baseline for the bytes-saved-vs-full-write
+        # analysis (T67).
+        self._last_op_metadata = {
+            "file_size_after_bytes": len(new_text.encode("utf-8"))
+        }
+        delta = len(new) - len(old)
+        sign = "+" if delta >= 0 else ""
+        return (
+            f"str_replace applied to {path} "
+            f"({sign}{delta} chars; was {len(text)}, now {len(new_text)})"
+        )
+
+    def insert(self, path: str, line_number: int, content: str) -> str:
+        """Insert ``content`` after ``line_number`` in ``path``.
+        Line numbers are 1-indexed. ``line_number=0`` prepends.
+
+        ``content`` is inserted as a complete unit; if it lacks a
+        trailing newline, one is added so the next line stays on
+        its own line. The diff-cheap counterpart to ``str_replace``
+        for adding new content (imports, methods, blocks) without
+        having to re-send the whole file.
+
+        Raises ToolError when ``line_number`` is out of bounds
+        (< 0 or > len(lines)).
+        """
+        full = self._resolve(path)
+        if not full.exists():
+            raise ToolError(f"file not found: {path}")
+        if not full.is_file():
+            raise ToolError(f"not a file: {path}")
+        try:
+            text = full.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise ToolError(
+                f"file {path} is not valid UTF-8: {exc}"
+            ) from exc
+        # splitlines(keepends=True) preserves \n boundaries so we
+        # can reassemble without losing line endings.
+        lines = text.splitlines(keepends=True)
+        if line_number < 0 or line_number > len(lines):
+            raise ToolError(
+                f"insert: line_number {line_number} out of bounds "
+                f"for {path} (file has {len(lines)} lines; valid "
+                f"range is 0..{len(lines)})"
+            )
+        # Ensure content ends with a newline so the insertion
+        # doesn't fuse with the following line.
+        if content and not content.endswith("\n"):
+            content = content + "\n"
+        # If the file's last line lacks a newline AND we're
+        # inserting after it, add a newline to that line first so
+        # the inserted content starts on its own line.
+        if (
+            line_number == len(lines)
+            and lines
+            and not lines[-1].endswith("\n")
+        ):
+            lines[-1] = lines[-1] + "\n"
+        lines.insert(line_number, content)
+        new_text = "".join(lines)
+        try:
+            full.write_text(new_text, encoding="utf-8")
+        except OSError as exc:
+            raise ToolError(f"write failed for {path}: {exc}") from exc
+        # Stash post-patch size for the observability hook (T67).
+        self._last_op_metadata = {
+            "file_size_after_bytes": len(new_text.encode("utf-8"))
+        }
+        inserted_lines = content.count("\n")
+        return (
+            f"insert applied to {path} after line {line_number} "
+            f"(+{inserted_lines} lines, +{len(content)} chars)"
+        )
 
     def list_files(self, directory: str = ".", pattern: str | None = None) -> str:
         """List files under ``directory``, optionally matching a glob ``pattern``.
@@ -436,10 +739,12 @@ class Tools:
                 "name": "write_file",
                 "description": (
                     "Write content to a text file (overwriting if it exists, "
-                    "creating parent directories as needed). Use this to "
-                    "ship code as part of an `implementation` artifact. The "
-                    "file path you write should match a `files_touched` "
-                    "entry in the implementation you're shipping."
+                    "creating parent directories as needed). Use this for "
+                    "*new* files or *wholesale rewrites*. For incremental "
+                    "edits to an existing file (changing a line, adding a "
+                    "method, fixing a return value), prefer `str_replace` "
+                    "or `insert` — they're token-cheap because they send "
+                    "only the diff instead of the whole file."
                 ),
                 "input_schema": {
                     "type": "object",
@@ -454,6 +759,83 @@ class Tools:
                         },
                     },
                     "required": ["path", "content"],
+                },
+            },
+            {
+                "name": "str_replace",
+                "description": (
+                    "Replace exactly one occurrence of `old` with `new` in "
+                    "an existing file. The token-cheap diff primitive — "
+                    "use this for incremental edits (fix a line, change a "
+                    "return value, swap an import) instead of re-sending "
+                    "the entire file via write_file. `old` must match "
+                    "exactly once: zero matches means the file changed "
+                    "since you last read it (re-read it); multiple matches "
+                    "means you need more surrounding context to make the "
+                    "match unique. Deletion is supported via `new=\"\"`."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path relative to the project root.",
+                        },
+                        "old": {
+                            "type": "string",
+                            "description": (
+                                "Exact text to match (single occurrence "
+                                "required). Include enough surrounding "
+                                "context that the match is unambiguous."
+                            ),
+                        },
+                        "new": {
+                            "type": "string",
+                            "description": (
+                                "Replacement text. Use empty string to "
+                                "delete the matched region."
+                            ),
+                        },
+                    },
+                    "required": ["path", "old", "new"],
+                },
+            },
+            {
+                "name": "insert",
+                "description": (
+                    "Insert content after a specific line in an existing "
+                    "file. Line numbers are 1-indexed; use 0 to prepend at "
+                    "the top of the file. Companion to `str_replace` for "
+                    "additions where you don't have a unique anchor to "
+                    "replace against (e.g., adding a new import block, "
+                    "appending a method)."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path relative to the project root.",
+                        },
+                        "line_number": {
+                            "type": "integer",
+                            "description": (
+                                "1-indexed line number after which to "
+                                "insert. 0 = prepend (insert at top). "
+                                "Must be in 0..len(lines)."
+                            ),
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": (
+                                "Content to insert. A trailing newline "
+                                "is added automatically if absent so the "
+                                "insertion doesn't fuse with the next "
+                                "line."
+                            ),
+                        },
+                    },
+                    "required": ["path", "line_number", "content"],
                 },
             },
             {
@@ -593,40 +975,116 @@ class Tools:
             },
         ]
 
-    def execute(self, tool_name: str, tool_input: dict[str, Any]) -> str:
+    def execute(
+        self,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        *,
+        agent_id: str | None = None,
+    ) -> str:
         """Dispatch a tool call by name. Raises ToolError on failure.
 
         The Tweedle's tool-use loop calls this for each tool_use block
         in the LLM's response, then packages the return value (or
         ToolError message) into a tool_result block for the next turn.
+
+        ``agent_id`` is the calling agent's name for tool-call
+        observability (T66). Optional; the writer captures the
+        invocation regardless, with agent_id=None when callers don't
+        propagate it (synthetic test calls, primarily).
         """
-        if tool_name == "read_file":
-            return self.read_file(tool_input["path"])
-        if tool_name == "write_file":
-            return self.write_file(tool_input["path"], tool_input["content"])
-        if tool_name == "list_files":
-            return self.list_files(
-                tool_input.get("directory", "."),
-                tool_input.get("pattern"),
-            )
-        if tool_name == "grep":
-            return self.grep(
-                tool_input["pattern"],
-                tool_input.get("path", "."),
-                tool_input.get("ignore_case", False),
-            )
-        if tool_name == "git_status":
-            return self.git_status()
-        if tool_name == "git_diff":
-            return self.git_diff(tool_input.get("path"))
-        if tool_name == "run_tests":
-            return self.run_tests(
-                paths=tool_input.get("paths"),
-                timeout_seconds=tool_input.get(
-                    "timeout_seconds", DEFAULT_TEST_TIMEOUT_SECONDS
-                ),
-            )
-        raise ToolError(f"unknown tool: {tool_name}")
+        # Capture the call's timing + sizes + error for the
+        # observability hook. Done at the dispatcher rather than
+        # per-method so adding a new tool primitive doesn't require
+        # remembering to instrument it.
+        start = time.monotonic()
+        timestamp = datetime.now(tz=timezone.utc)
+        result_str: str | None = None
+        error_msg: str | None = None
+        # Clear the per-call metadata stash so a previous call's
+        # file_size_after doesn't leak forward.
+        self._last_op_metadata = None
+        try:
+            if tool_name == "read_file":
+                result_str = self.read_file(tool_input["path"])
+            elif tool_name == "write_file":
+                result_str = self.write_file(
+                    tool_input["path"], tool_input["content"]
+                )
+            elif tool_name == "str_replace":
+                result_str = self.str_replace(
+                    tool_input["path"],
+                    tool_input["old"],
+                    tool_input["new"],
+                )
+            elif tool_name == "insert":
+                result_str = self.insert(
+                    tool_input["path"],
+                    int(tool_input["line_number"]),
+                    tool_input["content"],
+                )
+            elif tool_name == "list_files":
+                result_str = self.list_files(
+                    tool_input.get("directory", "."),
+                    tool_input.get("pattern"),
+                )
+            elif tool_name == "grep":
+                result_str = self.grep(
+                    tool_input["pattern"],
+                    tool_input.get("path", "."),
+                    tool_input.get("ignore_case", False),
+                )
+            elif tool_name == "git_status":
+                result_str = self.git_status()
+            elif tool_name == "git_diff":
+                result_str = self.git_diff(tool_input.get("path"))
+            elif tool_name == "run_tests":
+                result_str = self.run_tests(
+                    paths=tool_input.get("paths"),
+                    timeout_seconds=tool_input.get(
+                        "timeout_seconds", DEFAULT_TEST_TIMEOUT_SECONDS
+                    ),
+                )
+            else:
+                raise ToolError(f"unknown tool: {tool_name}")
+            return result_str
+        except ToolError as exc:
+            error_msg = str(exc)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Other exceptions still get observed before propagating.
+            error_msg = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            if self._on_tool_call is not None:
+                args_summary, input_bytes = _summarize_tool_args(
+                    tool_name, tool_input
+                )
+                metadata = self._last_op_metadata or {}
+                event = ToolCallEvent(
+                    timestamp=timestamp,
+                    tool_name=tool_name,
+                    agent_id=agent_id,
+                    args_summary=args_summary,
+                    input_bytes=input_bytes,
+                    elapsed_ms=(time.monotonic() - start) * 1000.0,
+                    result_bytes=(
+                        len(result_str.encode("utf-8"))
+                        if result_str is not None
+                        else 0
+                    ),
+                    error=error_msg,
+                    file_size_after_bytes=metadata.get(
+                        "file_size_after_bytes"
+                    ),
+                )
+                # Writer is sync + best-effort; never let an
+                # observability failure mask the underlying tool
+                # result.
+                try:
+                    self._on_tool_call(event)
+                except Exception:  # noqa: BLE001
+                    pass
 
 
 def _format_pytest_output(stdout: str, stderr: str, returncode: int) -> str:

@@ -733,7 +733,11 @@ class WonderlandAgent:
                     )
                     try:
                         tool_input = dict(block.input) if block.input else {}
-                        tool_output = self._tools.execute(block.name, tool_input)
+                        tool_output = self._tools.execute(
+                            block.name,
+                            tool_input,
+                            agent_id=self.identity.name,
+                        )
                         if block.name == "write_file":
                             path = tool_input.get("path")
                             if isinstance(path, str):
