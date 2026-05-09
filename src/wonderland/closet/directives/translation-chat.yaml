@@ -1,0 +1,20 @@
+name: translation-chat
+title: Translation chat MVP
+description: |
+  The Showcase 2 directive — analyses 015-018 used this to ship 1580
+  lines of working backend + frontend (auth, real-time WebSocket
+  message dispatch, language pair selection, GDPR-deletion path) at
+  ~$0.93. Stress-tests the full cast on a richly-featured but bounded
+  product — exercises Tweedle pair negotiation across the WS seam, the
+  Queen's GDPR-compliance ruling work, and the Caterpillar's review
+  surface.
+body: |
+  Build a translation chat MVP. Two users select a language pair
+  (English ↔ Spanish for v1), exchange messages in real time, and the
+  backend translates each message before it's relayed. Persist message
+  history scoped to the conversation. Include auth (any reasonable
+  shape), GDPR-deletion (a user can delete their account and all their
+  data with it), and target a three-week build.
+suggested_workflow: tdd-serial
+suggested_skeleton: fullstack-fastapi-react
+tags: [showcase, feature-rich, gdpr, real-time]

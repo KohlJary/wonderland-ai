@@ -30,11 +30,31 @@ Footer > .footer--description {
     color: $foreground;
 }
 
-#library-header {
+#home-title {
     padding: 1 2;
-    margin-bottom: 1;
     background: $surface;
     color: $accent;
+    height: auto;
+    text-align: center;
+}
+
+#home-actions {
+    height: auto;
+    padding: 0 2;
+    margin: 1 0 1 0;
+    align: center middle;
+}
+
+#home-actions Button {
+    margin: 0 1;
+    min-width: 20;
+}
+
+#library-header {
+    padding: 0 2;
+    margin: 1 0 1 0;
+    color: $primary;
+    height: auto;
 }
 
 #summary-header {
@@ -166,7 +186,171 @@ LiveRunScreen #live-artifacts-table {
     height: auto;
 }
 
-/* Cast view */
+/* New-run screen — preset picker + directive composer + config row */
+#new-run-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $accent;
+}
+
+#new-run-main {
+    height: 1fr;
+}
+
+NewRunScreen #preset-pane {
+    width: 38%;
+    height: 1fr;
+    margin: 0 1 0 0;
+}
+
+NewRunScreen #composer-pane {
+    width: 1fr;
+    height: 1fr;
+}
+
+NewRunScreen #preset-table {
+    height: 1fr;
+    margin: 0 0 1 2;
+}
+
+#preset-label,
+#composer-label,
+#description-label,
+#config-label {
+    padding: 0 2;
+    color: $primary;
+    height: auto;
+}
+
+NewRunScreen #directive-composer {
+    height: 60%;
+    margin: 0 2 0 0;
+    border: round $panel;
+}
+
+NewRunScreen #description-composer {
+    height: 40%;
+    margin: 0 2 1 0;
+    border: round $panel;
+}
+
+#config-row,
+#project-row,
+#save-row {
+    height: auto;
+    padding: 0 2;
+    margin: 0 0 1 0;
+}
+
+#config-row Label,
+#project-row Label,
+#save-row Label {
+    padding: 1 1 0 0;
+    color: $primary;
+    width: auto;
+}
+
+#config-row Input,
+#project-row Input,
+#save-row Input,
+#config-row Select {
+    width: 1fr;
+    margin: 0 1 0 0;
+}
+
+#workflow-select {
+    width: 30;
+}
+
+#budget-input {
+    width: 12;
+}
+
+#save-checkbox {
+    width: auto;
+    margin: 0 2 0 0;
+}
+
+#save-name-input {
+    width: 1fr;
+}
+
+#action-row {
+    height: auto;
+    padding: 0 2;
+    margin: 1 0 1 0;
+    align: center middle;
+}
+
+#action-row Button {
+    margin: 0 1;
+}
+
+#go-button {
+    min-width: 16;
+}
+
+#cancel-button {
+    min-width: 16;
+}
+
+/* Settings screen — user-level config form */
+#settings-header {
+    padding: 1 2;
+    margin-bottom: 1;
+    background: $surface;
+    color: $accent;
+}
+
+#settings-status {
+    padding: 0 2;
+    margin: 0 2 1 2;
+    color: $foreground;
+    height: auto;
+}
+
+#settings-api-key-label,
+#settings-model-label {
+    padding: 1 2 0 2;
+    color: $primary;
+    height: auto;
+}
+
+#settings-api-key-row,
+#settings-model-row {
+    height: auto;
+    padding: 0 2;
+    margin: 0 0 1 0;
+}
+
+#settings-api-key-row Label,
+#settings-model-row Label {
+    padding: 1 1 0 0;
+    color: $primary;
+    width: auto;
+}
+
+#settings-api-key-row Input,
+#settings-model-row Input {
+    width: 1fr;
+    margin: 0 1 0 0;
+}
+
+#settings-actions {
+    height: auto;
+    padding: 0 2;
+    margin: 1 0 1 0;
+    align: center middle;
+}
+
+#settings-actions Button {
+    margin: 0 1;
+    min-width: 18;
+}
+
+/* Cast view — single-page lazygit-shape: list at top, bio +
+ * constitution panes below filtered by cursor selection. */
 #cast-header {
     padding: 1 2;
     margin-bottom: 1;
@@ -174,31 +358,54 @@ LiveRunScreen #live-artifacts-table {
     color: $accent;
 }
 
-#member-header {
+CastBrowserScreen #cast-table {
+    height: 30%;
+    margin: 0 2 0 2;
+}
+
+#cast-member-header {
     padding: 1 2;
-    margin-bottom: 1;
+    margin: 1 2 1 2;
     background: $surface;
     color: $foreground;
     height: auto;
 }
 
-#member-summary {
-    padding: 1 2;
-    margin: 0 2 1 2;
-    color: $foreground;
-    border: round $panel;
+#cast-detail-row {
+    height: 1fr;
+}
+
+CastBrowserScreen #cast-bio-pane {
+    width: 50%;
+    height: 1fr;
+    margin: 0 1 1 2;
+}
+
+CastBrowserScreen #cast-constitution-pane {
+    width: 1fr;
+    height: 1fr;
+    margin: 0 2 1 0;
+}
+
+#cast-bio-label,
+#constitution-label {
+    padding: 0 2;
+    color: $primary;
     height: auto;
 }
 
-#constitution-label {
-    padding: 0 2;
-    margin-top: 1;
-    color: $primary;
+#cast-bio-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1;
+}
+
+#cast-bio {
+    color: $foreground;
 }
 
 #constitution-scroll {
     height: 1fr;
-    margin: 0 2 1 2;
     border: round $panel;
     padding: 1;
 }

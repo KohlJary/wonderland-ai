@@ -40,6 +40,7 @@ from wonderland.observer import (
     MockTurtleHandle,
     RunArtifact,
     RunEnded,
+    RunHandle,
     RunStarted,
     UtteranceEmitted,
 )
@@ -112,19 +113,30 @@ class LiveRunScreen(Screen[None]):
         self,
         snapshot_dir: Path | None = None,
         *,
+        handle: RunHandle | None = None,
         speed: float = 5.0,
         max_dwell_seconds: float = 2.0,
     ) -> None:
-        """Optional ``snapshot_dir`` carries the source for T46's
-        streaming subscription. T45 ignores it and renders dummy
-        data; the constructor signature is here now so callers can
-        wire up the entry path before streaming lands.
+        """Three input paths:
 
-        ``speed`` and ``max_dwell_seconds`` are passed through to
-        the MockTurtleHandle in T46.
+          - ``snapshot_dir`` set, ``handle=None`` → wrap a
+            MockTurtleHandle around the snapshot at the given speed
+            + dwell. The replay path; default for the
+            ``w`` (watch) entry from the snapshot library.
+          - ``handle`` set explicitly → use it directly. Used by
+            P8.5's NewRunScreen → LiveRunHandle handoff for live
+            runs, and by anything else that wants to plug a
+            different RunHandle in (e.g., a future AbortableHandle).
+          - Both None → fall back to the T45 dummy data so the
+            screen has something to show. Useful for layout testing
+            in isolation.
+
+        ``handle`` takes precedence over ``snapshot_dir`` when both
+        are provided.
         """
         super().__init__()
         self.snapshot_dir = snapshot_dir
+        self.handle = handle
         self.speed = speed
         self.max_dwell_seconds = max_dwell_seconds
         # Internal state — populated via on_mount stub for T45,
@@ -235,17 +247,16 @@ class LiveRunScreen(Screen[None]):
         )
         self._render_status_bar()
 
-        if self.snapshot_dir is None:
-            # No snapshot bound — fall back to the T45 dummy data so
+        if self.handle is None and self.snapshot_dir is None:
+            # No source bound — fall back to the T45 dummy data so
             # the screen has something to show. Useful for testing
             # the layout in isolation.
             self._render_static_dummy()
         else:
-            # Stream events from the bound snapshot via Mock Turtle.
-            # The @work decorator runs the consumer in a background
-            # task so the UI stays responsive — keystrokes, scroll,
-            # and meeting drill-down (T48) all keep working while
-            # the stream drains.
+            # Stream events from the bound source. The @work decorator
+            # runs the consumer in a background task so the UI stays
+            # responsive — keystrokes, scroll, and meeting drill-down
+            # all keep working while the stream drains.
             self._consume_stream()
 
         # Refresh the status bar every 500ms so the elapsed counter
@@ -258,29 +269,38 @@ class LiveRunScreen(Screen[None]):
 
     @work(exclusive=True)
     async def _consume_stream(self) -> None:
-        """Subscribe to MockTurtleHandle.stream_events() and update
-        the screen state as each event arrives.
+        """Subscribe to the bound RunHandle's stream_events() and
+        update the screen state as each event arrives.
 
         Runs in a Textual worker so the UI thread stays responsive.
-        Auto-cancels when the screen unmounts.
+        Auto-cancels when the screen unmounts (the handle's finally-
+        block teardown runs cleanly).
         """
-        if self.snapshot_dir is None:
+        # Resolve the source: explicit handle > snapshot_dir wrapped
+        # in MockTurtle. The handle path supports any RunHandle —
+        # MockTurtleHandle, LiveRunHandle, or any future variant.
+        if self.handle is not None:
+            handle: RunHandle = self.handle
+        elif self.snapshot_dir is not None:
+            try:
+                handle = MockTurtleHandle(
+                    self.snapshot_dir,
+                    speed=self.speed,
+                    max_dwell_seconds=self.max_dwell_seconds,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.query_one("#live-header", Static).update(
+                    f"[red]Failed to load snapshot:[/red] {exc}"
+                )
+                return
+        else:
             return  # Should never happen given the on_mount branch.
 
-        try:
-            handle = MockTurtleHandle(
-                self.snapshot_dir,
-                speed=self.speed,
-                max_dwell_seconds=self.max_dwell_seconds,
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.query_one("#live-header", Static).update(
-                f"[red]Failed to load snapshot:[/red] {exc}"
-            )
-            return
-
         # Cache the base meeting ids once so we can discriminate
-        # per_item iterations against them.
+        # per_item iterations against them. For live runs against
+        # LiveRunHandle.meetings() pre-stream, this returns []; the
+        # stream's MeetingStarted events handle the discriminator
+        # gracefully via the slug-suffix fallback.
         base_meeting_ids = [m.id for m in handle.meetings()]
 
         async for event in handle.stream_events():

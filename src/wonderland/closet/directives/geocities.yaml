@@ -1,0 +1,18 @@
+name: geocities
+title: Geocities-style personal pages
+description: |
+  The SHOWCASE.md banner — analyses 024-025 ran this to ship 1841
+  lines (auth, per-user pages, Markdown rendering, GDPR-deletion,
+  session management) plus 1253 lines of tests in 7m 38s for $2.05.
+  Caterpillar's M6 review caught three production-blocking bugs the
+  per-iteration M5 work couldn't see. The framework's flagship demo
+  for "vague directive in, working software out."
+body: |
+  Build a Geocities-style site where each user has their own personal
+  page they can edit with Markdown. Anyone can view any user's page
+  by URL. Authentication is required to edit, but pages are public to
+  view. Include a way for users to delete their account along with
+  all their content (GDPR).
+suggested_workflow: tdd-serial
+suggested_skeleton: fullstack-fastapi-react
+tags: [showcase, banner, gdpr, multi-tenant]

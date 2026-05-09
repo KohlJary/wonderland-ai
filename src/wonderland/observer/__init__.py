@@ -24,6 +24,7 @@ from wonderland.observer.interface import (
     RunMeeting,
     RunSummary,
 )
+from wonderland.observer.live import LiveRunHandle
 from wonderland.observer.mock_turtle import MockTurtleHandle
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "AgentTelemetryDelta",
     "ArtifactShipped",
     "HistoricalRunHandle",
+    "LiveRunHandle",
     "MeetingEnded",
     "MeetingStarted",
     "MockTurtleHandle",

@@ -15,14 +15,16 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from wonderland.observer import HistoricalRunHandle
 from wonderland.tui.screens.cast import CastBrowserScreen
 from wonderland.tui.screens.live_run import LiveRunScreen
+from wonderland.tui.screens.new_run import NewRunScreen
 from wonderland.tui.screens.run_summary import RunSummaryScreen
+from wonderland.tui.screens.settings import SettingsScreen
 
 
 def _discover_snapshots(root: Path) -> list[Path]:
@@ -61,7 +63,9 @@ class SnapshotLibraryScreen(Screen[None]):
     BINDINGS = [
         Binding("enter", "open_selected", "Open", show=True),
         Binding("w", "watch_selected", "Watch", show=True),
+        Binding("n", "new_run", "New run", show=True),
         Binding("c", "open_cast", "The Cast", show=True),
+        Binding("S", "open_settings", "Settings", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         # Vim nav (j/k/g/G) is provided by WonderlandApp.
     ]
@@ -74,12 +78,38 @@ class SnapshotLibraryScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Vertical():
+            yield Static("[b]Wonderland[/b]", id="home-title")
+            with Horizontal(id="home-actions"):
+                yield Button(
+                    "▶ New run",
+                    id="new-run-button",
+                    variant="primary",
+                )
+                yield Button(
+                    "👤 The Cast",
+                    id="cast-button",
+                )
+                yield Button(
+                    "⚙ Settings",
+                    id="settings-button",
+                )
             yield Static(
-                f"[b]Snapshots under[/b] {self.snapshot_root}",
+                f"[b]Past runs under[/b] [dim]{self.snapshot_root}[/dim]",
                 id="library-header",
             )
             yield DataTable(id="snapshot-table", cursor_type="row")
         yield Footer()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Route the home view's prominent buttons. New run opens the
+        composer; Cast opens the team browser; Settings opens the
+        config form."""
+        if event.button.id == "new-run-button":
+            self.action_new_run()
+        elif event.button.id == "cast-button":
+            self.action_open_cast()
+        elif event.button.id == "settings-button":
+            self.action_open_settings()
 
     def on_mount(self) -> None:
         self._populate()
@@ -123,6 +153,11 @@ class SnapshotLibraryScreen(Screen[None]):
             )
         if self._snapshot_paths:
             table.cursor_coordinate = (0, 0)
+        # Focus the snapshot table on mount so vim keys (j/k/g/G/H/L)
+        # navigate the past-runs list. Without this, the home-actions
+        # buttons take focus first and j/k get eaten by the focused
+        # button.
+        table.focus()
 
     def action_open_selected(self) -> None:
         table = self.query_one("#snapshot-table", DataTable)
@@ -142,6 +177,14 @@ class SnapshotLibraryScreen(Screen[None]):
         if row is None or row >= len(self._snapshot_paths):
             return
         self.app.push_screen(LiveRunScreen(self._snapshot_paths[row]))
+
+    def action_new_run(self) -> None:
+        """Open the new-run composer for kicking off a fresh run."""
+        self.app.push_screen(NewRunScreen())
+
+    def action_open_settings(self) -> None:
+        """Open the user-level settings screen (API key + model)."""
+        self.app.push_screen(SettingsScreen())
 
     def on_data_table_row_selected(self, _event: DataTable.RowSelected) -> None:
         self.action_open_selected()

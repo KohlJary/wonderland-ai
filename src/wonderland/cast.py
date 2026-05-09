@@ -1,10 +1,13 @@
-"""Cast metadata — high-level descriptions of each character in the
-system. Distinct from the constitutions themselves (which speak in
-the character's own voice); these summaries are an *outside* view
-written for someone who hasn't read the constitution yet.
+"""Cast metadata — character bios + constitution paths for each
+agent in the system.
+
+Distinct from the constitutions themselves (which speak in the
+character's own voice); the bio here is an *outside* introduction
+covering both who the character is in the literary source AND how
+that character shapes their place in Wonderland the framework.
 
 Used by the TUI's Cast view; the data is also useful for any future
-docs / web frontend / about-page that needs to describe the team.
+docs / web frontend / about page that needs to describe the team.
 
 Constitutions live at ``constitutions/<name>.md``; the
 ``constitution_path`` is relative to the repo root.
@@ -23,7 +26,7 @@ class CastMember:
     display_name: str
     role: str  # short label
     failure_mode: str  # one-line characterization of §VIII
-    summary: str  # multi-paragraph "what this character does in the system"
+    bio: str  # multi-paragraph intro: literary character + system role
     constitution_path: str  # relative to repo root
 
 
@@ -37,25 +40,24 @@ _CAST: list[CastMember] = [
             "product owner's job has already shifted to defending what's "
             "already in flight."
         ),
-        summary=(
-            "The first voice on user need. Inhabits specific personas "
-            "(the polyglot moderator, the teenage activist, the musician "
-            "with twenty minutes before a meeting) and ships user stories "
-            "from inside them.\n\n"
-            "Across the workflow:\n"
-            "  • M1 (Caucus Race) — produces the user stories that anchor "
-            "everything downstream.\n"
-            "  • M2 (Rabbit's Errand) — grounding voice. Defends the "
-            "personas her stories named when Rabbit's tickets compress "
-            "them past user-recognition.\n"
-            "  • M2.5 (Advice from a Caterpillar) — audits feature claims "
-            "against story coherence; pushes back when a feature drops a "
-            "story on the floor.\n"
-            "  • M4 (Mad Tea Party) — pairs with the Mad Hatter to write "
-            "user-journey test scenarios; she ships happy-path stories, "
-            "he ships failure-mode scenarios.\n\n"
-            "Her power is naivety as a stance, not a character flaw. She "
-            "asks the questions everyone else has stopped seeing."
+        bio=(
+            "From Lewis Carroll's [i]Alice's Adventures in Wonderland[/i] — "
+            "a girl who falls down a rabbit hole and refuses to accept "
+            "that things make sense just because everyone insists they "
+            "do. The naivety-as-stance is what the framework borrows: "
+            "the willingness to ask 'wait, would Maya actually do that?' "
+            "while everyone else has moved on to data structures.\n\n"
+            "In the system, Alice is the user voice. She produces "
+            "stories from inside specific personas (the polyglot "
+            "moderator, the teenage activist, the musician with twenty "
+            "minutes before a meeting), then defends those personas "
+            "across the workflow when scope creep or technical "
+            "convenience would blur them. Her constitution names the "
+            "stance explicitly — naivety is her power, not a flaw.\n\n"
+            "Her §VIII failure mode names the shadow: scope creep "
+            "during implementation, when the product owner's job has "
+            "already shifted to defending what's in flight rather than "
+            "adding more."
         ),
         constitution_path="constitutions/alice.md",
     ),
@@ -68,21 +70,20 @@ _CAST: list[CastMember] = [
             "generating tickets that are technically correct but lose "
             "the user-facing point. Counter is Alice's grounding voice."
         ),
-        summary=(
-            "Decomposes user stories into v1-scoped tickets with explicit "
-            "dependencies, owners, and time estimates. Burndown discipline "
-            "is his domain; he asks 'by when?' persistently and refuses "
-            "to let the schedule become dishonest.\n\n"
-            "Across the workflow:\n"
-            "  • M2 (Rabbit's Errand) — ships tickets. The work the "
-            "Tweedles will pick up.\n"
-            "  • M2.5 (Advice from a Caterpillar) — composes those "
-            "tickets into user-facing features that span the stack. "
-            "Each feature names a persona, a stack_span, and the "
-            "tickets it aggregates.\n\n"
-            "His characteristic move is the cut: this v1, that fast-"
-            "follow, this post-launch. He'd rather under-promise than "
-            "blow a deadline."
+        bio=(
+            "From the same source — late, hurried, looking at his "
+            "pocket-watch, always running behind. The hurriedness is "
+            "load-bearing: it's what makes him a project manager rather "
+            "than an architect. He compresses, decomposes, schedules; "
+            "he refuses to let the work float without a 'by when?'\n\n"
+            "In the system, Rabbit ships tickets in M2 (decomposing "
+            "ADRs and stories into v1 work units the Tweedles can pick "
+            "up) and features in M2.5 (composing those tickets into "
+            "user-facing capabilities that span the stack).\n\n"
+            "His §VIII failure mode is over-compression: ticketing so "
+            "tightly that the user-recognizable behavior gets lost. "
+            "That's exactly why Alice is in M2 + M2.5 — to ground his "
+            "compression against the personas she named in M1."
         ),
         constitution_path="constitutions/white_rabbit.md",
     ),
@@ -96,23 +97,23 @@ _CAST: list[CastMember] = [
             "without the cat: prescriptions that aren't anchored to a "
             "real tradeoff."
         ),
-        summary=(
-            "Surfaces the seam, names the tradeoff, then disappears. "
-            "Ships ADRs (Architecture Decision Records) that document "
-            "irreversible-feeling choices with their cost made explicit. "
-            "His characteristic move is the suggestive question that "
-            "reframes a problem rather than the prescription that closes "
-            "it.\n\n"
-            "Across the workflow:\n"
-            "  • M1 (Caucus Race) — produces the ADRs that establish the "
-            "system's load-bearing architectural invariants. Reads the "
-            "stories Alice ships and infers the architectural primitives "
-            "they imply.\n"
-            "  • M2 / M2.5 — defaults to silence unless a feature implies "
-            "a fresh architectural decision the existing ADRs don't "
-            "cover. His silence is informative.\n\n"
+        bio=(
+            "From Carroll — appears, smiles, vanishes; nothing to do "
+            "with anyone else's predicament. The withdrawn quality is "
+            "the load-bearing thing: Cat speaks once with weight, then "
+            "steps away. He doesn't iterate, doesn't argue, doesn't "
+            "follow up — once the ADR is shipped, it's the team's to "
+            "live with.\n\n"
+            "In the system, Cat is the architect. He ships ADRs "
+            "(Architecture Decision Records) that name the load-bearing "
+            "tradeoffs the system rests on, with what each decision "
+            "gives up made explicit. His characteristic move is the "
+            "suggestive question that reframes a problem rather than "
+            "the prescription that closes it.\n\n"
             "Every ADR he ships names what it gives up. No costless "
-            "decisions; the grin is the tradeoff."
+            "decisions; the grin is the tradeoff. His §VIII failure "
+            "mode is false certainty — the temptation to pronounce "
+            "without naming the cost."
         ),
         constitution_path="constitutions/cheshire_cat.md",
     ),
@@ -127,21 +128,26 @@ _CAST: list[CastMember] = [
             "process. Bound in v8 by the M4 directive's stay-in-your-lane "
             "clause + no-out-of-lane-code-shipping rule."
         ),
-        summary=(
-            "Ships failure-mode test scenarios — security edges, "
-            "concurrency races, malformed input, the place where 'the "
-            "system actually lives' (per his §I). His test surface "
-            "complements Alice's; she pins what real users do, he pins "
-            "what real users *eventually* do that breaks things.\n\n"
-            "Across the workflow:\n"
-            "  • M4 (Mad Tea Party) — the tea party pairing. Alice ships "
-            "user-journey scenarios; Hatter ships failure-mode "
-            "scenarios. Together they form the test pyramid M5 has to "
-            "satisfy. Each scenario gets two operations: a markdown "
-            "artifact AND a runnable pytest file.\n\n"
-            "The pairing is on-brand: in the source material the "
-            "Hatter's tea party is *Alice's* tea party — she's the "
-            "visitor who shows up to find the cups laid out."
+        bio=(
+            "From the tea-party chapter — a chaotic host who inverts "
+            "norms (eternal tea-time, riddles without answers, telling "
+            "Alice to eat the food in front of her with no plate). "
+            "Inversion is the move: Hatter pins what real users "
+            "[i]eventually[/i] do that breaks things, not what they're "
+            "supposed to do.\n\n"
+            "In the system, Hatter ships failure-mode test scenarios — "
+            "security edges, concurrency races, malformed input, the "
+            "place where 'the system actually lives' (per his §I). His "
+            "test surface complements Alice's: she pins the happy path, "
+            "he pins the second Tuesday in March. The pairing is on-"
+            "brand — the source-material tea party is [i]Alice's[/i] "
+            "tea party; she's the visitor who shows up to find the "
+            "cups laid out.\n\n"
+            "His §VIII failure mode is scenario sprawl + severity "
+            "inflation — generating more scenarios than the meeting "
+            "can absorb, marking everything critical. The directive "
+            "v3 bound in M4 (surface-relative + self-audit) targets "
+            "this directly."
         ),
         constitution_path="constitutions/mad_hatter.md",
     ),
@@ -154,17 +160,24 @@ _CAST: list[CastMember] = [
             "naming the legal/compliance principle that makes it a no. "
             "Procedural force without epistemic anchor."
         ),
-        summary=(
-            "Pursues compliance violations and security regressions with "
-            "cold focus. Her artifact is the ruling — a compliance "
-            "decision the rest of the team has to design around.\n\n"
-            "Across the workflow:\n"
-            "  • M1 (Caucus Race) — rules on data-handling boundaries, "
-            "GDPR scope, retention policies, security invariants. Her "
-            "rulings bound what architecture is permissible.\n\n"
-            "Rulings are not negotiable. If a feature requires data "
-            "retention beyond her ruling, the feature has to change, "
-            "not the ruling. The team has learned this."
+        bio=(
+            "From Carroll — 'OFF WITH THEIR HEAD' as the constant "
+            "baseline threat, severity inflated for everything. The "
+            "framework borrows the categorical force without the "
+            "comedy: Queen's role requires being the last word in her "
+            "domain, and that requires not lowering the temperature.\n\n"
+            "In the system, Queen issues rulings — binding "
+            "constitutional decisions about data handling, GDPR "
+            "boundaries, retention, security invariants. Her rulings "
+            "bound what architecture is permissible. The rest of the "
+            "team designs around her rulings, not the other way around: "
+            "if a feature requires data retention beyond her ruling, "
+            "the feature changes, not the ruling.\n\n"
+            "Her §VIII failure mode is severity inflation across non-"
+            "load-bearing concerns — ruling 'CRITICAL' on things that "
+            "aren't actually critical. The constitution guards against "
+            "this with explicit graduation; her work is supposed to "
+            "land where it's load-bearing, not everywhere."
         ),
         constitution_path="constitutions/queen_of_hearts.md",
     ),
@@ -178,20 +191,26 @@ _CAST: list[CastMember] = [
             "honor what the contract promised. Tweedledum checks him "
             "against this; the alone-Tweedle is dangerous."
         ),
-        summary=(
-            "Owns frontend. Inseparable from Tweedledum, his sibling.\n\n"
-            "Across the workflow:\n"
-            "  • M3 (Tweedledum and Tweedledee) — negotiates contracts "
-            "with Tweedledum. Half-formed proposals get marked "
-            "state=proposed; once both sides agree, state=agreed.\n"
-            "  • M5 (implementation) — ships frontend code against the "
-            "agreed contracts. Iterates red→green using run_tests "
-            "against Hatter's failing test surface from M4.\n"
-            "  • M6 (The Trial) — responds to Caterpillar's review "
-            "findings; ships fixes for genuinely-broken bugs.\n\n"
-            "He and Tweedledum are a pair, not a single agent doubled. "
-            "Each has their own opinion about their side of the seam; "
-            "the contract is the negotiation between them."
+        bio=(
+            "From [i]Through the Looking-Glass[/i] — twin brothers "
+            "who agree on everything, disagree about nothing important, "
+            "and refuse to settle without each other's input. The twin-"
+            "pair structure is load-bearing: the constitutions are "
+            "explicitly paired; neither Tweedle is meant to operate "
+            "alone.\n\n"
+            "In the system, Tweedledee owns frontend. He negotiates "
+            "contracts with Tweedledum in M3 (half-formed proposals "
+            "marked state=proposed; agreement transitions to "
+            "state=agreed), implements against those contracts in M5 "
+            "(iterating red→green using run_tests against Hatter's "
+            "failing test surface), and responds to Caterpillar's "
+            "review findings in M6.\n\n"
+            "Their shared §VIII failure mode is the [i]Tweedle dance[/i] "
+            "— converging on substance but never transitioning to "
+            "shipping, kept circling the contract instead of writing "
+            "the code. The Contract Note artifact (Pair Protocol §V) "
+            "exists specifically to give them a 'we have agreed; now "
+            "ship' inflection point."
         ),
         constitution_path="constitutions/tweedledee.md",
     ),
@@ -203,21 +222,22 @@ _CAST: list[CastMember] = [
             "Contract drift — same as Tweedledee, mirrored. The pair "
             "protocol is what keeps both honest; alone, either drifts."
         ),
-        summary=(
-            "Owns backend. Inseparable from Tweedledee, his sibling.\n\n"
-            "Across the workflow:\n"
-            "  • M3 (Tweedledum and Tweedledee) — negotiates contracts "
-            "with Tweedledee. He drafts the load-bearing seams (auth "
-            "session shapes, persistence contracts, query semantics) "
-            "and his sibling fills in the frontend impacts.\n"
-            "  • M5 (implementation) — ships backend code: SQLAlchemy "
-            "models, FastAPI routers, business logic. Iterates red→green "
-            "with run_tests.\n"
-            "  • M6 (The Trial) — responds to Caterpillar's findings; "
-            "ships fixes for genuinely-broken bugs.\n\n"
-            "His characteristic move: 'all four core contracts locked "
-            "and agreed.' The Tweedles' pair protocol is what keeps "
-            "their work coherent across the stack."
+        bio=(
+            "From the same chapter — Tweedledee's mirror. The pair-"
+            "protocol structure of their constitutions makes them "
+            "interchangeable in mood and method but split by domain: "
+            "Tweedledum owns backend, Tweedledee owns frontend.\n\n"
+            "In the system, Tweedledum drafts the load-bearing seams "
+            "in M3 (auth session shapes, persistence contracts, query "
+            "semantics) while his sibling fills in the frontend impacts. "
+            "In M5 he ships SQLAlchemy models, FastAPI routers, "
+            "business logic — iterating red→green with run_tests until "
+            "Hatter's failing tests turn green. In M6 he responds to "
+            "Caterpillar's findings.\n\n"
+            "His characteristic phrase: 'all four core contracts locked "
+            "and agreed.' The pair protocol is what keeps the work "
+            "coherent across the stack — neither Tweedle ships a one-"
+            "sided implementation that the other can't honor."
         ),
         constitution_path="constitutions/tweedledum.md",
     ),
@@ -231,24 +251,26 @@ _CAST: list[CastMember] = [
             "finishing the review pass. Bound in v8 by the M6 directive's "
             "broken-vs-refactor distinction."
         ),
-        summary=(
-            "Asks 'Who are you?' of shipped code. His stance is "
-            "character-shaped: the code is making a claim, and the "
-            "review's job is to test the claim, not just spot-check the "
-            "code. He reads imports across files, traces what's wired "
-            "to what, and surfaces findings cited at file:line.\n\n"
-            "Across the workflow:\n"
-            "  • M2.5 (Advice from a Caterpillar) — applies his 'what "
-            "does this claim?' stance one layer earlier than M6, to "
-            "features rather than shipped code.\n"
-            "  • M6 (The Trial) — reads the working tree as the "
-            "implementation artifact. Surfaces findings: the import "
-            "that doesn't resolve, the contract that isn't honored, "
-            "the error path that swallows data. Tweedles respond.\n\n"
+        bio=(
+            "From the 'Advice from a Caterpillar' chapter — sits on a "
+            "mushroom, smokes a hookah, asks 'who are you?' as a "
+            "fundamental question about identity. The 'who are you?' "
+            "stance is the work: code is making a claim, and the "
+            "review's job is to test the claim, not just spot-check "
+            "the code.\n\n"
+            "In the system, Caterpillar reviews. He weighs in early "
+            "in M2.5 (auditing feature claims against ticket coherence) "
+            "and lands hardest in M6, reading the working tree as the "
+            "implementation artifact. He surfaces findings cited at "
+            "file:line — imports that don't resolve, contracts not "
+            "honored, error paths that swallow data.\n\n"
             "Three real block-severity bugs caught in analysis 025's "
-            "Geocities run — none were obvious from a one-shot read of "
+            "Geocities run; none were obvious from a one-shot read of "
             "the diff. He found them by reading what the code claimed "
-            "and checking whether the claim held."
+            "and checking whether the claim held. His §VIII failure "
+            "mode is review-paralysis / finding inflation — the "
+            "temptation to ship every refactor suggestion as if it "
+            "were a bug, which expands M6 without bounded benefit."
         ),
         constitution_path="constitutions/caterpillar.md",
     ),
@@ -262,22 +284,25 @@ _CAST: list[CastMember] = [
             "team is busy. The flip side of healthy quiet is dangerous "
             "incuriosity."
         ),
-        summary=(
-            "Mostly asleep, and this is correct. His sleep is the signal "
-            "that the system is healthy; his waking is the signal that "
-            "something has changed. He's the team's contact with "
-            "production reality.\n\n"
-            "His characteristic move: waking, suddenly, when a graph "
-            "stops being flat. Reports what he sees in plain language, "
-            "with the data attached.\n\n"
-            "He believes production is the only environment that tells "
-            "the truth — that observability is built during "
-            "implementation rather than retrofitted under incident "
-            "pressure. The Tweedles instrument because of him.\n\n"
-            "Currently underused in the bundled workflows. The framework's "
-            "main loops are scoping → implementation → review; the "
-            "Dormouse's lane is post-deploy. He'll come into his own once "
-            "Wonderland is hosted with real production traffic to watch."
+        bio=(
+            "From the tea-party — falls asleep mid-conversation, "
+            "woken to say something profound, then dozes off again. "
+            "The half-asleep quality is the move: Dormouse only speaks "
+            "when something has [i]already happened[/i] in production "
+            "(an alert fired, a deploy succeeded, an error rate spiked). "
+            "His sleep is the signal that the system is healthy; his "
+            "waking is the signal that something has changed.\n\n"
+            "In the system, Dormouse is the team's contact with "
+            "production reality. He believes production is the only "
+            "environment that tells the truth — that observability is "
+            "built during implementation rather than retrofitted under "
+            "incident pressure. The Tweedles instrument because of "
+            "him.\n\n"
+            "Currently underused in the bundled workflows. The "
+            "framework's main loops are scoping → implementation → "
+            "review; Dormouse's lane is post-deploy. He'll come into "
+            "his own once Wonderland is hosted with real production "
+            "traffic to watch."
         ),
         constitution_path="constitutions/dormouse.md",
     ),
@@ -291,19 +316,25 @@ _CAST: list[CastMember] = [
             "convenor's pull toward visibility when invisibility is the "
             "job."
         ),
-        summary=(
-            "Doesn't deliberate. He convenes — relays the directive, "
-            "opens threads, transitions meetings, escalates deadlocks "
-            "to the human. The framework's procedural backbone.\n\n"
-            "When agents go silent, he nudges. When they get stuck, he "
-            "records it. When they deadlock, he asks the human. Every "
-            "meeting opens with his directive utterance ('**M2.5 — "
-            "Advice from a Caterpillar.**' etc.) and closes with his "
+        bio=(
+            "From the 'Caucus Race' chapter — runs the race where "
+            "everyone runs in circles and they all win prizes. "
+            "Procedural-not-substantive is the load-bearing role: "
+            "Dodo doesn't ship code, doesn't ship ADRs, doesn't ship "
+            "anything except the [i]moves[/i] that keep the team "
+            "progressing.\n\n"
+            "In the system, Dodo convenes. He relays the user's "
+            "directive into M1, opens each subsequent thread with a "
+            "convenor directive, watches for quiescence, escalates "
+            "deadlocks to the human. Every meeting opens with his "
+            "directive utterance ('**M2.5 — Advice from a "
+            "Caterpillar.**' etc.) and closes with his "
             "acknowledgment.\n\n"
-            "He's the only agent without a §VIII failure-mode that maps "
-            "to a constitutional flaw — his risk is *over-doing* the "
-            "convenor role, becoming a participant rather than the "
-            "person who lets participants participate."
+            "His §VIII failure mode is performing orchestration — "
+            "over-communicating with constant nudges and ceremonial "
+            "acknowledgments when silence would do. He's the only "
+            "agent whose risk is [i]doing too much of his job[/i] "
+            "rather than failing at it."
         ),
         constitution_path="constitutions/dodo.md",
     ),

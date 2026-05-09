@@ -1,15 +1,13 @@
 """Cast view — browse the characters that staff Wonderland.
 
-Two screens:
-  - ``CastBrowserScreen``: list of all cast members with their role
-    + characteristic failure mode
-  - ``CastMemberDetailScreen``: drill into one member; shows the
-    high-level "what they do in the system" summary, then the full
-    constitution markdown rendered below.
+Single-page lazygit-style layout (per the project_tui_lazygit_principle
+memory): cast member list at top, bio + constitution side-by-side
+below, all filtered by the row currently selected in the list. Tab
+cycles focus across the panes; cursor moves drive the content.
 
-Reachable from the Snapshot Library via the ``c`` binding. The cast
-is the same regardless of which snapshot's open — it's the team
-itself, not a per-run thing.
+Reachable from the home view via the ``c`` binding or the visible
+'The Cast' button. The cast is the same regardless of which run's
+open — it's the team itself, not a per-run thing.
 """
 
 from __future__ import annotations
@@ -18,7 +16,7 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Markdown, Static
 
@@ -31,17 +29,26 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 class CastBrowserScreen(Screen[None]):
-    """List the characters in the system."""
+    """Single-page lazygit-shape cast view.
+
+    Top: cast list (DataTable, focusable). Cursor row drives the
+    content of the panes below.
+
+    Below: side-by-side panes — Bio (left, who the character is +
+    how the literary character shapes the constitution) +
+    Constitution (right, the in-character voice). Both update as
+    the cursor moves in the list.
+    """
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=True),
-        Binding("enter", "open_selected", "Open", show=True),
-        # Vim nav (j/k/g/G) is provided by WonderlandApp.
+        # Vim nav (j/k/g/G/H/L) is provided by WonderlandApp.
     ]
 
     def __init__(self) -> None:
         super().__init__()
         self._cast: list[CastMember] = cast()
+        self._loaded_constitutions: dict[str, str] = {}
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -52,6 +59,20 @@ class CastBrowserScreen(Screen[None]):
                 id="cast-header",
             )
             yield DataTable(id="cast-table", cursor_type="row")
+            yield Static(id="cast-member-header")
+            with Horizontal(id="cast-detail-row"):
+                with Vertical(id="cast-bio-pane"):
+                    yield Static("[b]Bio[/b]", id="cast-bio-label")
+                    with VerticalScroll(id="cast-bio-scroll"):
+                        yield Static(id="cast-bio")
+                with Vertical(id="cast-constitution-pane"):
+                    yield Static(
+                        "[b]Constitution[/b]    "
+                        "[dim](the character speaking)[/dim]",
+                        id="constitution-label",
+                    )
+                    with VerticalScroll(id="constitution-scroll"):
+                        yield Markdown(id="constitution-markdown")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -63,75 +84,60 @@ class CastBrowserScreen(Screen[None]):
             if len(failure_short) > 60:
                 failure_short = failure_short[:60] + "…"
             table.add_row(member.display_name, member.role, failure_short)
+        # Prime the detail panes with row 0 (Alice by default).
+        if self._cast:
+            self._render_member_detail(0)
         table.focus()
 
-    def action_back(self) -> None:
-        self.app.pop_screen()
-
-    def action_open_selected(self) -> None:
-        table = self.query_one("#cast-table", DataTable)
-        row = table.cursor_row
-        if row is None or row < 0 or row >= len(self._cast):
+    def _render_member_detail(self, row: int) -> None:
+        """Update the bio + constitution panes for the cast member at
+        ``row`` in the table. Called on cursor moves and on mount."""
+        if row < 0 or row >= len(self._cast):
             return
-        self.app.push_screen(CastMemberDetailScreen(self._cast[row]))
+        m = self._cast[row]
 
-    def on_data_table_row_selected(
-        self, _event: DataTable.RowSelected
-    ) -> None:
-        self.action_open_selected()
-
-
-class CastMemberDetailScreen(Screen[None]):
-    """Detail view for one character — high-level role summary plus
-    the constitution markdown rendered below it."""
-
-    BINDINGS = [
-        Binding("escape", "back", "Back", show=True),
-    ]
-
-    def __init__(self, member: CastMember) -> None:
-        super().__init__()
-        self.member = member
-
-    def compose(self) -> ComposeResult:
-        yield Header(show_clock=False)
-        with Vertical():
-            yield Static(id="member-header")
-            yield Static(id="member-summary")
-            yield Static(
-                "[b]Constitution[/b]    "
-                "[dim](the character speaking in their own voice)[/dim]",
-                id="constitution-label",
-            )
-            with VerticalScroll(id="constitution-scroll"):
-                yield Markdown(id="constitution-markdown")
-        yield Footer()
-
-    def on_mount(self) -> None:
-        m = self.member
         header_lines = [
             f"[b]{m.display_name}[/b]    [dim]{m.role}[/dim]",
             f"[b]Failure mode:[/b] {m.failure_mode}",
         ]
-        self.query_one("#member-header", Static).update("\n".join(header_lines))
+        self.query_one("#cast-member-header", Static).update(
+            "\n".join(header_lines)
+        )
 
-        # Role summary: the outside-view "what they do in the system".
-        self.query_one("#member-summary", Static).update(m.summary)
+        # Bio — character-and-system intro
+        self.query_one("#cast-bio", Static).update(m.bio)
 
-        # Constitution: the in-character voice.
-        path = _REPO_ROOT / m.constitution_path
-        try:
-            content = path.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            content = (
-                f"# Failed to load constitution\n\n"
-                f"Tried path: {path}\n\n"
-                f"Error: {exc}"
-            )
-        self.query_one("#constitution-markdown", Markdown).update(content)
+        # Constitution — load lazily, cache for repeat selections
+        if m.name not in self._loaded_constitutions:
+            path = _REPO_ROOT / m.constitution_path
+            try:
+                self._loaded_constitutions[m.name] = path.read_text(
+                    encoding="utf-8", errors="replace"
+                )
+            except OSError as exc:
+                self._loaded_constitutions[m.name] = (
+                    f"# Failed to load constitution\n\n"
+                    f"Tried path: {path}\n\n"
+                    f"Error: {exc}"
+                )
+        self.query_one("#constitution-markdown", Markdown).update(
+            self._loaded_constitutions[m.name]
+        )
+
+    def on_data_table_row_highlighted(
+        self, event: DataTable.RowHighlighted
+    ) -> None:
+        """Cursor moved in the cast table → re-render bio +
+        constitution panes for the newly-highlighted row. The
+        lazygit-style filtering pattern: selection drives content."""
+        if event.data_table.id != "cast-table":
+            return
+        if event.cursor_row is None:
+            return
+        self._render_member_detail(event.cursor_row)
 
     def action_back(self) -> None:
         self.app.pop_screen()
 
 
-__all__ = ["CastBrowserScreen", "CastMemberDetailScreen"]
+__all__ = ["CastBrowserScreen"]

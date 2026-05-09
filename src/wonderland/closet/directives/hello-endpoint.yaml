@@ -1,0 +1,12 @@
+name: hello-endpoint
+title: /hello endpoint
+description: |
+  The smoke-level directive — exercises the whole pipeline against a
+  trivial backend endpoint. Useful for verifying the substrate works
+  end-to-end on a fresh checkout, or as a first run when learning the
+  framework's behavior. Cheap (~$0.30-0.80) and fast (~3 min).
+body: |
+  Build a /hello endpoint that returns the current server time as JSON.
+suggested_workflow: smoke
+suggested_skeleton: fullstack-fastapi-react
+tags: [smoke, cheap, learning]

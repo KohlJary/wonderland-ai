@@ -1,0 +1,15 @@
+name: pomodoro
+title: Pomodoro timer app
+description: |
+  Standard 25-min focus / 5-min break cycle with daily review and
+  persistent settings. The directive analyses 029-032 used to
+  validate the substrate convergence + tdd-serial workflow.
+  Feature-rich enough to exercise per_item iteration, contract
+  negotiation across multiple features, and M6 cross-feature
+  consistency review.
+body: |
+  Build a Pomodoro timer app: focus sessions, configurable breaks,
+  daily review, persistent settings.
+suggested_workflow: tdd-serial
+suggested_skeleton: fullstack-fastapi-react
+tags: [greenfield, feature-rich, banner]

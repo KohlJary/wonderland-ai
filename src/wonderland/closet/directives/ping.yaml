@@ -1,0 +1,12 @@
+name: ping
+title: Smoke ping (cheapest sanity check)
+description: |
+  The cheapest possible run — ships a single trivial endpoint with the
+  smoke workflow. Useful for verifying the framework works end-to-end
+  on a fresh checkout, or as the first thing to run when adding a new
+  agent / model / config. Typically <$0.20 and <90 seconds.
+body: |
+  Add a /ping endpoint that returns the literal string "pong".
+suggested_workflow: smoke
+suggested_skeleton: fullstack-fastapi-react
+tags: [smoke, cheap, sanity]

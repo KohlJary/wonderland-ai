@@ -1,0 +1,586 @@
+"""NewRunScreen — compose and launch a run.
+
+Three regions:
+  - **Preset picker** (left): DataTable of bundled + per-project
+    directive presets. Selecting one populates the directive composer
+    and pre-selects the suggested workflow.
+  - **Directive composer** (right): TextArea for the actual directive
+    text. Preset picks are starting points; user can edit freely.
+  - **Configuration** (bottom): workflow picker, project-root input,
+    budget input. Pre-filled from the selected preset's hints.
+
+Per the project_tui_lazygit_principle memory: multi-pane, focusable
+Tab cycle, no modals except for the launch confirmation (because
+burning $3-5 should require deliberate consent).
+
+T51 ships layout + state-only. T53 wires the Go button.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import os
+
+from textual import work
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical
+from textual.screen import Screen
+from textual.widgets import (
+    Button,
+    Checkbox,
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Select,
+    Static,
+    TextArea,
+)
+
+from wonderland.config import load_config
+from wonderland.directive import (
+    DirectivePreset,
+    list_directives,
+    list_project_directives,
+    load_directive,
+    load_project_directive,
+    save_directive,
+)
+from wonderland.tui.screens.launch_confirmation import LaunchConfirmationScreen
+from wonderland.tui.screens.settings import SettingsScreen
+from wonderland.workflow import list_workflows, load_workflow
+
+
+# Sentinel name for the "blank directive" pseudo-row at the top of
+# the preset table — selecting it clears the composer + description
+# so the user starts fresh.
+_BLANK_PRESET = "__blank__"
+
+
+class NewRunScreen(Screen[None]):
+    """Compose a directive + workflow + project, launch a run.
+
+    T51 scope: layout, preset selection populates the composer,
+    workflow picker exposes bundled options, project + budget inputs
+    accept text. The Go button is a stub until T53 wires the launch.
+    """
+
+    BINDINGS = [
+        Binding("escape", "back", "Back", show=True),
+        Binding("g", "go", "Go", show=True),
+        Binding("s", "save_as_preset", "Save preset", show=True),
+        # Vim nav (j/k/g/G/H/L) is provided by WonderlandApp.
+    ]
+
+    # Form field order — Enter advances through these in sequence
+    # (single-field widgets advance on plain Enter; TextAreas need
+    # Tab since they consume Enter as a newline by default).
+    # Last entry is the Go button; advancing past the name input
+    # focuses Go so the user can press Enter to confirm-and-launch.
+    _FORM_ORDER: tuple[str, ...] = (
+        "preset-table",
+        "directive-composer",
+        "description-composer",
+        "workflow-select",
+        "budget-input",
+        "project-input",
+        "save-checkbox",
+        "save-name-input",
+        "go-button",
+    )
+
+    def __init__(self, project_root: Path | None = None) -> None:
+        super().__init__()
+        # Default project root is cwd — convenient for users running
+        # wonderland-tui from inside the project they want to operate
+        # on. Always overridable in the config row.
+        self.project_root = project_root or Path.cwd()
+        # Cache of (display_name, preset) tuples in display order so
+        # row index → preset is a constant-time lookup.
+        self._presets: list[tuple[str, DirectivePreset]] = []
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=False)
+        with Vertical():
+            yield Static(
+                "[b]New run[/b] · pick a preset or write fresh",
+                id="new-run-header",
+            )
+            with Horizontal(id="new-run-main"):
+                with Vertical(id="preset-pane"):
+                    yield Static("[b]Presets[/b]", id="preset-label")
+                    yield DataTable(
+                        id="preset-table",
+                        cursor_type="row",
+                    )
+                with Vertical(id="composer-pane"):
+                    yield Static("[b]Directive[/b]", id="composer-label")
+                    yield TextArea(
+                        "",
+                        id="directive-composer",
+                        language=None,  # plain text
+                    )
+                    yield Static(
+                        "[b]Description[/b] [dim](optional — used if saved as preset)[/dim]",
+                        id="description-label",
+                    )
+                    yield TextArea(
+                        "",
+                        id="description-composer",
+                        language=None,
+                    )
+            yield Static("[b]Configuration[/b]", id="config-label")
+            with Horizontal(id="config-row"):
+                yield Label("Workflow:", id="workflow-label")
+                yield Select(
+                    [(w, w) for w in list_workflows()],
+                    id="workflow-select",
+                    allow_blank=True,
+                    prompt="(pick a workflow)",
+                )
+                yield Label("Budget (soft cap):", id="budget-label")
+                yield Input(
+                    value="5.00",
+                    placeholder="$ — runs can exceed by 10-20%",
+                    id="budget-input",
+                )
+            with Horizontal(id="project-row"):
+                yield Label("Project root:", id="project-label")
+                yield Input(
+                    value=str(self.project_root),
+                    placeholder="/path/to/project",
+                    id="project-input",
+                )
+            with Horizontal(id="save-row"):
+                yield Checkbox(
+                    "Save as preset",
+                    value=False,
+                    id="save-checkbox",
+                )
+                yield Label("Name:", id="save-name-label")
+                yield Input(
+                    placeholder="my-directive-name",
+                    id="save-name-input",
+                )
+            with Horizontal(id="action-row"):
+                yield Button(
+                    "▶ Go (g)",
+                    id="go-button",
+                    variant="primary",
+                )
+                yield Button(
+                    "Cancel (esc)",
+                    id="cancel-button",
+                )
+        yield Footer()
+
+    def on_mount(self) -> None:
+        # Populate the preset table.
+        self._populate_presets()
+        # Focus the preset table by default — j/k navigates presets,
+        # Enter selects, Tab moves to the composer.
+        self.query_one("#preset-table", DataTable).focus()
+
+    def _populate_presets(self) -> None:
+        """Build the preset table from bundled + per-project sources.
+        Order: blank pseudo-row → bundled → divider → project-local.
+        Cached as ``self._presets`` for row-index → preset lookup.
+        Entries with None payload are non-selectable separators."""
+        table = self.query_one("#preset-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns("Name", "Title", "Workflow")
+
+        self._presets = []
+
+        # Row 0 — blank pseudo-row. Selecting it clears the composer
+        # + description so the user starts fresh.
+        self._presets.append((_BLANK_PRESET, None))  # type: ignore[arg-type]
+        table.add_row(
+            "[b]── new blank ──[/b]",
+            "[dim]start with empty fields[/dim]",
+            "—",
+        )
+
+        # Bundled
+        for name in list_directives():
+            try:
+                p = load_directive(name)
+            except Exception:  # noqa: BLE001 — best-effort listing
+                continue
+            self._presets.append((name, p))
+            table.add_row(
+                name,
+                p.title[:50] + ("…" if len(p.title) > 50 else ""),
+                p.suggested_workflow or "—",
+            )
+
+        # Project — inserted only when there's at least one
+        if self.project_root and self.project_root.is_dir():
+            project_names = list_project_directives(self.project_root)
+            if project_names:
+                # Visual separator row; use a tuple slot so the lookup
+                # array stays parallel with the table rows. None means
+                # "not selectable as a preset".
+                self._presets.append(("", None))  # type: ignore[arg-type]
+                table.add_row(
+                    "[dim]──── project ────[/dim]", "", ""
+                )
+                for name in project_names:
+                    try:
+                        p = load_project_directive(name, self.project_root)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    self._presets.append((name, p))
+                    table.add_row(
+                        name,
+                        p.title[:50] + ("…" if len(p.title) > 50 else ""),
+                        p.suggested_workflow or "—",
+                    )
+
+    # ------------------------------------------------------------------ #
+    # Selection-driven population (lazygit pattern)
+    # ------------------------------------------------------------------ #
+
+    def on_data_table_row_highlighted(
+        self, event: DataTable.RowHighlighted
+    ) -> None:
+        """Cursor on a preset row → populate composer + description
+        + workflow with that preset's content. The user is free to
+        edit afterwards; presets are starting points, not locks.
+
+        Special cases:
+          - Blank pseudo-row: clear both editors so the user starts
+            fresh.
+          - Separator row (None payload, not blank): leave editors
+            alone.
+        """
+        if event.data_table.id != "preset-table":
+            return
+        row = event.cursor_row
+        if row is None or row < 0 or row >= len(self._presets):
+            return
+        name, preset = self._presets[row]
+
+        composer = self.query_one("#directive-composer", TextArea)
+        description = self.query_one("#description-composer", TextArea)
+
+        if name == _BLANK_PRESET:
+            # Clear for fresh-start composition.
+            composer.text = ""
+            description.text = ""
+            # Don't touch workflow — user picks.
+            return
+
+        if preset is None:
+            # Inert separator row.
+            return
+
+        composer.text = preset.body
+        description.text = preset.description
+        # Workflow pre-select (always overridable). The Select.Changed
+        # event fires async but on_select_changed checks has_focus
+        # before advancing, so this programmatic update doesn't jump
+        # past the user.
+        if preset.suggested_workflow:
+            sel = self.query_one("#workflow-select", Select)
+            sel.value = preset.suggested_workflow
+        # Pre-fill the save-name input with the preset's name as a
+        # convenience (user is likely editing-then-resaving). Only
+        # populate when the field is currently empty so we don't
+        # clobber a name the user has already typed.
+        save_name = self.query_one("#save-name-input", Input)
+        if not save_name.value.strip():
+            save_name.value = name
+
+    # ------------------------------------------------------------------ #
+    # Actions
+    # ------------------------------------------------------------------ #
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_go(self) -> None:
+        """Launch the run. Validates inputs, optionally persists a
+        preset, pre-flights the API key, then pushes the launch
+        confirmation modal. Real Runner+LiveRunHandle construction
+        happens after the user confirms (in _launch_run)."""
+        directive = self.query_one("#directive-composer", TextArea).text.strip()
+        description = self.query_one(
+            "#description-composer", TextArea
+        ).text.strip()
+        workflow_name = self.query_one("#workflow-select", Select).value
+        project_str = self.query_one("#project-input", Input).value
+        budget_str = self.query_one("#budget-input", Input).value
+        save_checked = self.query_one("#save-checkbox", Checkbox).value
+        save_name = self.query_one("#save-name-input", Input).value.strip()
+
+        if not directive:
+            self.notify(
+                "Directive is empty — write or pick a preset.",
+                severity="warning",
+            )
+            return
+        if workflow_name == Select.BLANK or not workflow_name:
+            self.notify("Pick a workflow.", severity="warning")
+            return
+        if not project_str:
+            self.notify("Set the project root.", severity="warning")
+            return
+        try:
+            budget = float(budget_str)
+            if budget <= 0:
+                raise ValueError("budget must be positive")
+        except ValueError:
+            self.notify(
+                f"Invalid budget: {budget_str!r} (expected a positive number)",
+                severity="error",
+            )
+            return
+
+        project_path = Path(project_str).expanduser()
+
+        # Project root must already exist with a skeleton + .wonderland/.
+        # Auto-creating an empty dir would just produce a confusing
+        # downstream failure (agents have nothing to read; the team
+        # ships into the void). New-project creation lives in P8.6
+        # spinup; until that lands, the user must seed the project
+        # themselves (via wonderland init or by copying a skeleton).
+        if not project_path.is_dir():
+            self.notify(
+                f"Project root doesn't exist: {project_path}\n"
+                f"Wonderland needs an existing project tree to run "
+                f"against. Create the directory + seed a skeleton "
+                f"first (or wait for P8.6 spinup).",
+                severity="error",
+                timeout=8,
+            )
+            return
+
+        # API-key pre-flight: env var → config file. If neither has
+        # one, push the Settings screen so the user can set it from
+        # inside the TUI rather than dropping to the shell.
+        api_key = self._resolve_api_key()
+        if not api_key:
+            self.notify(
+                "No Anthropic API key found — opening Settings. Set "
+                "the key, save, then press Go again to launch.",
+                severity="warning",
+                timeout=6,
+            )
+            self.app.push_screen(SettingsScreen())
+            return
+
+        # Save as preset first (if requested) so the saved record
+        # captures whatever's in the form right now.
+        if save_checked:
+            if not save_name:
+                self.notify(
+                    "Save-as-preset is checked but no name given.",
+                    severity="warning",
+                )
+                return
+            if not project_path.is_dir():
+                self.notify(
+                    f"Project root doesn't exist; can't save preset to "
+                    f"{project_path}/.wonderland/directives/",
+                    severity="warning",
+                )
+                return
+            preset = DirectivePreset(
+                name=save_name,
+                title=description.split("\n", 1)[0][:80] or save_name,
+                description=description,
+                body=directive,
+                suggested_workflow=str(workflow_name),
+            )
+            try:
+                path = save_directive(preset, project_path)
+            except Exception as exc:  # noqa: BLE001
+                self.notify(
+                    f"Failed to save preset: {exc}",
+                    severity="error",
+                )
+                return
+            self.notify(f"Saved preset → {path}", timeout=3)
+            # Refresh the table so the new preset appears.
+            self._populate_presets()
+
+        # Stash the validated launch parameters for the post-confirm
+        # callback to read.
+        self._pending_launch = {
+            "directive": directive,
+            "workflow_name": str(workflow_name),
+            "project_path": project_path,
+            "budget": budget,
+        }
+
+        # Push the confirmation modal. Burning $3-5 deserves a
+        # deliberate Yes — irreversible action gets a guarded prompt
+        # per the project_tui_lazygit_principle exception.
+        self.app.push_screen(
+            LaunchConfirmationScreen(
+                directive=directive,
+                workflow_name=str(workflow_name),
+                budget=budget,
+                project_root=str(project_path),
+            ),
+            self._on_launch_confirmed,
+        )
+
+    def _resolve_api_key(self) -> str | None:
+        """Pre-flight check: env var > config file. Returns the key
+        or None if neither path has one."""
+        env_key = os.environ.get("ANTHROPIC_API_KEY")
+        if env_key:
+            return env_key
+        try:
+            cfg = load_config()
+        except Exception:  # noqa: BLE001 — bad config shouldn't crash
+            return None
+        return cfg.anthropic.api_key
+
+    def _on_launch_confirmed(self, confirmed: bool | None) -> None:
+        """Callback fired when the LaunchConfirmationScreen pops.
+        Confirmed → kick off the launch worker; declined → no-op."""
+        if not confirmed:
+            return
+        # Hand off to the worker that handles the async Runner build.
+        self._launch_run()
+
+    @work(exclusive=True)
+    async def _launch_run(self) -> None:
+        """Actually construct the Runner + LiveRunHandle and push
+        LiveRunScreen against it. Pops the NewRunScreen after the
+        push so escape from the live-watch returns to the snapshot
+        library, not back to the new-run composer.
+        """
+        # Lazy imports to avoid pulling Runner machinery into the
+        # new-run module's load path until launch time.
+        from wonderland.observer import LiveRunHandle
+        from wonderland.runner import Runner
+        from wonderland.tui.screens.live_run import LiveRunScreen
+
+        params = self._pending_launch
+        try:
+            workflow = load_workflow(params["workflow_name"])
+        except Exception as exc:  # noqa: BLE001
+            self.notify(
+                f"Failed to load workflow: {exc}", severity="error"
+            )
+            return
+
+        try:
+            runner = await Runner.make_full_cast(
+                project_root=params["project_path"],
+                budget_dollars=params["budget"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.notify(
+                f"Failed to construct runner: {exc}", severity="error"
+            )
+            return
+
+        handle = LiveRunHandle(
+            runner=runner,
+            workflow=workflow,
+            directive=params["directive"],
+        )
+
+        # switch_screen swaps NewRunScreen for LiveRunScreen on the
+        # stack — escape from the live-watch returns to the snapshot
+        # library directly without an intermediate stop on the
+        # composer the user already submitted.
+        self.app.switch_screen(LiveRunScreen(handle=handle))
+
+    # ------------------------------------------------------------------ #
+    # Linear-form advance — Enter steps through fields
+    # ------------------------------------------------------------------ #
+
+    def _advance_from(self, current_id: str) -> None:
+        """Move focus to the next form field after ``current_id``.
+        At the end of the form (the Go button), fire action_go
+        directly rather than advancing past it."""
+        try:
+            idx = self._FORM_ORDER.index(current_id)
+        except ValueError:
+            return
+        if idx >= len(self._FORM_ORDER) - 1:
+            # Already on the Go button (or past) — trigger launch.
+            self.action_go()
+            return
+        next_id = self._FORM_ORDER[idx + 1]
+        try:
+            self.query_one(f"#{next_id}").focus()
+        except Exception:  # noqa: BLE001 — best-effort focus
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle clicks (and Enter on focused buttons) for the
+        Go and Cancel actions."""
+        if event.button.id == "go-button":
+            self.action_go()
+        elif event.button.id == "cancel-button":
+            self.action_back()
+
+    def on_data_table_row_selected(
+        self, event: DataTable.RowSelected
+    ) -> None:
+        """Enter on the preset table fires this event. Advance to the
+        next form field (the directive composer)."""
+        if event.data_table.id == "preset-table":
+            self._advance_from("preset-table")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter inside an Input fires Submitted. Advance to the next
+        form field."""
+        if event.input.id:
+            self._advance_from(event.input.id)
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """When the user picks a workflow from the dropdown, advance
+        to the next field. Note: the Select widget collapses the
+        dropdown on selection automatically, so this just moves
+        focus.
+
+        Only fires when the Select has focus — preset auto-population
+        sets the value programmatically without focusing the Select,
+        so user-initiated changes are the only ones that advance.
+        Textual posts Changed events asynchronously so a transient
+        flag doesn't reliably distinguish user vs programmatic; the
+        focus check is the structural fix.
+        """
+        if event.select.id == "workflow-select" and event.value != Select.BLANK:
+            if event.select.has_focus:
+                self._advance_from("workflow-select")
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """When the user checks the save-as-preset box, advance to
+        the name input so they can type the slug. Toggling off
+        leaves focus alone. Same focus-based filter as
+        on_select_changed for programmatic vs user changes."""
+        if event.checkbox.id == "save-checkbox" and event.value:
+            if event.checkbox.has_focus:
+                self._advance_from("save-checkbox")
+
+    def action_save_as_preset(self) -> None:
+        """The 's' binding flips the save-as-preset checkbox on so
+        the next Go saves before launching. The actual save happens
+        in action_go (inline rather than a separate modal — keeps the
+        lazygit pattern: no modals except for irreversible actions)."""
+        checkbox = self.query_one("#save-checkbox", Checkbox)
+        checkbox.value = not checkbox.value
+        if checkbox.value:
+            # Focus the name input so the user can type the slug.
+            self.query_one("#save-name-input", Input).focus()
+            self.notify(
+                "Save-as-preset enabled — fill in the name and press 'g'.",
+                timeout=3,
+            )
+        else:
+            self.notify("Save-as-preset disabled.", timeout=2)
+
+
+__all__ = ["NewRunScreen"]

@@ -24,14 +24,12 @@ from wonderland.tui.screens.live_run import (
     LiveRunScreen,
     _label_from_thread_id,
 )
+from wonderland.tui.screens.new_run import NewRunScreen
 from wonderland.tui.screens.artifact_browser import (
     ArtifactBrowserScreen,
     ArtifactDetailScreen,
 )
-from wonderland.tui.screens.cast import (
-    CastBrowserScreen,
-    CastMemberDetailScreen,
-)
+from wonderland.tui.screens.cast import CastBrowserScreen
 from wonderland.tui.screens.meeting_detail import (
     MeetingDetailScreen,
     UtteranceModalScreen,
@@ -97,6 +95,161 @@ async def test_app_launches_with_custom_root(tmp_path: Path) -> None:
     app = WonderlandApp(snapshot_root=tmp_path)
     async with app.run_test() as pilot:
         assert isinstance(app.screen, SnapshotLibraryScreen)
+        await pilot.press("q")
+
+
+async def test_home_view_has_settings_button(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The home view exposes a visible Settings button alongside
+    New run / The Cast. Clicking it opens the settings screen."""
+    from textual.widgets import Button
+
+    from wonderland.tui.screens.settings import SettingsScreen
+
+    # Point config away from any real user config to avoid touching
+    # the developer's actual settings.
+    monkeypatch.setattr(
+        "wonderland.tui.screens.settings.config_path",
+        lambda: tmp_path / "config.json",
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, SnapshotLibraryScreen)
+
+        settings_btn = screen.query_one("#settings-button", Button)
+        assert "Settings" in str(settings_btn.label)
+
+        screen.post_message(Button.Pressed(settings_btn))
+        await pilot.pause()
+        assert isinstance(app.screen, SettingsScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, SnapshotLibraryScreen)
+        await pilot.press("q")
+
+
+async def test_settings_screen_persists_api_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """SettingsScreen save writes the API key to the config file."""
+    import json
+
+    from wonderland.tui.screens.settings import SettingsScreen
+    from textual.widgets import Input
+
+    fake_config = tmp_path / "config.json"
+    monkeypatch.setattr(
+        "wonderland.tui.screens.settings.config_path",
+        lambda: fake_config,
+    )
+    monkeypatch.setattr(
+        "wonderland.config.config_path",
+        lambda: fake_config,
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(SettingsScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, SettingsScreen)
+
+        screen.query_one("#api-key-input", Input).value = "sk-ant-test-12345"
+        await pilot.pause()
+        screen.action_save()
+        await pilot.pause()
+
+        assert fake_config.is_file()
+        data = json.loads(fake_config.read_text())
+        assert data["anthropic"]["api_key"] == "sk-ant-test-12345"
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_pushes_settings_when_key_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """T53 polish: when the API key is missing, NewRunScreen pushes
+    the Settings screen instead of just notifying. One-click recovery
+    from the missing-key error."""
+    from textual.widgets import Checkbox, Input, Select, TextArea
+
+    from wonderland.tui.screens.settings import SettingsScreen
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "wonderland.tui.screens.new_run.load_config",
+        lambda: type("X", (), {"anthropic": type("Y", (), {"api_key": None})()})(),
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Fill form
+        screen.query_one("#directive-composer", TextArea).text = (
+            "Build a /hello endpoint."
+        )
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = str(tmp_path)
+        screen.query_one("#save-checkbox", Checkbox).value = False
+        await pilot.pause()
+
+        screen.action_go()
+        await pilot.pause()
+
+        # Should have pushed the Settings screen, not just notified
+        assert isinstance(app.screen, SettingsScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("q")
+
+
+async def test_home_view_has_prominent_new_run_and_cast_buttons() -> None:
+    """The home view (SnapshotLibraryScreen) shows visible primary
+    buttons for the load-bearing actions — New run + Cast — rather
+    than burying them in keybind hints. Pressing the buttons routes
+    to the same screens as the n/c bindings."""
+    from textual.widgets import Button
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, SnapshotLibraryScreen)
+
+        # Both buttons present + visible
+        new_run_btn = screen.query_one("#new-run-button", Button)
+        cast_btn = screen.query_one("#cast-button", Button)
+        assert "New run" in str(new_run_btn.label)
+        assert "Cast" in str(cast_btn.label)
+
+        # Click New run → opens NewRunScreen (same as 'n' binding)
+        screen.post_message(Button.Pressed(new_run_btn))
+        await pilot.pause()
+        assert isinstance(app.screen, NewRunScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+
+        # Click The Cast → opens CastBrowserScreen (same as 'c' binding)
+        from wonderland.tui.screens.cast import CastBrowserScreen
+
+        screen.post_message(Button.Pressed(cast_btn))
+        await pilot.pause()
+        assert isinstance(app.screen, CastBrowserScreen)
+
         await pilot.press("q")
 
 
@@ -934,6 +1087,563 @@ async def test_live_run_screen_vim_navigation_works() -> None:
         await pilot.press("q")
 
 
+# ---------- new-run screen (T51 / P8.5) ----------
+
+
+async def test_new_run_screen_mounts_with_bundled_presets() -> None:
+    """T51: NewRunScreen mounts cleanly and the preset table is
+    populated with the blank pseudo-row plus at least the canonical
+    bundled presets."""
+    from textual.widgets import DataTable
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        table = screen.query_one("#preset-table", DataTable)
+        # 1 blank pseudo-row + 5 bundled directives shipped in T50 =
+        # at least 6 rows.
+        assert table.row_count >= 6
+
+        # Cached preset list should match the table.
+        assert len(screen._presets) == table.row_count
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_blank_preset_clears_editors() -> None:
+    """T51 follow-up: selecting the blank pseudo-row at the top of
+    the preset list clears the composer + description so the user
+    can start fresh. Pre-fills from another preset don't persist."""
+    from textual.widgets import DataTable, TextArea
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Cursor onto pomodoro first to fill the editors.
+        table = screen.query_one("#preset-table", DataTable)
+        pomodoro_row = next(
+            i
+            for i, (name, _) in enumerate(screen._presets)
+            if name == "pomodoro"
+        )
+        table.cursor_coordinate = (pomodoro_row, 0)
+        await pilot.pause()
+
+        composer = screen.query_one("#directive-composer", TextArea)
+        description = screen.query_one("#description-composer", TextArea)
+        assert "Pomodoro" in composer.text
+        assert description.text  # non-empty (pomodoro has a description)
+
+        # Now cursor up to the blank pseudo-row at index 0.
+        table.cursor_coordinate = (0, 0)
+        await pilot.pause()
+
+        assert composer.text == ""
+        assert description.text == ""
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_description_is_editable() -> None:
+    """T51 follow-up: the description below the composer is a
+    TextArea, not a Static — user can type into it (e.g. when saving
+    a custom directive as a preset)."""
+    from textual.widgets import TextArea
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        description = screen.query_one("#description-composer", TextArea)
+        # Should be assignable (TextArea exposes a writable .text).
+        description.text = "Manually written description for a fresh directive."
+        await pilot.pause()
+        assert description.text.startswith("Manually written")
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_enter_advances_through_form() -> None:
+    """T51 follow-up: Enter on each form field steps to the next
+    field (linear form behavior). TextAreas keep their natural
+    Enter-as-newline behavior; users Tab past them. Single-field
+    widgets (Inputs, DataTable, Select, Checkbox) advance on Enter."""
+    from textual.widgets import (
+        Checkbox,
+        DataTable,
+        Input,
+        Select,
+        TextArea,
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Start with preset table focused. Hit Enter to advance.
+        preset_table = screen.query_one("#preset-table", DataTable)
+        assert preset_table.has_focus
+        # Fire RowSelected directly via the action — pilot.press("enter")
+        # sometimes routes oddly through DataTable.
+        screen._advance_from("preset-table")
+        await pilot.pause()
+        composer = screen.query_one("#directive-composer", TextArea)
+        assert composer.has_focus
+
+        # From composer, advance to description.
+        screen._advance_from("directive-composer")
+        await pilot.pause()
+        description = screen.query_one("#description-composer", TextArea)
+        assert description.has_focus
+
+        # From description → workflow.
+        screen._advance_from("description-composer")
+        await pilot.pause()
+        workflow = screen.query_one("#workflow-select", Select)
+        assert workflow.has_focus
+
+        # workflow → budget
+        screen._advance_from("workflow-select")
+        await pilot.pause()
+        budget = screen.query_one("#budget-input", Input)
+        assert budget.has_focus
+
+        # budget → project
+        screen._advance_from("budget-input")
+        await pilot.pause()
+        project = screen.query_one("#project-input", Input)
+        assert project.has_focus
+
+        # project → save checkbox
+        screen._advance_from("project-input")
+        await pilot.pause()
+        save_box = screen.query_one("#save-checkbox", Checkbox)
+        assert save_box.has_focus
+
+        # save checkbox → save-name input
+        screen._advance_from("save-checkbox")
+        await pilot.pause()
+        save_name = screen.query_one("#save-name-input", Input)
+        assert save_name.has_focus
+
+        # End of form → action_go fires (without crashing on empty
+        # directive — surfaces a notification).
+        screen._advance_from("save-name-input")
+        await pilot.pause()
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_go_button_triggers_launch_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T53 polish: a visible Go button at the bottom of the form is
+    discoverable + clickable. Pressing it triggers the same
+    action_go path as the 'g' binding."""
+    from textual.widgets import Button, Input, Select, TextArea
+
+    from wonderland.tui.screens.launch_confirmation import (
+        LaunchConfirmationScreen,
+    )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=Path("/tmp")))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Go button is visible
+        go = screen.query_one("#go-button", Button)
+        assert go is not None
+        assert "Go" in str(go.label)
+
+        # Fill form
+        screen.query_one("#directive-composer", TextArea).text = (
+            "Build a /hello endpoint."
+        )
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = "/tmp"
+        await pilot.pause()
+
+        # Click the Go button — should push the confirmation modal
+        from textual.widgets import Button as _Button
+
+        screen.post_message(_Button.Pressed(go))
+        await pilot.pause()
+        assert isinstance(app.screen, LaunchConfirmationScreen)
+
+        # Decline so the test exits cleanly
+        await pilot.press("n")
+        await pilot.pause()
+        await pilot.press("q")
+
+
+async def test_launch_confirmation_dismisses_yes_no() -> None:
+    """T53: the launch confirmation modal returns True on Yes
+    binding, False on No / Escape. Pushes via app.push_screen with
+    a callback to verify the response."""
+    from wonderland.tui.screens.launch_confirmation import (
+        LaunchConfirmationScreen,
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        results: list = []
+
+        def capture(value):
+            results.append(value)
+
+        # Yes path
+        app.push_screen(
+            LaunchConfirmationScreen(
+                directive="Build a /hello endpoint.",
+                workflow_name="smoke",
+                budget=0.50,
+                project_root="/tmp/test",
+            ),
+            capture,
+        )
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        assert results[-1] is True
+
+        # No path
+        app.push_screen(
+            LaunchConfirmationScreen(
+                directive="dirty",
+                workflow_name="smoke",
+                budget=0.50,
+                project_root="/tmp/test",
+            ),
+            capture,
+        )
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        assert results[-1] is False
+
+        # Escape path
+        app.push_screen(
+            LaunchConfirmationScreen(
+                directive="dirty",
+                workflow_name="smoke",
+                budget=0.50,
+                project_root="/tmp/test",
+            ),
+            capture,
+        )
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert results[-1] is False
+
+        await pilot.press("q")
+
+
+async def test_live_run_screen_accepts_handle_directly() -> None:
+    """T53: LiveRunScreen now accepts a pre-built RunHandle. Used by
+    the NewRunScreen → LiveRunScreen handoff for live runs (the
+    handle is a LiveRunHandle wrapping a real Runner). Verified here
+    via a HistoricalRunHandle so we don't need a Runner."""
+    if not (_V6_BANNER / "wonderland-snapshot").is_dir():
+        pytest.skip("v6 banner snapshot not present")
+    from textual.widgets import DataTable
+
+    handle = HistoricalRunHandle(_V6_BANNER)
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(LiveRunScreen(handle=handle))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, LiveRunScreen)
+        await _drain_live_run_screen(pilot, screen)
+
+        # Same expectations as the snapshot_dir variant — the screen
+        # doesn't care which RunHandle subclass it consumes.
+        table = screen.query_one("#live-meetings-table", DataTable)
+        # 7 v6 meetings + 1 All-Meetings pseudo-row
+        assert table.row_count == 8
+        assert screen._total_cost > 0
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_action_go_pushes_confirmation_modal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T53: action_go on a fully-validated form pushes the launch
+    confirmation modal. Pre-flight API key check passes when
+    ANTHROPIC_API_KEY is set in the env."""
+    from textual.widgets import Checkbox, Input, Select, TextArea
+
+    from wonderland.tui.screens.launch_confirmation import (
+        LaunchConfirmationScreen,
+    )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=Path("/tmp")))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Fill the form
+        screen.query_one("#directive-composer", TextArea).text = (
+            "Build a /hello endpoint."
+        )
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = "/tmp"
+        screen.query_one("#save-checkbox", Checkbox).value = False
+        await pilot.pause()
+
+        # Trigger Go — should push the confirmation modal
+        screen.action_go()
+        await pilot.pause()
+
+        assert isinstance(app.screen, LaunchConfirmationScreen)
+        # Decline so the test exits cleanly without trying to launch
+        await pilot.press("n")
+        await pilot.pause()
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_action_go_blocks_without_existing_project(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """T53 polish: action_go refuses to launch when the project
+    root doesn't exist, surfacing a clear message instead of letting
+    Runner.make_full_cast fail with a confusing downstream error."""
+    from textual.widgets import Checkbox, Input, Select, TextArea
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
+
+    nonexistent = tmp_path / "this-does-not-exist"
+    assert not nonexistent.exists()
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Fill form pointing at a path that doesn't exist
+        screen.query_one("#directive-composer", TextArea).text = (
+            "Build a /hello endpoint."
+        )
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = str(nonexistent)
+        screen.query_one("#save-checkbox", Checkbox).value = False
+        await pilot.pause()
+
+        screen.action_go()
+        await pilot.pause()
+
+        # Should still be on NewRunScreen — no modal pushed
+        assert isinstance(app.screen, NewRunScreen)
+        # And the path was NOT silently created
+        assert not nonexistent.exists()
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_action_go_blocks_without_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """T53: pre-flight refuses to launch when no API key is
+    configured. The user gets a clear error notification, no modal
+    pushed."""
+    from textual.widgets import Checkbox, Input, Select, TextArea
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    # Point load_config at a non-existent file so it returns defaults
+    # (api_key=None).
+    monkeypatch.setattr(
+        "wonderland.tui.screens.new_run.load_config",
+        lambda: type("X", (), {"anthropic": type("Y", (), {"api_key": None})()})(),
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        screen.query_one("#directive-composer", TextArea).text = (
+            "Build a /hello endpoint."
+        )
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = str(tmp_path)
+        screen.query_one("#save-checkbox", Checkbox).value = False
+        await pilot.pause()
+
+        screen.action_go()
+        await pilot.pause()
+
+        # Should have pushed Settings screen for the user to set
+        # the key inline rather than dropping to the shell.
+        from wonderland.tui.screens.settings import SettingsScreen
+
+        assert isinstance(app.screen, SettingsScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("q")
+
+
+async def test_new_run_screen_save_as_preset_persists_and_relists(
+    tmp_path: Path,
+) -> None:
+    """T51 follow-up: when the save-as-preset checkbox is on and a
+    name is set, action_go (still a launch stub) saves the preset
+    to project_root/.wonderland/directives/<name>.yaml and the
+    preset table re-populates with the new entry."""
+    from textual.widgets import Checkbox, DataTable, Input, Select, TextArea
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Fill in the form.
+        composer = screen.query_one("#directive-composer", TextArea)
+        composer.text = "Build a custom thing for testing."
+        description = screen.query_one("#description-composer", TextArea)
+        description.text = "A custom thing\nwith multi-line description."
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#save-checkbox", Checkbox).value = True
+        screen.query_one("#save-name-input", Input).value = "custom-thing-test"
+        await pilot.pause()
+
+        # Trigger the launch action — it should save before notifying.
+        screen.action_go()
+        await pilot.pause()
+
+        # File should be on disk.
+        target = tmp_path / ".wonderland" / "directives" / "custom-thing-test.yaml"
+        assert target.is_file()
+
+        # Preset list should now include the new project-local preset.
+        names = [name for (name, p) in screen._presets if p is not None]
+        assert "custom-thing-test" in names
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_pressing_n_from_library_opens_it() -> None:
+    """T51: 'n' on the snapshot library opens NewRunScreen."""
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, NewRunScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("q")
+
+
+async def test_new_run_screen_preset_selection_populates_composer() -> None:
+    """T51: cursor on a preset row populates the directive composer
+    with the preset's body and pre-selects the suggested workflow."""
+    from textual.widgets import DataTable, Select, TextArea
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Force selection of the pomodoro preset directly via the
+        # cursor (find its row index).
+        table = screen.query_one("#preset-table", DataTable)
+        target_row = next(
+            i
+            for i, (name, _) in enumerate(screen._presets)
+            if name == "pomodoro"
+        )
+        table.cursor_coordinate = (target_row, 0)
+        await pilot.pause()
+
+        composer = screen.query_one("#directive-composer", TextArea)
+        # The pomodoro body should be in the composer
+        assert "Pomodoro" in composer.text
+        assert "focus sessions" in composer.text
+
+        # Workflow should be pre-selected to the suggested one.
+        workflow_select = screen.query_one("#workflow-select", Select)
+        assert workflow_select.value == "tdd-serial"
+
+        await pilot.press("q")
+
+
+async def test_new_run_screen_go_validates_inputs() -> None:
+    """T51 stub behavior: action_go doesn't crash on empty inputs;
+    surfaces validation messages instead. T53 wires the actual launch
+    behind this validation."""
+    from textual.widgets import TextArea
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        # Empty directive — calling action_go should not raise.
+        composer = screen.query_one("#directive-composer", TextArea)
+        composer.text = ""
+        screen.action_go()  # should notify, not crash
+        await pilot.pause()
+
+        await pilot.press("q")
+
+
 # ---------- streaming surface composition (T44 / P8.3 prep) ----------
 
 
@@ -1077,29 +1787,47 @@ async def test_cast_browser_lists_all_members() -> None:
         await pilot.press("q")
 
 
-async def test_cast_member_detail_renders_summary_and_constitution() -> None:
-    """Enter on a cast row drills into the detail screen, which
-    populates both the role summary and the rendered constitution."""
+async def test_cast_browser_renders_bio_and_constitution_inline() -> None:
+    """The single-page cast view (lazygit-style) shows the selected
+    member's bio + constitution inline rather than pushing a detail
+    screen. Cursor on a row drives both panes."""
+    from textual.widgets import DataTable, Markdown, Static
+
     app = WonderlandApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("c")
         await pilot.pause()
-        await pilot.press("enter")  # open first member (Alice)
-        await pilot.pause()
         screen = app.screen
-        assert isinstance(screen, CastMemberDetailScreen)
-        assert screen.member.name == "alice"
-        # The constitution path the screen will load must exist on disk.
+        assert isinstance(screen, CastBrowserScreen)
+
+        # On mount, the first row (Alice) should be the selected one.
+        # Bio pane should have her bio content.
+        bio_widget = screen.query_one("#cast-bio", Static)
+        # The Static doesn't expose its renderable cleanly across
+        # Textual versions; verify via the screen state.
+        # The first cast member is Alice; her bio mentions 'Carroll'
+        # in the literary intro.
+        first_member = screen._cast[0]
+        assert first_member.name == "alice"
+        assert "Carroll" in first_member.bio
+
+        # Constitution markdown widget exists + the file resolves.
         repo_root = Path(__file__).resolve().parents[1]
-        const_path = repo_root / screen.member.constitution_path
-        assert const_path.is_file(), (
-            f"constitution missing: {const_path}"
-        )
-        # Pop back to browser
-        await pilot.press("escape")
+        const_path = repo_root / first_member.constitution_path
+        assert const_path.is_file()
+
+        # Move cursor to a different member; the lazy-load cache
+        # should grow.
+        table = screen.query_one("#cast-table", DataTable)
+        table.cursor_coordinate = (2, 0)  # Cheshire Cat
         await pilot.pause()
-        assert isinstance(app.screen, CastBrowserScreen)
+        # Two constitutions loaded so far (Alice on mount + Cat on move)
+        assert len(screen._loaded_constitutions) >= 2
+
+        # Constitution widget exists
+        screen.query_one("#constitution-markdown", Markdown)
+
         await pilot.press("q")
 
 
