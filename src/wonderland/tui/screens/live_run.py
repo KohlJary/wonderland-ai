@@ -273,6 +273,18 @@ class LiveRunScreen(Screen[None]):
             # the layout in isolation.
             self._render_static_dummy()
         else:
+            # Wire the user-question handler on the LiveRunHandle
+            # so agent QUESTION-to-operator utterances surface as
+            # the AskUserModal (T69). Mock-turtle replay paths
+            # don't have a runner to call back, so the
+            # set_user_question_handler attribute check guards
+            # the cast.
+            if self.handle is not None and hasattr(
+                self.handle, "set_user_question_handler"
+            ):
+                self.handle.set_user_question_handler(
+                    self._handle_user_question
+                )
             # Stream events from the bound source. The @work decorator
             # runs the consumer in a background task so the UI stays
             # responsive — keystrokes, scroll, and meeting drill-down
@@ -493,6 +505,37 @@ class LiveRunScreen(Screen[None]):
             # AgentTelemetryDelta has fired.
             self._total_cost = self._meeting_cost_total
         self._render_meetings_ribbon()
+
+    async def _handle_user_question(self, question_utterance) -> str | None:
+        """Surface a QUESTION-to-operator utterance via AskUserModal
+        and await the operator's reply (T69).
+
+        Called by the runner's user-question watcher (via the
+        LiveRunHandle wiring) when an agent emits a QUESTION
+        addressed to the operator identity. Returns the reply text,
+        or None on skip — the watcher publishes a sentinel
+        OBSERVATION on None so the team can proceed.
+        """
+        import asyncio
+
+        from wonderland.tui.screens.ask_user_modal import AskUserModal
+
+        # Future bridges the modal's async dismiss callback back
+        # into the awaiting coroutine.
+        future: asyncio.Future[str | None] = asyncio.Future()
+
+        def _on_dismissed(answer: str | None) -> None:
+            if not future.done():
+                future.set_result(answer)
+
+        self.app.push_screen(
+            AskUserModal(
+                asking_agent=question_utterance.speaker.name,
+                question=question_utterance.content.body,
+            ),
+            _on_dismissed,
+        )
+        return await future
 
     def _handle_run_ended(self, event: "RunEnded") -> None:
         # Final status update — the AgentTelemetryDelta events that

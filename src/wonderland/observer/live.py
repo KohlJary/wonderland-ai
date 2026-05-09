@@ -38,10 +38,10 @@ re-walking events.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from wonderland.observer.events import (
     AgentActed,
@@ -108,6 +108,21 @@ class LiveRunHandle(RunHandle):
         self._final_outcome: str | None = None
         self._started_at: datetime | None = None
         self._ended_at: datetime | None = None
+        # User-question handler (T69). Optional — set via
+        # ``set_user_question_handler`` before stream_events starts.
+        # When None, the runner's default sentinel reply applies.
+        self._user_question_handler: (
+            Callable[[Utterance], Any] | None
+        ) = None
+
+    def set_user_question_handler(
+        self,
+        handler: "Callable[[Utterance], Any] | None",
+    ) -> None:
+        """Wire an async user-question handler. The TUI's LiveRunScreen
+        injects a modal-based handler here; headless callers can
+        leave it None for the sentinel-reply path."""
+        self._user_question_handler = handler
 
     # ------------------------------------------------------------------ #
     # Streaming surface — the substantive method
@@ -144,6 +159,16 @@ class LiveRunHandle(RunHandle):
         outcome = "RUNNING"
         try:
             await self._runner.setup()
+            # Wire the user-question handler if one was registered.
+            # Done after setup so the runner's watcher task is alive
+            # and ready to consult the handler when QUESTION-to-
+            # operator utterances arrive (T69).
+            if self._user_question_handler is not None and hasattr(
+                self._runner, "set_user_question_handler"
+            ):
+                self._runner.set_user_question_handler(
+                    self._user_question_handler
+                )
             self._started_at = datetime.now(tz=timezone.utc)
             yield RunStarted(
                 timestamp=self._started_at,

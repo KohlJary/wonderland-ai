@@ -1014,6 +1014,79 @@ async def test_read_phase_events_missing_file_returns_empty(tmp_path) -> None:
     assert read_phase_events(tmp_path / "nonexistent.jsonl") == []
 
 
+async def test_phase_orchestrator_blocks_for_operator_answer_after_question() -> None:
+    """When an agent's window-act is a QUESTION-to-operator, the
+    phase orchestrator awaits ``runner.wait_for_question_answer``
+    before opening the next window — so the next agent's
+    compose_context sees the operator's reply rather than racing
+    the watcher's publish."""
+    from wonderland.utterance import operator_identity
+
+    # Agent's response: a question to the operator
+    question_utt = Utterance(
+        thread_id="t",
+        speaker=AgentIdentity(name="a", constitution_version="0.1"),
+        addressed_to=[operator_identity()],
+        speech_act=SpeechAct.QUESTION,
+        content=UtteranceContent(body="client-only or client+server?"),
+    )
+
+    runner = _make_runner(
+        cast=["a"],
+        scripts={"a": [_ScriptedResponse(utterance=question_utt)]},
+    )
+
+    # Track that wait_for_question_answer is called with the
+    # question's utterance id.
+    waited_for: list[str] = []
+
+    async def fake_wait_for(question_id: str, timeout: float = 600.0):
+        waited_for.append(question_id)
+        # Return a synthetic answer utterance to satisfy the await
+        return _utt("operator", body="client-only", act=SpeechAct.OBSERVATION)
+
+    runner.wait_for_question_answer = fake_wait_for  # type: ignore[attr-defined]
+
+    meeting = _meeting(
+        roster=["a"],
+        phases=[PhaseSpec(name="discussion", max_rotations=1)],
+    )
+    await _drive(meeting, runner)
+
+    # The orchestrator awaited the operator's reply for THIS question
+    assert waited_for == [question_utt.id]
+
+
+async def test_phase_orchestrator_does_not_block_on_non_operator_questions() -> None:
+    """A QUESTION to caucus (not operator) shouldn't trigger
+    wait_for_question_answer — only operator-addressed questions
+    do."""
+    bus_question = _utt(
+        "a",
+        body="anyone know the contract version?",
+        act=SpeechAct.QUESTION,
+    )
+    runner = _make_runner(
+        cast=["a"],
+        scripts={"a": [_ScriptedResponse(utterance=bus_question)]},
+    )
+
+    waited_for: list[str] = []
+
+    async def fake_wait_for(question_id: str, timeout: float = 600.0):
+        waited_for.append(question_id)
+        return _utt("x", body="x")
+
+    runner.wait_for_question_answer = fake_wait_for  # type: ignore[attr-defined]
+
+    meeting = _meeting(
+        roster=["a"],
+        phases=[PhaseSpec(name="discussion", max_rotations=1)],
+    )
+    await _drive(meeting, runner)
+    assert waited_for == []
+
+
 async def test_orchestrator_owned_flag_cleared_in_finally() -> None:
     """Even when an exception fires mid-phase, the
     _orchestrator_owned flag must be cleared so agents resume

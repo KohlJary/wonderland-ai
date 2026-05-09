@@ -97,6 +97,23 @@ def is_procedural(act: SpeechAct) -> bool:
     return act in PROCEDURAL_ACTS
 
 
+# ---------------------------------------------------------------------
+# Operator identity — the user-as-bus-participant (T69 / P10)
+# ---------------------------------------------------------------------
+# Per the architectural-ambiguity findings in r37 + r38 plus roadmap
+# 9aae11bc: agents need a way to surface decisions the team can't
+# resolve internally (server vs client architecture, business
+# priorities, UX preferences). The operator is modeled as another
+# addressable peer on the bus rather than a side-channel mechanism,
+# so the question + answer become first-class meeting artifacts:
+# replayable, auditable, and visible to other agents via their
+# normal listen loops.
+
+OPERATOR_NAME = "operator"
+
+OPERATOR_CONSTITUTION_VERSION = "external"
+
+
 class Stance(StrEnum):
     IN_CHARACTER = "in_character"
     OUT_OF_CHARACTER = "out_of_character"
@@ -188,3 +205,27 @@ class Utterance(BaseModel):
     with ``recipients={priority_agent}`` so only that agent sees it.
     Observer-tier subscribers (``bypass_roster=True``) still see every
     utterance — measurement isn't affected, only delivery."""
+
+
+def operator_identity() -> AgentIdentity:
+    """The user-as-bus-participant. Agents address questions to this
+    identity when they need a decision the team can't resolve
+    internally; the runner's user-question hook publishes the
+    operator's reply as a normal bus utterance so other agents see
+    both the question and answer in their compose_context."""
+    return AgentIdentity(
+        name=OPERATOR_NAME,
+        constitution_version=OPERATOR_CONSTITUTION_VERSION,
+    )
+
+
+def is_question_to_operator(u: "Utterance") -> bool:
+    """True when this utterance is a QUESTION addressed to the
+    operator (T69). The runner's bus observer watches for these and
+    surfaces them to the user-question UI handler; reply lands on
+    the bus as a normal OBSERVATION from the operator identity."""
+    if u.speech_act != SpeechAct.QUESTION:
+        return False
+    if isinstance(u.addressed_to, str):
+        return False
+    return any(aid.name == OPERATOR_NAME for aid in u.addressed_to)

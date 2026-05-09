@@ -604,6 +604,29 @@ async def run_phased_meeting(
                         if phase_event_writer is not None:
                             await phase_event_writer(act_evt)
                         yield act_evt
+
+                        # If this act was a question to the operator,
+                        # block until the operator's OBSERVATION reply
+                        # lands on the bus so the next window's
+                        # compose_context sees it (T69).
+                        from wonderland.utterance import (
+                            is_question_to_operator,
+                        )
+
+                        if (
+                            is_question_to_operator(response)
+                            and hasattr(runner, "wait_for_question_answer")
+                        ):
+                            try:
+                                await runner.wait_for_question_answer(
+                                    response.id, timeout=600.0
+                                )
+                            except (asyncio.TimeoutError, TimeoutError):
+                                # Operator never answered; proceed
+                                # without the answer. Subsequent
+                                # agents see the question but no
+                                # reply, which is information too.
+                                pass
                     else:
                         pass_reason: str | None = None
                         if response is not None:
