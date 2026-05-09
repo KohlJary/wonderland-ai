@@ -172,3 +172,75 @@ def test_is_bare_project_root_for_missing_dir(tmp_path: Path) -> None:
     """A path that doesn't exist yet is bare (will be created on
     apply)."""
     assert is_bare_project_root(tmp_path / "missing")
+
+
+# --- Manifest layer (T73) ---
+
+
+def test_bundled_skeletons_have_manifests() -> None:
+    """All five bundled skeletons ship a manifest.yaml. Backward
+    compat: skeletons without a manifest get an empty default;
+    we test that explicit manifests are loaded correctly."""
+    for s in list_skeletons():
+        # Every bundled skeleton declares at least a language.
+        assert s.manifest.language is not None, (
+            f"{s.name}: missing manifest.yaml or language tag"
+        )
+
+
+def test_python_cli_manifest_post_apply() -> None:
+    s = load_skeleton("python-cli")
+    assert s.manifest.language == "python"
+    assert len(s.manifest.post_apply) == 1
+    step = s.manifest.post_apply[0]
+    assert "pip install" in step.command
+    assert step.cwd == "."
+    assert step.description
+
+
+def test_fullstack_skeleton_has_multi_language_post_apply() -> None:
+    """The fullstack skeleton spans Python backend + JS frontend;
+    its post_apply lists both pip and npm steps with different
+    cwd values."""
+    s = load_skeleton("fullstack-fastapi-react")
+    assert s.manifest.language == "python+javascript"
+    cmds = [step.command for step in s.manifest.post_apply]
+    assert any("pip install" in c for c in cmds)
+    assert any("npm install" in c for c in cmds)
+    cwds = {step.cwd for step in s.manifest.post_apply}
+    assert "frontend" in cwds  # frontend deps install in frontend/
+
+
+def test_skeleton_without_manifest_defaults_to_empty(tmp_path: Path) -> None:
+    """A skeleton directory without manifest.yaml loads with the
+    default empty manifest — backward compat for any future
+    skeleton that doesn't need post-apply steps."""
+    from wonderland.skeleton import (
+        SkeletonManifest,
+        _load_manifest,
+    )
+
+    # Directory exists but no manifest.yaml inside
+    manifest = _load_manifest(tmp_path)
+    assert isinstance(manifest, SkeletonManifest)
+    assert manifest.language is None
+    assert manifest.post_apply == []
+
+
+def test_manifest_yaml_is_not_in_skeleton_files() -> None:
+    """The manifest itself is metadata for the loader, not part
+    of the user's project. apply_skeleton must NOT copy
+    manifest.yaml into the operator's project root."""
+    for s in list_skeletons():
+        assert "manifest.yaml" not in s.files, (
+            f"{s.name}: manifest.yaml leaked into files list"
+        )
+
+
+def test_apply_skeleton_does_not_copy_manifest(tmp_path: Path) -> None:
+    """End-to-end check: the applied project root has no
+    manifest.yaml even though the skeleton's source directory
+    has one."""
+    s = load_skeleton("python-cli")
+    apply_skeleton(s, tmp_path)
+    assert not (tmp_path / "manifest.yaml").exists()

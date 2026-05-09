@@ -203,6 +203,13 @@
         "title": "Re-run pomodoro on tdd-serial-phased + skeleton; A/B vs r39",
         "status": "pending",
         "details": "After T70 + T71 ship, re-run pomodoro through tdd-serial-phased with fullstack-fastapi-react skeleton applied. A/B against r39 (the directive-backfill baseline). Predicted outcomes: per-feature cost drops 10-15% (directive's structure-explanation overhead is unneeded with skeleton present); deliverability holds at >= r39's 602 LOC; possibly cleaner cross-feature consistency because the skeleton-imposed conftest.py + src/ layout gives Tweedles a shared starting point. Document outcome as analysis 038 \u2014 banner if predicted-outcome holds, post-mortem if not."
+      },
+      {
+        "id": "T73",
+        "title": "Skeleton manifest + post-apply instructions in picker",
+        "status": "done",
+        "details": "Per the multi-language-ready design call. Add manifest.yaml to each bundled skeleton declaring language + post_apply steps (description + command + cwd). Skeleton dataclass carries an optional SkeletonManifest. Loader reads manifest if present; defaults to empty for skeletons without one (preserving current behavior). Picker preview surfaces post_apply commands as a 'Setup commands (run after apply):' block so the operator can copy-paste into a shell. Lays groundwork for future auto-install (T74) without committing to subprocess management yet \u2014 the manifest is data, not behavior; auto-install reads it later.",
+        "resolution": "Skeleton manifest layer shipped. SkeletonManifest + PostApplyStep Pydantic models in src/wonderland/skeleton.py (language tag + ordered post_apply steps with description + command + cwd). Loader reads manifest.yaml from each skeleton directory; defaults to empty manifest for skeletons without one (backward compat). manifest.yaml itself is excluded from skeleton.files so apply_skeleton doesn't copy it into operator projects. Five bundled manifests added: python-cli/python-tui/python-fastapi (single pip-install step each), react-vite (npm install in cwd=.), fullstack-fastapi-react (multi-step: pip install in . + npm install in frontend). SkeletonPickerScreen preview now surfaces post_apply commands as a yellow-highlighted 'Setup commands (run after apply, before launch)' block with descriptions + cwd hints; operator copy-pastes into a shell. Future auto-runner (roadmap 3a22d99e, P3) executes the same manifest data as subprocesses; landing it requires no schema change. 6 new tests cover bundled manifests + multi-language post_apply + missing-manifest backward compat + manifest.yaml not leaking into apply targets. Full suite: 1570 pass."
       }
     ],
     "deferred": []

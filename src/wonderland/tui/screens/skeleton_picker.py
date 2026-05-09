@@ -132,15 +132,39 @@ class SkeletonPickerScreen(Screen[str | None]):
         preview = self.query_one("#skeleton-preview", Static)
         top_dirs = skeleton.top_level_dirs()
         dirs_line = ", ".join(f"`{d}/`" for d in top_dirs) or "(no top-level dirs)"
-        body = (
-            f"[b]{skeleton.name}[/b]\n\n"
-            f"{skeleton.description}\n\n"
-            f"[b]Top-level layout:[/b] {dirs_line}\n"
-            f"[b]Files shipped:[/b] {len(skeleton.files)}\n\n"
+        lines = [
+            f"[b]{skeleton.name}[/b]",
+            "",
+            skeleton.description,
+            "",
+            f"[b]Top-level layout:[/b] {dirs_line}",
+            f"[b]Files shipped:[/b] {len(skeleton.files)}",
+        ]
+        if skeleton.manifest.language:
+            lines.append(f"[b]Language:[/b] {skeleton.manifest.language}")
+        lines.append("")
+        lines.append(
             f"[dim]Apply will copy these files into "
             f"{self.project_root}.[/dim]"
         )
-        preview.update(body)
+        # Post-apply commands — the operator's path to a runnable
+        # project. Auto-runner is deferred (roadmap 3a22d99e); for
+        # now, surface the commands so the operator can copy-paste
+        # into a shell after applying. Phrase in yellow so it
+        # registers as a required follow-up, not optional polish.
+        if skeleton.manifest.post_apply:
+            lines.append("")
+            lines.append(
+                "[b yellow]Setup commands "
+                "(run after apply, before launch):[/b yellow]"
+            )
+            for step in skeleton.manifest.post_apply:
+                lines.append(f"  [dim]# {step.description}[/dim]")
+                cwd_hint = (
+                    "" if step.cwd in (".", "") else f"  [dim](cd {step.cwd}/)[/dim]"
+                )
+                lines.append(f"  [b]$[/b] {step.command}{cwd_hint}")
+        preview.update("\n".join(lines))
 
     # --- Actions ---
 

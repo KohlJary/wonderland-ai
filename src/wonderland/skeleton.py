@@ -31,10 +31,70 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
+from pydantic import BaseModel, Field
+
 # The bundled skeleton directory sits alongside ``closet/workflows/``
 # and ``closet/directives/``. Same loader pattern: bundled here +
 # per-project overrides at ``<project_root>/.wonderland/skeletons/``
 # (when that's wired in T71+).
+
+
+class PostApplyStep(BaseModel):
+    """One command to run after the skeleton's files are laid down.
+
+    Currently informational — the picker surfaces these as a
+    'Setup commands (run after apply)' block for the operator to
+    copy-paste. Future work (roadmap 3a22d99e) adds an auto-install
+    runner that executes these as subprocesses. Per the
+    multi-language-ready design: each skeleton declares its own
+    install procedure as data, the applier doesn't hardcode
+    pip-vs-npm-vs-cargo logic.
+    """
+
+    description: str = Field(
+        description="Human-readable label, e.g. 'Install Python deps'."
+    )
+    command: str = Field(
+        description="Shell command to run, e.g. 'pip install -e .[dev]'."
+    )
+    cwd: str = Field(
+        default=".",
+        description=(
+            "Working directory relative to project root. Defaults "
+            "to '.' (project root itself). Used for monorepos where "
+            "frontend deps live under frontend/ etc."
+        ),
+    )
+
+
+class SkeletonManifest(BaseModel):
+    """Optional metadata next to a skeleton's files. Declares the
+    language stack (informational) + post-apply commands the
+    operator (or future auto-runner) should execute to make the
+    skeleton runnable.
+
+    A skeleton without a manifest is treated as empty-manifest:
+    no post-apply steps, no language tag. Backward-compatible with
+    skeletons that predate T73.
+    """
+
+    language: str | None = Field(
+        default=None,
+        description=(
+            "Language stack tag for picker filtering / display. "
+            "Examples: 'python', 'javascript', 'rust'. Optional."
+        ),
+    )
+    post_apply: list[PostApplyStep] = Field(
+        default_factory=list,
+        description=(
+            "Ordered list of commands to run after the skeleton's "
+            "files are laid down. Currently surfaced via the "
+            "picker as copy-paste instructions; auto-runner is "
+            "deferred (roadmap 3a22d99e)."
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -48,6 +108,7 @@ class Skeleton:
     description: str
     root: Path
     files: tuple[str, ...] = field(default_factory=tuple)
+    manifest: SkeletonManifest = field(default_factory=SkeletonManifest)
 
     def top_level_dirs(self) -> tuple[str, ...]:
         """Top-level directory names the skeleton lays down. Used
@@ -73,9 +134,10 @@ def skeletons_dir() -> Path:
 
 def _scan_skeleton_files(root: Path) -> tuple[str, ...]:
     """Walk a skeleton directory; return relative paths of every
-    file (excluding hidden directories like .git that shouldn't be
-    laid down). The skeleton's own .gitignore IS included — it's
-    part of the scaffolding."""
+    file that should be laid down on apply. The skeleton's own
+    .gitignore IS included; manifest.yaml is excluded (it's
+    metadata for the loader, not a file the operator's project
+    needs)."""
     if not root.is_dir():
         return ()
     out: list[str] = []
@@ -89,8 +151,27 @@ def _scan_skeleton_files(root: Path) -> tuple[str, ...]:
         if any(part.startswith(".") and part not in {".gitignore", ".env.example"}
                for part in parts[:-1]):
             continue
+        # manifest.yaml is metadata for the skeleton loader — it
+        # shouldn't be copied into the user's project.
+        if rel.as_posix() == "manifest.yaml":
+            continue
         out.append(rel.as_posix())
     return tuple(out)
+
+
+def _load_manifest(root: Path) -> SkeletonManifest:
+    """Read the skeleton's manifest.yaml if present; return an
+    empty manifest otherwise. Empty-manifest behavior preserves
+    backward compat with skeletons that predate T73."""
+    path = root / "manifest.yaml"
+    if not path.is_file():
+        return SkeletonManifest()
+    try:
+        with path.open() as f:
+            data = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return SkeletonManifest()
+    return SkeletonManifest.model_validate(data)
 
 
 def _read_skeleton_description(root: Path) -> str:
@@ -144,6 +225,7 @@ def list_skeletons() -> list[Skeleton]:
                 description=_read_skeleton_description(entry),
                 root=entry,
                 files=files,
+                manifest=_load_manifest(entry),
             )
         )
     return out
@@ -221,7 +303,9 @@ def is_bare_project_root(project_root: Path) -> bool:
 
 
 __all__ = [
+    "PostApplyStep",
     "Skeleton",
+    "SkeletonManifest",
     "apply_skeleton",
     "is_bare_project_root",
     "list_skeletons",

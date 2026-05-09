@@ -889,6 +889,16 @@
       "status": "backlog",
       "created_at": "2026-05-09T19:04:04.890759",
       "created_by": "daedalus"
+    },
+    {
+      "id": "3a22d99e-708c-4177-b81e-5a154fbe3f7f",
+      "title": "Skeleton auto-install runner: execute manifest.post_apply commands",
+      "description": "Per T73's manifest layer. Add an apply-then-install path that runs the skeleton's post_apply commands as subprocesses with progress reporting in the SkeletonPickerScreen. Considerations: long-running installs (pip 1-5min, npm 5-15min) need a non-blocking UI; failures need clear surfacing; venv creation may need to be a separate step. Defer until a operator wants unattended-capable runs against fresh project roots without touching a shell. The manifest from T73 makes this tractable when we want it.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T22:56:11.818631",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

@@ -1,0 +1,9 @@
+language: python+javascript
+
+post_apply:
+  - description: Install Python backend dependencies (FastAPI + pytest)
+    command: pip install -e .[dev]
+    cwd: .
+  - description: Install Node frontend dependencies (React + Vite)
+    command: npm install
+    cwd: frontend

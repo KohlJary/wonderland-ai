@@ -1,0 +1,6 @@
+language: python
+
+post_apply:
+  - description: Install Python dependencies (Textual + pytest-asyncio)
+    command: pip install -e .[dev]
+    cwd: .
