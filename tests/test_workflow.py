@@ -126,6 +126,106 @@ class TestMeeting:
         assert len(m.seeds) == 1
         assert m.seeds[0].from_meeting == "scoping"
 
+    # --- Phases (T57) ---
+
+    def test_no_phases_by_default(self):
+        """Existing workflows: ``phases`` defaults to empty list,
+        meeting runs on the legacy engagement-policy path."""
+        m = Meeting(id="x", label="Mx", goal="g", roster=["alice"])
+        assert m.phases == []
+
+    def test_with_phases(self):
+        m = Meeting.model_validate(
+            {
+                "id": "tea-party",
+                "label": "M4",
+                "goal": "negotiate",
+                "roster": ["hatter", "tweedledum", "tweedledee"],
+                "phases": [
+                    {"name": "clarify", "max_rotations": 2},
+                    {
+                        "name": "red-tests",
+                        "max_rotations": 3,
+                        "exit_condition_artifact": "test_scenario",
+                    },
+                    {"name": "wait"},
+                ],
+            }
+        )
+        assert len(m.phases) == 3
+        assert m.phases[0].name == "clarify"
+        assert m.phases[0].max_rotations == 2
+        assert m.phases[1].exit_condition_artifact == "test_scenario"
+        assert m.phases[2].max_rotations == 3  # default
+
+    def test_duplicate_phase_names_rejected(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="duplicate phase names"):
+            Meeting.model_validate(
+                {
+                    "id": "x",
+                    "label": "Mx",
+                    "goal": "g",
+                    "roster": ["alice"],
+                    "phases": [
+                        {"name": "discussion"},
+                        {"name": "discussion"},
+                    ],
+                }
+            )
+
+    def test_phase_max_rotations_must_be_positive(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            Meeting.model_validate(
+                {
+                    "id": "x",
+                    "label": "Mx",
+                    "goal": "g",
+                    "roster": ["alice"],
+                    "phases": [{"name": "p", "max_rotations": 0}],
+                }
+            )
+
+
+class TestPhaseSpec:
+    def test_minimal(self):
+        from wonderland.workflow import PhaseSpec
+
+        p = PhaseSpec(name="discussion")
+        assert p.name == "discussion"
+        assert p.max_rotations == 3
+        assert p.exit_condition_artifact is None
+
+    def test_empty_name_rejected(self):
+        """Schema-level validation catches empty name at parse time
+        rather than letting it crash the bridge call later."""
+        from pydantic import ValidationError
+
+        from wonderland.workflow import PhaseSpec
+
+        with pytest.raises(ValidationError):
+            PhaseSpec(name="")
+
+    def test_to_phase_definition(self):
+        """Round-trip from workflow-side spec to engine-side data
+        primitive — the bridge between schema and runtime."""
+        from wonderland.turns import PhaseDefinition
+        from wonderland.workflow import PhaseSpec
+
+        spec = PhaseSpec(
+            name="red-tests",
+            max_rotations=4,
+            exit_condition_artifact="test_scenario",
+        )
+        d = spec.to_phase_definition()
+        assert isinstance(d, PhaseDefinition)
+        assert d.name == "red-tests"
+        assert d.max_rotations == 4
+        assert d.exit_condition_artifact == "test_scenario"
+
 
 class TestWorkflow:
     def test_minimal_workflow(self):

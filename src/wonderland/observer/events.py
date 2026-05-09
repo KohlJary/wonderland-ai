@@ -155,6 +155,127 @@ class RunEnded:
     summary: RunSummary
 
 
+# Phase + priority + rotation events (P9 / analysis 033). These
+# events surface meeting structure that the engine emits when a
+# meeting declares phases. Older snapshots predate these events and
+# simply don't include them — historical replay works either way.
+
+
+@dataclass(frozen=True)
+class PhaseStarted:
+    """A new phase opened inside a meeting.
+
+    Phases are workflow-declared sub-units of a meeting (e.g. M4's
+    ``red → green → refactor``). Each phase has its own priority
+    rotation and rotation budget. The engine emits ``PhaseStarted``
+    when entering the phase, before any priority window opens.
+    """
+
+    timestamp: datetime
+    meeting_thread_id: str
+    phase_name: str
+    max_rotations: int
+    cast: tuple[str, ...]
+    """Priority order for this phase. Tuple, not list, because the
+    order is fixed for the duration of the phase."""
+    exit_condition_artifact: str | None = None
+
+
+@dataclass(frozen=True)
+class PhaseEnded:
+    """A phase closed.
+
+    ``reason`` is one of: ``"succession"`` (every cast member passed
+    in succession — natural end), ``"exhausted"`` (rotation budget
+    spent), ``"exit_condition"`` (the workflow's exit-condition
+    artifact shipped), or ``"aborted"`` (run-level abort). The
+    per-agent count maps are the §VIII observability primitive — T60
+    detectors read these to flag sprawl (never-passes) and
+    withdrawal (always-passes-after-first) shapes.
+    """
+
+    timestamp: datetime
+    meeting_thread_id: str
+    phase_name: str
+    reason: str
+    rotations_used: int
+    total_windows: int
+    passes_per_agent: dict[str, int]
+    acts_per_agent: dict[str, int]
+
+
+@dataclass(frozen=True)
+class PriorityWindowOpened:
+    """Priority just passed to ``agent_id``. They will either act or
+    pass before the window closes.
+
+    ``window_index_in_phase`` is monotonic across the entire phase
+    (0, 1, 2, ...) so consumers can render windows linearly.
+    ``rotation_index`` is which rotation this window belongs to.
+    """
+
+    timestamp: datetime
+    meeting_thread_id: str
+    phase_name: str
+    agent_id: str
+    rotation_index: int
+    window_index_in_phase: int
+
+
+@dataclass(frozen=True)
+class AgentActed:
+    """An agent used their priority window to emit an utterance.
+
+    Paired with ``UtteranceEmitted`` for the actual utterance
+    payload — consumers that only care about phase structure can
+    subscribe to ``AgentActed`` alone; consumers that need the
+    utterance content read both. ``utterance_id`` cross-references
+    them.
+    """
+
+    timestamp: datetime
+    meeting_thread_id: str
+    phase_name: str
+    agent_id: str
+    rotation_index: int
+    utterance_id: str
+
+
+@dataclass(frozen=True)
+class AgentPassed:
+    """An agent declined their priority window.
+
+    Pass is a first-class action — distinct from "wasn't asked to
+    speak." Counting passes per agent is what makes Cat withdrawal
+    observable from outside the agent (analysis 033).
+    """
+
+    timestamp: datetime
+    meeting_thread_id: str
+    phase_name: str
+    agent_id: str
+    rotation_index: int
+    reason: str | None = None
+    """Optional human-readable explanation. Engine may leave None;
+    agents that volunteer a reason via tool call can populate it."""
+
+
+@dataclass(frozen=True)
+class RotationCompleted:
+    """A full rotation around the cast just finished.
+
+    Boundary event — payload is intentionally minimal because the
+    interesting per-rotation accounting can be derived from the
+    AgentActed / AgentPassed stream. Useful as a render hint for the
+    TUI ("draw a horizontal line between rotations").
+    """
+
+    timestamp: datetime
+    meeting_thread_id: str
+    phase_name: str
+    rotation_index: int
+
+
 # Sealed union type alias. New event kinds added to this module
 # should also extend this union — that's the canonical surface
 # RunHandle.stream_events() yields, and consumers' match/isinstance
@@ -167,14 +288,26 @@ RunEvent = Union[
     AgentTelemetryDelta,
     MeetingEnded,
     RunEnded,
+    PhaseStarted,
+    PhaseEnded,
+    PriorityWindowOpened,
+    AgentActed,
+    AgentPassed,
+    RotationCompleted,
 ]
 
 
 __all__ = [
+    "AgentActed",
+    "AgentPassed",
     "AgentTelemetryDelta",
     "ArtifactShipped",
     "MeetingEnded",
     "MeetingStarted",
+    "PhaseEnded",
+    "PhaseStarted",
+    "PriorityWindowOpened",
+    "RotationCompleted",
     "RunEnded",
     "RunEvent",
     "RunStarted",

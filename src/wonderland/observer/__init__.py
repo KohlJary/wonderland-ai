@@ -7,10 +7,16 @@ Two implementations of ``RunHandle``:
 """
 
 from wonderland.observer.events import (
+    AgentActed,
+    AgentPassed,
     AgentTelemetryDelta,
     ArtifactShipped,
     MeetingEnded,
     MeetingStarted,
+    PhaseEnded,
+    PhaseStarted,
+    PriorityWindowOpened,
+    RotationCompleted,
     RunEnded,
     RunEvent,
     RunStarted,
@@ -28,6 +34,8 @@ from wonderland.observer.live import LiveRunHandle
 from wonderland.observer.mock_turtle import MockTurtleHandle
 
 __all__ = [
+    "AgentActed",
+    "AgentPassed",
     "AgentTelemetry",
     "AgentTelemetryDelta",
     "ArtifactShipped",
@@ -36,6 +44,10 @@ __all__ = [
     "MeetingEnded",
     "MeetingStarted",
     "MockTurtleHandle",
+    "PhaseEnded",
+    "PhaseStarted",
+    "PriorityWindowOpened",
+    "RotationCompleted",
     "RunArtifact",
     "RunEnded",
     "RunEvent",

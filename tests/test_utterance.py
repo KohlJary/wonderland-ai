@@ -38,8 +38,16 @@ def test_substantive_count_matches_spec() -> None:
 
 
 def test_procedural_count_matches_spec() -> None:
-    # 4 from WONDERLAND_SPEC §6 + invite added in P6 Block 2c.
-    assert len(PROCEDURAL_ACTS) == 5
+    # 4 from WONDERLAND_SPEC §6 + invite added in P6 Block 2c +
+    # pass added for phased meetings (analysis 033 / P9 T58a).
+    assert len(PROCEDURAL_ACTS) == 6
+
+
+def test_pass_is_procedural() -> None:
+    """PASS is the first-class 'I had a window and chose not to act'
+    signal in phased meetings — procedural by category."""
+    assert is_procedural(SpeechAct.PASS)
+    assert not is_substantive(SpeechAct.PASS)
 
 
 @pytest.mark.parametrize(
@@ -287,3 +295,32 @@ def test_utterance_thread_id_required() -> None:
             speech_act=SpeechAct.PROPOSAL,
             content=UtteranceContent(body="..."),
         )
+
+
+def test_utterance_recipients_default_is_none() -> None:
+    """Default recipients=None means open delivery via the existing
+    roster. The priority-gate primitive (T58a) is opt-in."""
+    u = Utterance(
+        thread_id="t",
+        speaker=_cat(),
+        addressed_to="caucus",
+        speech_act=SpeechAct.PROPOSAL,
+        content=UtteranceContent(body="..."),
+    )
+    assert u.recipients is None
+
+
+def test_utterance_recipients_round_trip_json() -> None:
+    """Recipients survives JSONL serialization (snapshots + replay)."""
+    import json
+
+    original = Utterance(
+        thread_id="t",
+        speaker=_cat(),
+        addressed_to="caucus",
+        speech_act=SpeechAct.NUDGE,
+        content=UtteranceContent(body="your window"),
+        recipients=frozenset({"hatter", "tweedledum"}),
+    )
+    rehydrated = Utterance.model_validate(json.loads(original.model_dump_json()))
+    assert rehydrated.recipients == frozenset({"hatter", "tweedledum"})

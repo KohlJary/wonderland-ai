@@ -789,6 +789,76 @@
       "status": "backlog",
       "created_at": "2026-05-08T22:11:03.641961",
       "created_by": "daedalus"
+    },
+    {
+      "id": "41a1d99a-c4fc-4117-bfaa-5240812d6c9d",
+      "title": "Meeting engine: phases + priority rotation",
+      "description": "Lift MtG turn structure into the meeting engine per analysis 033. Add phases (workflow-defined sequence within a meeting) and priority rotation (each cast member gets one priority window per phase, can act or pass, phase advances when all pass in succession or rotation-budget exhausts). Pass becomes first-class action. Skip the stack \u2014 single utterance per window suffices for collaborative 3-5 agent meetings.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:10.850229",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "15a0df95-c216-41f7-b019-6e8e5cc87d90",
+      "title": "Workflow YAML: phases schema + opt-in",
+      "description": "Per analysis 033 \u2014 extend workflow YAML to declare phases per meeting block (e.g. M4: red/green/refactor; M6: present/review/defend/verdict). Default: single 'discussion' phase preserves backward compat. First implementation ships behind opt-in on tdd-serial so we can A/B against the 032 banner with controlled variables.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.474807",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "bf358a75-12c3-4ba3-970f-544db0803feb",
+      "title": "Observer: phase + priority RunEvents",
+      "description": "Per analysis 033 \u2014 add PhaseStarted/PhaseEnded/PriorityWindowOpened/AgentPassed RunEvents. All three RunHandle implementations (HistoricalRunHandle, MockTurtleHandle, LiveRunHandle) need to emit + replay them. TUI live view gets a phase indicator. Pass-vs-not-asked distinction is what makes Cat withdrawal observable from outside the agent.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.556645",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "3ea7b281-1380-4d4e-b1e4-e7692bcc2c7f",
+      "title": "Turns-as-budget: rotation counter + telemetry",
+      "description": "Per analysis 033 \u2014 meetings get a rotation budget (e.g. 'this meeting is 3 rotations') alongside the existing dollar soft-cap. Telemetry adds per-phase + per-window cost attribution. Mitigation against the 030 F1 anchoring lesson: rotation count is engine-side only, never surfaced in agent context.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.636176",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "d0bdd371-3731-4db0-9a70-c3e381ef1162",
+      "title": "Failure-mode measurement primitives",
+      "description": "Per analysis 033 \u2014 under phases + priority, the engine can count passes per agent per phase per meeting. Wire this into the synthetic-consensus guard (already exists) and add new detectors: never-passes (sprawl shape), always-passes-after-first-utterance (withdrawal shape). The substrate gains an outside-the-agent measurement primitive for \u00a7VIII failure modes that currently can only be inferred post-hoc from the transcript.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T02:42:23.717655",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "dbf88619-274f-4f35-84ff-222aae504679",
+      "title": "Two-Headed Giant: team windows for constitutional pairs",
+      "description": "Per the live r35-tdd-serial-phased run: strict-serial priority gate inside a rotation accidentally serializes constitutional pairs that are complementary, not adversarial (Tweedledee:frontend :: Tweedledum:backend; Alice:user-journey :: Hatter:failure-mode). Wall-clock cost ~N\u00d7 cast size for the same deliberation depth. Fix: extend PhaseSpec with team_groupings: list[list[str]], default one-agent-per-team (current behavior). A team window opens concurrently for all members via asyncio.gather; per-agent WindowOutcome preserves \u00a7VIII observability primitives. Phase advances when all teams pass in succession. Maps onto MtG's Two-Headed Giant format. Substantive but local: orchestrator changes, no new event surface needed.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T03:57:42.429716",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "9aae11bc-2548-419e-9391-a7dc70a56a93",
+      "title": "Agent-to-user questions: ask_user / interactive escalation",
+      "description": "Per the live r35-tdd-serial-phased run: Alice's grounding instinct produced a coherent reframe of the daily-review feature (Pomodoro session review \u2192 reflective journaling), accumulated across stories 015-017. The reframe is actually a product insight worth surfacing \u2014 but the substrate has no channel for 'this might be a different product than you specified, does that resonate?' before the team commits to the new direction. Build agent \u2192 user question affordance: agent emits a question addressed to the user (likely a new speech_act QUESTION_TO_USER or a tool ask_user(prompt)->answer), runtime pauses, TUI surfaces with text-input prompt, answer reflows into the agent's deliberation context. Builds on existing Runner._pending_escalations machinery and human-in-the-loop escalation already done in P2 (39a91906). For phased meetings, the window resolves as act/pass/ask; ask pauses without consuming the window, agent re-deliberates with the answer. Solves a class of problems: Alice's product reframes, Tweedles' contract ambiguities, Caterpillar's actionable-vs-fast-follow judgment calls.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T04:10:20.872541",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

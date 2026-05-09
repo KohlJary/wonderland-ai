@@ -580,7 +580,7 @@ wheels = [
 
 [[package]]
 name = "wonderland-ai"
-version = "0.0.1"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -589,6 +589,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-ulid" },
     { name = "pyyaml" },
+    { name = "textual" },
 ]
 
 [package.optional-dependencies]
@@ -597,13 +598,9 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "redis" },
     { name = "ruff" },
-    { name = "textual" },
 ]
 redis = [
     { name = "redis" },
-]
-tui = [
-    { name = "textual" },
 ]
 
 [package.metadata]
@@ -619,7 +616,6 @@ requires-dist = [
     { name = "redis", marker = "extra == 'dev'", specifier = ">=5.2" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
-    { name = "textual", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "textual", marker = "extra == 'tui'", specifier = ">=8.0" },
+    { name = "textual", specifier = ">=8.0" },
 ]
-provides-extras = ["redis", "tui", "dev"]
+provides-extras = ["redis", "dev"]

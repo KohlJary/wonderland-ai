@@ -33,7 +33,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from wonderland.turns import PhaseDefinition
 
 if TYPE_CHECKING:
     from wonderland.runner import Runner
@@ -89,6 +91,58 @@ class SeedBinding(BaseModel):
     )
 
 
+class PhaseSpec(BaseModel):
+    """Workflow-side declaration of a phase within a meeting.
+
+    Per analysis 033 — phases are sub-units of a meeting; each has
+    its own priority rotation and rotation budget. A meeting opts
+    into phase-based engine semantics by declaring at least one
+    phase here. Meetings with no ``phases:`` declaration run on the
+    legacy engagement-policy path (backward compatibility).
+
+    The schema is intentionally minimal — runtime behavior lives
+    elsewhere (engine in T58, opt-in workflow YAMLs in T59).
+    """
+
+    name: str = Field(
+        min_length=1,
+        description=(
+            "Phase name, unique within the meeting (e.g. 'red-tests', "
+            "'settle')."
+        ),
+    )
+    max_rotations: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "Upper bound on full priority rotations within this phase. "
+            "Engine-side measurement primitive — never surfaced in "
+            "agent context (per the analysis 030 F1 anchoring lesson)."
+        ),
+    )
+    exit_condition_artifact: str | None = Field(
+        default=None,
+        description=(
+            "If set, the phase ends when an artifact of this kind "
+            "ships (e.g. ``contract``), even with rotations remaining. "
+            "Lets a phase be 'until X is shipped' rather than "
+            "'for N rotations.' Validated as a string only — the "
+            "runtime checks the kind name against shipped artifacts "
+            "directly, no central artifact registry to validate "
+            "against."
+        ),
+    )
+
+    def to_phase_definition(self) -> PhaseDefinition:
+        """Convert the workflow-side spec into the engine-side data
+        primitive (``wonderland.turns.PhaseDefinition``)."""
+        return PhaseDefinition(
+            name=self.name,
+            max_rotations=self.max_rotations,
+            exit_condition_artifact=self.exit_condition_artifact,
+        )
+
+
 class Meeting(BaseModel):
     """One meeting in a workflow."""
 
@@ -139,6 +193,32 @@ class Meeting(BaseModel):
             "across all features in a single shot."
         ),
     )
+    phases: list[PhaseSpec] = Field(
+        default_factory=list,
+        description=(
+            "Optional declaration of MtG-style phases inside this "
+            "meeting (per analysis 033). Each phase has its own "
+            "priority rotation + rotation budget. When present, the "
+            "engine runs the meeting as: for each phase, rotate "
+            "priority through cast, agents act-or-pass, advance when "
+            "all-pass-in-succession or rotation-budget exhausts or "
+            "exit-condition artifact ships. When absent (the default), "
+            "the meeting runs on the legacy engagement-policy path — "
+            "phase semantics are strictly opt-in."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_phase_names_unique(self) -> "Meeting":
+        if not self.phases:
+            return self
+        names = [p.name for p in self.phases]
+        if len(names) != len(set(names)):
+            dupes = sorted({n for n in names if names.count(n) > 1})
+            raise ValueError(
+                f"meeting {self.id!r} has duplicate phase names: {dupes}"
+            )
+        return self
 
 
 class WorkflowDefaults(BaseModel):
@@ -478,7 +558,7 @@ async def run_workflow(
 
         if meeting.per_item is None:
             outcome = "RUNNING"
-            async for event in _convene_one(
+            async for event in _run_one_meeting(
                 meeting=meeting,
                 runner=runner,
                 capture=capture,
@@ -544,7 +624,7 @@ async def run_workflow(
             iteration_thread_id = f"{meeting.id}-{slug}"
             label = item.get("title") or slug
             outcome = "RUNNING"
-            async for event in _convene_one(
+            async for event in _run_one_meeting(
                 meeting=meeting,
                 runner=runner,
                 capture=capture,
@@ -573,6 +653,67 @@ class _OutcomeSentinel:
     events reach the caller."""
 
     outcome: str
+
+
+async def _run_one_meeting(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    capture: WorkflowCapture,
+    directive: str | None,
+    per_item_meetings: dict[str, str],
+    current_item_kind: str | None,
+    current_item_slug: str | None,
+    thread_id: str,
+    iteration_index: int | None,
+    iteration_total: int | None,
+    iteration_label: str | None,
+) -> AsyncIterator[Any]:
+    """Dispatch a single meeting (or per_item iteration) onto either
+    the legacy engagement-policy path (``_convene_one``) or the
+    phased orchestrator (``meeting.run_phased_meeting``) based on
+    whether ``meeting.phases`` is non-empty.
+
+    Phase semantics are strictly opt-in (analysis 033 / P9 T57):
+    workflows without a ``phases:`` declaration retain the original
+    parallel-multicast behavior unchanged.
+    """
+    if meeting.phases:
+        # Local import to avoid the meeting ↔ workflow circular at
+        # module-load time (meeting.py imports MeetingStartEvent /
+        # MeetingEndEvent / resolve_seeds from workflow).
+        from wonderland.meeting import run_phased_meeting
+
+        async for event in run_phased_meeting(
+            meeting=meeting,
+            runner=runner,
+            capture=capture,
+            directive=directive,
+            per_item_meetings=per_item_meetings,
+            current_item_kind=current_item_kind,
+            current_item_slug=current_item_slug,
+            thread_id=thread_id,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+            iteration_label=iteration_label,
+        ):
+            yield event
+        return
+
+    async for event in _convene_one(
+        meeting=meeting,
+        runner=runner,
+        capture=capture,
+        directive=directive,
+        per_item_meetings=per_item_meetings,
+        current_item_kind=current_item_kind,
+        current_item_slug=current_item_slug,
+        thread_id=thread_id,
+        iteration_index=iteration_index,
+        iteration_total=iteration_total,
+        iteration_label=iteration_label,
+    ):
+        yield event
 
 
 async def _convene_one(

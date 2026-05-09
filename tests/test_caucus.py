@@ -95,6 +95,68 @@ async def test_from_beginning_replays_history() -> None:
     assert [u.content.body for u in received] == ["past-1", "past-2"]
 
 
+async def test_recipients_filter_targets_single_agent() -> None:
+    """When utterance.recipients is set, only listed subscribers see
+    it. Priority-gate primitive for phased meetings (T58a)."""
+    caucus = InMemoryCaucus()
+    sub_hatter = caucus.subscribe(agent_name="hatter")
+    sub_cat = caucus.subscribe(agent_name="cheshire_cat")
+
+    targeted = Utterance(
+        thread_id="t",
+        speaker=_speaker("dodo"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.NUDGE,
+        content=UtteranceContent(body="your window"),
+        recipients=frozenset({"hatter"}),
+    )
+    await caucus.publish(targeted)
+    # Open delivery follows so we have a sentinel to wait on without
+    # blocking forever on the cat queue.
+    await caucus.publish(_utterance(body="open"))
+
+    hatter_received = await _collect(sub_hatter, 2)
+    cat_received = await _collect(sub_cat, 1)
+    assert [u.content.body for u in hatter_received] == ["your window", "open"]
+    assert [u.content.body for u in cat_received] == ["open"]
+
+
+async def test_recipients_none_preserves_existing_fanout() -> None:
+    """recipients=None (the default) keeps current behavior — every
+    subscriber on the thread sees the utterance."""
+    caucus = InMemoryCaucus()
+    sub_a = caucus.subscribe(agent_name="a")
+    sub_b = caucus.subscribe(agent_name="b")
+    await caucus.publish(_utterance(body="hi"))
+    a_received = await _collect(sub_a, 1)
+    b_received = await _collect(sub_b, 1)
+    assert a_received[0].content.body == "hi"
+    assert b_received[0].content.body == "hi"
+
+
+async def test_recipients_filter_does_not_block_observer() -> None:
+    """Subscribers with bypass_roster=True (e.g. runner-observer)
+    must still see targeted utterances — measurement is whole-bus
+    regardless of who the priority window is for."""
+    caucus = InMemoryCaucus()
+    sub_observer = caucus.subscribe(agent_name="runner-observer", bypass_roster=True)
+    sub_hatter = caucus.subscribe(agent_name="hatter")
+
+    targeted = Utterance(
+        thread_id="t",
+        speaker=_speaker("dodo"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.NUDGE,
+        content=UtteranceContent(body="for hatter only"),
+        recipients=frozenset({"hatter"}),
+    )
+    await caucus.publish(targeted)
+    observer_received = await _collect(sub_observer, 1)
+    hatter_received = await _collect(sub_hatter, 1)
+    assert observer_received[0].content.body == "for hatter only"
+    assert hatter_received[0].content.body == "for hatter only"
+
+
 async def test_default_subscribe_skips_history() -> None:
     caucus = InMemoryCaucus()
     await caucus.publish(_utterance(body="missed"))
