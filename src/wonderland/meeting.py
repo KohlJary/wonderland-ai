@@ -608,7 +608,14 @@ async def run_phased_meeting(
                         # If this act was a question to the operator,
                         # block until the operator's OBSERVATION reply
                         # lands on the bus so the next window's
-                        # compose_context sees it (T69).
+                        # compose_context sees it (T69), and yield
+                        # the answer as a RunnerEvent so the live-
+                        # watch transcript surfaces it (the watcher
+                        # publishes to the bus but the phased
+                        # orchestrator doesn't drain runner.events,
+                        # so the answer would otherwise be invisible
+                        # in the live UI even though agents' memory
+                        # records it normally).
                         from wonderland.utterance import (
                             is_question_to_operator,
                         )
@@ -618,8 +625,17 @@ async def run_phased_meeting(
                             and hasattr(runner, "wait_for_question_answer")
                         ):
                             try:
-                                await runner.wait_for_question_answer(
-                                    response.id, timeout=600.0
+                                answer_utt = (
+                                    await runner.wait_for_question_answer(
+                                        response.id, timeout=600.0
+                                    )
+                                )
+                                yield RunnerEvent(
+                                    kind="utterance",
+                                    elapsed=(
+                                        time.monotonic() - meeting_start
+                                    ),
+                                    payload={"utterance": answer_utt},
                                 )
                             except (asyncio.TimeoutError, TimeoutError):
                                 # Operator never answered; proceed

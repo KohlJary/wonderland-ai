@@ -1057,6 +1057,58 @@ async def test_phase_orchestrator_blocks_for_operator_answer_after_question() ->
     assert waited_for == [question_utt.id]
 
 
+async def test_phase_orchestrator_yields_operator_answer_as_runner_event() -> None:
+    """The phased orchestrator yields the operator's reply as a
+    RunnerEvent so the live-watch transcript surfaces it. Without
+    this the UI would show only the question — the answer goes to
+    the bus + agents' memory but never to the live transcript
+    pane, since the orchestrator doesn't drain runner.events()."""
+    from wonderland.utterance import operator_identity
+
+    question_utt = Utterance(
+        thread_id="t",
+        speaker=AgentIdentity(name="a", constitution_version="0.1"),
+        addressed_to=[operator_identity()],
+        speech_act=SpeechAct.QUESTION,
+        content=UtteranceContent(body="client-only or with backend?"),
+    )
+    answer_utt = Utterance(
+        thread_id="t",
+        speaker=operator_identity(),
+        addressed_to=[question_utt.speaker],
+        speech_act=SpeechAct.OBSERVATION,
+        content=UtteranceContent(body="client-only for v1"),
+        parent_id=question_utt.id,
+    )
+
+    runner = _make_runner(
+        cast=["a"],
+        scripts={"a": [_ScriptedResponse(utterance=question_utt)]},
+    )
+
+    async def fake_wait_for(question_id: str, timeout: float = 600.0):
+        return answer_utt
+
+    runner.wait_for_question_answer = fake_wait_for  # type: ignore[attr-defined]
+
+    meeting = _meeting(
+        roster=["a"],
+        phases=[PhaseSpec(name="discussion", max_rotations=1)],
+    )
+    events = await _drive(meeting, runner)
+
+    # The answer utterance should appear as a RunnerEvent in the
+    # yielded stream — that's what makes it visible in the
+    # live-watch transcript.
+    answer_runner_events = [
+        e for e in events
+        if hasattr(e, "kind")
+        and e.kind == "utterance"
+        and e.payload.get("utterance") is answer_utt
+    ]
+    assert len(answer_runner_events) == 1
+
+
 async def test_phase_orchestrator_does_not_block_on_non_operator_questions() -> None:
     """A QUESTION to caucus (not operator) shouldn't trigger
     wait_for_question_answer — only operator-addressed questions
