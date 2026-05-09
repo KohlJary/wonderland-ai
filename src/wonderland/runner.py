@@ -924,6 +924,12 @@ class Runner:
         async for u in sub:
             if not is_question_to_operator(u):
                 continue
+            # Suspend quiescence detection on this thread while
+            # we wait for the operator. Without this, the asker's
+            # post-publish IDLE transition would trigger turn-
+            # based quiescence (or the 300s wall-clock fallback
+            # would fire while the operator reads the question).
+            self._monitor.pause_for_external_input(u.thread_id)
             try:
                 if self._user_question_handler is None:
                     answer_text = (
@@ -945,6 +951,10 @@ class Runner:
                     f"(operator handler error: {type(exc).__name__}; "
                     "proceed with your best judgment)"
                 )
+            finally:
+                # Always resume quiescence — even on handler error
+                # — so the meeting doesn't get stuck paused.
+                self._monitor.resume_for_external_input(u.thread_id)
 
             answer_utt = Utterance(
                 thread_id=u.thread_id,

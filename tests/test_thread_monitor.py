@@ -87,6 +87,54 @@ async def test_quiescence_fires_after_silence_with_no_open_expectations() -> Non
     await monitor.stop()
 
 
+# ---------- T69: pause for external input ----------
+
+
+async def test_pause_for_external_input_suppresses_wall_clock_quiescence() -> None:
+    """While a thread is paused (awaiting operator answer to a
+    QUESTION-to-operator), wall-clock quiescence must not fire even
+    though the thread has gone silent past quiescence_seconds."""
+    bus = InMemoryCaucus()
+    monitor = ThreadMonitor(bus, quiescence_seconds=0.1, check_interval=0.05)
+    await monitor.start()
+
+    await bus.publish(_u(act=SpeechAct.ACKNOWLEDGMENT, body="thread t → running"))
+    monitor.pause_for_external_input("t")
+
+    # Wait well past quiescence_seconds — without the pause, this
+    # would have produced a QUIESCENT transition.
+    await asyncio.sleep(0.3)
+
+    # Verify pause held: no transition delivered yet.
+    iterator = monitor.transitions()
+    with contextlib.suppress(TimeoutError):
+        change = await asyncio.wait_for(anext(iterator), timeout=0.1)
+        # If we got here, the pause failed.
+        raise AssertionError(
+            f"quiescence fired despite pause: {change.to_state.value}"
+        )
+
+    # Resume — quiescence is now allowed; with continued silence,
+    # the next wall-clock tick should fire it.
+    monitor.resume_for_external_input("t")
+    [change] = await _drain_until(monitor, count=1)
+    assert change.to_state is ThreadState.QUIESCENT
+
+    await monitor.stop()
+
+
+async def test_pause_resume_is_idempotent() -> None:
+    """Pausing or resuming the same thread twice is harmless."""
+    bus = InMemoryCaucus()
+    monitor = ThreadMonitor(bus)
+    monitor.pause_for_external_input("t")
+    monitor.pause_for_external_input("t")
+    assert monitor.is_paused_for_external_input("t")
+    monitor.resume_for_external_input("t")
+    monitor.resume_for_external_input("t")
+    assert not monitor.is_paused_for_external_input("t")
+
+
 async def test_stuck_fires_when_open_expectation_with_silence() -> None:
     """A question with no cross-speaker engagement → stuck after silence."""
     bus = InMemoryCaucus()

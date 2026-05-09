@@ -143,6 +143,13 @@ class ThreadMonitor:
         # analysis 022). Updated via record_agent_state, which the
         # Runner wires into each agent's state-change handler.
         self._agent_states: dict[str, AgentState] = {}
+        # Threads currently awaiting external input (operator answer
+        # to a QUESTION-to-operator utterance, T69). While paused,
+        # neither turn-based nor wall-clock quiescence fires for the
+        # thread — the team is intentionally silent waiting for the
+        # human to respond, not productively-finished. The runner's
+        # user-question watcher manages the pause set.
+        self._quiescence_paused_threads: set[str] = set()
         # Subscribe synchronously per the WonderlandAgent fix from T14 — bus
         # publishes between construction and iteration must not be lost.
         # ThreadMonitor needs to see every utterance regardless of
@@ -157,6 +164,26 @@ class ThreadMonitor:
     # ------------------------------------------------------------------ #
     # Inspection
     # ------------------------------------------------------------------ #
+
+    def pause_for_external_input(self, thread_id: str) -> None:
+        """Suppress quiescence for ``thread_id`` while it's awaiting
+        external input (T69 — operator answer to a QUESTION-to-
+        operator utterance). Both turn-based and wall-clock paths
+        gate on the pause flag; agent-state transitions still record
+        normally so resume picks up the right post-resume baseline.
+        Idempotent."""
+        self._quiescence_paused_threads.add(thread_id)
+
+    def resume_for_external_input(self, thread_id: str) -> None:
+        """End the pause for ``thread_id`` after external input
+        landed. Quiescence detection re-enables on the next state
+        change or wall-clock check. Idempotent."""
+        self._quiescence_paused_threads.discard(thread_id)
+
+    def is_paused_for_external_input(self, thread_id: str) -> bool:
+        """For tests / inspection: True if quiescence is currently
+        suppressed for this thread."""
+        return thread_id in self._quiescence_paused_threads
 
     def thread_state(self, thread_id: str) -> ThreadState:
         info = self._threads.get(thread_id)
@@ -261,6 +288,12 @@ class ThreadMonitor:
         gates on open expectations (per the spec); the only difference
         is *when* we check (immediately on idle, not after N seconds).
         """
+        # T69: while a thread is awaiting external input (operator
+        # answer to a QUESTION-to-operator), all-members-IDLE is
+        # *expected* — the human is the next mover. Don't fire
+        # quiescence and don't transition the thread.
+        if thread_id in self._quiescence_paused_threads:
+            return None
         info = self._threads.get(thread_id)
         if info is None or info.state in (
             ThreadState.COMPLETE,
@@ -414,6 +447,12 @@ class ThreadMonitor:
         self, info: ThreadInfo, now: datetime
     ) -> ThreadStateChange | None:
         if info.state in (ThreadState.COMPLETE, ThreadState.ABANDONED):
+            return None
+        # T69: don't fire wall-clock quiescence on threads waiting
+        # for operator input. Operators may take minutes to read
+        # the question and decide; the silence is intentional, not
+        # pathological.
+        if info.thread_id in self._quiescence_paused_threads:
             return None
         elapsed = (now - info.last_activity).total_seconds()
         if elapsed < self._quiescence_seconds:
