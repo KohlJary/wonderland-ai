@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wonderland-ai"
-version = "0.0.1"
+version = "0.1.0"
 description = "An identity-native multi-agent development system."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,6 +32,10 @@ dependencies = [
     "aiosqlite>=0.20",
     "platformdirs>=4.0",
     "pyyaml>=6.0",
+    # Textual is the primary user-facing surface — wonderland-tui
+    # is what most users will interact with. Promoted from the
+    # [tui] extra to a core dep in 0.1.0. Theme API requires v8+.
+    "textual>=8.0",
 ]
 
 [project.urls]
@@ -48,17 +52,11 @@ wonderland-tui = "wonderland.tui.app:main"
 redis = [
     "redis>=5.2",
 ]
-tui = [
-    # P8 user-facing interface — TUI now, web later. Theme API
-    # (textual.theme.Theme) is a v8.x feature.
-    "textual>=8.0",
-]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "redis>=5.2",  # full test coverage includes the Redis path
-    "textual>=8.0",  # so tests can exercise the TUI module
 ]
 
 [tool.hatch.build.targets.wheel]

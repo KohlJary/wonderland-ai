@@ -127,7 +127,9 @@ that need supervising out of their bad habits.
 
 ## Status
 
-In-progress, building in public. Phase 5 of 7 complete.
+In-progress, building in public. P1–P6 complete; P8 (operator
+interface) shipping in sub-phases — three of five done as of
+0.1.0, two remain. P7 (evals) is the final post-P8 phase.
 
 - [x] **P1 — Foundation** ([overview](./WONDERLAND_SPEC.md#12-build-order))
       Schema, Caucus event bus, episodic memory, agent base class.
@@ -151,7 +153,7 @@ In-progress, building in public. Phase 5 of 7 complete.
       consensus guard observes the bus for the §11 anti-pattern — three
       or more distinct constitutional domains converging on the same
       position is suspect, and the guard surfaces it for review.
-- [>] **P6 — Real Threads** *(in progress)*
+- [x] **P6 — Real Threads**
       The hard showcases plus the substrate maturation that made them
       work. **Showcase 2: translation chat MVP** ([analyses
       015](./analyses/015-tweedles-ship-real-code.md)–[018](./analyses/018-the-breakthrough.md))
@@ -181,8 +183,52 @@ In-progress, building in public. Phase 5 of 7 complete.
       [`SHOWCASE.md`](./SHOWCASE.md) for the friend-facing tour and
       [`analyses/`](./analyses) for the full build log of the iteration
       that got the framework here.
+- [x] **P8.1 — Observer API** & **P8.2 — TUI Inspector** *(0.0.1 release)*
+      `HistoricalRunHandle` reads any snapshot directory; the
+      Textual TUI ships as a read-only run inspector with
+      lazygit-style multi-pane drill-down (snapshot library →
+      run summary → meeting detail → utterance modal →
+      artifact browser, plus Cast view + theme cycling).
+- [x] **P8.3 — Streaming + Mock Turtle**
+      `RunHandle.stream_events()` async-iterator interface +
+      `MockTurtleHandle` that replays a snapshot at compressed
+      clock time. The testbed P8.4's live-watch screen iterates
+      against without API spend.
+- [x] **P8.4 — Live-watch screen**
+      The streaming surface goes visual: meetings ribbon fills
+      in as `MeetingStarted` events arrive, transcript scrolls
+      live, body preview tracks the utterance cursor, artifacts
+      pane filters per-meeting. All three panes focusable, Tab
+      cycles, lazygit principle throughout. Iterated entirely
+      against Mock Turtle replay.
+- [x] **P8.5 — Directive issuing + LiveRunHandle** *(this release)*
+      `NewRunScreen` is the directive composer (preset picker
+      with bundled `pomodoro` / `hello-endpoint` /
+      `translation-chat` / `geocities` / `ping` directives, plus
+      per-project saves to `.wonderland/directives/`); selection
+      drives composer + workflow pre-fill; Enter steps through
+      the form like a paper form. `LaunchConfirmationScreen`
+      guards the irreversible spend with directive preview +
+      soft-cap budget. `LiveRunHandle` wraps a real Runner+Caucus
+      and emits through the same streaming protocol Mock Turtle
+      uses, so the live-watch screen consumes a real run
+      interchangeably with a replay. Settings screen accepts
+      API key + model from inside the TUI — fresh `pip install`
+      users no longer drop to the shell to write a config file.
+      First end-to-end TUI run shipped a story for $0.0119
+      against the smoke workflow.
+- [ ] **P8.6 — New-project spinup**
+      Skeleton picker + stack-detection routine for adopting
+      existing non-Wonderland projects. Closes the on-ramp from
+      "I have a project idea" to "team's ready to start" without
+      leaving the TUI.
+- [ ] **P8.7 — First-use polish**
+      Welcome screen, error states, abort flow, quiescence
+      indicator, README + SHOWCASE refresh.
 - [ ] **P7 — Evals**
-      Generic-baseline vs Wonderland comparison. The compounding curve.
+      Generic-baseline vs Wonderland comparison. The compounding
+      curve. Reordered after P8 so the eval harness has a usable
+      operator surface.
 
 [`WONDERLAND_SPEC.md`](./WONDERLAND_SPEC.md) is the design document.
 [`constitutions/`](./constitutions) holds each character's identity in plain
@@ -206,45 +252,64 @@ Both scripts publish a translation-chat directive by default; pass
 
 ## The TUI
 
-A terminal interface ships with the project as the long-term home for
-operating Wonderland — issuing directives, watching live runs, and
-inspecting past ones. The first cut focuses on the inspection half,
-since it's the cheapest place to iterate (snapshots run for free); the
-directive-issuing and live-watching halves arrive in later sub-phases.
+`wonderland-tui` is the operator interface. Type a directive, pick
+a workflow, hit Go, and watch the team work in real time. The same
+screen that renders live runs also replays past ones at compressed
+clock time, so iterating on the UX never costs API tokens.
 
 ```bash
-pip install 'wonderland-ai[tui]'
-wonderland-tui                       # opens the snapshot library
+pip install wonderland-ai
+wonderland-tui                       # opens the home view
 ```
 
-What's in it today:
+First-run flow: the home view has prominent New run / Cast /
+Settings buttons. Open Settings, paste an Anthropic API key
+(saved to your platform's user-config dir), back out, then
+New run → pick the `ping` preset (cheapest, ~$0.20) → confirm →
+watch.
 
-- **Snapshot library** — every captured run under `analyses/data/`,
-  with workflow, outcome, duration, call count, and cost.
-- **Run summary** — per-meeting cost, agent telemetry, and a
-  meetings table you can drill into.
-- **Meeting detail** — full transcript with body preview as you
-  navigate; press Enter on an utterance for the expanded view, with
-  attached artifacts you can drill into.
-- **Speaker filter** — `f`/`F` cycle the meeting transcript by
-  speaker.
-- **Artifact browser** — every artifact the team produced for a run,
-  globally or scoped to a single meeting (`a` from a meeting).
-- **Cast view** — `c` from the library opens the team roster, with
-  each character's role summary and constitution side-by-side.
-- **Theme cycling** — `t` rotates through Wonderland-flavored
-  palettes (Tea Party, Looking Glass, Trial, Caucus); built-in
+What's in it:
+
+- **Home view** — `New run`, `The Cast`, and `Settings` as primary
+  buttons; the past-runs table below lists every captured snapshot
+  with workflow / outcome / duration / cost.
+- **New run composer** — preset picker (left) + directive editor
+  (right) + description editor + workflow / budget / project-root
+  config + inline save-as-preset form. Bundled directives:
+  `pomodoro`, `hello-endpoint`, `translation-chat`, `geocities`,
+  `ping`. Per-project presets live at
+  `<project>/.wonderland/directives/`. Enter steps through the
+  form like a paper form.
+- **Live-watch screen** — three focusable panes (lazygit-style):
+  meetings ribbon (left, with per_item iteration discriminators
+  for serial workflows), transcript table + body preview pane
+  (top-right), artifacts table (bottom-right). Selection in the
+  meetings list filters the transcript and artifacts panes;
+  cursor moves on the transcript drive the body preview. Status
+  bar shows current speaker, live cost ticker, watching elapsed
+  time + source-time elapsed. Same screen consumes live runs
+  (via `LiveRunHandle`) and replays of past runs (via
+  `MockTurtleHandle`) interchangeably.
+- **Cast view** — single-page lazygit shape: character list at
+  top, bio + constitution side-by-side below. Selection drives
+  both panes. Bios cover both the literary character and how
+  it shapes each agent's constitution.
+- **Settings** — Anthropic API key (password-masked, persists to
+  the user-config dir) + optional model override. Reachable from
+  home, also auto-pushed when New run finds no API key set so
+  fresh `pip install` users have a one-click recovery path.
+- **Theme cycling** — `t` rotates through four Wonderland-flavored
+  palettes (Tea Party / Looking Glass / Trial / Caucus); built-in
   Textual themes (gruvbox, dracula, nord, …) remain available.
-- **Vim navigation** throughout — `j`/`k` to move, `g`/`G` for
-  top/bottom, `Enter` to drill in, `Escape` to back out.
+- **Vim navigation** throughout — `j`/`k` to move, `g`/`G` and
+  `H`/`L` for top/bottom, `Enter` to drill in / advance, `Tab` to
+  cycle focus across panes, `Escape` to back out.
 
-The current build is replay-first by design: it consumes the same
-snapshots the analyses are written from, so smoke tests double as
-exercise of the historical-run observer API. Issuing directives from
-the TUI and watching live runs are the next two sub-phases — the
-goal is for `wonderland-tui` to be the way most users interact with
-the framework, with the demo scripts above remaining as minimal
-"hello world" entry points.
+The replay-first design carries forward: drives the smoke tests,
+keeps UX iteration free of API spend, and means anyone curious
+about how the framework actually behaves can `wonderland-tui` →
+press `w` on a snapshot to watch a captured run play back at 5×
+speed.
 
 ## Project layout
 
@@ -280,13 +345,12 @@ existing artifacts and a user-edited README are left alone.
 ## Install
 
 Distribution name on PyPI is `wonderland-ai`; the import path stays
-`import wonderland`. Core install pulls only what the in-process bus
-needs:
+`import wonderland`. Core install includes the TUI (the primary
+user-facing surface) and the in-process bus:
 
 ```bash
-pip install wonderland-ai           # InMemoryCaucus only
+pip install wonderland-ai           # core + TUI
 pip install 'wonderland-ai[redis]'  # adds RedisCaucus
-pip install 'wonderland-ai[tui]'    # adds the TUI (Textual)
 ```
 
 `RedisCaucus` requires the `redis` extra; constructing one without it
