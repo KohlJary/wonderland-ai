@@ -358,6 +358,26 @@ class LiveRunHandle(RunHandle):
                 timestamp=self._ended_at,
                 summary=self._build_summary(),
             )
+
+            # Best-effort post-run digest. Daedalus's digest module
+            # reads .wonderland/ state (telemetry + lifecycle +
+            # artifacts + reviews) and writes a markdown summary to
+            # .wonderland/digests/run-<id>.md. Skipped silently when
+            # daedalus isn't installed (it's a sister package, not a
+            # hard dep) or when project_root is missing (FakeRunner
+            # test fixtures, etc.).
+            project_root = getattr(self._runner, "project_root", None)
+            if project_root is not None:
+                try:
+                    from daedalus.digest import write_digest  # type: ignore
+
+                    write_digest(project_root)
+                except ImportError:
+                    pass  # daedalus not installed — skip digest
+                except Exception:  # noqa: BLE001
+                    # Digest writes are best-effort; never fail the
+                    # run because the digest can't render.
+                    pass
         finally:
             # Best-effort teardown. Even on cancellation, the runner's
             # background threads / dispatcher tasks need to stop or
