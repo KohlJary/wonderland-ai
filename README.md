@@ -204,64 +204,101 @@ Both scripts publish a translation-chat directive by default; pass
 
 ## The TUI
 
-`wonderland-tui` is the operator interface. Type a directive, pick
-a workflow, hit Go, and watch the team work in real time. The same
-screen that renders live runs also replays past ones at compressed
-clock time, so iterating on the UX never costs API tokens.
+`wonderland-tui` is the operator interface. Register a project,
+queue features for the team, watch them work in real time, verify
+or reject what they ship. The same screen that renders live runs
+also replays past ones at compressed clock time, so iterating on
+the UX never costs API tokens.
 
 ```bash
 pip install wonderland-ai
-wonderland-tui                       # opens the home view
+wonderland-tui                       # opens the project library
 ```
 
-First-run flow: the home view has prominent New run / Cast /
-Settings buttons. Open Settings, paste an Anthropic API key
-(saved to your platform's user-config dir), back out, then
-New run → pick the `ping` preset (cheapest, ~$0.20) → confirm →
-watch.
+First-run flow: the library opens empty. Open `Settings`, paste an
+Anthropic API key (saved to your platform's user-config dir), back
+out. Press `n` to create a project — pick a path, pick a skeleton
+(`python-tui`, `python-cli`, `python-fastapi`, `react-vite`,
+`fullstack-fastapi-react`), and the substrate writes a
+`.wonderland/project.yaml` carrying the stack as authoritative
+project context the team consults at every meeting. The project's
+dashboard opens automatically.
 
-What's in it:
+The screens, in the order an operator typically meets them:
 
-- **Home view** — `New run`, `The Cast`, and `Settings` as primary
-  buttons; the past-runs table below lists every captured snapshot
-  with workflow / outcome / duration / cost.
+- **Project library** — your projects with metadata. `n` for new,
+  Enter to open the dashboard, `s` for settings.
+- **New project** — name, path, skeleton picker, workflow default.
+  Skeleton apply lays down a working scaffold AND writes
+  `project.yaml` so M4 architecture and M5 contracts ground in
+  the runtime fact, not just the directive's prose. Existing
+  non-bare projects get a retrofit path that writes `project.yaml`
+  without clobbering existing files.
+- **Per-project dashboard** — the operator's primary attention
+  surface in P12. Features tree on the left (each feature
+  expandable to show its constituent tickets); state filter chips
+  (designed / queued / ready_review / in_progress / verified /
+  rejected); detail pane on the right renders the highlighted
+  feature or ticket markdown. State-aware action buttons —
+  `Design`, `Implement`, `Verify`, `Custom run` — surface counts
+  for what's actionable; the highest-priority action gets the
+  primary variant. Drill-down tabs for run history, raw artifacts,
+  the project's working tree, and metrics charts.
+- **Lifecycle moves from the dashboard** — `q` queues a designed
+  feature for implementation; `Verify` opens a modal that captures
+  the operator's verdict with optional notes (verified / rejected
+  → recorded in `.wonderland/feature-states.jsonl` for next-run
+  context); `m`/`D` mark and bulk-delete duplicate tickets when
+  Rabbit's M3 ships revision-pass redundancy.
 - **New run composer** — preset picker (left) + directive editor
-  (right) + description editor + workflow / budget / project-root
-  config + inline save-as-preset form. Bundled directives:
-  `pomodoro`, `hello-endpoint`, `translation-chat`, `geocities`,
-  `ping`. Per-project presets live at
-  `<project>/.wonderland/directives/`. Enter steps through the
-  form like a paper form.
+  (right) + workflow / budget / project-root config + inline
+  save-as-preset form. Bundled directives: `pomodoro`,
+  `hello-endpoint`, `translation-chat`, `geocities`, `ping`.
+  Per-project presets live at `<project>/.wonderland/directives/`.
+  Empty directives push a confirmation modal so a launch doesn't
+  silently ship without intent.
 - **Live-watch screen** — three focusable panes (lazygit-style):
-  meetings ribbon (left, with per_item iteration discriminators
-  for serial workflows), transcript table + body preview pane
-  (top-right), artifacts table (bottom-right). Selection in the
-  meetings list filters the transcript and artifacts panes;
-  cursor moves on the transcript drive the body preview. Status
-  bar shows current speaker, live cost ticker, watching elapsed
-  time + source-time elapsed. Same screen consumes live runs
-  (via `LiveRunHandle`) and replays of past runs (via
-  `MockTurtleHandle`) interchangeably.
+  meetings ribbon (with per_item iteration discriminators for
+  parallel and pipeline workflows), transcript table + body
+  preview pane, artifacts table. Selection filters across panes;
+  status bar shows current speaker, live cost ticker, watching
+  elapsed time + source-time elapsed. Same screen consumes live
+  runs (`LiveRunHandle`) and replays of captured runs
+  (`MockTurtleHandle`) interchangeably.
+- **Operator-question modal** — when an agent emits a
+  `question_to_operator` (architectural ambiguity contracts can't
+  disambiguate, business priority calls, schema-vs-directive
+  conflicts), the framework pauses the meeting and surfaces the
+  question as a modal. Your reply lands on the bus as an
+  `observation` from the operator identity; the meeting resumes
+  with the team seeing the answer in their context.
 - **Cast view** — single-page lazygit shape: character list at
-  top, bio + constitution side-by-side below. Selection drives
-  both panes. Bios cover both the literary character and how
-  it shapes each agent's constitution.
+  top, bio + constitution side-by-side below. Bios cover both
+  the literary character and how it shapes each agent's
+  constitution. Useful for understanding why an agent made a
+  particular call when reviewing a captured run.
 - **Settings** — Anthropic API key (password-masked, persists to
   the user-config dir) + optional model override. Reachable from
-  home, also auto-pushed when New run finds no API key set so
-  fresh `pip install` users have a one-click recovery path.
+  the library, also auto-pushed when New run finds no API key
+  set so fresh `pip install` users have a one-click recovery
+  path.
 - **Theme cycling** — `t` rotates through four Wonderland-flavored
   palettes (Tea Party / Looking Glass / Trial / Caucus); built-in
   Textual themes (gruvbox, dracula, nord, …) remain available.
 - **Vim navigation** throughout — `j`/`k` to move, `g`/`G` and
   `H`/`L` for top/bottom, `Enter` to drill in / advance, `Tab` to
-  cycle focus across panes, `Escape` to back out.
+  cycle focus across panes, `Escape` to back out. Per-screen
+  bindings show in the footer.
 
 The replay-first design carries forward: drives the smoke tests,
 keeps UX iteration free of API spend, and means anyone curious
 about how the framework actually behaves can `wonderland-tui` →
-press `w` on a snapshot to watch a captured run play back at 5×
-speed.
+open a project → drill into Runs → press `w` on a snapshot to
+watch a captured run play back at 5× speed. Project context, the
+features-as-tree dashboard, the verify/reject modal, and the
+operator-question pipeline are the P11/P12 additions that pulled
+the framework from "watch a run happen" to "drive a project's
+feature lifecycle through several runs."
 
 ## Project layout
 
