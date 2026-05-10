@@ -560,6 +560,96 @@ async def test_phase_ends_via_exit_condition_when_target_artifact_ships() -> Non
     assert end.total_windows == 1
 
 
+def test_check_exit_condition_skips_seed_utterances() -> None:
+    """Cross-run regression: seed utterances (cross-run disk-fallback
+    artifacts re-published as seeds at convene time) must NOT
+    satisfy ``exit_condition_artifact``. Without this guard, every
+    phased meeting with an exit_condition_artifact races to
+    instant-complete on second runs against the same project —
+    prior run's features/ADRs/contracts re-publish as seeds and
+    fire exit_condition on rotation 0.
+
+    Symptom observed in the May 10 obol design pass for mock-data:
+    the full tdd-design workflow ran with every meeting reporting
+    COMPLETE at $0, no agent did any new work."""
+    from wonderland.meeting import PhaseState, _check_exit_condition
+    from wonderland.utterance import Utterance, UtteranceContent
+    from wonderland.workflow import PhaseSpec, WorkflowCapture
+
+    state = PhaseState(
+        definition=PhaseSpec(
+            name="commit",
+            max_rotations=2,
+            exit_condition_artifact="feature",
+        ).to_phase_definition(),
+        cast=("alice",),
+    )
+
+    capture = WorkflowCapture()
+    seed_with_target_artifact = Utterance(
+        thread_id="t",
+        speaker=AgentIdentity(name="white_rabbit", constitution_version="0.1"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.FEATURE,
+        content=UtteranceContent(
+            body="(disk-fallback feature from prior run)",
+            artifacts=[Artifact(kind="feature", payload={"slug": "x"})],
+        ),
+        is_seed=True,  # ← the load-bearing flag
+    )
+    capture.observe(seed_with_target_artifact)
+
+    _check_exit_condition(
+        state=state,
+        capture=capture,
+        artifact_count_before=0,
+    )
+
+    # Exit condition NOT met — seeds shouldn't count as work the
+    # current meeting just produced.
+    assert state.exit_condition_met is False
+
+
+def test_check_exit_condition_fires_for_non_seed_match() -> None:
+    """The other half of the contract: a non-seed utterance with
+    a matching artifact DOES satisfy exit_condition. Symmetry
+    check that the seed filter didn't break the happy path."""
+    from wonderland.meeting import PhaseState, _check_exit_condition
+    from wonderland.utterance import Utterance, UtteranceContent
+    from wonderland.workflow import PhaseSpec, WorkflowCapture
+
+    state = PhaseState(
+        definition=PhaseSpec(
+            name="commit",
+            max_rotations=2,
+            exit_condition_artifact="feature",
+        ).to_phase_definition(),
+        cast=("alice",),
+    )
+
+    capture = WorkflowCapture()
+    fresh_emission = Utterance(
+        thread_id="t",
+        speaker=AgentIdentity(name="white_rabbit", constitution_version="0.1"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.FEATURE,
+        content=UtteranceContent(
+            body="(rabbit's new emission this meeting)",
+            artifacts=[Artifact(kind="feature", payload={"slug": "y"})],
+        ),
+        is_seed=False,
+    )
+    capture.observe(fresh_emission)
+
+    _check_exit_condition(
+        state=state,
+        capture=capture,
+        artifact_count_before=0,
+    )
+
+    assert state.exit_condition_met is True
+
+
 # ---------------------------------------------------------------------
 # Window event sequencing
 # ---------------------------------------------------------------------

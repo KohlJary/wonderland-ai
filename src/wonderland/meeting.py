@@ -322,13 +322,28 @@ def _check_exit_condition(
 ) -> None:
     """Scan utterances captured so far this meeting for an artifact
     of the phase's exit_condition_artifact kind. Mutates
-    ``state.exit_condition_met`` in place when found."""
+    ``state.exit_condition_met`` in place when found.
+
+    Skips ``u.is_seed=True`` utterances. The bus's convene path
+    publishes seed utterances (cross-run disk-fallback artifacts,
+    cross-meeting bindings re-stamped to the new thread) AFTER
+    ``artifact_count_before`` is snapshotted, so they appear in
+    the window we scan even though they're not work the meeting
+    just did. Without this guard, every phased meeting with an
+    exit_condition_artifact races to instant-complete on cross-
+    run executions — the prior run's features/ADRs/contracts
+    re-published as seeds satisfy the condition on rotation 0.
+    Cross-run continuity has to mean "you can SEE prior work,"
+    not "prior work counts as YOUR work."
+    """
     if not state.definition.exit_condition_artifact:
         return
     if state.exit_condition_met:
         return
     target_kind = state.definition.exit_condition_artifact
     for u in capture.utterances[artifact_count_before:]:
+        if u.is_seed:
+            continue
         for a in u.content.artifacts:
             if a.kind == target_kind:
                 state.exit_condition_met = True
