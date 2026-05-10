@@ -30,7 +30,16 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, DataTable, Footer, Header, Static
+from textual.widgets import (
+    Button,
+    DataTable,
+    Footer,
+    Header,
+    Static,
+    TabbedContent,
+    TabPane,
+    Tree,
+)
 
 from wonderland.observer import (
     AgentActed,
@@ -51,7 +60,6 @@ from wonderland.observer import (
     UtteranceEmitted,
 )
 from wonderland.tui.screens.artifact_browser import ArtifactDetailScreen
-from wonderland.tui.widgets import ChaseStrip
 from wonderland.utterance import Utterance
 
 
@@ -223,29 +231,42 @@ class LiveRunScreen(Screen[None]):
         self._last_open_thread_id: str | None = None
 
     def compose(self) -> ComposeResult:
+        # Three-column lazygit-shape layout. Each column has a
+        # top + bottom split.
+        #
+        #   LEFT:    Meetings (top)        |   Live call feed (bottom)
+        #   MIDDLE:  Transcript (top)      |   Body / Detail (bottom)
+        #   RIGHT:   Tabs: Artifacts /     |   Detail (per active tab)
+        #            Files / Phases (top)  |
+        #
+        # Selection cascades left-to-right: pick a meeting → transcript
+        # filters; pick an utterance → body shows; pick an artifact /
+        # file → detail shows. Live call feed is filtered to the
+        # selected meeting so it doubles as an aliveness signal during
+        # quiet rotations.
         yield Header(show_clock=False)
         with Vertical():
             yield Static("[b]Run watch[/b]", id="live-header")
             with Horizontal(id="live-main-row"):
-                # Left pane — meetings list (focusable).
+                # ─── LEFT COLUMN ───────────────────────────────────
                 with Vertical(id="left-pane"):
                     yield Static("[b]Meetings[/b]", id="meetings-label")
-                    # Ambient liveness strip — Alice chases the White
-                    # Rabbit. Ticks on each AgentActed event; idles
-                    # (dims) when no acts are landing. Cosmetic by
-                    # intent, diagnostic in effect: a frozen chase is
-                    # the cheapest "we're stuck" signal we have, much
-                    # earlier than Dodo's nudge ladder.
-                    yield ChaseStrip(id="meetings-chase")
                     yield DataTable(
                         id="live-meetings-table",
                         cursor_type="row",
                     )
-                # Right pane — transcript table (top), body preview
-                # (middle, updates as the user moves the transcript
-                # cursor), artifacts table (bottom). All filter to
-                # the meeting selected in the left pane.
-                with Vertical(id="right-pane"):
+                    yield Static(
+                        "[b]Live call feed[/b]  "
+                        "[dim](filtered to selected meeting)[/dim]",
+                        id="call-feed-label",
+                    )
+                    yield DataTable(
+                        id="live-call-feed-table",
+                        cursor_type="row",
+                        show_header=False,
+                    )
+                # ─── MIDDLE COLUMN ─────────────────────────────────
+                with Vertical(id="middle-pane"):
                     yield Static("[b]Transcript[/b]", id="transcript-label")
                     yield DataTable(
                         id="transcript-table",
@@ -254,22 +275,36 @@ class LiveRunScreen(Screen[None]):
                     yield Static("[b]Body[/b]", id="transcript-body-label")
                     with VerticalScroll(id="transcript-body-scroll"):
                         yield Static(id="transcript-body")
+                # ─── RIGHT COLUMN ──────────────────────────────────
+                with Vertical(id="right-pane"):
+                    with TabbedContent(
+                        initial="tab-artifacts",
+                        id="right-tabs",
+                    ):
+                        with TabPane("Artifacts", id="tab-artifacts"):
+                            yield DataTable(
+                                id="live-artifacts-table",
+                                cursor_type="row",
+                            )
+                        with TabPane("Files", id="tab-files"):
+                            yield Tree(
+                                "(no files touched yet)",
+                                id="live-files-tree",
+                            )
+                        with TabPane("Phases", id="tab-phases"):
+                            yield DataTable(
+                                id="live-phase-events-table",
+                                cursor_type="row",
+                            )
                     yield Static(
-                        "[b]Artifacts[/b]",
-                        id="artifacts-label",
+                        "[b]Detail[/b]",
+                        id="right-detail-label",
                     )
-                    yield DataTable(
-                        id="live-artifacts-table",
-                        cursor_type="row",
-                    )
-                    yield Static(
-                        "[b]Phase events[/b]",
-                        id="phase-events-label",
-                    )
-                    yield DataTable(
-                        id="live-phase-events-table",
-                        cursor_type="row",
-                    )
+                    with VerticalScroll(id="right-detail-scroll"):
+                        yield Static(
+                            "[dim](nothing selected)[/dim]",
+                            id="right-detail",
+                        )
             with Horizontal(id="live-controls-row"):
                 yield Button(
                     "⏸ Pause",
@@ -305,11 +340,29 @@ class LiveRunScreen(Screen[None]):
         ptable = self.query_one("#live-phase-events-table", DataTable)
         ptable.clear(columns=True)
         ptable.add_columns("Time", "Phase", "Event", "Agent", "Detail")
+        # Initialize live call feed — single-column ticker showing each
+        # LLM call as it lands. Filtered to the selected meeting so it
+        # doubles as an aliveness signal during quiet rotations (the
+        # operator-pain class "is anything happening?" goes away when
+        # there's a visible per-call tick).
+        cftable = self.query_one("#live-call-feed-table", DataTable)
+        cftable.clear(columns=True)
+        cftable.add_columns("⚡ When · Agent · Cost")
+        # Initialize files tree — populated on demand from
+        # tool-calls.jsonl as write/edit/delete tools fire. Empty
+        # state until the first tool call lands.
+        ftree = self.query_one("#live-files-tree", Tree)
+        ftree.clear()
+        ftree.show_root = False
         # Initial body preview + status bar — dashes until events flow.
         self.query_one("#transcript-body", Static).update(
             "[dim](no utterance selected)[/dim]"
         )
         self._render_status_bar()
+        # Track call-feed cursor + files-touched so periodic refresh
+        # only adds new entries / nodes instead of redrawing.
+        self._call_feed_cursor: int = 0
+        self._files_touched: dict[str, str] = {}  # path → indicator
 
         if self.handle is None and self.snapshot_dir is None:
             # No source bound — fall back to the T45 dummy data so
@@ -340,6 +393,12 @@ class LiveRunScreen(Screen[None]):
         # periods between calls). The set_interval handle auto-
         # cancels when the screen unmounts.
         self.set_interval(0.5, self._render_status_bar)
+        # Refresh the live call feed + files tab from disk-backed
+        # sources at a slightly slower cadence than the status bar.
+        # 1s gives the operator visible ticks without thrashing the
+        # filesystem on tool-calls.jsonl reads.
+        self.set_interval(1.0, self._refresh_call_feed)
+        self.set_interval(1.5, self._refresh_files_tab)
 
         table.focus()
 
@@ -431,15 +490,10 @@ class LiveRunScreen(Screen[None]):
 
         # Mark the chase strip alive on signal-of-life events. The
         # chase moves on a wall-clock timer (so motion continues
-        # during long deliberation calls); mark_alive only controls
-        # the dim/idle color state. UtteranceEmitted is the broader
-        # signal — catches legacy engagement-policy meetings (M1/M2/
-        # M2.5) where phase events don't fire.
-        if isinstance(event, (UtteranceEmitted, AgentActed)):
-            try:
-                self.query_one("#meetings-chase", ChaseStrip).mark_alive()
-            except Exception:  # noqa: BLE001 — chase widget is purely cosmetic
-                pass
+        # ChaseStrip removed in the live-watch rework — the live
+        # call feed (#live-call-feed-table) now serves as the
+        # aliveness signal, ticking per LLM call. The Static row
+        # of agents-running indicators is replaced by real activity.
 
         # Status bar updates after every event so the elapsed timer
         # stays current.
@@ -1031,6 +1085,197 @@ class LiveRunScreen(Screen[None]):
 
         self.app.push_screen(AbortConfirmModal(), _on_dismiss)
 
+    # ------------------------------------------------------------------ #
+    # Live call feed + Files tab refresh
+    # ------------------------------------------------------------------ #
+
+    def _refresh_call_feed(self) -> None:
+        """Append any new LLM telemetry entries to the call feed.
+
+        Reads ``runner.telemetry.entries`` directly. Each entry is a
+        single LLM call; we add a row per entry past the cursor. The
+        feed is filtered to the currently-selected meeting (or shows
+        all entries when ``All meetings`` is selected) so the operator
+        gets a real-time aliveness signal scoped to whatever they're
+        watching.
+        """
+        runner = (
+            getattr(self.handle, "_runner", None)
+            if self.handle is not None
+            else None
+        )
+        if runner is None or not hasattr(runner, "telemetry"):
+            return
+        entries = list(runner.telemetry.entries)
+        # No new entries since last tick — skip.
+        if len(entries) <= self._call_feed_cursor:
+            return
+        try:
+            table = self.query_one(
+                "#live-call-feed-table", DataTable
+            )
+        except Exception:  # noqa: BLE001
+            return
+        # Determine the active filter (selected meeting's thread_id)
+        # so we only show calls relevant to the current focus.
+        active_thread = self._selected_thread_id
+        for entry in entries[self._call_feed_cursor :]:
+            self._call_feed_cursor += 1
+            if active_thread and entry.thread_id != active_thread:
+                continue
+            ts = entry.timestamp.strftime("%H:%M:%S") if entry.timestamp else "—"
+            cost_str = _fmt_cost(entry.cost)
+            table.add_row(
+                f"{ts}  [b]{entry.agent}[/b]  [dim]{cost_str}[/dim]"
+            )
+        # Cap the visible rows so the table doesn't grow unbounded
+        # over a long run. 40 is enough for a couple of rotations'
+        # worth of context; older calls scroll off.
+        while table.row_count > 40:
+            table.remove_row(table.coordinate_to_cell_key((0, 0)).row_key)
+        if table.row_count > 0:
+            table.action_scroll_end()
+
+    def _refresh_files_tab(self) -> None:
+        """Build the Files tree from .wonderland/tool-calls.jsonl.
+
+        Each tool call writing/editing/deleting a file gets surfaced
+        with a git-gutter style indicator on the file's tree node:
+          - ``+`` new file (write_file path that didn't exist before
+            the run, approximated by first-touch in the run window)
+          - ``~`` modified (str_replace, insert, write_file overwrite)
+          - ``-`` deleted (delete_file)
+
+        Reads the project root from the runner. Best-effort — missing
+        tool-calls.jsonl just leaves the tree empty.
+        """
+        runner = (
+            getattr(self.handle, "_runner", None)
+            if self.handle is not None
+            else None
+        )
+        project_root = (
+            getattr(runner, "project_root", None)
+            if runner is not None
+            else None
+        )
+        if project_root is None:
+            return
+        tool_log = project_root / ".wonderland" / "tool-calls.jsonl"
+        if not tool_log.is_file():
+            return
+        # Parse the log fresh each refresh — cheap (<1k lines on
+        # typical runs) and avoids state drift if files get touched
+        # twice with different intent. Keys: path → indicator.
+        import json
+        touched: dict[str, str] = {}
+        try:
+            for line in tool_log.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                tool_name = rec.get("tool_name", "")
+                args = rec.get("args_summary") or {}
+                path = args.get("path") if isinstance(args, dict) else None
+                if not path:
+                    continue
+                if tool_name == "delete_file":
+                    touched[path] = "-"
+                elif tool_name in ("write_file",):
+                    # First-touch wins as "+" if not already touched;
+                    # subsequent write_file → "~" (modification).
+                    touched[path] = (
+                        "+" if path not in touched else "~"
+                    )
+                elif tool_name in ("str_replace", "insert"):
+                    if touched.get(path) != "+":
+                        touched[path] = "~"
+        except OSError:
+            return
+        # Only redraw when the touched-set actually changed.
+        if touched == self._files_touched:
+            return
+        self._files_touched = touched
+        try:
+            tree = self.query_one("#live-files-tree", Tree)
+        except Exception:  # noqa: BLE001
+            return
+        tree.clear()
+        if not touched:
+            tree.label = "(no files touched yet)"
+            return
+        tree.label = f"{len(touched)} file(s) touched"
+        # Build a flat list view: each file under the project root
+        # with its indicator + relative path. A real recursive
+        # directory tree comes in Phase 3; flat list is a useful
+        # MVP that surfaces the data without the layout complexity.
+        for path in sorted(touched.keys()):
+            indicator = touched[path]
+            color = (
+                "[green]+[/green]"
+                if indicator == "+"
+                else "[red]-[/red]"
+                if indicator == "-"
+                else "[yellow]~[/yellow]"
+            )
+            node = tree.root.add(
+                f"{color} {path}",
+                data={"path": path, "indicator": indicator},
+            )
+            node.allow_expand = False
+
+    def on_tree_node_highlighted(self, event) -> None:
+        """Render the highlighted file's contents in the right-detail
+        pane. Best-effort — errors render an inline message rather
+        than crashing the screen."""
+        if event.node.tree.id != "live-files-tree":
+            return
+        data = event.node.data
+        if data is None:
+            return
+        runner = (
+            getattr(self.handle, "_runner", None)
+            if self.handle is not None
+            else None
+        )
+        project_root = (
+            getattr(runner, "project_root", None)
+            if runner is not None
+            else None
+        )
+        if project_root is None:
+            return
+        target = project_root / data["path"]
+        try:
+            detail = self.query_one("#right-detail", Static)
+        except Exception:  # noqa: BLE001
+            return
+        if not target.is_file():
+            detail.update(
+                f"[dim]File no longer exists: {data['path']}[/dim]"
+            )
+            return
+        try:
+            content = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            detail.update(
+                f"[red]Read error: {exc}[/red]"
+            )
+            return
+        # Truncate large files so the detail pane stays usable; full
+        # syntax-highlighted diff view comes in Phase 3.
+        max_chars = 8000
+        if len(content) > max_chars:
+            content = content[:max_chars] + f"\n\n[dim]... ({len(content) - max_chars} more chars)[/dim]"
+        detail.update(
+            f"[b]{data['path']}[/b]  "
+            f"[dim](indicator: {data['indicator']})[/dim]\n\n"
+            f"{content}"
+        )
+
     def _refresh_pause_button_label(self) -> None:
         """Toggle the Pause/Resume button label based on the runner's
         current pause state. Called after pause()/resume() and
@@ -1076,21 +1321,23 @@ class LiveRunScreen(Screen[None]):
     def on_data_table_row_highlighted(
         self, event: DataTable.RowHighlighted
     ) -> None:
-        """Lazygit-style filtering via cursor moves. Three tables can
+        """Lazygit-style filtering via cursor moves. Tables that
         fire this event:
 
           - meetings table → re-filter transcript + artifacts to the
-            newly-selected meeting (or All-Meetings)
-          - transcript table → update the body preview to the
-            newly-selected utterance
-          - artifacts table → no-op (selecting an artifact doesn't
-            change anything; Enter opens the detail screen)
+            newly-selected meeting (or All-Meetings); also clear
+            the call feed so the operator's view of activity matches
+            the current selection
+          - transcript table → update the body preview
+          - artifacts table → render the highlighted artifact in
+            the right-detail pane
+          - phase-events table → render the phase event detail
         """
-        if event.data_table.id == "live-meetings-table":
+        tid = event.data_table.id
+        if tid == "live-meetings-table":
             row = event.cursor_row
             if row is None or row < 0:
                 return
-            # Row 0 is the All-Meetings pseudo-row.
             if row == 0:
                 new_selection = _ALL_MEETINGS
             else:
@@ -1102,11 +1349,88 @@ class LiveRunScreen(Screen[None]):
                 return
             self._selected_thread_id = new_selection
             self._refresh_panes_for_selection()
-        elif event.data_table.id == "transcript-table":
+            # Clear the call feed since it's filtered to the active
+            # meeting — old entries from the previous filter aren't
+            # relevant to the new selection.
+            try:
+                self.query_one(
+                    "#live-call-feed-table", DataTable
+                ).clear(columns=False)
+            except Exception:  # noqa: BLE001
+                pass
+            self._call_feed_cursor = 0
+            self._refresh_call_feed()
+        elif tid == "transcript-table":
             row = event.cursor_row
             if row is None:
                 return
             self._update_body_preview(row)
+        elif tid == "live-artifacts-table":
+            row = event.cursor_row
+            artifacts = self._meeting_artifacts.get(
+                self._selected_thread_id, []
+            )
+            if row is None or not (0 <= row < len(artifacts)):
+                return
+            self._render_artifact_detail(artifacts[row])
+        elif tid == "live-phase-events-table":
+            row = event.cursor_row
+            if row is None:
+                return
+            self._render_phase_event_detail(row)
+
+    def _render_artifact_detail(self, artifact) -> None:
+        """Render the highlighted artifact's metadata + body in the
+        right-detail pane. Falls back to ``str(artifact)`` if the
+        ArtifactBrowser-shape attributes aren't present."""
+        try:
+            detail = self.query_one("#right-detail", Static)
+        except Exception:  # noqa: BLE001
+            return
+        title = getattr(artifact, "title", "") or "(untitled)"
+        kind = getattr(artifact, "kind", "?")
+        body = getattr(artifact, "body", "") or ""
+        path = getattr(artifact, "path", "")
+        max_chars = 4000
+        if len(body) > max_chars:
+            body = body[:max_chars] + f"\n\n[dim]... ({len(body) - max_chars} more chars; press Enter to open full)[/dim]"
+        path_line = (
+            f"\n[dim]Path: {path}[/dim]\n" if path else "\n"
+        )
+        detail.update(
+            f"[b]{kind}[/b]: {title}{path_line}\n{body}"
+        )
+
+    def _render_phase_event_detail(self, row_idx: int) -> None:
+        """Phase events don't carry a rich body; surface the row
+        contents in the detail pane as a structured block."""
+        try:
+            ptable = self.query_one(
+                "#live-phase-events-table", DataTable
+            )
+            detail = self.query_one("#right-detail", Static)
+        except Exception:  # noqa: BLE001
+            return
+        if row_idx is None or row_idx < 0 or row_idx >= ptable.row_count:
+            return
+        n_cols = len(ptable.columns) if hasattr(ptable, "columns") else 0
+        cells = [
+            str(ptable.get_cell_at((row_idx, c)))
+            for c in range(n_cols)
+        ]
+        if not cells:
+            detail.update("[dim](no phase event)[/dim]")
+            return
+        detail.update(
+            "[b]Phase event[/b]\n\n"
+            + "\n".join(
+                f"[dim]{label}:[/dim] {val}"
+                for label, val in zip(
+                    ("Time", "Phase", "Event", "Agent", "Detail"),
+                    cells,
+                )
+            )
+        )
 
 
 __all__ = ["LiveRunScreen"]
