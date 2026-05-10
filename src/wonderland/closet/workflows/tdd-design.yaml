@@ -287,9 +287,16 @@ meetings:
         kinds: [feature]
 
     transition_iteration_to: in_design
+    # Single-phase with exit_condition: ticket. As soon as Rabbit
+    # ships the first ticket, the meeting can exit; Alice's
+    # grounding pushback shows up as concerns during the rotations,
+    # not as a separate phase. Squathero already came in well under
+    # budget at this meeting (\$0.02-\$0.08 per feature) so the
+    # rotation budget tightening is precautionary, not a cost-cut.
     phases:
       - name: decompose
-        max_rotations: 3
+        max_rotations: 2
+        exit_condition_artifact: ticket
 
   # ─────────────────────────────────────────────────────────────────
   # M4 — Architecture + security. Cat ADR + Queen ruling, both
@@ -361,12 +368,20 @@ meetings:
         kinds: [feature]
       - from: decomposition
         kinds: [ticket]
+    # exit_condition mirrored to discussion + tightened rotations.
+    # Squathero produced 11 ADRs at this meeting for \$1.48 (≈3.7×
+    # the \$0.40 budget) — Cat kept shipping ADRs because nothing
+    # exits the meeting. With exit on first ADR, Cat ships one
+    # well-grounded architectural commitment; further architectural
+    # decisions come from operator-driven re-runs of M4 rather than
+    # one mega-meeting that produces 11 overlapping ADRs.
     phases:
       - name: discussion
-        max_rotations: 3
-        team_groupings: [[cheshire_cat, queen_of_hearts, alice]]
-      - name: commit
         max_rotations: 2
+        team_groupings: [[cheshire_cat, queen_of_hearts, alice]]
+        exit_condition_artifact: adr
+      - name: commit
+        max_rotations: 1
         team_groupings: [[cheshire_cat, queen_of_hearts, alice]]
         exit_condition_artifact: adr
 
@@ -473,11 +488,18 @@ meetings:
         kinds: [adr, ruling]
 
     transition_iteration_to: designed
+    # Same fix as M4/M6/M7/M8: exit_condition mirrored to discussion
+    # so the meeting ends as soon as the Tweedles ship a contract
+    # note instead of rotating through max_rotations regardless.
+    # Squathero ran 7 parallel M5 lanes at \$0.50-\$0.66 each
+    # (≈1.5× the \$0.40 budget) — fix should bring most lanes to
+    # the budget ceiling.
     phases:
       - name: discussion
-        max_rotations: 3
-        team_groupings: [[tweedledee, tweedledum, alice]]
-      - name: commit
         max_rotations: 2
+        team_groupings: [[tweedledee, tweedledum, alice]]
+        exit_condition_artifact: contract_note
+      - name: commit
+        max_rotations: 1
         team_groupings: [[tweedledee, tweedledum, alice]]
         exit_condition_artifact: contract_note

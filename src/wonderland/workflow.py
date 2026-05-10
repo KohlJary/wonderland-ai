@@ -2236,7 +2236,6 @@ async def _convene_one(
         header = f"**{meeting.label}.**"
     convenor_directive = f"{header}\n\n{convenor_directive}"
 
-    calls_before = runner.telemetry.call_count
     artifact_count_before = len(capture.utterances)
     meeting_start = time.monotonic()
 
@@ -2318,7 +2317,15 @@ async def _convene_one(
         runner.mark_thread_complete(thread_id, f"meeting ended via {outcome}")
 
     elapsed = time.monotonic() - meeting_start
-    calls_delta = runner.telemetry.call_count - calls_before
+    # calls_delta uses calls_for_thread (per-thread) instead of the
+    # global call_count delta, otherwise pipeline-mode parallel lanes
+    # contaminate each other's counts: when ticket-A's M7 finishes,
+    # call_count - calls_before includes calls that tickets B and C
+    # made concurrently during ticket-A's window, inflating the
+    # reported call count by 3-4× (the live-watch's "454 calls" rows
+    # on meetings that actually made ~80 LLM calls). Pairs cleanly
+    # with cost_delta which already used the per-thread accumulator.
+    calls_delta = runner.telemetry.calls_for_thread(thread_id)
     cost_delta = runner.telemetry.cost_for_thread(thread_id)
     new_utterances = capture.utterances[artifact_count_before:]
     kinds_count: dict[str, int] = {}

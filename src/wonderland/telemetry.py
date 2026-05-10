@@ -136,6 +136,7 @@ class Telemetry:
     entries: list[TelemetryEntry] = field(default_factory=list)
     _total_cost: float = 0.0
     _per_thread_cost: dict[str, float] = field(default_factory=dict)
+    _per_thread_calls: dict[str, int] = field(default_factory=dict)
 
     def record_for(self, agent: str):
         """Return a callback that, when invoked with TokenUsage, records it.
@@ -164,6 +165,9 @@ class Telemetry:
             self._per_thread_cost[thread_id] = (
                 self._per_thread_cost.get(thread_id, 0.0) + cost
             )
+            self._per_thread_calls[thread_id] = (
+                self._per_thread_calls.get(thread_id, 0) + 1
+            )
         return entry
 
     @property
@@ -181,6 +185,19 @@ class Telemetry:
         incrementally-updated dict, not a scan over entries.
         """
         return self._per_thread_cost.get(thread_id, 0.0)
+
+    def calls_for_thread(self, thread_id: str) -> int:
+        """Return cumulative LLM-call count attributed to ``thread_id``.
+
+        Counterpart to ``cost_for_thread`` — used by MeetingEnd events
+        to report the right call count per meeting in pipeline mode.
+        Without this, ``calls_delta`` would be computed against the
+        global ``call_count`` and inflated by other concurrent lanes'
+        calls (the live-watch's "454 calls" rows on a meeting that
+        actually made ~80 LLM calls). Returns 0 for unknown thread_id.
+        O(1) — incrementally-updated dict, not a scan over entries.
+        """
+        return self._per_thread_calls.get(thread_id, 0)
 
     def per_agent_summary(self) -> dict[str, dict[str, int | float]]:
         """Aggregate by agent: calls / input / output / cache_w / cache_r / cost."""

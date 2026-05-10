@@ -1288,9 +1288,13 @@ class FakeEvent:
 class FakeTelemetry:
     call_count: int = 0
     _per_thread_cost: dict[str, float] = field(default_factory=dict)
+    _per_thread_calls: dict[str, int] = field(default_factory=dict)
 
     def cost_for_thread(self, thread_id: str) -> float:
         return self._per_thread_cost.get(thread_id, 0.0)
+
+    def calls_for_thread(self, thread_id: str) -> int:
+        return self._per_thread_calls.get(thread_id, 0)
 
 
 class FakeRunner:
@@ -1350,11 +1354,14 @@ class FakeRunner:
             if ev.kind == "utterance":
                 self.telemetry.call_count += 1
                 self.total_cost += 0.10
-                # Mirror per-thread cost so cost_for_thread-based
-                # budget checks see the same accounting the global
-                # counter does.
+                # Mirror per-thread cost AND calls so cost_for_thread
+                # / calls_for_thread budget + reporting see the same
+                # accounting the global counter does.
                 self.telemetry._per_thread_cost[thread] = (
                     self.telemetry._per_thread_cost.get(thread, 0.0) + 0.10
+                )
+                self.telemetry._per_thread_calls[thread] = (
+                    self.telemetry._per_thread_calls.get(thread, 0) + 1
                 )
             yield ev
             await asyncio.sleep(0)
