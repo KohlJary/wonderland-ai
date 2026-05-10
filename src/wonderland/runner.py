@@ -441,6 +441,7 @@ class Runner:
                 llm=llm_factory("white_rabbit", telemetry),
                 ticket_registry=TicketRegistry(project_root),
                 feature_registry=FeatureRegistry(project_root),
+                tools=shared_tools,
             ),
             "mad_hatter": MadHatter(
                 memory=memories["mad_hatter"],

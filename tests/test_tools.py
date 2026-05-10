@@ -246,6 +246,7 @@ def test_tool_definitions_returns_full_set() -> None:
     assert names == {
         "read_file",
         "write_file",
+        "delete_file",
         "str_replace",
         "insert",
         "list_files",
@@ -656,6 +657,49 @@ def test_str_replace_via_execute_dispatch(tmp_path: Path) -> None:
     )
     assert "applied" in result
     assert p.read_text() == "a = 42\n"
+
+
+def test_delete_file_removes_file(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "doomed.md"
+    p.write_text("content")
+    result = tools.delete_file("doomed.md")
+    assert "deleted" in result
+    assert not p.exists()
+
+
+def test_delete_file_idempotent_on_missing(tmp_path: Path) -> None:
+    """An agent calling delete_file on a path that doesn't exist
+    shouldn't crash — returns 'not found' so the LLM gets useful
+    feedback without the meeting flow erroring out."""
+    tools = Tools(tmp_path)
+    result = tools.delete_file("never-existed.md")
+    assert "no file at" in result.lower() or "not found" in result.lower()
+
+
+def test_delete_file_refuses_directory(tmp_path: Path) -> None:
+    """Sandbox-level guard: deleting a directory could cascade-prune
+    entire feature/ticket trees by accident. Force the agent to
+    name individual files."""
+    tools = Tools(tmp_path)
+    (tmp_path / "subdir").mkdir()
+    with pytest.raises(ToolError, match="directory"):
+        tools.delete_file("subdir")
+
+
+def test_delete_file_via_execute_dispatch(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.md"
+    p.write_text("doomed")
+    result = tools.execute("delete_file", {"path": "x.md"})
+    assert "deleted" in result
+    assert not p.exists()
+
+
+def test_delete_file_sandbox_blocks_escape(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    with pytest.raises(ToolError, match="escape"):
+        tools.delete_file("../outside.md")
 
 
 def test_insert_after_line_n(tmp_path: Path) -> None:

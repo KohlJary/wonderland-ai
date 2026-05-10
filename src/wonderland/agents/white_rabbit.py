@@ -323,6 +323,7 @@ class WhiteRabbit(WonderlandAgent):
         llm: LLMClient | None = None,
         ticket_registry: TicketRegistry | None = None,
         feature_registry: FeatureRegistry | None = None,
+        tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(RABBIT_NAME, root=constitutions_root)
@@ -333,6 +334,10 @@ class WhiteRabbit(WonderlandAgent):
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._ticket_registry = ticket_registry
         self._feature_registry = feature_registry
+        # tools is forwarded to the base Agent which handles tool-use
+        # loops in deliberate(); needed for M3.5 consolidation where
+        # Rabbit prunes duplicate tickets via delete_file.
+        self._tools = tools
 
     @property
     def ticket_registry(self) -> TicketRegistry | None:

@@ -299,6 +299,100 @@ meetings:
         exit_condition_artifact: ticket
 
   # ─────────────────────────────────────────────────────────────────
+  # M3.5 — Consolidation per feature. Rabbit + Caterpillar review the
+  # decomposed tickets, prune duplicates, and assign explicit blocked-
+  # by dependencies. Right time to do this is immediately after M3
+  # while the tickets are fresh in mind, and before M4's architecture
+  # work which would otherwise be done against an over-decomposed
+  # ticket set.
+  #
+  # Cuts downstream cost: a feature decomposed into 13 overlapping
+  # tickets in M3 (squathero's migration feature, obol's cash-flow
+  # monolith) becomes 5-7 right-sized tickets here. M6/M7/M8 then
+  # iterate over the smaller set, which dominates implementation
+  # spend. Pays for itself ~3-5×.
+  #
+  # Mechanism: agents have ``delete_file`` tool access to drop
+  # duplicate ticket files directly, and re-emit ``ticket`` artifacts
+  # with updated ``Blocked by:`` lines for surviving tickets. No new
+  # artifact kind — the consolidation IS the resulting on-disk
+  # ticket set.
+  # ─────────────────────────────────────────────────────────────────
+  - id: consolidation
+    label: M3.5
+    name: A Caterpillar's Edit
+    goal: |
+      consolidate this feature's tickets — merge overlaps, prune
+      duplicates, and assign explicit blocked-by dependencies so
+      M7 can serialize implementations of dependent tickets
+    roster: [white_rabbit, caterpillar]
+    per_item: feature
+    iterate_only_in_states: [in_design]
+    parallel: true
+    meeting_budget: 0.30
+    convenor_directive: |
+      **Rabbit and Caterpillar — consolidate this feature's tickets.**
+      M3 just decomposed this feature into a ticket set. Two failure
+      modes are common at M3: over-decomposition (one capability
+      sliced into 8 micro-tickets that should be 3) and missing
+      dependencies (no explicit ``Blocked by:`` so M7 implementations
+      race on shared foundations). This meeting fixes both, with
+      Rabbit and Caterpillar each playing to their tools.
+
+      **Rabbit — re-emit the ticket set you want.** For tickets that
+      need merge or scope revision: ship a new ``ticket`` decision
+      with the merged content (combined acceptance, broader
+      description, union of sources). For tickets whose dependencies
+      need updating: re-emit them with the new ``dependencies.blocked_by``
+      list. The substrate keeps the new ticket on disk; Caterpillar
+      handles the cleanup of the old ones.
+
+      **Crucially, assign ``Blocked by:`` dependencies.** Walk the
+      surviving tickets and for each one ask: which other tickets'
+      implementations does this need on disk before it can start?
+      A ticket that calls ``apply_migrations()`` is blocked_by the
+      ticket that defines it. Be explicit — M7 reads these to
+      serialize dependent implementations.
+
+      **Caterpillar — prune duplicates with ``delete_file``.** You
+      have the file-deletion tool; Rabbit doesn't. After Rabbit
+      re-emits a consolidated ticket, the OLD ticket file (the
+      pre-merge slug) is still on disk. Use ``delete_file`` on
+      ``.wonderland/tickets/<old-ticket-file>.md`` to remove it.
+      Same for tickets that should drop entirely without replacement
+      (genuine duplicates Rabbit didn't re-emit).
+
+      Verify before deleting: a ticket whose slug appears as a
+      ``Sources:`` entry on a still-surviving sibling is fair game.
+      A ticket whose acceptance criteria a sibling doesn't actually
+      absorb is NOT — push back as a concern instead of pruning.
+
+      **Aim for 3-7 tickets per feature after consolidation.** A
+      feature with 8+ tickets after M3.5 is probably actually two
+      features that should split back at M2 (flag as a concern; M2
+      is closed but the operator can re-run design).
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      # Existing tickets for this feature come from disk via the
+      # seed-fallback. The lane-scoping in resolve_seeds ensures
+      # we see only THIS feature's tickets.
+      - from: any
+        kinds: [feature, ticket]
+
+    # Single-phase with the same exit-on-artifact + tighter rotations
+    # pattern as the rest of the workflow. Exit on ticket emission —
+    # if Rabbit's first emission is the consolidated set, no need
+    # to keep rotating. (Multi-emission cases — Rabbit drops a few
+    # tickets THEN re-emits with deps — fall through to max
+    # rotations cleanly.)
+    phases:
+      - name: consolidate
+        max_rotations: 2
+        exit_condition_artifact: ticket
+
+  # ─────────────────────────────────────────────────────────────────
   # M4 — Architecture + security. Cat ADR + Queen ruling, both
   # grounded in concrete features + tickets. Single project-wide
   # meeting; doesn't transition individual features (architecture

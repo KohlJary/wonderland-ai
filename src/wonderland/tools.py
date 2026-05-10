@@ -334,6 +334,34 @@ class Tools:
             raise ToolError(f"write failed for {path}: {exc}") from exc
         return f"wrote {len(content)} chars to {path}"
 
+    def delete_file(self, path: str) -> str:
+        """Delete a file from the project tree.
+
+        Sandboxed to project_root via _resolve; refuses directories.
+        Useful for pruning duplicate artifacts (e.g. Rabbit dropping
+        merged tickets during M3.5 consolidation, or Caterpillar
+        dropping orphaned implementation files in M8 review).
+
+        Idempotent on missing files: returns a "not found" message
+        rather than raising, so an agent that wasn't sure whether
+        the file existed doesn't have to pre-check with read_file.
+        """
+        full = self._resolve(path)
+        if full.is_dir():
+            raise ToolError(
+                f"path is a directory, not a file: {path}; "
+                f"delete_file refuses directory deletes"
+            )
+        if not full.exists():
+            return f"no file at {path} (already gone or never existed)"
+        try:
+            full.unlink()
+        except OSError as exc:
+            raise ToolError(
+                f"delete failed for {path}: {exc}"
+            ) from exc
+        return f"deleted {path}"
+
     def str_replace(self, path: str, old: str, new: str) -> str:
         """Replace exactly one occurrence of ``old`` with ``new`` in
         ``path``. Token-cheap diff primitive (P10 / T67 / roadmap
@@ -762,6 +790,29 @@ class Tools:
                 },
             },
             {
+                "name": "delete_file",
+                "description": (
+                    "Delete a file from the project tree. Sandboxed "
+                    "to project_root; refuses directories. Idempotent "
+                    "on missing files (returns 'not found' rather "
+                    "than failing). Use this for pruning duplicates — "
+                    "e.g. dropping merged tickets during M3.5 "
+                    "consolidation, or dropping orphaned files during "
+                    "a review pass. Be conservative: deletion is "
+                    "irreversible within a run."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path relative to the project root.",
+                        },
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
                 "name": "str_replace",
                 "description": (
                     "Replace exactly one occurrence of `old` with `new` in "
@@ -1011,6 +1062,8 @@ class Tools:
                 result_str = self.write_file(
                     tool_input["path"], tool_input["content"]
                 )
+            elif tool_name == "delete_file":
+                result_str = self.delete_file(tool_input["path"])
             elif tool_name == "str_replace":
                 result_str = self.str_replace(
                     tool_input["path"],
