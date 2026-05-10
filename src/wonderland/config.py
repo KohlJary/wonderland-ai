@@ -54,8 +54,23 @@ class AnthropicConfig:
 
 
 @dataclass
+class UIConfig:
+    """User-level UI preferences. Currently just the welcome-screen
+    toggle; expand as the TUI grows other persistent preferences
+    (default theme, default project, etc.).
+
+    show_welcome: when True, the welcome modal fires on app startup.
+    Operators can dismiss it permanently via the modal's checkbox or
+    re-enable it from Settings.
+    """
+
+    show_welcome: bool = True
+
+
+@dataclass
 class WonderlandConfig:
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
+    ui: UIConfig = field(default_factory=UIConfig)
 
 
 def load_config(*, path: Path | None = None) -> WonderlandConfig:
@@ -69,10 +84,14 @@ def load_config(*, path: Path | None = None) -> WonderlandConfig:
         return WonderlandConfig()
     raw = json.loads(target.read_text(encoding="utf-8"))
     anthropic_raw = raw.get("anthropic") or {}
+    ui_raw = raw.get("ui") or {}
     return WonderlandConfig(
         anthropic=AnthropicConfig(
             api_key=anthropic_raw.get("api_key"),
             model=anthropic_raw.get("model"),
+        ),
+        ui=UIConfig(
+            show_welcome=ui_raw.get("show_welcome", True),
         ),
     )
 
@@ -81,5 +100,8 @@ def save_config(config: WonderlandConfig, *, path: Path | None = None) -> None:
     """Write the config to disk, creating the parent directory if needed."""
     target = path or config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"anthropic": asdict(config.anthropic)}
+    payload = {
+        "anthropic": asdict(config.anthropic),
+        "ui": asdict(config.ui),
+    }
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

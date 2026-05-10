@@ -25,10 +25,11 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Input, Label, Static
+from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, Static
 
 from wonderland.config import (
     AnthropicConfig,
+    UIConfig,
     WonderlandConfig,
     config_path,
     load_config,
@@ -123,6 +124,21 @@ class SettingsScreen(Screen[None]):
                     id="model-input",
                 )
 
+            # UI preferences. Currently just the welcome-screen
+            # toggle; additional preferences slot in here as the TUI
+            # grows them.
+            yield Static(
+                "[b]Welcome screen[/b]\n"
+                "[dim]The first-run onboarding modal. Re-enable to "
+                "see it again on next launch.[/dim]",
+                id="settings-ui-label",
+            )
+            yield Checkbox(
+                "Show welcome screen on startup",
+                value=self._config.ui.show_welcome,
+                id="show-welcome-checkbox",
+            )
+
             with Horizontal(id="settings-actions"):
                 yield Button(
                     "💾 Save (Ctrl+S)",
@@ -147,6 +163,9 @@ class SettingsScreen(Screen[None]):
     def action_save(self) -> None:
         new_key = self.query_one("#api-key-input", Input).value.strip()
         new_model = self.query_one("#model-input", Input).value.strip()
+        show_welcome = self.query_one(
+            "#show-welcome-checkbox", Checkbox
+        ).value
 
         # Updated config: keep existing key when the input was left
         # blank (the placeholder hint says so explicitly). Update
@@ -160,6 +179,7 @@ class SettingsScreen(Screen[None]):
                 api_key=api_key_to_save,
                 model=model_to_save,
             ),
+            ui=UIConfig(show_welcome=show_welcome),
         )
 
         try:

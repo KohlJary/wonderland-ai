@@ -81,7 +81,10 @@ def test_save_writes_json_to_target_path(tmp_path: Path) -> None:
         "anthropic": {
             "api_key": "sk-ant-test",
             "model": "claude-haiku-4-5-20251001",
-        }
+        },
+        "ui": {
+            "show_welcome": True,
+        },
     }
 
 

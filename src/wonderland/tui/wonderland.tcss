@@ -1058,3 +1058,75 @@ QuitConfirmModal {
     margin: 0 1;
     min-width: 14;
 }
+
+/* WelcomeModal — first-run onboarding. Bigger footprint than the
+ * other confirmation modals because there's actual content to read.
+ * Centered, generous padding, distinct accent border so it reads as
+ * "narrative content" not "are-you-sure" friction. */
+
+WelcomeModal {
+    align: center middle;
+}
+
+#welcome-modal-root {
+    width: 80%;
+    max-width: 90;
+    height: auto;
+    max-height: 90%;
+    background: $surface;
+    border: round $accent;
+    padding: 1 2;
+}
+
+#welcome-modal-title {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 0;
+    text-align: center;
+    text-style: bold;
+}
+
+#welcome-modal-page-indicator {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+#welcome-modal-body {
+    height: auto;
+    padding: 1 1;
+    margin-bottom: 1;
+    color: $foreground;
+}
+
+#welcome-modal-key-row {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#welcome-modal-key-row Static {
+    width: 12;
+    padding-top: 1;
+}
+
+#welcome-modal-key-row Input {
+    width: 1fr;
+}
+
+#welcome-modal-dont-show {
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#welcome-modal-actions {
+    height: auto;
+    padding: 1 0;
+    align: center middle;
+}
+
+#welcome-modal-actions Button {
+    margin: 0 1;
+    min-width: 18;
+}

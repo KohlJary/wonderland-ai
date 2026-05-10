@@ -84,7 +84,7 @@ def test_discover_snapshots_skips_invalid_directories(tmp_path: Path) -> None:
 async def test_app_launches_with_default_root() -> None:
     """The app should start, push the ProjectLibraryScreen (P11), and
     not crash. Doesn't validate rendering — just exit-cleanly-on-quit."""
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         # The project library is the new home (was SnapshotLibrary
         # pre-P11; reachable via 'L' from the new home).
@@ -94,7 +94,7 @@ async def test_app_launches_with_default_root() -> None:
 
 async def test_app_launches_with_custom_root(tmp_path: Path) -> None:
     """A run with a snapshot-less root should still launch (just empty)."""
-    app = WonderlandApp(snapshot_root=tmp_path)
+    app = WonderlandApp(snapshot_root=tmp_path, show_welcome=False)
     async with app.run_test() as pilot:
         assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("q")
@@ -110,7 +110,7 @@ async def test_home_view_action_menu_has_analyses_entry() -> None:
 
     from wonderland.tui.screens.analyses import AnalysesScreen
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -146,7 +146,7 @@ async def test_analyses_screen_a_keybind_opens_it() -> None:
     `c` for cast and `S` for settings."""
     from wonderland.tui.screens.analyses import AnalysesScreen
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("a")
@@ -173,7 +173,7 @@ async def test_home_view_action_menu_has_settings_entry(
         lambda: tmp_path / "config.json",
     )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -216,7 +216,7 @@ async def test_settings_screen_persists_api_key(
         lambda: fake_config,
     )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(SettingsScreen())
@@ -256,7 +256,7 @@ async def test_new_run_screen_pushes_settings_when_key_missing(
     # picker (T71) and exercise the API-key check directly.
     (tmp_path / "src").mkdir()
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=tmp_path))
@@ -294,7 +294,7 @@ async def test_home_view_action_menu_routes_new_run_and_cast() -> None:
 
     from wonderland.tui.screens.cast import CastBrowserScreen
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -335,7 +335,7 @@ async def test_home_view_action_menu_routes_new_run_and_cast() -> None:
 
 async def test_app_back_action_is_noop_at_root() -> None:
     """Pressing Escape at the library screen shouldn't crash."""
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.press("escape")
         # Still on library screen — back is no-op when nothing is pushed
@@ -355,7 +355,7 @@ async def test_vim_keys_navigate_snapshot_library() -> None:
     snapshots = _discover_snapshots(ANALYSES_DATA)
     if len(snapshots) < 2:
         pytest.skip("need at least 2 snapshots to test movement")
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # Navigate from project library → snapshot library.
@@ -393,7 +393,7 @@ async def test_opening_a_snapshot_pushes_run_summary() -> None:
     snapshots = _discover_snapshots(ANALYSES_DATA)
     if not snapshots:
         pytest.skip("no snapshots available to drill into")
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # Navigate from project library → snapshot library.
@@ -423,7 +423,7 @@ async def test_run_summary_focuses_meetings_table_by_default() -> None:
         pytest.skip("v6 banner snapshot not present")
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # Open the v6 banner snapshot directly via the API rather than
@@ -444,7 +444,7 @@ async def test_pressing_enter_on_meeting_opens_meeting_detail() -> None:
     should drill into MeetingDetailScreen for the selected meeting."""
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(RunSummaryScreen(_V6_BANNER))
@@ -468,7 +468,7 @@ async def test_meeting_detail_renders_utterances() -> None:
         pytest.skip("v6 banner snapshot not present")
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(RunSummaryScreen(_V6_BANNER))
@@ -498,7 +498,7 @@ async def test_meeting_detail_preview_updates_on_cursor_move() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # Open a meeting with multiple utterances. M3 (contract-
@@ -535,7 +535,7 @@ async def test_a_key_opens_artifact_browser() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(RunSummaryScreen(_V6_BANNER))
@@ -558,7 +558,7 @@ async def test_artifact_browser_preview_updates_on_cursor_move() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ArtifactBrowserScreen(_V6_BANNER))
@@ -583,7 +583,7 @@ async def test_artifact_browser_drills_into_detail() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ArtifactBrowserScreen(_V6_BANNER))
@@ -610,7 +610,7 @@ async def test_meeting_detail_a_opens_meeting_scoped_artifact_browser() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(RunSummaryScreen(_V6_BANNER))
@@ -674,7 +674,7 @@ async def test_pressing_enter_opens_utterance_modal() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(RunSummaryScreen(_V6_BANNER))
@@ -706,7 +706,7 @@ async def test_speaker_filter_cycles_through_meeting_speakers() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # M4 (The Mad Tea Party) has all four roster members emitting
@@ -759,7 +759,7 @@ async def test_theme_starts_at_wonderland_default() -> None:
     """The app should boot with the Wonderland tea-party theme."""
     from wonderland.tui.themes import DEFAULT_THEME_NAME
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app.theme == DEFAULT_THEME_NAME
@@ -772,7 +772,7 @@ async def test_t_cycles_through_wonderland_themes() -> None:
     from wonderland.tui.themes import WONDERLAND_THEMES
 
     names = [t.name for t in WONDERLAND_THEMES]
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app.theme == names[0]
@@ -829,7 +829,7 @@ async def test_live_run_screen_mounts_with_dummy_data() -> None:
     with the hand-built dummy data when no snapshot is bound."""
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(LiveRunScreen())
@@ -947,7 +947,7 @@ async def test_live_run_screen_phase_events_pane_populates_via_stream() -> None:
             directive="test",
         )
 
-        app = WonderlandApp()
+        app = WonderlandApp(show_welcome=False)
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = LiveRunScreen(handle=handle)
@@ -974,7 +974,7 @@ async def test_live_run_screen_phase_events_pane_populates_via_stream() -> None:
 async def test_live_run_screen_auto_sentinel_cycle_advances_through_states() -> None:
     """The T keybind cycles through: off → 15m → 5m → 1m → instant
     → off. Status bar shows the current state when on."""
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = LiveRunScreen()
@@ -1014,7 +1014,7 @@ async def test_live_run_screen_auto_sentinel_instant_skips_modal() -> None:
     from wonderland import AgentIdentity, SpeechAct, Utterance, UtteranceContent
     from wonderland.utterance import operator_identity
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = LiveRunScreen()
@@ -1046,7 +1046,7 @@ async def test_ask_user_modal_auto_dismiss_after_timeout() -> None:
 
     from wonderland.tui.screens.ask_user_modal import AskUserModal
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
 
@@ -1088,7 +1088,7 @@ async def test_live_run_screen_phase_events_pane_populates() -> None:
         RotationCompleted,
     )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = LiveRunScreen()
@@ -1202,7 +1202,7 @@ async def test_live_run_screen_streams_v6_banner() -> None:
         pytest.skip("v6 banner snapshot not present")
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # speed=1e6 + dwell=0 strips all timing — drain instantly.
@@ -1239,7 +1239,7 @@ async def test_live_run_screen_streams_v3_per_item_snapshot() -> None:
         pytest.skip("v3 snapshot not present")
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(LiveRunScreen(v3, speed=1e6, max_dwell_seconds=0.0))
@@ -1275,7 +1275,7 @@ async def test_live_run_screen_body_preview_updates_on_transcript_cursor() -> No
         pytest.skip("v6 banner snapshot not present")
     from textual.widgets import DataTable, Static
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(
@@ -1313,7 +1313,7 @@ async def test_live_run_screen_filtering_by_meeting_selection() -> None:
         pytest.skip("v6 banner snapshot not present")
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(
@@ -1360,7 +1360,7 @@ async def test_live_run_screen_artifacts_pane_populates() -> None:
         pytest.skip("v6 banner snapshot not present")
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(
@@ -1402,7 +1402,7 @@ async def test_live_run_screen_per_meeting_costs_match_run_log() -> None:
     if not (v3 / "wonderland-snapshot").is_dir():
         pytest.skip("v3 snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(LiveRunScreen(v3, speed=1e6, max_dwell_seconds=0.0))
@@ -1453,7 +1453,7 @@ async def test_live_run_screen_transcript_populated_after_stream() -> None:
     handle = HistoricalRunHandle(_V6_BANNER)
     expected_utterances = sum(1 for _ in handle.utterances())
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(
@@ -1477,7 +1477,7 @@ async def test_live_run_screen_vim_navigation_works() -> None:
     comes from WonderlandApp app-level bindings)."""
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(LiveRunScreen())
@@ -1504,7 +1504,7 @@ async def test_new_run_screen_mounts_with_bundled_presets() -> None:
     bundled presets."""
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen())
@@ -1529,7 +1529,7 @@ async def test_new_run_screen_blank_preset_clears_editors() -> None:
     can start fresh. Pre-fills from another preset don't persist."""
     from textual.widgets import DataTable, TextArea
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen())
@@ -1568,7 +1568,7 @@ async def test_new_run_screen_description_is_editable() -> None:
     a custom directive as a preset)."""
     from textual.widgets import TextArea
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen())
@@ -1598,7 +1598,7 @@ async def test_new_run_screen_enter_advances_through_form() -> None:
         TextArea,
     )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen())
@@ -1674,7 +1674,7 @@ async def test_new_run_screen_go_button_triggers_launch_flow(
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=Path("/tmp")))
@@ -1717,7 +1717,7 @@ async def test_launch_confirmation_dismisses_yes_no() -> None:
         LaunchConfirmationScreen,
     )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         results: list = []
@@ -1784,7 +1784,7 @@ async def test_live_run_screen_accepts_handle_directly() -> None:
 
     handle = HistoricalRunHandle(_V6_BANNER)
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(LiveRunScreen(handle=handle))
@@ -1817,7 +1817,7 @@ async def test_new_run_screen_action_go_pushes_confirmation_modal(
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=Path("/tmp")))
@@ -1865,7 +1865,7 @@ async def test_new_run_screen_action_go_pushes_skeleton_picker_for_bare_root(
     nonexistent = tmp_path / "this-does-not-exist"
     assert not nonexistent.exists()
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=tmp_path))
@@ -1915,7 +1915,7 @@ async def test_new_run_screen_action_go_blocks_without_api_key(
     # picker (T71) and exercise the API-key check directly.
     (tmp_path / "src").mkdir()
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=tmp_path))
@@ -1959,7 +1959,7 @@ async def test_new_run_screen_save_as_preset_persists_and_relists(
     # (T71) and exercise the save-as-preset path directly.
     (tmp_path / "src").mkdir()
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=tmp_path))
@@ -2011,7 +2011,7 @@ async def test_skeleton_picker_apply_lays_down_files_and_resumes_launch(
     project = tmp_path / "fresh-project"
     assert not project.exists()
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=tmp_path))
@@ -2077,7 +2077,7 @@ async def test_skeleton_picker_skip_continues_launch_with_bare_root(
     project.mkdir()
     (project / ".gitignore").write_text("__pycache__\n")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=tmp_path))
@@ -2128,7 +2128,7 @@ async def test_skeleton_picker_cancel_aborts_launch(
 
     project = tmp_path / "fresh-project"
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project_root=tmp_path))
@@ -2160,7 +2160,7 @@ async def test_skeleton_picker_cancel_aborts_launch(
 
 async def test_new_run_screen_pressing_n_from_library_opens_it() -> None:
     """T51: 'n' on the snapshot library opens NewRunScreen."""
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("n")
@@ -2176,7 +2176,7 @@ async def test_new_run_screen_preset_selection_populates_composer() -> None:
     with the preset's body and pre-selects the suggested workflow."""
     from textual.widgets import DataTable, Select, TextArea
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen())
@@ -2213,7 +2213,7 @@ async def test_new_run_screen_go_validates_inputs() -> None:
     behind this validation."""
     from textual.widgets import TextArea
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen())
@@ -2253,7 +2253,7 @@ async def test_mock_turtle_stream_composes_inside_textual_runtime() -> None:
 
     expected = sum(1 for _ in HistoricalRunHandle(_V6_BANNER).utterances())
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         mock = MockTurtleHandle(
@@ -2300,7 +2300,7 @@ async def test_streaming_consumer_does_not_starve_textual_event_loop() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # Open the snapshot library, navigate a row, then start
@@ -2334,7 +2334,7 @@ async def test_streaming_consumer_does_not_starve_textual_event_loop() -> None:
 async def test_pressing_c_opens_cast_browser() -> None:
     """`c` from the project library (TUI home post-P11) pushes the
     Cast browser."""
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         assert isinstance(app.screen, ProjectLibraryScreen)
@@ -2362,7 +2362,7 @@ async def test_cast_browser_lists_all_members() -> None:
     """Every cast member should appear as a row."""
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("c")
@@ -2380,7 +2380,7 @@ async def test_cast_browser_renders_bio_and_constitution_inline() -> None:
     screen. Cursor on a row drives both panes."""
     from textual.widgets import DataTable, Markdown, Static
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("c")
@@ -2422,7 +2422,7 @@ async def test_cast_browser_vim_navigation() -> None:
     """j/k/g/G should move the cursor in the cast table."""
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("c")
@@ -2454,7 +2454,7 @@ async def test_modal_artifacts_table_supports_vim_nav() -> None:
         pytest.skip("v6 banner snapshot not present")
     from textual.widgets import DataTable
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(RunSummaryScreen(_V6_BANNER))
@@ -2500,7 +2500,7 @@ async def test_modal_artifact_link_opens_artifact_detail() -> None:
     if not (_V6_BANNER / "wonderland-snapshot").is_dir():
         pytest.skip("v6 banner snapshot not present")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(RunSummaryScreen(_V6_BANNER))
@@ -2564,7 +2564,7 @@ async def test_project_library_is_home_screen(monkeypatch, tmp_path) -> None:
     """The TUI's home screen is now ProjectLibraryScreen, not
     SnapshotLibrary. Snapshot library is reachable via 'h' (history)."""
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         assert isinstance(app.screen, ProjectLibraryScreen)
@@ -2579,7 +2579,7 @@ async def test_project_library_empty_state_guides_first_time_user(
     from textual.widgets import Static
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -2612,7 +2612,7 @@ async def test_project_library_lists_registered_projects(
         root_path=tmp_path / "bravo",
     ))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -2638,7 +2638,7 @@ async def test_project_library_n_opens_new_run_without_project_context(
     context (back-compat path). Preserves muscle memory from
     SnapshotLibraryScreen."""
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("n")
@@ -2672,7 +2672,7 @@ async def test_project_library_enter_opens_dashboard(
         default_budget=2.00,
     ))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -2712,7 +2712,7 @@ async def test_dashboard_actions_pane_has_new_run_button(
     ))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -2751,7 +2751,7 @@ async def test_dashboard_n_keybind_pushes_new_run(
     ))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -2781,7 +2781,7 @@ async def test_new_run_screen_with_project_prefills_budget(
         root_path=tmp_path / "alpha",
         default_budget=12.34,
     )
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen(project=project))
@@ -2802,7 +2802,7 @@ async def test_new_run_screen_without_project_uses_legacy_default(
     from textual.widgets import Input
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewRunScreen())
@@ -2830,7 +2830,7 @@ async def test_new_project_screen_form_registers_project(
     from wonderland.tui.screens.new_project import NewProjectScreen
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewProjectScreen())
@@ -2865,7 +2865,7 @@ async def test_new_project_screen_rejects_duplicate_name(
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
     register_project(Project(name="alpha", root_path=tmp_path / "a"))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewProjectScreen())
@@ -2892,7 +2892,7 @@ async def test_new_project_screen_rejects_invalid_budget(
     from wonderland.tui.screens.new_project import NewProjectScreen
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewProjectScreen())
@@ -2924,7 +2924,7 @@ async def test_new_project_screen_skeleton_apply_writes_files(
     target = tmp_path / "fresh-project"
     # target doesn't exist yet — apply_skeleton creates it.
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewProjectScreen())
@@ -2954,7 +2954,7 @@ async def test_pressing_N_on_project_library_opens_form(
     from wonderland.tui.screens.new_project import NewProjectScreen
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("N")
@@ -2991,7 +2991,7 @@ async def test_edit_project_screen_persists_changes(
     ))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(EditProjectScreen(project))
@@ -3029,7 +3029,7 @@ async def test_edit_project_screen_invalid_budget_rejected(
     ))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(EditProjectScreen(project))
@@ -3060,7 +3060,7 @@ async def test_pressing_e_on_project_library_opens_edit_form(
         root_path=tmp_path / "alpha",
     ))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("e")
@@ -3089,7 +3089,7 @@ async def test_new_project_form_prefills_path_with_cwd(
     workdir.mkdir()
     monkeypatch.chdir(workdir)
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewProjectScreen())
@@ -3120,7 +3120,7 @@ async def test_new_project_form_skips_cwd_prefill_when_already_registered(
     register_project(Project(name="existing", root_path=workdir))
     monkeypatch.chdir(workdir)
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(NewProjectScreen())
@@ -3150,7 +3150,7 @@ async def test_project_library_actions_menu_is_default_focus(
     # when there's a project to highlight in the project-table.
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -3170,7 +3170,7 @@ async def test_project_library_buttons_are_under_project_list(
     from textual.widgets import Button
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
@@ -3206,7 +3206,7 @@ async def test_project_dashboard_mounts_with_tabs(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3256,7 +3256,7 @@ async def test_project_dashboard_runs_tab_shows_runs(
         },
     }))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3291,7 +3291,7 @@ async def test_project_dashboard_runs_empty_state(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3335,7 +3335,7 @@ async def test_project_dashboard_artifacts_tab_lists_files(
         "# Contract\n\nSession state shape."
     )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3363,7 +3363,7 @@ async def test_project_library_d_opens_dashboard(
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         # Move focus to the project table so 'd' acts on a selected
@@ -3401,7 +3401,7 @@ async def test_dashboard_files_tab_mounts_with_directory_tree(
     register_project(Project(name="alpha", root_path=root))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3463,7 +3463,7 @@ async def test_dashboard_metrics_tab_empty_state(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3527,7 +3527,7 @@ async def test_dashboard_metrics_tab_renders_charts(
         },
     }))
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3571,7 +3571,7 @@ async def test_dashboard_features_table_mounts(monkeypatch, tmp_path) -> None:
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3600,7 +3600,7 @@ async def test_dashboard_features_empty_state_guides_first_design_run(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3628,7 +3628,7 @@ async def test_dashboard_features_filter_chips_present(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3666,7 +3666,7 @@ async def test_dashboard_drilldown_tabs_still_present(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3717,7 +3717,7 @@ async def test_dashboard_queue_button_transitions_designed_feature(
     transition(project_root, "account-dashboard", FeatureState.IN_DESIGN, by="rabbit")
     transition(project_root, "account-dashboard", FeatureState.DESIGNED, by="system")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3749,7 +3749,7 @@ async def test_verify_modal_dismisses_with_verified_state(
     from wonderland.tui.screens.verify_modal import VerifyRejectModal
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     result_holder: list = []
 
     async with app.run_test() as pilot:
@@ -3782,7 +3782,7 @@ async def test_verify_modal_reject_requires_notes(
     from wonderland.tui.screens.verify_modal import VerifyRejectModal
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     result_holder: list = []
 
     async with app.run_test() as pilot:
@@ -3817,7 +3817,7 @@ async def test_verify_modal_reject_with_notes_dismisses(
     from wonderland.tui.screens.verify_modal import VerifyRejectModal
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     result_holder: list = []
 
     async with app.run_test() as pilot:
@@ -3853,7 +3853,7 @@ async def test_verify_modal_cancel_dismisses_with_none(
     from wonderland.tui.screens.verify_modal import VerifyRejectModal
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     result_holder: list = []
 
     async with app.run_test() as pilot:
@@ -3912,7 +3912,7 @@ async def test_dashboard_verify_button_opens_modal_for_rfr_feature(
     ]:
         transition(project_root, "account-dashboard", s, by="test")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3962,7 +3962,7 @@ async def test_dashboard_verify_blocked_for_non_rfr_feature(
     transition(project_root, "alpha", FeatureState.PROPOSED, by="t")
     # Stays at proposed — not ready_for_review
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -3999,7 +3999,7 @@ async def test_dashboard_actions_pane_all_buttons_present(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -4029,7 +4029,7 @@ async def test_dashboard_empty_state_design_button_primary(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -4076,7 +4076,7 @@ async def test_dashboard_verify_primary_when_rfr_features_exist(
             FeatureState.READY_FOR_REVIEW, notes="test"
         )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -4117,7 +4117,7 @@ async def test_dashboard_implement_primary_when_queued_features_exist(
     ))
     back_fill_state(project_root, "a", FeatureState.QUEUED, notes="t")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -4163,7 +4163,7 @@ async def test_dashboard_verify_button_opens_modal_for_first_rfr(
         project_root, "a", FeatureState.READY_FOR_REVIEW, notes="t"
     )
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(ProjectDashboardScreen(project))
@@ -4196,7 +4196,7 @@ async def test_new_run_screen_default_workflow_prefills_select(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(
@@ -4224,7 +4224,7 @@ async def test_new_run_screen_default_directive_prefills_textarea(
     register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(
@@ -4258,7 +4258,7 @@ async def test_new_run_screen_empty_directive_pushes_confirmation_modal(
     register_project(Project(name="alpha", root_path=project_root))
     project = load_project("alpha")
 
-    app = WonderlandApp()
+    app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
         app.push_screen(

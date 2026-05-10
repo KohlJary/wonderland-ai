@@ -62,9 +62,22 @@ class WonderlandApp(App):
     TITLE = "Wonderland"
     SUB_TITLE = "Run inspector"
 
-    def __init__(self, snapshot_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        snapshot_root: Path | None = None,
+        *,
+        show_welcome: bool | None = None,
+    ) -> None:
+        """Construct the app.
+
+        ``show_welcome`` overrides the config-based welcome-modal
+        decision. ``None`` (default) reads from the user config;
+        ``True`` / ``False`` force the behavior. Tests pass ``False``
+        to skip the modal so screens are reachable directly.
+        """
         super().__init__()
         self.snapshot_root = snapshot_root or _DEFAULT_SNAPSHOT_ROOT
+        self._show_welcome_override = show_welcome
 
     def on_mount(self) -> None:
         # Register the Wonderland-flavored themes and set the project
@@ -73,7 +86,35 @@ class WonderlandApp(App):
         for theme in WONDERLAND_THEMES:
             self.register_theme(theme)
         self.theme = DEFAULT_THEME_NAME
+
+        # Push the project library underneath, then maybe push the
+        # welcome modal on top. Welcome dismisses back to the library;
+        # if the operator has already dismissed welcome (config flag),
+        # we skip straight to the library.
         self.push_screen(ProjectLibraryScreen())
+        if self._should_show_welcome():
+            from wonderland.tui.screens.welcome_modal import WelcomeModal
+
+            self.push_screen(WelcomeModal())
+
+    def _should_show_welcome(self) -> bool:
+        """Decide whether to push the welcome modal on startup.
+
+        Resolution order:
+          1. Explicit constructor override (tests pass False)
+          2. Config file's ui.show_welcome flag
+          3. Default True (fresh installs see the welcome on first run)
+        """
+        if self._show_welcome_override is not None:
+            return self._show_welcome_override
+        try:
+            from wonderland.config import load_config
+
+            return load_config().ui.show_welcome
+        except Exception:  # noqa: BLE001
+            # Bad config file: still show welcome (the modal can help
+            # them sort out the API key + repair the config).
+            return True
 
     # ---------------------------------------------------------------- #
     # App-wide vim navigation. Each action finds the currently focused
