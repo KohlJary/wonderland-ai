@@ -1842,6 +1842,27 @@ async def _run_one_meeting(
             phase_event_writer=phase_writer,
             lane_thread_prefix=lane_thread_prefix,
         ):
+            # Per-utterance transition_emitted_to fires on the phased
+            # path too. The phased orchestrator yields RunnerEvent with
+            # kind="utterance" for each agent emission (meeting.py
+            # line ~628), same shape as the convene-one path. Without
+            # this hook, M2's transition_emitted_to: proposed never
+            # fires for phased meetings, leaving features at no-state
+            # → dashboard back-fills DESIGNED on auto-refresh →
+            # M3's iterate_only_in_states: [proposed] filters them
+            # all out → M3 hits "(no items)" skip.
+            if (
+                hasattr(event, "kind")
+                and event.kind == "utterance"
+                and event.payload is not None
+            ):
+                emitted = event.payload.get("utterance")
+                if emitted is not None:
+                    _apply_emission_transition_for_utterance(
+                        meeting=meeting,
+                        runner=runner,
+                        utterance=emitted,
+                    )
             yield event
         return
 

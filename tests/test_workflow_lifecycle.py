@@ -349,6 +349,196 @@ class TestApplyPostMeetingTransitions:
         assert "composition" in (history[0].notes or "")
 
 
+class TestEmissionHookFiresInEventLoop:
+    """Regression: confirms the per-utterance hook actually fires
+    inside _run_one_meeting's event loop, not just when called
+    directly. The earlier obol2 design pass produced 5 features
+    but feature-states.jsonl was never created — symptom of the
+    hook silently no-opping in the real workflow path.
+
+    The bug had two layers:
+      1. v1 fix put the hook in _convene_one's event loop only;
+         phased meetings (which M2 uses, since it has phases:
+         [discussion, commit]) route through run_phased_meeting
+         instead, bypassing the hook entirely.
+      2. v2 fix mirrors the hook into the phased dispatch path.
+
+    Both paths must be tested — the convene-one path covers
+    legacy unphased meetings; the phased path covers the actual
+    M2/M4 use cases in tdd-design.
+    """
+
+    async def test_run_one_meeting_writes_state_per_emission(
+        self, tmp_path: Path
+    ) -> None:
+        from typing import AsyncIterator
+        from wonderland.workflow import Workflow, _run_one_meeting
+
+        # FakeRunner with project_root + a script that emits two
+        # feature utterances then completes. Mirrors what M2 does
+        # in a real run.
+        from tests.test_workflow import FakeEvent, FakeRunner, FakeTelemetry
+
+        class RunnerWithRoot(FakeRunner):
+            def __init__(self, scripts, project_root):
+                super().__init__(scripts)
+                self.project_root = project_root
+
+        meeting = Meeting(
+            id="composition",
+            label="M2",
+            goal="ship features",
+            roster=["white_rabbit"],
+            meeting_budget=1.00,
+            transition_emitted_to="proposed",
+        )
+        script = [
+            FakeEvent(
+                "utterance",
+                {"utterance": _feature_utterance("alpha")},
+            ),
+            FakeEvent(
+                "utterance",
+                {"utterance": _feature_utterance("bravo")},
+            ),
+            FakeEvent(
+                "complete",
+                {"thread_id": "composition", "reason": "all done"},
+            ),
+        ]
+        runner = RunnerWithRoot(
+            {"composition": script}, project_root=tmp_path
+        )
+
+        from wonderland.workflow import WorkflowCapture
+
+        capture = WorkflowCapture()
+        async for _event in _run_one_meeting(
+            meeting=meeting,
+            runner=runner,
+            capture=capture,
+            directive=None,
+            per_item_meetings={},
+            current_item_kind=None,
+            current_item_slug=None,
+            thread_id="composition",
+            iteration_index=None,
+            iteration_total=None,
+            iteration_label=None,
+        ):
+            pass
+
+        # Both features should be at PROPOSED via transition_emitted_to
+        # firing per-utterance.
+        assert get_state(tmp_path, "alpha") == FeatureState.PROPOSED, (
+            "transition_emitted_to didn't fire for alpha — "
+            "per-utterance hook isn't reaching the event loop"
+        )
+        assert get_state(tmp_path, "bravo") == FeatureState.PROPOSED
+
+    async def test_phased_meeting_writes_state_per_emission(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Phased meetings (meeting.phases is non-empty) route through
+        run_phased_meeting, which bypasses _convene_one's event loop.
+        The per-utterance hook must fire on this path too.
+
+        Regression: obol2's M2 has phases [discussion, commit] and
+        emitted 5 features; feature-states.jsonl was never written
+        because the hook was only wired into the legacy convene
+        path. M3's iterate_only_in_states: [proposed] then filtered
+        all 5 features out (no state record → no match), and M3
+        skipped entirely.
+        """
+        from typing import AsyncIterator, Any
+        from wonderland.workflow import (
+            PhaseSpec,
+            WorkflowCapture,
+            _run_one_meeting,
+        )
+        import wonderland.workflow as workflow_module
+
+        # Stub out run_phased_meeting to yield two utterance events
+        # without actually running an LLM. This isolates the hook
+        # wiring at the workflow.py dispatch level — the only thing
+        # we're testing is whether _run_one_meeting's phased branch
+        # forwards utterance events through the lifecycle hook.
+        async def fake_run_phased_meeting(*, meeting, **_kwargs) -> AsyncIterator[Any]:
+            from wonderland.runner import RunnerEvent
+
+            yield RunnerEvent(
+                kind="utterance",
+                elapsed=0.0,
+                payload={"utterance": _feature_utterance("alpha")},
+            )
+            yield RunnerEvent(
+                kind="utterance",
+                elapsed=0.0,
+                payload={"utterance": _feature_utterance("bravo")},
+            )
+
+        # Patch the import that workflow.py does inline. The phased
+        # branch in _run_one_meeting does
+        # ``from wonderland.meeting import run_phased_meeting`` at
+        # call time, so patching the wonderland.meeting module is
+        # what intercepts.
+        import wonderland.meeting as meeting_module
+
+        monkeypatch.setattr(
+            meeting_module, "run_phased_meeting", fake_run_phased_meeting
+        )
+
+        meeting = Meeting(
+            id="composition",
+            label="M2",
+            goal="ship features",
+            roster=["white_rabbit"],
+            meeting_budget=1.00,
+            transition_emitted_to="proposed",
+            phases=[
+                PhaseSpec(name="discussion", max_rotations=3),
+                PhaseSpec(name="commit", max_rotations=2),
+            ],
+        )
+
+        # Minimal runner stub — phased path needs project_root for
+        # the phase_event_writer plus the lifecycle hook.
+        from tests.test_workflow import FakeRunner
+
+        class RunnerWithRoot(FakeRunner):
+            def __init__(self, project_root):
+                super().__init__({})
+                self.project_root = project_root
+
+        runner = RunnerWithRoot(project_root=tmp_path)
+        # phase_event_writer writes to .wonderland/phase-events.jsonl
+        (tmp_path / ".wonderland").mkdir(exist_ok=True)
+
+        capture = WorkflowCapture()
+        async for _event in _run_one_meeting(
+            meeting=meeting,
+            runner=runner,
+            capture=capture,
+            directive=None,
+            per_item_meetings={},
+            current_item_kind=None,
+            current_item_slug=None,
+            thread_id="composition",
+            iteration_index=None,
+            iteration_total=None,
+            iteration_label=None,
+        ):
+            pass
+
+        assert get_state(tmp_path, "alpha") == FeatureState.PROPOSED, (
+            "phased path didn't fire transition_emitted_to — "
+            "this is the obol2 M3-skip bug"
+        )
+        assert get_state(tmp_path, "bravo") == FeatureState.PROPOSED
+
+
 # --- T86 input filter integration via Meeting model ---
 
 
