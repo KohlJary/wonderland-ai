@@ -1085,11 +1085,131 @@
     {
       "id": "7f572021-4ee3-41ed-acf1-49ae0726328a",
       "title": "Multi-skeleton support: one project, N skeletons + port workflow",
-      "description": "Today's project.yaml assumes a single stack/skeleton. Multi-skeleton support would let a project have N (skeleton, stack) tuples — e.g. squathero ships as web first, then ports to mobile, with a third TUI variant possible later. Shape: features live at the project level above any one skeleton; contracts negotiated to be skeleton-agnostic where they touch domain (session record schema, quest state machine) and skeleton-specific where they touch UI (web component vs native screen). New 'port' workflow takes a verified feature in skeleton A and asks Tweedles to ship it in skeleton B, with original tickets + contracts as seeds — interesting part is which contracts transfer cleanly (data model, API surface) and which need re-design (gesture vs click, push notifications vs websocket). Squathero as the testbed: once web is verified, run port-to-mobile against same project; watch second-skeleton ADR for shared-domain-divergent-UI vs accidental data model fork. Surface is non-trivial: single-skeleton assumption is baked into project.yaml schema, lane_thread_prefix, FeatureRegistry, possibly more. Worth flagging at idea stage so future-Daedalus knows the surface to plan.",
+      "description": "Today's project.yaml assumes a single stack/skeleton. Multi-skeleton support would let a project have N (skeleton, stack) tuples \u2014 e.g. squathero ships as web first, then ports to mobile, with a third TUI variant possible later. Shape: features live at the project level above any one skeleton; contracts negotiated to be skeleton-agnostic where they touch domain (session record schema, quest state machine) and skeleton-specific where they touch UI (web component vs native screen). New 'port' workflow takes a verified feature in skeleton A and asks Tweedles to ship it in skeleton B, with original tickets + contracts as seeds \u2014 interesting part is which contracts transfer cleanly (data model, API surface) and which need re-design (gesture vs click, push notifications vs websocket). Squathero as the testbed: once web is verified, run port-to-mobile against same project; watch second-skeleton ADR for shared-domain-divergent-UI vs accidental data model fork. Surface is non-trivial: single-skeleton assumption is baked into project.yaml schema, lane_thread_prefix, FeatureRegistry, possibly more. Worth flagging at idea stage so future-Daedalus knows the surface to plan.",
       "priority": "P3",
       "item_type": "feature",
       "status": "backlog",
       "created_at": "2026-05-10T13:36:56.033848",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "72919d9e-1a8b-4b78-a97d-58115700de94",
+      "title": "Daedalus run-digest hooks: post-run summary file + CLI export",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:23.684748",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "3e00f433-685e-4d81-8264-d065b7addbfa",
+      "title": "Confirmation modal when exiting the app",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:23.781517",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "51195441-4f75-4768-8a7b-304c3b1425e9",
+      "title": "Live-watch lazygit-style rework: focus + selection across panes",
+      "description": "",
+      "priority": "P2",
+      "item_type": "refactor",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:23.882365",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "8c307bf4-bb7b-4613-ae61-223c333778c5",
+      "title": "Pause/abort buttons on live-run screen",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:23.978931",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "998d1ef8-bf96-40e2-b902-7b8070cc12c7",
+      "title": "Telemetry write-on-abort: flush partial run data on cancellation",
+      "description": "",
+      "priority": "P2",
+      "item_type": "fix",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.073070",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "65fdd9c3-2804-4ca0-b684-a10bebc8949f",
+      "title": "Drop M8 defend phase: redundant after exit_condition fix",
+      "description": "",
+      "priority": "P2",
+      "item_type": "fix",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.169133",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "b51e3616-d1f9-4c4e-8fab-ab3adfa4d906",
+      "title": "Stories view tab in dashboard alongside Features view",
+      "description": "",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.267391",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "d567b0a4-2aea-42da-89b4-77802954e015",
+      "title": "Cascade-delete prompt: warn about sourcing artifacts when deleting features",
+      "description": "",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.365487",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "98544e07-e495-42fc-83d9-5cddd7f8e639",
+      "title": "Drop M6 commit phase: redundant after exit_condition fix",
+      "description": "",
+      "priority": "P3",
+      "item_type": "fix",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.467079",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "64369cc5-05b9-433a-a702-12b19b981b97",
+      "title": "Caterpillar constitutional clause: re-read quoted code before reasoning",
+      "description": "",
+      "priority": "P3",
+      "item_type": "refactor",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.572057",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "9b01ba4f-47c3-47ec-9a6f-11b6450f693d",
+      "title": "Filter M3.5-residue reviews from M8 review surface",
+      "description": "",
+      "priority": "P3",
+      "item_type": "fix",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.672928",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "1e9b6803-ec09-4d53-97f2-2ba5fd9c7c23",
+      "title": "Run-comparison tool: telemetry diff between two runs",
+      "description": "",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T16:45:24.775052",
       "created_by": "daedalus"
     }
   ],
