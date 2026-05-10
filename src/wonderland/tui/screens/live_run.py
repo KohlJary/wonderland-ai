@@ -30,7 +30,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.widgets import Button, DataTable, Footer, Header, Static
 
 from wonderland.observer import (
     AgentActed,
@@ -114,6 +114,8 @@ class LiveRunScreen(Screen[None]):
         Binding("escape", "back", "Back", show=True),
         Binding("enter", "open_meeting", "Open meeting", show=True),
         Binding("T", "cycle_auto_sentinel", "Auto-sentinel", show=True),
+        Binding("p", "toggle_pause", "Pause/Resume", show=True),
+        Binding("ctrl+c", "abort_run", "Abort run", show=True),
         # Vim nav (j/k/g/G/H/L) is provided by WonderlandApp.
     ]
 
@@ -268,6 +270,16 @@ class LiveRunScreen(Screen[None]):
                         id="live-phase-events-table",
                         cursor_type="row",
                     )
+            with Horizontal(id="live-controls-row"):
+                yield Button(
+                    "⏸ Pause",
+                    id="live-pause-button",
+                )
+                yield Button(
+                    "⏹ Abort",
+                    id="live-abort-button",
+                    variant="error",
+                )
             yield Static(id="live-status")
         yield Footer()
 
@@ -894,6 +906,11 @@ class LiveRunScreen(Screen[None]):
         self._update_body_preview(0 if utterances else -1)
 
     def _render_status_bar(self) -> None:
+        # Keep the pause button label in sync with the runner's
+        # current state. Cheap to call on the periodic refresh —
+        # query_one + a string check.
+        self._refresh_pause_button_label()
+
         bar = self.query_one("#live-status", Static)
         speaker_part = (
             f"[b]Speaking:[/b] [cyan]{self._current_speaker}[/cyan]"
@@ -954,6 +971,89 @@ class LiveRunScreen(Screen[None]):
 
     def action_back(self) -> None:
         self.app.pop_screen()
+
+    def action_toggle_pause(self) -> None:
+        """Pause if running; resume if paused. Operator can toggle
+        with the ``p`` keybind or by clicking the Pause button.
+        Pause is best-effort: in-flight LLM calls finish before
+        the gate blocks (clean rotation boundary, nothing partial
+        gets stranded). MockTurtle / replay handles silently
+        accept the call but don't actually pause — only LiveRunHandle
+        wraps a Runner with a real pause primitive."""
+        runner = getattr(self.handle, "_runner", None) if self.handle else None
+        if runner is None or not hasattr(runner, "pause"):
+            self.notify(
+                "Pause not supported on this run handle "
+                "(replay or fixture data).",
+                severity="warning",
+                timeout=3,
+            )
+            return
+        if runner.is_paused:
+            runner.resume()
+            self.notify("▶ Run resumed.", timeout=2)
+        else:
+            runner.pause()
+            self.notify(
+                "⏸ Run paused. In-flight calls will finish; new "
+                "rotations won't open until you resume.",
+                timeout=4,
+            )
+        self._refresh_pause_button_label()
+
+    def action_abort_run(self) -> None:
+        """Operator-driven abort. Confirms via modal because abort
+        is destructive (the run is over; resuming requires a fresh
+        launch). Telemetry is preserved by the safety-net flush in
+        observer/live's finally block."""
+        runner = getattr(self.handle, "_runner", None) if self.handle else None
+        if runner is None or not hasattr(runner, "abort"):
+            self.notify(
+                "Abort not supported on this run handle "
+                "(replay or fixture data).",
+                severity="warning",
+                timeout=3,
+            )
+            return
+        from wonderland.tui.screens.abort_confirm_modal import (
+            AbortConfirmModal,
+        )
+
+        def _on_dismiss(confirmed: bool | None) -> None:
+            if confirmed:
+                runner.abort(reason="operator pressed Abort")
+                self.notify(
+                    "⏹ Abort signaled. Telemetry will flush "
+                    "automatically.",
+                    severity="warning",
+                    timeout=4,
+                )
+
+        self.app.push_screen(AbortConfirmModal(), _on_dismiss)
+
+    def _refresh_pause_button_label(self) -> None:
+        """Toggle the Pause/Resume button label based on the runner's
+        current pause state. Called after pause()/resume() and
+        opportunistically from the periodic status-bar refresh so
+        the label stays accurate even on programmatic pause changes."""
+        try:
+            btn = self.query_one("#live-pause-button", Button)
+        except Exception:  # noqa: BLE001
+            return
+        runner = getattr(self.handle, "_runner", None) if self.handle else None
+        if runner is None or not hasattr(runner, "is_paused"):
+            btn.label = "⏸ Pause"
+            btn.disabled = True
+            return
+        btn.disabled = False
+        btn.label = "▶ Resume" if runner.is_paused else "⏸ Pause"
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "live-pause-button":
+            self.action_toggle_pause()
+        elif bid == "live-abort-button":
+            self.action_abort_run()
 
     def action_open_meeting(self) -> None:
         """Enter on a row routes through here. With the lazygit-

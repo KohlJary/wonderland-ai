@@ -300,6 +300,16 @@ class Runner:
         self._completed = False
         self._start_monotonic: float | None = None
 
+        # Pause/resume primitive. The event is "set" (signaled) by
+        # default — meeting dispatch awaits it before opening each
+        # rotation, but the await returns immediately while set.
+        # ``pause()`` clears the event; ``resume()`` sets it. While
+        # paused, in-flight LLM calls finish (we don't cancel them
+        # mid-deliberation), but no new rotations open. Cheapest
+        # coarse pause that doesn't risk corrupting an emission.
+        self._paused = asyncio.Event()
+        self._paused.set()
+
         self._observer_task: asyncio.Task[None] | None = None
         self._state_task: asyncio.Task[None] | None = None
         self._consensus_task: asyncio.Task[None] | None = None
@@ -875,6 +885,11 @@ class Runner:
         if self._aborted:
             return
         self._aborted = True
+        # Wake any pause-waiters so cancellation propagates cleanly.
+        # Otherwise an aborted-while-paused run would block in the
+        # ``await self._paused.wait()`` call inside the meeting
+        # dispatcher and never reach the abort handling below.
+        self._paused.set()
         self._event_queue.put_nowait(
             RunnerEvent(
                 kind="aborted",
@@ -882,6 +897,24 @@ class Runner:
                 payload={"reason": reason},
             )
         )
+
+    def pause(self) -> None:
+        """Pause the run. New rotations don't open until resume();
+        in-flight LLM calls finish naturally (they're not cancelled
+        mid-deliberation — that would risk corrupting partial
+        emissions). Idempotent on re-pause."""
+        self._paused.clear()
+
+    def resume(self) -> None:
+        """Resume from pause. Idempotent on re-resume."""
+        self._paused.set()
+
+    @property
+    def is_paused(self) -> bool:
+        """True iff pause() has been called and resume() hasn't yet
+        followed. UI consumers read this to render Pause vs Resume
+        labels on the same button."""
+        return not self._paused.is_set()
 
     # ------------------------------------------------------------------ #
     # Internal consumers

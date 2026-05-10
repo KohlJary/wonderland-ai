@@ -1124,3 +1124,59 @@ WelcomeModal {
     margin: 0 1;
     min-width: 18;
 }
+
+/* Live-run controls row — pause/abort buttons sitting just above
+ * the status bar. Compact so they don't compete with the data
+ * panes for vertical space; consistent visual weight with the
+ * status bar above which they live. */
+
+#live-controls-row {
+    height: 3;
+    padding: 0 2;
+    align: left middle;
+}
+
+#live-controls-row Button {
+    margin: 0 1 0 0;
+    min-width: 14;
+}
+
+/* AbortConfirmModal — same shape as QuitConfirmModal, error-flavored. */
+
+AbortConfirmModal {
+    align: center middle;
+}
+
+#abort-modal-root {
+    width: 60%;
+    max-width: 64;
+    height: auto;
+    background: $surface;
+    border: round $error;
+    padding: 1 2;
+}
+
+#abort-modal-header {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+#abort-modal-body {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    color: $foreground;
+}
+
+#abort-modal-actions {
+    height: auto;
+    padding: 1 0;
+    align: center middle;
+}
+
+#abort-modal-actions Button {
+    margin: 0 1;
+    min-width: 16;
+}

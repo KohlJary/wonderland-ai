@@ -518,6 +518,18 @@ async def run_phased_meeting(
                     return None
 
             while not state.is_complete():
+                # Pause gate. Set by default — the await is a no-op
+                # while resumed. When the operator calls runner.pause(),
+                # the event clears and this await blocks until
+                # runner.resume() (or runner.abort(), which sets the
+                # event so cancellation can propagate). In-flight LLM
+                # calls in the previous rotation finished before this
+                # check, so pause is a clean rotation boundary —
+                # nothing partial gets stranded.
+                pause_event = getattr(runner, "_paused", None)
+                if pause_event is not None:
+                    await pause_event.wait()
+
                 # Meeting budget gate (Decision 4).
                 # Per-thread cost (not global) so parallel meetings
                 # don't cannibalize each other's budgets — see
