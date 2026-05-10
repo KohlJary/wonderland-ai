@@ -2442,6 +2442,252 @@ class TestPipelineMode:
         assert len(m8_starts) == 1
         assert m8_starts[0].thread_id == "pipe.feat-A.m8-feat-A"
 
+    async def test_inner_block_gates_on_dependencies(self):
+        """When a meeting has gates_on_dependencies=True, a per-ticket
+        lane waits for its blocked_by tickets' SAME meeting to complete
+        before starting. M6 runs all tickets in parallel (no gate); M7
+        gates so a dependent ticket's M7 doesn't start until its
+        upstream's M7 finishes.
+
+        Reproduces the squathero migration scenario: 3 tickets where
+        ticket B and C are both blocked_by ticket A. A's M7 must finish
+        before B's M7 or C's M7 can start. M6 for all three runs
+        concurrently.
+        """
+        from wonderland.workflow import (
+            Pipeline,
+            PipelineLevel,
+            _run_pipelined_workflow,
+        )
+
+        wf = Workflow(
+            name="dep-gate-pipe",
+            description="d",
+            pipeline=Pipeline(
+                levels=[
+                    PipelineLevel(per_item="feature", parallel=False),
+                    PipelineLevel(per_item="ticket", parallel=True),
+                ]
+            ),
+            meetings=[
+                Meeting(
+                    id="m6",
+                    label="M6",
+                    goal="g",
+                    roster=["mad_hatter"],
+                    per_item="ticket",
+                    seeds=[],
+                ),
+                Meeting(
+                    id="m7",
+                    label="M7",
+                    goal="g",
+                    roster=["tweedledum"],
+                    per_item="ticket",
+                    seeds=[],
+                    gates_on_dependencies=True,
+                ),
+                Meeting(
+                    id="m8",
+                    label="M8",
+                    goal="g",
+                    roster=["caterpillar"],
+                    per_item="feature",
+                    seeds=[],
+                ),
+            ],
+        )
+
+        scripts: dict[str, list[FakeEvent]] = {}
+        for tid in (
+            "pipe.feat-A.m6-tic-A",
+            "pipe.feat-A.m6-tic-B",
+            "pipe.feat-A.m6-tic-C",
+            "pipe.feat-A.m7-tic-A",
+            "pipe.feat-A.m7-tic-B",
+            "pipe.feat-A.m7-tic-C",
+            "pipe.feat-A.m8-feat-A",
+        ):
+            scripts[tid] = [FakeEvent("complete", {"thread_id": tid})]
+        runner = FakeRunner(scripts)
+
+        from wonderland import workflow as wf_module
+
+        original = wf_module._collect_per_item_items
+        # tic-B and tic-C are blocked_by tic-A; tic-A has no deps.
+        ticket_items = [
+            {"slug": "tic-A", "title": "A", "blocked_by": []},
+            {"slug": "tic-B", "title": "B", "blocked_by": ["tic-A"]},
+            {"slug": "tic-C", "title": "C", "blocked_by": ["tic-A"]},
+        ]
+
+        def _stub(*, item_kind, **kw):
+            if item_kind == "feature":
+                return [{"slug": "feat-A", "title": "Feature A"}]
+            if item_kind == "ticket":
+                return ticket_items
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            event_order: list[str] = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingStartEvent):
+                    event_order.append(f"start:{ev.thread_id}")
+                elif isinstance(ev, MeetingEndEvent):
+                    event_order.append(f"end:{ev.thread_id}")
+        finally:
+            wf_module._collect_per_item_items = original
+
+        # Find positions
+        def _idx(needle: str) -> int:
+            for i, e in enumerate(event_order):
+                if needle in e:
+                    return i
+            raise AssertionError(f"missing event: {needle}")
+
+        m7_a_end = _idx("end:pipe.feat-A.m7-tic-A")
+        m7_b_start = _idx("start:pipe.feat-A.m7-tic-B")
+        m7_c_start = _idx("start:pipe.feat-A.m7-tic-C")
+
+        # Gate enforcement: dependent tickets' M7 starts AFTER tic-A's
+        # M7 ends. Without the gate, all three M7s would interleave
+        # arbitrarily.
+        assert m7_a_end < m7_b_start, (
+            f"tic-B M7 started before tic-A M7 finished: "
+            f"a-end={m7_a_end}, b-start={m7_b_start}, order={event_order}"
+        )
+        assert m7_a_end < m7_c_start, (
+            f"tic-C M7 started before tic-A M7 finished: "
+            f"a-end={m7_a_end}, c-start={m7_c_start}"
+        )
+
+    async def test_inner_block_no_gate_when_meeting_doesnt_gate(self):
+        """gates_on_dependencies=False (default) on M7 means tickets
+        run M7 in parallel regardless of blocked_by — sanity check
+        the gate is opt-in, not always-on."""
+        from wonderland.workflow import (
+            Pipeline,
+            PipelineLevel,
+            _run_pipelined_workflow,
+        )
+
+        wf = Workflow(
+            name="no-gate-pipe",
+            description="d",
+            pipeline=Pipeline(
+                levels=[
+                    PipelineLevel(per_item="feature", parallel=False),
+                    PipelineLevel(per_item="ticket", parallel=True),
+                ]
+            ),
+            meetings=[
+                Meeting(
+                    id="m7",
+                    label="M7",
+                    goal="g",
+                    roster=["tweedledum"],
+                    per_item="ticket",
+                    seeds=[],
+                    # gates_on_dependencies omitted → defaults False
+                ),
+            ],
+        )
+
+        scripts: dict[str, list[FakeEvent]] = {
+            f"pipe.feat-A.m7-tic-{slug}": [
+                FakeEvent("complete", {"thread_id": f"pipe.feat-A.m7-tic-{slug}"})
+            ]
+            for slug in ("A", "B")
+        }
+        runner = FakeRunner(scripts)
+
+        from wonderland import workflow as wf_module
+
+        original = wf_module._collect_per_item_items
+
+        def _stub(*, item_kind, **kw):
+            if item_kind == "feature":
+                return [{"slug": "feat-A", "title": "A"}]
+            if item_kind == "ticket":
+                return [
+                    {"slug": "tic-A", "title": "A", "blocked_by": []},
+                    {"slug": "tic-B", "title": "B", "blocked_by": ["tic-A"]},
+                ]
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            starts: list[str] = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingStartEvent):
+                    starts.append(ev.thread_id)
+        finally:
+            wf_module._collect_per_item_items = original
+
+        # Both tickets started — exact ordering doesn't matter for
+        # this test, just that the gate didn't fire.
+        assert "pipe.feat-A.m7-tic-A" in starts
+        assert "pipe.feat-A.m7-tic-B" in starts
+
+    async def test_inner_block_drops_self_referential_deps(self):
+        """A ticket whose blocked_by includes its own slug doesn't
+        deadlock — the self-ref is dropped at setup time."""
+        from wonderland.workflow import (
+            Pipeline,
+            PipelineLevel,
+            _run_pipelined_workflow,
+        )
+
+        wf = Workflow(
+            name="self-ref-pipe",
+            description="d",
+            pipeline=Pipeline(
+                levels=[
+                    PipelineLevel(per_item="feature", parallel=False),
+                    PipelineLevel(per_item="ticket", parallel=True),
+                ]
+            ),
+            meetings=[
+                Meeting(
+                    id="m7",
+                    label="M7",
+                    goal="g",
+                    roster=["tweedledum"],
+                    per_item="ticket",
+                    seeds=[],
+                    gates_on_dependencies=True,
+                ),
+            ],
+        )
+
+        tid = "pipe.feat-A.m7-tic-A"
+        runner = FakeRunner({tid: [FakeEvent("complete", {"thread_id": tid})]})
+
+        from wonderland import workflow as wf_module
+
+        original = wf_module._collect_per_item_items
+
+        def _stub(*, item_kind, **kw):
+            if item_kind == "feature":
+                return [{"slug": "feat-A", "title": "A"}]
+            if item_kind == "ticket":
+                # tic-A's blocked_by includes itself — should be dropped
+                return [{"slug": "tic-A", "title": "A", "blocked_by": ["tic-A"]}]
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            ends = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingEndEvent):
+                    ends.append(ev.thread_id)
+        finally:
+            wf_module._collect_per_item_items = original
+
+        # Lane completed instead of deadlocking on the self-ref
+        assert tid in ends
+
     async def test_multi_level_pipeline_runs_outer_sequentially(self):
         """outer level parallel=False: feature 2 doesn't start until
         feature 1's lane (including its inner block + M8) finishes."""

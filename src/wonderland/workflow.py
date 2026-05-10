@@ -26,6 +26,8 @@ landing alongside the T38 refactor).
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -36,6 +38,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from wonderland.turns import PhaseDefinition
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from wonderland.runner import Runner
@@ -294,6 +298,25 @@ class Meeting(BaseModel):
             "by M4 to mark features as 'designed' when scenarios "
             "ship; by M6 to mark as 'ready_for_review' when reviews "
             "approve."
+        ),
+    )
+    gates_on_dependencies: bool = Field(
+        default=False,
+        description=(
+            "When True (and the meeting runs inside an inner pipeline "
+            "block on a per_item kind that has dependency relationships "
+            "between items), this meeting waits for the same meeting "
+            "to complete on each of the iteration item's upstream "
+            "dependencies before starting. Used for ticket-level work "
+            "in tdd-implement: M6 (Tea Party) runs all tickets in "
+            "parallel because writing failing tests is independent, "
+            "but M7 (Implementation) gates on dependencies so a "
+            "ticket whose code depends on an upstream ticket's "
+            "implementation doesn't start writing against half-built "
+            "foundations. Dependencies come from the ticket's "
+            "``Blocked by:`` markdown line (parsed when the items "
+            "are collected). Cycles, missing deps, and cross-block "
+            "deps log warnings and fall through (don't gate)."
         ),
     )
     parallel: bool = Field(
@@ -1015,6 +1038,17 @@ def _collect_per_item_items(
         # the meeting runs once for THIS lane's outer item.
         items = [it for it in items if it.get("slug") == lane_outer_slug]
 
+    # For ticket items, attach blocked_by dependencies parsed from
+    # each ticket's markdown so downstream code (Meeting.gates_on_
+    # dependencies) can use them for inner-block gating without
+    # re-reading disk per lane.
+    if item_kind == "ticket" and project_root is not None and items:
+        blocked_by = _ticket_blocked_by_map(project_root)
+        for item in items:
+            slug = item.get("slug")
+            if slug:
+                item["blocked_by"] = blocked_by.get(slug, [])
+
     return items
 
 
@@ -1383,33 +1417,108 @@ async def _run_inner_block(
             )
         return
 
+    # Dependency-gating setup. For each gated meeting, build a map
+    # (sub_item_slug, meeting_id) → asyncio.Event. A lane sets its
+    # event when the meeting completes; a downstream lane awaits its
+    # upstream lanes' events before starting the gated meeting.
+    #
+    # Validation up-front: drop deps that don't refer to an item in
+    # this block, and break self-references / cycles by stripping
+    # offending edges. Edge cases log a warning and fall through
+    # (lane runs without waiting on the dropped edge).
+    item_slugs_in_block = {item["slug"] for item in sub_items}
+    sub_item_deps: dict[str, list[str]] = {}
+    for item in sub_items:
+        slug = item["slug"]
+        raw = item.get("blocked_by") or []
+        # Drop self-references (cycle of 1) and out-of-block refs.
+        clean = [d for d in raw if d != slug and d in item_slugs_in_block]
+        if len(clean) != len(raw):
+            dropped = set(raw) - set(clean)
+            logger.info(
+                "ticket %r blocked_by has %d unmappable deps "
+                "(self-ref or out-of-block): %s",
+                slug,
+                len(dropped),
+                ", ".join(sorted(dropped)),
+            )
+        sub_item_deps[slug] = clean
+
+    # Cycle detection: drop edges that participate in a cycle (Tarjan-
+    # lite — for each item, see if it's reachable from any of its
+    # deps). On cycle, drop ALL deps from the cycle members. Cheap
+    # and conservative: parallel execution is the safe fallback.
+    def _has_cycle(start: str, visited: set[str]) -> bool:
+        if start in visited:
+            return True
+        visited = visited | {start}
+        return any(
+            _has_cycle(d, visited) for d in sub_item_deps.get(start, [])
+        )
+
+    for slug in list(sub_item_deps.keys()):
+        if _has_cycle(slug, set()):
+            if sub_item_deps[slug]:
+                logger.warning(
+                    "ticket %r blocked_by participates in a cycle; "
+                    "dropping all deps to keep the lane unblocked",
+                    slug,
+                )
+            sub_item_deps[slug] = []
+
+    # One Event per (sub_item_slug, meeting_id). Created up-front so
+    # any lane can await any other lane's event regardless of start
+    # order under _merge_async_iterators.
+    completion_events: dict[tuple[str, str], asyncio.Event] = {}
+    for item in sub_items:
+        for meeting in block:
+            completion_events[(item["slug"], meeting.id)] = asyncio.Event()
+
     def _make_inner_lane(idx: int, sub_item: dict[str, Any]):
         sub_slug = sub_item["slug"]
         sub_label = sub_item.get("title") or sub_slug
+        deps = sub_item_deps.get(sub_slug, [])
 
         async def _gen():
             for meeting in block:
+                # Gate: wait for upstream lanes' SAME meeting to
+                # complete. Skip when meeting doesn't gate or this
+                # ticket has no deps.
+                if meeting.gates_on_dependencies and deps:
+                    for dep_slug in deps:
+                        ev = completion_events.get((dep_slug, meeting.id))
+                        if ev is not None:
+                            await ev.wait()
+
                 thread_id = f"{lane_thread_prefix}{meeting.id}-{sub_slug}"
                 outcome = "RUNNING"
-                async for event in _run_one_meeting(
-                    meeting=meeting,
-                    runner=runner,
-                    capture=capture,
-                    directive=None,
-                    per_item_meetings=per_item_meetings,
-                    current_item_kind=meeting.per_item,
-                    current_item_slug=sub_slug,
-                    thread_id=thread_id,
-                    iteration_index=idx + 1,
-                    iteration_total=len(sub_items),
-                    iteration_label=f"{outer_label} / {sub_label}",
-                    lane_thread_prefix=lane_thread_prefix,
-                ):
-                    if isinstance(event, _OutcomeSentinel):
-                        outcome = event.outcome
+                try:
+                    async for event in _run_one_meeting(
+                        meeting=meeting,
+                        runner=runner,
+                        capture=capture,
+                        directive=None,
+                        per_item_meetings=per_item_meetings,
+                        current_item_kind=meeting.per_item,
+                        current_item_slug=sub_slug,
+                        thread_id=thread_id,
+                        iteration_index=idx + 1,
+                        iteration_total=len(sub_items),
+                        iteration_label=f"{outer_label} / {sub_label}",
+                        lane_thread_prefix=lane_thread_prefix,
+                    ):
+                        if isinstance(event, _OutcomeSentinel):
+                            outcome = event.outcome
+                            yield event
+                            continue
                         yield event
-                        continue
-                    yield event
+                finally:
+                    # Always set the completion event so downstream
+                    # waiters unblock — even on GLOBAL_BUDGET or
+                    # exception. If we don't set on abort, dependent
+                    # lanes hang forever waiting.
+                    completion_events[(sub_slug, meeting.id)].set()
+
                 if outcome == "GLOBAL_BUDGET":
                     return
 
@@ -1832,6 +1941,65 @@ def _ticket_to_feature_map(project_root: Path) -> dict[str, str]:
                     # entry; this matches that contract.
                     out[ticket_record.slug] = source
                     break
+    except Exception:  # noqa: BLE001 — best-effort
+        return {}
+    return out
+
+
+def _ticket_blocked_by_map(project_root: Path) -> dict[str, list[str]]:
+    """Build an index: ticket_slug → list of slugs it's blocked by.
+
+    Source-of-truth: each ticket's ``- Blocked by: ...`` line in the
+    Dependencies section of its markdown. Rabbit emits this during M3
+    decomposition. Format examples:
+
+        - Blocked by: —
+        - Blocked by: schema-init, csv-parser
+
+    The ``—`` placeholder (or ``-`` ASCII variant, or empty) means no
+    upstream dependencies.
+
+    Used by ``Meeting.gates_on_dependencies`` to determine which
+    upstream tickets a per-ticket lane should wait for before starting
+    its gated meeting (typically M7 — implementation that depends on
+    upstream tickets' implementations).
+
+    Best-effort: missing files / parse failures map to empty deps so
+    the gate falls through (lane runs normally without waiting).
+    """
+    import re
+
+    out: dict[str, list[str]] = {}
+    try:
+        from wonderland.ticket import TicketRegistry
+
+        # Match the dash-prefixed "Blocked by:" line inside the
+        # Dependencies block. Be lenient about whitespace; the slug
+        # list comes after the colon. Capture the rest of the line.
+        blocked_by_re = re.compile(
+            r"^\s*-\s*Blocked\s+by:\s*(.+?)$",
+            re.IGNORECASE | re.MULTILINE,
+        )
+
+        for ticket_record in TicketRegistry(project_root).list_tickets():
+            try:
+                text = ticket_record.path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            match = blocked_by_re.search(text)
+            if not match:
+                out[ticket_record.slug] = []
+                continue
+            line = match.group(1).strip()
+            if line in ("", "—", "-", "none", "None"):
+                out[ticket_record.slug] = []
+                continue
+            deps = [s.strip() for s in line.split(",") if s.strip()]
+            # Drop the literal placeholders just in case they appear
+            # mid-list (defensive — Rabbit's prose has been
+            # well-behaved here but a future agent might not be).
+            deps = [d for d in deps if d not in ("—", "-", "none", "None")]
+            out[ticket_record.slug] = deps
     except Exception:  # noqa: BLE001 — best-effort
         return {}
     return out

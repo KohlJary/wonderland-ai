@@ -168,6 +168,19 @@ meetings:
     per_item: ticket
     iterate_only_in_states: [queued]
     meeting_budget: 0.70
+    # Gate on dependencies: a ticket whose code depends on another
+    # ticket's implementation waits for that upstream ticket's M7
+    # to finish before starting its own M7. M6 (Tea Party) still
+    # runs all tickets in parallel because writing a failing test is
+    # independent of the upstream's actual implementation.
+    # Dependencies come from each ticket's ``- Blocked by:`` markdown
+    # line. Squathero's last implementation run had 7 migration
+    # tickets all running in parallel where most depended on the
+    # foundational migration setup; result was 4 divergent partial
+    # implementations of the same module. With this gate, the
+    # foundation ticket finishes M7 first, then dependent tickets
+    # see the actual code on disk before writing against it.
+    gates_on_dependencies: true
     convenor_directive: |
       **Tweedles — make the failing test pass.** The ticket's owner
       ships the implementation. Code lives in non-test directories

@@ -82,9 +82,13 @@ class _FakeTelemetry:
             row.get("cost", 0.0) for row in self.per_agent.values()
         )
         self._per_thread_cost: dict[str, float] = {}
+        self._per_thread_calls: dict[str, int] = {}
 
     def cost_for_thread(self, thread_id: str) -> float:
         return self._per_thread_cost.get(thread_id, 0.0)
+
+    def calls_for_thread(self, thread_id: str) -> int:
+        return self._per_thread_calls.get(thread_id, 0)
 
 
 class _FakeRunner:
