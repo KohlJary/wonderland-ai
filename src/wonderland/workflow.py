@@ -1827,6 +1827,12 @@ async def _run_one_meeting(
             runner.project_root / ".wonderland" / "phase-events.jsonl"
         )
 
+        # Capture index before the phased orchestrator runs so we can
+        # slice out new_utterances for transition_iteration_to gating.
+        # Mirrors _convene_one's bookkeeping (which uses the same
+        # artifact_count_before / new_utterances pattern).
+        phased_artifact_count_before = len(capture.utterances)
+
         async for event in run_phased_meeting(
             meeting=meeting,
             runner=runner,
@@ -1863,6 +1869,28 @@ async def _run_one_meeting(
                         runner=runner,
                         utterance=emitted,
                     )
+
+            # transition_iteration_to fires on phased COMPLETE just
+            # like the convene-one path. Without this, M3's
+            # transition_iteration_to: in_design never fires for
+            # phased meetings, leaving M3-decomposed features stuck
+            # at proposed → M5's iterate_only_in_states: [in_design]
+            # filters them all out → M5 hits "(no items)" skip.
+            # Same dispatch-asymmetry shape that bit transition_emitted_to.
+            if (
+                isinstance(event, MeetingEndEvent)
+                and event.outcome == "COMPLETE"
+            ):
+                phased_new_utterances = (
+                    capture.utterances[phased_artifact_count_before:]
+                )
+                _apply_post_meeting_transitions(
+                    meeting=meeting,
+                    runner=runner,
+                    new_utterances=phased_new_utterances,
+                    current_item_slug=current_item_slug,
+                )
+
             yield event
         return
 

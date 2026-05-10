@@ -538,6 +538,100 @@ class TestEmissionHookFiresInEventLoop:
         )
         assert get_state(tmp_path, "bravo") == FeatureState.PROPOSED
 
+    async def test_phased_meeting_fires_transition_iteration_to(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """transition_iteration_to fires on phased COMPLETE just like
+        the convene-one path. Without this, M3's transition_iteration_to:
+        in_design never fires for phased meetings → features stuck at
+        proposed → M5's iterate_only_in_states: [in_design] filters
+        them all out → M5 skips with "(no items)".
+
+        Same shape as the transition_emitted_to bug, one layer down
+        the lifecycle. Caught from obol2's run after M3 finally
+        worked: M5 reported zero iterations despite M3 having
+        decomposed features.
+        """
+        from typing import AsyncIterator, Any
+        from wonderland.workflow import (
+            MeetingEndEvent,
+            PhaseSpec,
+            WorkflowCapture,
+            _run_one_meeting,
+        )
+
+        # Pre-seed: alpha at proposed (M2 already shipped it).
+        # M3-style meeting iterating on alpha should transition it
+        # to in_design on COMPLETE.
+        transition(tmp_path, "alpha", FeatureState.PROPOSED, by="rabbit")
+
+        async def fake_run_phased_meeting(*, meeting, **_kwargs) -> AsyncIterator[Any]:
+            # No utterances emitted — M3 doesn't emit features, it
+            # decomposes the iteration item via tickets. Just yield
+            # MeetingEndEvent with COMPLETE outcome to trigger the
+            # transition_iteration_to path.
+            yield MeetingEndEvent(
+                meeting=meeting,
+                outcome="COMPLETE",
+                elapsed_s=0.0,
+                calls_delta=0,
+                cost_delta=0.0,
+                artifact_kinds={},
+                thread_id="decomposition-alpha",
+                iteration_index=1,
+                iteration_total=1,
+                iteration_label="alpha",
+            )
+
+        import wonderland.meeting as meeting_module
+
+        monkeypatch.setattr(
+            meeting_module, "run_phased_meeting", fake_run_phased_meeting
+        )
+
+        meeting = Meeting(
+            id="decomposition",
+            label="M3",
+            goal="decompose into tickets",
+            roster=["white_rabbit"],
+            per_item="feature",
+            transition_iteration_to="in_design",
+            phases=[PhaseSpec(name="decompose", max_rotations=3)],
+        )
+
+        from tests.test_workflow import FakeRunner
+
+        class RunnerWithRoot(FakeRunner):
+            def __init__(self, project_root):
+                super().__init__({})
+                self.project_root = project_root
+
+        runner = RunnerWithRoot(project_root=tmp_path)
+        (tmp_path / ".wonderland").mkdir(exist_ok=True)
+
+        capture = WorkflowCapture()
+        async for _event in _run_one_meeting(
+            meeting=meeting,
+            runner=runner,
+            capture=capture,
+            directive=None,
+            per_item_meetings={},
+            current_item_kind="feature",
+            current_item_slug="alpha",
+            thread_id="decomposition-alpha",
+            iteration_index=1,
+            iteration_total=1,
+            iteration_label="alpha",
+        ):
+            pass
+
+        assert get_state(tmp_path, "alpha") == FeatureState.IN_DESIGN, (
+            "phased path didn't fire transition_iteration_to — "
+            "this is the obol2 M5-skip bug"
+        )
+
 
 # --- T86 input filter integration via Meeting model ---
 
