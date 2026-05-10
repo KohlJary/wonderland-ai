@@ -1,0 +1,23 @@
+name: squathero
+title: Squathero — gamified weightlifting tracker with LLM routine generator
+description: |
+  Casual product-owner-tone directive that exercises three intertwined
+  domains in one ask: a tracking data model, gamification UX, and an
+  LLM-as-feature integration (the program calls an LLM to generate
+  routines, distinct from the substrate's own LLM use). First sample
+  directive without any stack hint — tests whether project_context
+  resolves the form factor or whether Cat drifts to defaults. Also the
+  first sample directive that puts an LLM call in the deliverable, so
+  Queen's design-pass should catch API-key handling + prompt-injection
+  + workout-data-leakage concerns. Watch for: gamification scope
+  sprawl in M2 (XP/quests/streaks/leaderboards/levels can easily
+  decompose into 15 features past the 3-6 ceiling), and whether
+  Caterpillar surfaces a foundation story for credential storage and
+  rate-limit handling alongside Alice's gamification capability stories.
+body: |
+  I want a personal fitness program where I can track my weightlifting
+  progress. It should be gamified, with experience bars and quests to
+  encourage me to hit the gym. I'd also like to have the program use
+  an LLM to generate a gym routine with the equipment I have available.
+suggested_workflow: tdd-design
+tags: [casual-tone, llm-integration, gamification, no-stack-hint]
