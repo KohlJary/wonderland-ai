@@ -331,36 +331,50 @@ meetings:
     parallel: true
     meeting_budget: 0.30
     convenor_directive: |
-      **Rabbit and Caterpillar — consolidate this feature's tickets.**
-      M3 just decomposed this feature into a ticket set. Two failure
+      **Rabbit — ship ``ticket`` decisions only. Do NOT emit a
+      ``feature`` decision in this meeting.** This is the trap: the
+      iteration item IS a feature, but the meeting's job is
+      consolidating its TICKETS. M2 is closed; you don't ship
+      features here. Every emission you make in this meeting is a
+      ``ticket`` decision (or ``concern`` / ``silence`` / ``question_to_operator``
+      when something else applies).
+
+      M3 just decomposed this feature into tickets and two failure
       modes are common at M3: over-decomposition (one capability
       sliced into 8 micro-tickets that should be 3) and missing
       dependencies (no explicit ``Blocked by:`` so M7 implementations
-      race on shared foundations). This meeting fixes both, with
-      Rabbit and Caterpillar each playing to their tools.
+      race on shared foundations). M3.5 fixes both per feature.
 
-      **Rabbit — re-emit the ticket set you want.** For tickets that
-      need merge or scope revision: ship a new ``ticket`` decision
-      with the merged content (combined acceptance, broader
-      description, union of sources). For tickets whose dependencies
-      need updating: re-emit them with the new ``dependencies.blocked_by``
-      list. The substrate keeps the new ticket on disk; Caterpillar
-      handles the cleanup of the old ones.
+      **What ``ticket`` emissions to make:**
 
-      **Crucially, assign ``Blocked by:`` dependencies.** Walk the
-      surviving tickets and for each one ask: which other tickets'
-      implementations does this need on disk before it can start?
-      A ticket that calls ``apply_migrations()`` is blocked_by the
-      ticket that defines it. Be explicit — M7 reads these to
-      serialize dependent implementations.
+        - **Tickets you want to keep AS-IS** with no changes: don't
+          re-emit them. Just leave them alone.
+        - **Tickets you want to MERGE**: ship a new ``ticket``
+          decision with the merged content (combined acceptance,
+          broader description, union of sources from the absorbed
+          tickets). Caterpillar will delete the absorbed ones.
+        - **Tickets whose ``Blocked by:`` needs updating** (this is
+          the dependency-assignment goal of the meeting): ship a
+          new ``ticket`` decision with the existing slug, the
+          existing content, and a fresh ``dependencies.blocked_by``
+          list naming the upstream ticket slugs.
+
+      **Assigning ``Blocked by:`` is the load-bearing job.** Walk
+      this feature's tickets. For each one ask: which other
+      tickets' implementations does this need on disk before it
+      can start? A ticket that calls ``apply_migrations()`` is
+      blocked_by the ticket that defines it. M7 reads these to
+      serialize dependent implementations — without them, dependent
+      tickets race against half-built foundations and produce
+      duplicate divergent code. Be explicit.
 
       **Caterpillar — prune duplicates with ``delete_file``.** You
       have the file-deletion tool; Rabbit doesn't. After Rabbit
-      re-emits a consolidated ticket, the OLD ticket file (the
-      pre-merge slug) is still on disk. Use ``delete_file`` on
-      ``.wonderland/tickets/<old-ticket-file>.md`` to remove it.
-      Same for tickets that should drop entirely without replacement
-      (genuine duplicates Rabbit didn't re-emit).
+      re-emits a merged ticket, the OLD ticket files (the absorbed
+      slugs) are still on disk. Use ``delete_file`` on
+      ``.wonderland/tickets/<old-ticket-file>.md`` to remove them.
+      Same for tickets that should drop entirely without
+      replacement (genuine duplicates Rabbit didn't re-emit).
 
       Verify before deleting: a ticket whose slug appears as a
       ``Sources:`` entry on a still-surviving sibling is fair game.
@@ -372,14 +386,32 @@ meetings:
       features that should split back at M2 (flag as a concern; M2
       is closed but the operator can re-run design).
 
+      **Silence is okay if there's nothing to consolidate** — a
+      feature with 3 well-scoped tickets and no merge-or-deps work
+      to do is fine to leave untouched. Don't manufacture
+      consolidation just because the meeting opened.
+
     seeds:
       - from: any
         kinds: [project_context]
-      # Existing tickets for this feature come from disk via the
-      # seed-fallback. The lane-scoping in resolve_seeds ensures
-      # we see only THIS feature's tickets.
+      # Feature binding stays on its own so the iteration-kind slice
+      # keeps only THIS lane's feature artifact (current_item_slug
+      # match against feature.payload.slug).
       - from: any
-        kinds: [feature, ticket]
+        kinds: [feature]
+      # Tickets from the decomposition meeting, lane-scoped via the
+      # per_item paired-suffix rule (decomposition-<feature_slug>).
+      # Critical to split this from the feature binding above:
+      # combining them as ``kinds: [feature, ticket]`` triggers the
+      # iteration-kind slice (because ``feature`` is the iteration
+      # kind), which drops every utterance that lacks a matching
+      # feature artifact — including M3's ticket-only emissions.
+      # Squathero2's first M3.5 run hit this: 5 of 6 lanes opened
+      # with zero tickets in their context, so Rabbit had nothing
+      # to consolidate and reverted to M2 muscle memory (re-emitting
+      # the parent feature instead of shipping ``ticket`` decisions).
+      - from: decomposition
+        kinds: [ticket]
 
     # Single-phase with the same exit-on-artifact + tighter rotations
     # pattern as the rest of the workflow. Exit on ticket emission —
