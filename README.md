@@ -4,6 +4,8 @@
 
 > Generic AI agents perform roles. Identity-native agents inhabit them.
 
+![Wonderland dashboard](img/dash.png)
+
 > ### ▶ See it in action
 >
 > [**Building a Geocities — a tour of how Wonderland works**](./SHOWCASE.md).
