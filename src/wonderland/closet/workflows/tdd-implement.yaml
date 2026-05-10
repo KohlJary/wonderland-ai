@@ -144,6 +144,14 @@ meetings:
         kinds: [ticket]
       - from: any
         kinds: [feature, adr, ruling, contract_note]
+      # Prior review artifacts — on a retry iteration after a
+      # request-changes verdict, Caterpillar's findings need to
+      # surface in seed context so Hatter knows which test
+      # scenarios to revise. The parent-feature scoping in
+      # resolve_seeds drops sibling features' reviews; cross-run
+      # disk fallback picks up reviews from prior runs.
+      - from: any
+        kinds: [review]
 
     transition_iteration_to: in_progress
     # exit_condition on BOTH phases so the meeting ends as soon as
@@ -239,6 +247,12 @@ meetings:
         kinds: [contract_note]
       - from: tea-party
         kinds: [test_scenario]
+      # Prior review artifacts surface here for retry iterations
+      # after a request-changes verdict — Tweedles see what
+      # Caterpillar flagged in their last attempt. Scoped to the
+      # parent feature in resolve_seeds.
+      - from: any
+        kinds: [review]
 
     # Same exit_condition shape as M6: implementation lands → meeting
     # exits regardless of phase. max_rotations tightened from 4→2 on
@@ -360,18 +374,26 @@ meetings:
       - from: implementation
         kinds: [implementation]
 
-    transition_iteration_to: ready_for_review
-    # M8 had no exit_condition before this fix — Caterpillar shipped
+    # No ``transition_iteration_to`` line on M8 anymore. The
+    # substrate routes verdicts directly to the ticket lifecycle:
+    #   - accept → tickets IN_PROGRESS → DONE
+    #   - request-changes / block → tickets IN_PROGRESS → ABORTED
+    # Feature state then derives from the ticket rollup, so
+    # all-tickets-DONE rolls up to ``ready_for_review`` without
+    # needing an explicit feature transition here. (Previous
+    # ``transition_iteration_to: ready_for_review`` line became
+    # dead code under derived-feature-state.)
+    #
     # Single-phase: review exits as soon as Caterpillar ships her
     # verdict. Pre-this-fix the meeting had a separate "defend"
     # phase running 1 rotation post-exit, which on every recent run
     # tipped total spend over the meeting_budget cap and stranded
-    # the lifecycle transition_iteration_to: ready_for_review (M8
-    # outcome wasn't COMPLETE because defend hit MEETING_BUDGET).
-    # Tweedle defense, if relevant, shows up as concerns during the
-    # review phase before Caterpillar's verdict lands — the §III
-    # selectively-engaging rules let Tweedles buzz in without a
-    # standing roster slot.
+    # the lifecycle ready_for_review transition (M8 outcome wasn't
+    # COMPLETE because defend hit MEETING_BUDGET). Tweedle defense,
+    # if relevant, shows up as concerns during the review phase
+    # before Caterpillar's verdict lands — the §III selectively-
+    # engaging rules let Tweedles buzz in without a standing
+    # roster slot.
     phases:
       - name: review
         max_rotations: 2

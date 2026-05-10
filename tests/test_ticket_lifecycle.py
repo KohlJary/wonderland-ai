@@ -110,6 +110,74 @@ def test_back_fill_state(tmp_path: Path) -> None:
         back_fill_state(tmp_path, "ticket-old", TicketState.QUEUED)
 
 
+def test_chain_transition_walks_multistep_paths(tmp_path: Path) -> None:
+    """``chain_transition`` traverses intermediate states to reach
+    any legal target — used by the dashboard's bulk ops.
+
+    Covers:
+      - DONE → PENDING (DONE → QUEUED → PENDING)
+      - ABORTED → PENDING (single-step)
+      - No-record → QUEUED (back-fill PENDING + transition)
+      - Idempotent: already at target → no-op
+    """
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        chain_transition,
+        get_state,
+        transition,
+        transitions_for,
+    )
+
+    # DONE → PENDING via intermediate QUEUED
+    transition(tmp_path, "alpha", TicketState.QUEUED, by="op")
+    transition(tmp_path, "alpha", TicketState.IN_PROGRESS, by="sys")
+    transition(tmp_path, "alpha", TicketState.DONE, by="sys")
+    assert get_state(tmp_path, "alpha") == TicketState.DONE
+    chain_transition(tmp_path, "alpha", TicketState.PENDING, by="op")
+    assert get_state(tmp_path, "alpha") == TicketState.PENDING
+    states = [r.to_state for r in transitions_for(tmp_path, "alpha")]
+    assert TicketState.QUEUED in states  # intermediate hop
+
+    # ABORTED → PENDING (single legal step)
+    transition(tmp_path, "beta", TicketState.QUEUED, by="op")
+    transition(tmp_path, "beta", TicketState.IN_PROGRESS, by="sys")
+    transition(tmp_path, "beta", TicketState.ABORTED, by="sys")
+    chain_transition(tmp_path, "beta", TicketState.PENDING, by="op")
+    assert get_state(tmp_path, "beta") == TicketState.PENDING
+
+    # No-record → QUEUED via PENDING back-fill
+    chain_transition(tmp_path, "gamma", TicketState.QUEUED, by="op")
+    assert get_state(tmp_path, "gamma") == TicketState.QUEUED
+
+    # Idempotent
+    chain_transition(tmp_path, "gamma", TicketState.QUEUED, by="op")
+    assert get_state(tmp_path, "gamma") == TicketState.QUEUED
+
+
+def test_chain_transition_done_via_queued_in_progress(
+    tmp_path: Path,
+) -> None:
+    """Mark-Ready bulk op: a PENDING ticket reaches DONE via
+    QUEUED → IN_PROGRESS → DONE."""
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        chain_transition,
+        get_state,
+        transitions_for,
+    )
+
+    chain_transition(tmp_path, "alpha", TicketState.DONE, by="op")
+    assert get_state(tmp_path, "alpha") == TicketState.DONE
+    states = [r.to_state for r in transitions_for(tmp_path, "alpha")]
+    # PENDING (back-fill) → QUEUED → IN_PROGRESS → DONE
+    assert states == [
+        TicketState.PENDING,
+        TicketState.QUEUED,
+        TicketState.IN_PROGRESS,
+        TicketState.DONE,
+    ]
+
+
 def test_transitions_for_returns_chronological_history(
     tmp_path: Path,
 ) -> None:

@@ -885,7 +885,11 @@ def resolve_seeds(
             current_item_kind == "ticket"
             and current_item_slug is not None
             and project_root is not None
-            and ("feature" in binding.kinds or "contract_note" in binding.kinds)
+            and (
+                "feature" in binding.kinds
+                or "contract_note" in binding.kinds
+                or "review" in binding.kinds
+            )
         ):
             try:
                 ticket_to_feature = _ticket_to_feature_map(project_root)
@@ -901,6 +905,9 @@ def resolve_seeds(
                     )
                     has_contract = any(
                         a.kind == "contract_note" for a in artifacts
+                    )
+                    has_review = any(
+                        a.kind == "review" for a in artifacts
                     )
                     keep = True
                     new_artifacts = list(artifacts)
@@ -941,6 +948,19 @@ def resolve_seeds(
                             keep = (
                                 f"contract-negotiation-{parent_feature_slug}"
                                 in tid
+                            )
+                    if has_review and keep:
+                        # Reviews from M8 (per_item: feature) — the
+                        # thread_id encodes the feature when emitted
+                        # in a feature-scoped iteration. Same
+                        # graceful-degradation as contract_notes for
+                        # disk-fallback reviews (bare ``review``
+                        # thread_id has no feature suffix).
+                        tid = u.thread_id
+                        is_feature_specific_review = "review-" in tid
+                        if is_feature_specific_review:
+                            keep = (
+                                f"review-{parent_feature_slug}" in tid
                             )
                     if keep:
                         if new_artifacts == list(artifacts):
@@ -2352,6 +2372,181 @@ def _apply_emission_transition_for_utterance(
             pass
 
 
+def _find_blocking_review(
+    new_utterances: list[Utterance], feature_slug: str
+) -> str | None:
+    """Scan utterances emitted during this iteration for a review
+    artifact whose verdict is request-changes or block. Returns the
+    review slug when found, else None.
+
+    Used by ``_apply_post_meeting_transitions`` to route around the
+    normal feature → ready_for_review transition when Caterpillar
+    flags issues — instead, tickets get marked ABORTED and the
+    operator drives the retry loop via the dashboard.
+    """
+    del feature_slug  # Reserved for future scoping; one feature
+    # per M8 iteration today so the iteration's utterances are
+    # already correctly scoped.
+    for u in new_utterances:
+        for a in u.content.artifacts:
+            if a.kind != "review":
+                continue
+            verdict = a.payload.get("verdict")
+            if verdict in ("request-changes", "block"):
+                slug = a.payload.get("slug")
+                if isinstance(slug, str) and slug:
+                    return slug
+                # Slug missing: fall back to the title as a stable
+                # human-readable identifier. Better than dropping
+                # the routing entirely.
+                title = a.payload.get("title")
+                if isinstance(title, str):
+                    return title
+                return "(unknown review)"
+    return None
+
+
+def _find_accept_review(
+    new_utterances: list[Utterance],
+) -> str | None:
+    """Mirror of ``_find_blocking_review`` for accept verdicts.
+    Returns the review slug when a review with verdict=accept ships
+    in this iteration; else None."""
+    for u in new_utterances:
+        for a in u.content.artifacts:
+            if a.kind != "review":
+                continue
+            if a.payload.get("verdict") == "accept":
+                slug = a.payload.get("slug")
+                if isinstance(slug, str) and slug:
+                    return slug
+                title = a.payload.get("title")
+                if isinstance(title, str):
+                    return title
+                return "(unknown review)"
+    return None
+
+
+def _complete_tickets_on_accept_review(
+    project_root: Path,
+    *,
+    feature_slug: str,
+    review_slug: str,
+    actor: str,
+    meeting_id: str,
+) -> None:
+    """Mark every IN_PROGRESS ticket of ``feature_slug`` as DONE.
+    With the derived-feature-state work, the feature's
+    ready_for_review rollup depends on all-tickets-DONE; this is
+    the success-path counterpart to the request-changes
+    abort path.
+
+    Tickets in other states (PENDING / DONE / ABORTED / QUEUED) are
+    left alone — DONE is for "we just iterated this and Caterpillar
+    approved", not for retroactively marking everything in the
+    feature."""
+    from wonderland.ticket_lifecycle import (
+        IllegalTransitionError as TicketIllegal,
+        TicketState,
+        get_state as get_ticket_state,
+        transition as ticket_transition,
+    )
+
+    notes = (
+        f"Auto-complete from {meeting_id!r} on accept verdict "
+        f"({review_slug!r})."
+    )
+    ticket_to_feature = _ticket_to_feature_map(project_root)
+    feature_tickets = [
+        slug for slug, feat in ticket_to_feature.items()
+        if feat == feature_slug
+    ]
+    for ticket_slug in feature_tickets:
+        state = get_ticket_state(project_root, ticket_slug)
+        if state != TicketState.IN_PROGRESS:
+            continue
+        try:
+            ticket_transition(
+                project_root,
+                ticket_slug,
+                TicketState.DONE,
+                by=actor,
+                notes=notes,
+            )
+        except TicketIllegal:
+            continue
+
+
+def _abort_tickets_on_blocking_review(
+    project_root: Path,
+    *,
+    feature_slug: str,
+    review_slug: str,
+    actor: str,
+    meeting_id: str,
+) -> None:
+    """Mark every ticket of ``feature_slug`` that's currently
+    IN_PROGRESS as ABORTED, with notes citing the review. Tickets
+    in other states (DONE / PENDING / already ABORTED) are left
+    alone — ABORTED is for "we just tried this and it didn't
+    pass review", not for retroactively flagging shipped tickets.
+
+    Tickets that have no lifecycle state yet (typical pre-this-
+    feature case) get back-filled to IN_PROGRESS first, then
+    transitioned to ABORTED — the iteration ran, even if the
+    substrate didn't think to record it.
+    """
+    from wonderland.ticket_lifecycle import (
+        IllegalTransitionError as TicketIllegal,
+        TicketState,
+        back_fill_state,
+        get_state as get_ticket_state,
+        transition as ticket_transition,
+    )
+
+    notes = (
+        f"Auto-abort from {meeting_id!r} on request-changes verdict "
+        f"({review_slug!r}); operator can re-queue from the dashboard."
+    )
+    ticket_to_feature = _ticket_to_feature_map(project_root)
+    feature_tickets = [
+        slug for slug, feat in ticket_to_feature.items()
+        if feat == feature_slug
+    ]
+    for ticket_slug in feature_tickets:
+        state = get_ticket_state(project_root, ticket_slug)
+        if state is None:
+            # No lifecycle record yet — back-fill to in_progress so
+            # the abort transition is legal.
+            try:
+                back_fill_state(
+                    project_root,
+                    ticket_slug,
+                    TicketState.IN_PROGRESS,
+                    notes=(
+                        "Back-filled to in_progress before "
+                        "request-changes abort"
+                    ),
+                )
+                state = TicketState.IN_PROGRESS
+            except Exception:  # noqa: BLE001
+                continue
+        if state != TicketState.IN_PROGRESS:
+            continue
+        try:
+            ticket_transition(
+                project_root,
+                ticket_slug,
+                TicketState.ABORTED,
+                by=actor,
+                notes=notes,
+            )
+        except TicketIllegal:
+            # Already terminal or other illegal — swallow; the
+            # transition layer shouldn't break meeting flow.
+            continue
+
+
 def _apply_post_meeting_transitions(
     *,
     meeting: Meeting,
@@ -2389,42 +2584,124 @@ def _apply_post_meeting_transitions(
 
     actor = "system"  # transitions fired by workflow are system-level
 
-    # transition_iteration_to: fire once for the iteration's feature.
-    # Two semantics depending on per_item kind (T88 split workflow
-    # support):
-    #   - per_item: feature → current_item_slug IS the feature slug;
-    #     transition directly.
-    #   - per_item: ticket  → current_item_slug is a ticket slug; look
-    #     up which feature the ticket belongs to, transition that
-    #     feature. Lets tdd-implement's M6 (per_item: ticket) move
-    #     the parent feature → in_progress on first ticket; subsequent
-    #     tickets find the feature already in_progress so the
-    #     idempotent illegal-transition swallow no-ops them.
+    # transition_iteration_to: fire once for the iteration's
+    # target. Two semantics depending on per_item kind:
+    #
+    #   - per_item: feature → target the FEATURE state (M3, M5 in
+    #     tdd-design; both pre-ticket phases). Transition fires on
+    #     ``current_item_slug`` via feature_lifecycle.
+    #
+    #   - per_item: ticket  → target the TICKET state via
+    #     ticket_lifecycle. Tdd-implement's M6 fires this to flip
+    #     the queued ticket → in_progress on iteration end;
+    #     ticket_lifecycle.LEGAL_TRANSITIONS gates which moves are
+    #     legal so a re-iteration of an in-flight ticket no-ops.
+    #
+    # The blocking/accept review routing below still applies AT THE
+    # FEATURE LEVEL (M8 only — it's the meeting that emits reviews).
     if meeting.transition_iteration_to and current_item_slug:
-        try:
-            target = FeatureState(meeting.transition_iteration_to)
-        except ValueError:
-            target = None
-        if target is not None:
-            if meeting.per_item == "ticket":
-                lookup = _ticket_to_feature_map(project_root)
-                feature_slug = lookup.get(current_item_slug)
-            else:
-                feature_slug = current_item_slug
-            if feature_slug:
+        # Per-ticket transition path: route through ticket_lifecycle.
+        # Don't fall through to feature_lifecycle when the meeting's
+        # iteration unit is a ticket — under derived-feature-state
+        # the feature transition becomes a duplicate side channel
+        # anyway.
+        if meeting.per_item == "ticket":
+            from wonderland.ticket_lifecycle import (
+                IllegalTransitionError as _TicketIllegal,
+                TicketState,
+                back_fill_state as ticket_back_fill,
+                get_state as get_ticket_state,
+                transition as ticket_transition,
+            )
+
+            try:
+                ticket_target = TicketState(
+                    meeting.transition_iteration_to
+                )
+            except ValueError:
+                ticket_target = None
+            if ticket_target is not None:
+                state = get_ticket_state(project_root, current_item_slug)
+                if state is None:
+                    # No record yet — back-fill PENDING so the
+                    # forward transition is legal.
+                    try:
+                        ticket_back_fill(
+                            project_root,
+                            current_item_slug,
+                            TicketState.PENDING,
+                            notes=(
+                                "Back-filled before iteration "
+                                f"transition from {meeting.id!r}"
+                            ),
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                 try:
-                    transition(
+                    ticket_transition(
                         project_root,
-                        feature_slug,
-                        target,
+                        current_item_slug,
+                        ticket_target,
                         by=actor,
                         notes=(
                             f"Auto-transition from iteration of "
                             f"{meeting.id!r} on COMPLETE"
                         ),
                     )
-                except IllegalTransitionError:
+                except _TicketIllegal:
                     pass
+            return
+
+        # Per-feature transition path (M3, M5 in tdd-design).
+        try:
+            target = FeatureState(meeting.transition_iteration_to)
+        except ValueError:
+            target = None
+        if target is not None and current_item_slug:
+            try:
+                transition(
+                    project_root,
+                    current_item_slug,
+                    target,
+                    by=actor,
+                    notes=(
+                        f"Auto-transition from iteration of "
+                        f"{meeting.id!r} on COMPLETE"
+                    ),
+                )
+            except IllegalTransitionError:
+                pass
+
+    # Review-verdict routing. Runs independently of
+    # ``transition_iteration_to`` so M8 can drop its now-redundant
+    # ``transition_iteration_to: ready_for_review`` (derivation
+    # handles the feature rollup once tickets are DONE). Fires when
+    # the meeting emitted a review artifact, regardless of per_item
+    # kind — practically that's only M8 (per_item: feature) today
+    # but the wiring doesn't care.
+    if current_item_slug and meeting.per_item == "feature":
+        feature_slug = current_item_slug
+        blocking_review = _find_blocking_review(
+            new_utterances, feature_slug
+        )
+        if blocking_review is not None:
+            _abort_tickets_on_blocking_review(
+                project_root,
+                feature_slug=feature_slug,
+                review_slug=blocking_review,
+                actor=actor,
+                meeting_id=meeting.id,
+            )
+            return
+        accept_review = _find_accept_review(new_utterances)
+        if accept_review is not None:
+            _complete_tickets_on_accept_review(
+                project_root,
+                feature_slug=feature_slug,
+                review_slug=accept_review,
+                actor=actor,
+                meeting_id=meeting.id,
+            )
 
 
 async def _run_one_meeting(

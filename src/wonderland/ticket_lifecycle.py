@@ -211,6 +211,119 @@ def transition(
     return record
 
 
+# Hardcoded legal paths between ticket states — the state machine
+# is small enough that explicit paths beat runtime BFS. Each entry
+# names the intermediate states to traverse (not including the
+# starting state). ``chain_transition`` walks the path step by step
+# through ``transition`` so the LEGAL_TRANSITIONS gate enforces
+# each individual move. Used by dashboard bulk operations (queue
+# all / mark ready / re-design) where the operator's intent is a
+# target state regardless of where the ticket starts.
+_LEGAL_PATHS: dict[
+    tuple["TicketState | None", "TicketState"], list["TicketState"]
+] = {
+    # From None (no record): back-fill happens separately in
+    # ``chain_transition``; entries here cover the post-back-fill
+    # PENDING starting point.
+    (None, TicketState.PENDING): [],
+    (None, TicketState.QUEUED): [TicketState.QUEUED],
+    (None, TicketState.IN_PROGRESS): [
+        TicketState.QUEUED, TicketState.IN_PROGRESS
+    ],
+    (None, TicketState.DONE): [
+        TicketState.QUEUED,
+        TicketState.IN_PROGRESS,
+        TicketState.DONE,
+    ],
+    # From PENDING.
+    (TicketState.PENDING, TicketState.QUEUED): [TicketState.QUEUED],
+    (TicketState.PENDING, TicketState.IN_PROGRESS): [
+        TicketState.QUEUED, TicketState.IN_PROGRESS
+    ],
+    (TicketState.PENDING, TicketState.DONE): [
+        TicketState.QUEUED,
+        TicketState.IN_PROGRESS,
+        TicketState.DONE,
+    ],
+    # From QUEUED.
+    (TicketState.QUEUED, TicketState.PENDING): [TicketState.PENDING],
+    (TicketState.QUEUED, TicketState.IN_PROGRESS): [
+        TicketState.IN_PROGRESS
+    ],
+    (TicketState.QUEUED, TicketState.DONE): [
+        TicketState.IN_PROGRESS, TicketState.DONE
+    ],
+    # From IN_PROGRESS.
+    (TicketState.IN_PROGRESS, TicketState.QUEUED): [
+        TicketState.QUEUED
+    ],
+    (TicketState.IN_PROGRESS, TicketState.PENDING): [
+        TicketState.QUEUED, TicketState.PENDING
+    ],
+    (TicketState.IN_PROGRESS, TicketState.DONE): [TicketState.DONE],
+    (TicketState.IN_PROGRESS, TicketState.ABORTED): [
+        TicketState.ABORTED
+    ],
+    # From DONE.
+    (TicketState.DONE, TicketState.QUEUED): [TicketState.QUEUED],
+    (TicketState.DONE, TicketState.PENDING): [
+        TicketState.QUEUED, TicketState.PENDING
+    ],
+    # From ABORTED.
+    (TicketState.ABORTED, TicketState.PENDING): [TicketState.PENDING],
+    (TicketState.ABORTED, TicketState.QUEUED): [TicketState.QUEUED],
+}
+
+
+def chain_transition(
+    project_root: Path,
+    ticket_slug: str,
+    target: TicketState,
+    *,
+    by: str,
+    notes: str | None = None,
+) -> TicketState:
+    """Multi-step legal transition from the ticket's current state
+    to ``target``. Walks intermediate states via individual
+    ``transition`` calls so each step is gated by
+    ``LEGAL_TRANSITIONS`` and shows up in the audit log.
+
+    No-record tickets are back-filled to PENDING first (the
+    standard initial state). Tickets already at ``target`` no-op.
+    Raises ``IllegalTransitionError`` only when no path exists
+    from current to target in ``_LEGAL_PATHS``.
+
+    Returns the final state (= target on success).
+    """
+    current = get_state(project_root, ticket_slug)
+    if current is None:
+        back_fill_state(
+            project_root,
+            ticket_slug,
+            TicketState.PENDING,
+            notes=notes
+            or "Back-filled before chain transition from dashboard",
+        )
+        current = TicketState.PENDING
+    if current == target:
+        return current
+    path = _LEGAL_PATHS.get((current, target))
+    if path is None:
+        raise IllegalTransitionError(
+            f"chain_transition for {ticket_slug!r}: no legal path "
+            f"from {current.value} to {target.value}"
+        )
+    for step in path:
+        transition(
+            project_root,
+            ticket_slug,
+            step,
+            by=by,
+            notes=notes,
+        )
+    return target
+
+
 def back_fill_state(
     project_root: Path,
     ticket_slug: str,
@@ -245,6 +358,7 @@ __all__ = [
     "TransitionRecord",
     "all_transitions",
     "back_fill_state",
+    "chain_transition",
     "get_state",
     "list_tickets_in_state",
     "transition",

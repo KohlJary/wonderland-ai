@@ -111,6 +111,235 @@ class TestTransitionRecord:
 # --- transition() / get_state() basic flow ---
 
 
+def _make_feature_and_tickets(
+    tmp_path: Path,
+    feature_slug: str,
+    ticket_slugs: list[str],
+) -> None:
+    """Write feature + ticket markdown files so
+    ``_ticket_to_feature_map`` resolves the parents. Used by the
+    derivation tests below."""
+    wonderland = tmp_path / ".wonderland"
+    (wonderland / "features").mkdir(parents=True, exist_ok=True)
+    (wonderland / "tickets").mkdir(parents=True, exist_ok=True)
+    (wonderland / "features" / f"feature-001-{feature_slug}.md").write_text(
+        f"## Feature 001: {feature_slug}\n",
+        encoding="utf-8",
+    )
+    for idx, slug in enumerate(ticket_slugs, start=1):
+        (
+            wonderland / "tickets" / f"ticket-{idx:03d}-{slug}.md"
+        ).write_text(
+            f"## Ticket {idx:03d}: {slug}\n\n**Sources:** {feature_slug}\n",
+            encoding="utf-8",
+        )
+
+
+class TestDerivedState:
+    """Post-ticket feature state is rolled up from the ticket
+    lifecycle, not read verbatim from the log. Pre-ticket states
+    (proposed/in_design/designed) and operator terminals
+    (verified/rejected) stay in the log."""
+
+    def test_no_tickets_returns_log_state(self, tmp_path: Path) -> None:
+        """Feature in ``designed`` per the log, no tickets yet
+        (M3 hasn't decomposed). Derivation returns None, log wins."""
+        slug = "alpha"
+        _make_feature_and_tickets(tmp_path, slug, ticket_slugs=[])
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        assert get_state(tmp_path, slug) == FeatureState.DESIGNED
+
+    def test_all_tickets_pending_returns_log_state(
+        self, tmp_path: Path
+    ) -> None:
+        """Tickets exist but none have an operator-touched state —
+        feature stays in its pre-ticket state."""
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a", "b"]
+        )
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        ticket_transition(tmp_path, "a", TicketState.PENDING, by="system")
+        ticket_transition(tmp_path, "b", TicketState.PENDING, by="system")
+        assert get_state(tmp_path, slug) == FeatureState.DESIGNED
+
+    def test_any_ticket_queued_derives_queued(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a", "b"]
+        )
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
+        assert get_state(tmp_path, slug) == FeatureState.QUEUED
+
+    def test_any_ticket_in_progress_derives_in_progress(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a", "b"]
+        )
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
+        ticket_transition(tmp_path, "a", TicketState.IN_PROGRESS, by="system")
+        assert get_state(tmp_path, slug) == FeatureState.IN_PROGRESS
+
+    def test_aborted_ticket_still_in_progress(
+        self, tmp_path: Path
+    ) -> None:
+        """ABORTED rolls up to IN_PROGRESS — the feature still has
+        work in flight from the operator's perspective (just stalled
+        and owing a retry call). The ticket-level ⚠ badge carries
+        the "needs attention" signal."""
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a", "b"]
+        )
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
+        ticket_transition(tmp_path, "a", TicketState.IN_PROGRESS, by="system")
+        ticket_transition(tmp_path, "a", TicketState.ABORTED, by="system")
+        assert get_state(tmp_path, slug) == FeatureState.IN_PROGRESS
+
+    def test_all_tickets_done_derives_ready_for_review(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a", "b"]
+        )
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        for t in ("a", "b"):
+            ticket_transition(tmp_path, t, TicketState.QUEUED, by="operator")
+            ticket_transition(tmp_path, t, TicketState.IN_PROGRESS, by="system")
+            ticket_transition(tmp_path, t, TicketState.DONE, by="system")
+        assert get_state(tmp_path, slug) == FeatureState.READY_FOR_REVIEW
+
+    def test_mixed_done_and_pending_is_in_progress(
+        self, tmp_path: Path
+    ) -> None:
+        """Partial work shipped, more pending — feature stays
+        in_progress. Operator decides whether to queue the rest or
+        verify what's there."""
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a", "b"]
+        )
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
+        ticket_transition(tmp_path, "a", TicketState.IN_PROGRESS, by="system")
+        ticket_transition(tmp_path, "a", TicketState.DONE, by="system")
+        # ticket "b" untouched (no record → PENDING-by-default).
+        assert get_state(tmp_path, slug) == FeatureState.IN_PROGRESS
+
+    def test_legacy_log_post_ticket_entries_ignored(
+        self, tmp_path: Path
+    ) -> None:
+        """A legacy ``feature-states.jsonl`` from before the
+        derivation layer may carry post-ticket entries (queued,
+        in_progress, ready_for_review). Those are ignored when
+        tickets exist with meaningful state — derivation wins."""
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a"]
+        )
+        # Legacy log all the way through ready_for_review.
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+            FeatureState.READY_FOR_REVIEW,
+        ):
+            transition(tmp_path, slug, st, by="legacy")
+        # Ticket says QUEUED (operator just re-queued for retry).
+        ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
+        # Derivation wins over the legacy ready_for_review log entry.
+        assert get_state(tmp_path, slug) == FeatureState.QUEUED
+
+    def test_verified_terminal_overrides_derivation(
+        self, tmp_path: Path
+    ) -> None:
+        """Verified is final; the substrate doesn't auto-revert it
+        if the operator later mutates a ticket. (E.g., operator
+        verified the feature; later re-queues a ticket as a
+        side-quest. Feature stays verified — the operator can
+        explicitly reject if they want to un-verify.)"""
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(
+            tmp_path, slug, ticket_slugs=["a"]
+        )
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+            FeatureState.READY_FOR_REVIEW,
+            FeatureState.VERIFIED,
+        ):
+            transition(tmp_path, slug, st, by="legacy")
+        ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
+        assert get_state(tmp_path, slug) == FeatureState.VERIFIED
+
+
 class TestTransitionAndGetState:
     def test_initial_transition_to_proposed(self, tmp_path: Path) -> None:
         record = transition(

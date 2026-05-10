@@ -1392,34 +1392,16 @@ class ProjectDashboardScreen(Screen[None]):
         except Exception:  # noqa: BLE001 — pre-mount race; refresh fires later
             return
 
-        # Implement button is gated on "anything ready for an imp
-        # run." That's queued features OR features with at least
-        # one explicitly-queued ticket — same override logic the
-        # substrate uses in _collect_per_item_items. Without this,
-        # a single queued ticket on an in_progress/done feature
-        # leaves the button greyed out even though the substrate
-        # is happy to iterate it.
-        n_queued_features = counts.get(FeatureState.QUEUED, 0)
-        n_features_with_queued_tickets = self._count_features_with_queued_tickets()
-        n_runnable = n_queued_features + n_features_with_queued_tickets
+        # Feature state is derived from tickets now (post-chunk-A):
+        # a feature shows as QUEUED iff any of its tickets is queued.
+        # So we can go back to the simple "count queued features"
+        # — no dual count needed.
+        n_queued = counts.get(FeatureState.QUEUED, 0)
         n_ready = counts.get(FeatureState.READY_FOR_REVIEW, 0)
-
-        # Update labels with current counts.
-        if n_features_with_queued_tickets > 0:
-            implement_btn.label = (
-                f"▶ Implement {n_queued_features} queued + "
-                f"{n_features_with_queued_tickets} w/ queued tickets"
-            )
-        else:
-            implement_btn.label = f"▶ Implement {n_queued_features} queued"
+        implement_btn.label = f"▶ Implement {n_queued} queued"
         verify_btn.label = f"▶ Verify {n_ready} ready"
-
-        # Disable empty-target buttons. Textual's Button.disabled
-        # greys out the button + blocks click events.
-        implement_btn.disabled = n_runnable == 0
+        implement_btn.disabled = n_queued == 0
         verify_btn.disabled = n_ready == 0
-        # Keep ``n_queued`` as the primary-variant tiebreaker.
-        n_queued = n_runnable
 
         # Primary variant assignment — exactly one button gets the
         # primary spotlight. Priority: verify > implement > design.
@@ -1453,49 +1435,6 @@ class ProjectDashboardScreen(Screen[None]):
             )
         )
 
-    def _count_features_with_queued_tickets(self) -> int:
-        """Count features that have at least one explicitly-queued
-        ticket. Mirrors the substrate-level override in
-        ``_collect_per_item_items`` so the dashboard's
-        "Implement" button is enabled in the same cases the
-        backend will actually run an iteration. Best-effort:
-        returns 0 on any error (pre-mount race, missing registry)."""
-        try:
-            from wonderland.ticket_lifecycle import (
-                TicketState,
-                get_state as get_ticket_state,
-            )
-            from wonderland.workflow import _ticket_to_feature_map
-        except Exception:  # noqa: BLE001
-            return 0
-        try:
-            ticket_to_feature = _ticket_to_feature_map(
-                self.project.root_path
-            )
-        except Exception:  # noqa: BLE001
-            return 0
-        queued_features: set[str] = set()
-        for ticket_slug, feature_slug in ticket_to_feature.items():
-            try:
-                state = get_ticket_state(
-                    self.project.root_path, ticket_slug
-                )
-            except Exception:  # noqa: BLE001
-                continue
-            if state in (
-                TicketState.QUEUED, TicketState.IN_PROGRESS
-            ):
-                # Only count this feature if its OWN state isn't
-                # already QUEUED — otherwise we'd double-count it
-                # against the queued-features tally.
-                row = next(
-                    (r for r in self._features if r.slug == feature_slug),
-                    None,
-                )
-                if row is None or row.state != FeatureState.QUEUED:
-                    queued_features.add(feature_slug)
-        return len(queued_features)
-
     def _action_run_implement(self) -> None:
         """Push NewRunScreen with project context + tdd-implement
         pre-selected + a boilerplate directive. Operator can edit
@@ -1505,23 +1444,16 @@ class ProjectDashboardScreen(Screen[None]):
         so the directive text isn't load-bearing."""
         from wonderland.tui.screens.new_run import NewRunScreen
 
+        # Feature state is derived from tickets, so QUEUED features
+        # are exactly the set with at least one queued ticket.
         n_queued = sum(
             1 for f in self._features if f.state == FeatureState.QUEUED
         )
-        n_extra = self._count_features_with_queued_tickets()
-        if n_queued and n_extra:
-            scope = f"{n_queued} queued feature(s) and {n_extra} feature(s) with queued tickets"
-        elif n_queued:
-            scope = f"{n_queued} queued feature(s)"
-        elif n_extra:
-            scope = f"{n_extra} feature(s) with queued tickets"
-        else:
-            scope = "any queued work"
         directive = (
-            f"Implement {scope} per their existing tickets and "
-            f"contracts. The team works from seeded lifecycle "
-            f"artifacts; this directive is a placeholder — edit "
-            f"to add focus if useful."
+            f"Implement the {n_queued} queued feature(s) per their "
+            f"existing tickets and contracts. The team works from "
+            f"seeded lifecycle artifacts; this directive is a "
+            f"placeholder — edit to add focus if useful."
         )
         self.app.push_screen(
             NewRunScreen(
@@ -1924,9 +1856,14 @@ class ProjectDashboardScreen(Screen[None]):
         return node.data["record"]
 
     def _handle_feature_action(self, button_id: str) -> None:
-        """Per-feature action button dispatch. Queue / Un-queue ship
-        now (single-step transitions, no operator notes needed).
-        Verify / Reject defer to T90 which adds the notes-modal."""
+        """Per-feature action dispatch. Most actions are now bulk
+        operations over the feature's tickets — feature state
+        derives from the ticket rollup (chunks A + B), so writing
+        feature-level lifecycle entries directly would be ignored.
+        Verify / Reject stay at feature level (operator terminals).
+        Promote-to-Designed still operates on the feature lifecycle
+        because designed is a pre-ticket state.
+        """
         from wonderland.feature_lifecycle import (
             IllegalTransitionError,
             transition,
@@ -1955,81 +1892,167 @@ class ProjectDashboardScreen(Screen[None]):
                     f"Can't promote: {exc}", severity="warning"
                 )
         elif button_id == "feature-action-queue":
-            try:
-                transition(
-                    self.project.root_path,
-                    row.slug,
-                    FeatureState.QUEUED,
-                    by="operator",
-                )
+            n, skipped = self._bulk_ticket_op(
+                row.slug,
+                target_state="queued",
+                eligible_states=("pending", None),
+                notes=f"Bulk queue via {row.slug!r} feature action",
+            )
+            if n:
                 self.notify(
-                    f"Queued {row.slug} for next implementation run."
+                    f"Queued {n} ticket(s) on {row.slug} for next "
+                    f"implementation run."
                 )
-                self.action_refresh()
-            except IllegalTransitionError as exc:
-                self.notify(f"Can't queue: {exc}", severity="warning")
+            elif skipped:
+                self.notify(
+                    f"No pending tickets to queue on {row.slug}.",
+                    severity="warning",
+                )
+            self.action_refresh()
         elif button_id == "feature-action-unqueue":
-            try:
-                transition(
-                    self.project.root_path,
-                    row.slug,
-                    FeatureState.DESIGNED,
-                    by="operator",
-                    notes="Un-queued",
+            n, skipped = self._bulk_ticket_op(
+                row.slug,
+                target_state="pending",
+                eligible_states=("queued",),
+                notes=f"Bulk un-queue via {row.slug!r} feature action",
+            )
+            if n:
+                self.notify(
+                    f"Un-queued {n} ticket(s) on {row.slug}."
                 )
-                self.notify(f"Un-queued {row.slug}.")
-                self.action_refresh()
-            except IllegalTransitionError as exc:
-                self.notify(f"Can't un-queue: {exc}", severity="warning")
+            else:
+                self.notify(
+                    f"No queued tickets to un-queue on {row.slug}.",
+                    severity="warning",
+                )
+            self.action_refresh()
         elif button_id == "feature-action-mark-ready":
-            try:
-                transition(
-                    self.project.root_path,
-                    row.slug,
-                    FeatureState.READY_FOR_REVIEW,
-                    by="operator",
-                    notes=(
-                        "Manually marked ready_for_review from "
-                        "in_progress via dashboard "
-                        "(M8 didn't auto-transition — likely "
-                        "budget-aborted post-verdict)"
-                    ),
+            n, skipped = self._bulk_ticket_op(
+                row.slug,
+                target_state="done",
+                eligible_states=("queued", "in_progress", "pending"),
+                notes=(
+                    f"Bulk mark-done via {row.slug!r} feature action "
+                    "(operator override; review skipped)"
+                ),
+            )
+            if n:
+                msg = (
+                    f"Marked {n} ticket(s) on {row.slug} done — "
+                    f"feature now ready for review."
                 )
+                if skipped:
+                    msg += (
+                        f" ({skipped} aborted ticket(s) skipped — "
+                        f"re-queue them to retry through review.)"
+                    )
+                self.notify(msg)
+            elif skipped:
                 self.notify(
-                    f"Marked {row.slug} ready_for_review — "
-                    f"verify or reject when ready."
+                    f"All non-done tickets on {row.slug} are "
+                    f"aborted — re-queue to retry.",
+                    severity="warning",
                 )
-                self.action_refresh()
-            except IllegalTransitionError as exc:
-                self.notify(
-                    f"Can't mark ready: {exc}", severity="warning"
-                )
+            self.action_refresh()
         elif button_id == "feature-action-redesign":
-            try:
-                transition(
-                    self.project.root_path,
-                    row.slug,
-                    FeatureState.DESIGNED,
-                    by="operator",
-                    notes=(
-                        "Aborted in_progress; sent back to designed "
-                        "via dashboard (operator wants to re-run "
-                        "design phase)"
-                    ),
-                )
-                self.notify(
-                    f"Sent {row.slug} back to designed — "
-                    f"re-run tdd-design or queue again."
-                )
-                self.action_refresh()
-            except IllegalTransitionError as exc:
-                self.notify(
-                    f"Can't re-design: {exc}", severity="warning"
-                )
+            n, _ = self._bulk_ticket_op(
+                row.slug,
+                target_state="pending",
+                eligible_states=(
+                    "queued", "in_progress", "done", "aborted"
+                ),
+                notes=(
+                    f"Bulk re-design via {row.slug!r}: operator "
+                    "reverted tickets to pending"
+                ),
+            )
+            self.notify(
+                f"Reverted {n} ticket(s) on {row.slug} to pending — "
+                f"re-run tdd-design or queue again."
+            )
+            self.action_refresh()
         elif button_id == "feature-action-verify":
             self._open_verify_modal("verify")
         elif button_id == "feature-action-reject":
             self._open_verify_modal("reject")
+
+    def _bulk_ticket_op(
+        self,
+        feature_slug: str,
+        *,
+        target_state: str,
+        eligible_states: tuple[str | None, ...],
+        notes: str,
+    ) -> tuple[int, int]:
+        """Bulk-transition every ticket of ``feature_slug`` whose
+        current state matches one of ``eligible_states`` to
+        ``target_state`` via the ticket-lifecycle chain helper.
+
+        Returns ``(moved, skipped)`` — moved = tickets that
+        transitioned, skipped = tickets that exist but didn't
+        match any eligible state (kept for the caller to surface
+        in the notification text, e.g. "N aborted tickets skipped").
+
+        ``eligible_states`` uses string forms (``"pending"``,
+        ``"queued"``, etc.) plus ``None`` for "no record yet" so
+        the dashboard can write the eligibility filter without
+        importing TicketState. Same for ``target_state``.
+        """
+        from wonderland.ticket_lifecycle import (
+            IllegalTransitionError as _TicketIllegal,
+            TicketState,
+            chain_transition,
+            get_state as get_ticket_state,
+        )
+        from wonderland.workflow import _ticket_to_feature_map
+
+        try:
+            target_enum = TicketState(target_state)
+        except ValueError:
+            return 0, 0
+
+        eligible_enums: set[TicketState | None] = set()
+        for s in eligible_states:
+            if s is None:
+                eligible_enums.add(None)
+                continue
+            try:
+                eligible_enums.add(TicketState(s))
+            except ValueError:
+                continue
+
+        try:
+            mapping = _ticket_to_feature_map(self.project.root_path)
+        except Exception:  # noqa: BLE001
+            return 0, 0
+        tickets = [
+            slug for slug, feat in mapping.items()
+            if feat == feature_slug
+        ]
+        moved = 0
+        skipped = 0
+        for slug in tickets:
+            try:
+                current = get_ticket_state(
+                    self.project.root_path, slug
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if current not in eligible_enums:
+                skipped += 1
+                continue
+            try:
+                chain_transition(
+                    self.project.root_path,
+                    slug,
+                    target_enum,
+                    by="operator",
+                    notes=notes,
+                )
+                moved += 1
+            except _TicketIllegal:
+                skipped += 1
+        return moved, skipped
 
     def _open_verify_modal(self, mode: str) -> None:
         """Push the verify/reject modal for the highlighted feature.

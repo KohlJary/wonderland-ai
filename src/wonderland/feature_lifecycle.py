@@ -229,17 +229,130 @@ def transitions_for(
     ]
 
 
+def _tickets_for_feature(
+    project_root: Path, feature_slug: str
+) -> list[str]:
+    """Return the slugs of all tickets whose ``Sources:`` field
+    names ``feature_slug`` as their parent. Returns [] when the
+    map can't be built (no tickets on disk, registry error, etc.).
+
+    Lazy-imports ``_ticket_to_feature_map`` from workflow.py so
+    this module stays import-cheap and avoids a feature_lifecycle
+    ↔ workflow cycle at module load."""
+    try:
+        from wonderland.workflow import _ticket_to_feature_map
+    except Exception:  # noqa: BLE001
+        return []
+    try:
+        mapping = _ticket_to_feature_map(project_root)
+    except Exception:  # noqa: BLE001
+        return []
+    return [slug for slug, feat in mapping.items() if feat == feature_slug]
+
+
+def _derive_post_ticket_state(
+    project_root: Path, feature_slug: str
+) -> FeatureState | None:
+    """Roll the feature's tickets up into a derived feature state.
+
+    Returns one of QUEUED / IN_PROGRESS / READY_FOR_REVIEW when
+    the rollup is meaningful, or None when:
+      - no tickets exist for this feature yet (M3 hasn't decomposed
+        it, so feature stays in whatever pre-ticket state it's in)
+      - tickets exist but none have an operator-touched state
+        (all PENDING or no record yet — same "stay pre-ticket"
+        semantics)
+
+    Rollup rules (Jira-style epic-from-stories):
+
+      - all tickets DONE → READY_FOR_REVIEW
+      - any ticket IN_PROGRESS or ABORTED → IN_PROGRESS
+        (mid-flight work or operator owes a retry call; the
+        ABORTED-as-in_progress mapping deliberately surfaces
+        retry-pending features in the same triage bucket as
+        actively-running ones; the ⚠ ticket badge in the
+        dashboard tree carries the "needs attention" detail.)
+      - any ticket QUEUED (and none active) → QUEUED
+      - everything else (mixed PENDING + some DONE) → IN_PROGRESS
+
+    The substrate's per-ticket lifecycle is the source of truth;
+    this function is read-only and computes from the latest tickets.
+    """
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        get_state as get_ticket_state,
+    )
+
+    tickets = _tickets_for_feature(project_root, feature_slug)
+    if not tickets:
+        return None
+    states = [get_ticket_state(project_root, t) for t in tickets]
+
+    # All untouched → no derivation, feature stays in its log state.
+    if all(s in (None, TicketState.PENDING) for s in states):
+        return None
+
+    # All terminal-positive → ready for operator review.
+    if all(s == TicketState.DONE for s in states):
+        return FeatureState.READY_FOR_REVIEW
+
+    # Any in-flight or retry-pending → in_progress umbrella.
+    if any(
+        s in (TicketState.IN_PROGRESS, TicketState.ABORTED)
+        for s in states
+    ):
+        return FeatureState.IN_PROGRESS
+
+    # Any queued, none active → queued.
+    if any(s == TicketState.QUEUED for s in states):
+        return FeatureState.QUEUED
+
+    # Mixed PENDING + DONE with nothing queued / active. Reads as
+    # "partial work shipped, more pending" — still in_progress.
+    return FeatureState.IN_PROGRESS
+
+
 def get_state(
     project_root: Path, feature_slug: str
 ) -> FeatureState | None:
-    """Current state of a feature — the to_state of its most recent
-    transition. Returns None if the feature has no transitions yet
-    (caller can interpret this as 'feature exists in features/ but
-    hasn't entered the lifecycle yet' — useful for migrating
-    pre-T85 projects)."""
+    """Current state of a feature, layered over two sources:
+
+      1. Operator terminals (VERIFIED / REJECTED) from the
+         transition log — these win unconditionally. Verify/reject
+         is final; the substrate doesn't auto-revert them when
+         the operator later mutates ticket state.
+      2. Ticket-derived rollup (QUEUED / IN_PROGRESS /
+         READY_FOR_REVIEW) — see ``_derive_post_ticket_state``.
+         This replaces the previous "read the most-recent log
+         entry verbatim" path for post-design states. Legacy log
+         entries for those states (queued, in_progress,
+         ready_for_review written by older runs) are ignored when
+         tickets are around — the tickets win.
+      3. Pre-ticket states (PROPOSED / IN_DESIGN / DESIGNED) and
+         the legacy-only edge case (post-ticket log entries with
+         no tickets on disk): fall back to the most recent log
+         entry.
+
+    Returns None when no log entries exist and no tickets exist —
+    same "feature exists on disk but hasn't entered the lifecycle"
+    semantics as before.
+    """
     history = transitions_for(project_root, feature_slug)
     if not history:
         return None
+
+    # Operator terminals override everything.
+    for record in reversed(history):
+        if record.to_state in (
+            FeatureState.VERIFIED, FeatureState.REJECTED
+        ):
+            return record.to_state
+
+    derived = _derive_post_ticket_state(project_root, feature_slug)
+    if derived is not None:
+        return derived
+
+    # No tickets (or all untouched) — last log entry wins.
     return history[-1].to_state
 
 

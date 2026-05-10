@@ -3854,10 +3854,10 @@ async def test_dashboard_drilldown_tabs_still_present(
 async def test_dashboard_queue_button_transitions_designed_feature(
     monkeypatch, tmp_path
 ) -> None:
-    """Clicking 'Queue' on a designed feature transitions it to
-    queued state — operator's batch-select gate. Refresh reflects
-    the new state."""
-    from textual.widgets import Button, DataTable, Tree
+    """Clicking 'Queue' on a designed feature bulk-queues all of
+    its PENDING tickets — feature state then derives to QUEUED
+    via the ticket rollup (post chunks A + B + C)."""
+    from textual.widgets import Button, Tree
 
     from wonderland.feature_lifecycle import (
         FeatureState,
@@ -3866,6 +3866,11 @@ async def test_dashboard_queue_button_transitions_designed_feature(
     )
     from wonderland.feature import FeaturePayload, FeatureRegistry
     from wonderland.project import Project, register_project, load_project
+    from wonderland.ticket import TicketPayload, TicketRegistry, TicketTier
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        get_state as get_ticket_state,
+    )
     from wonderland.tui.screens.project_dashboard import (
         ProjectDashboardScreen,
     )
@@ -3876,7 +3881,6 @@ async def test_dashboard_queue_button_transitions_designed_feature(
     register_project(Project(name="alpha", root_path=project_root))
     project = load_project("alpha")
 
-    # Create a feature in 'designed' state.
     FeatureRegistry(project_root).write(FeaturePayload(
         title="Account dashboard",
         description="View balances at a glance.",
@@ -3885,9 +3889,31 @@ async def test_dashboard_queue_button_transitions_designed_feature(
         tier="v1",
         sources=["see-money-at-a-glance"],
     ))
-    transition(project_root, "account-dashboard", FeatureState.PROPOSED, by="rabbit")
-    transition(project_root, "account-dashboard", FeatureState.IN_DESIGN, by="rabbit")
-    transition(project_root, "account-dashboard", FeatureState.DESIGNED, by="system")
+    transition(
+        project_root, "account-dashboard", FeatureState.PROPOSED,
+        by="rabbit",
+    )
+    transition(
+        project_root, "account-dashboard", FeatureState.IN_DESIGN,
+        by="rabbit",
+    )
+    transition(
+        project_root, "account-dashboard", FeatureState.DESIGNED,
+        by="system",
+    )
+    # A real ticket file is needed for the bulk-queue op to have
+    # anything to operate on (Queue now routes through ticket
+    # lifecycle, not feature lifecycle).
+    TicketRegistry(project_root).write(TicketPayload(
+        title="Balance card",
+        description="Card showing current account balance.",
+        sources=["account-dashboard"],
+        stack_span="frontend",
+        acceptance_criteria=["renders a card"],
+        owner="tweedledee",
+        tier=TicketTier.V1,
+        estimate="m",
+    ))
 
     app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
@@ -3895,34 +3921,40 @@ async def test_dashboard_queue_button_transitions_designed_feature(
         app.push_screen(ProjectDashboardScreen(project))
         await pilot.pause()
         screen = app.screen
-        # Cursor on the only feature row.
         ft = screen.query_one("#features-tree", Tree)
         ft.cursor_line = 0
         await pilot.pause()
-        # Click Queue
         queue_btn = screen.query_one("#feature-action-queue", Button)
         screen.post_message(Button.Pressed(queue_btn))
         await pilot.pause()
-        # Feature now in queued state
-        assert get_state(project_root, "account-dashboard") == FeatureState.QUEUED
+        # Ticket was bulk-queued; feature now derives to QUEUED.
+        assert (
+            get_ticket_state(project_root, "balance-card")
+            == TicketState.QUEUED
+        )
+        assert (
+            get_state(project_root, "account-dashboard")
+            == FeatureState.QUEUED
+        )
         await pilot.press("escape")
         await pilot.press("q")
 
 
-async def test_dashboard_implement_button_enabled_by_queued_ticket(
+async def test_dashboard_implement_button_enabled_when_ticket_queued(
     monkeypatch, tmp_path
 ) -> None:
-    """A queued ticket on a feature whose own state isn't QUEUED
-    should still enable the '▶ Implement' button. The substrate
-    runs the iteration; the UI was previously gating on
-    queued-features-only and greying the button out, leaving the
-    operator stuck."""
+    """Under derived-feature-state (chunk A), queueing a ticket
+    automatically derives its parent feature as QUEUED — so the
+    Implement button enables naturally without any UI-side
+    override logic. This is the regression case for what used to
+    require a dual-bucket count on the dashboard."""
     from textual.widgets import Button
 
     from wonderland.feature import FeaturePayload, FeatureRegistry
     from wonderland.feature_lifecycle import (
         FeatureState,
         transition as feature_transition,
+        get_state as get_feature_state,
     )
     from wonderland.project import Project, register_project, load_project
     from wonderland.ticket import TicketPayload, TicketRegistry, TicketTier
@@ -3940,8 +3972,6 @@ async def test_dashboard_implement_button_enabled_by_queued_ticket(
     register_project(Project(name="alpha", root_path=project_root))
     project = load_project("alpha")
 
-    # Feature ran imp and ended up in_progress (one ticket aborted,
-    # operator now wants to retry just that ticket).
     FeatureRegistry(project_root).write(FeaturePayload(
         title="XP",
         description="d",
@@ -3954,8 +3984,6 @@ async def test_dashboard_implement_button_enabled_by_queued_ticket(
         FeatureState.PROPOSED,
         FeatureState.IN_DESIGN,
         FeatureState.DESIGNED,
-        FeatureState.QUEUED,
-        FeatureState.IN_PROGRESS,
     ):
         feature_transition(project_root, "xp", st, by="test")
     TicketRegistry(project_root).write(TicketPayload(
@@ -3972,6 +4000,12 @@ async def test_dashboard_implement_button_enabled_by_queued_ticket(
         project_root, "alpha", TicketState.QUEUED, by="operator"
     )
 
+    # The queued ticket should derive the feature state to QUEUED
+    # — proving the derivation layer is the source of truth here.
+    assert (
+        get_feature_state(project_root, "xp") == FeatureState.QUEUED
+    )
+
     app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -3979,12 +4013,8 @@ async def test_dashboard_implement_button_enabled_by_queued_ticket(
         await pilot.pause()
         screen = app.screen
         btn = screen.query_one("#action-implement", Button)
-        assert btn.disabled is False, (
-            "queued ticket on an in_progress feature should keep "
-            "the Implement button enabled"
-        )
-        # Label should reflect the queued-ticket count.
-        assert "queued tickets" in str(btn.label), str(btn.label)
+        assert btn.disabled is False
+        assert "1 queued" in str(btn.label)
         await pilot.press("escape")
         await pilot.press("q")
 

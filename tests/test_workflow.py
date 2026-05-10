@@ -1425,6 +1425,281 @@ class TestResolveSeeds:
         )
         assert [t["slug"] for t in tickets] == ["alpha"]
 
+    def test_request_changes_review_aborts_tickets_not_advance_feature(
+        self, tmp_path: Path
+    ) -> None:
+        """When a meeting emits a review with ``verdict=request-changes``,
+        the substrate skips the normal feature transition (which would
+        land it on ``ready_for_review``) and instead marks every
+        currently-in_progress ticket of that feature as ABORTED with
+        notes citing the review. Operator's next move is the per-ticket
+        re-queue from the dashboard — the loop closes."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            get_state as get_feature_state,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import _apply_post_meeting_transitions
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        for n, slug in ((1, "alpha"), (2, "beta")):
+            (
+                wonderland / "tickets" / f"ticket-{n:03d}-{slug}.md"
+            ).write_text(
+                f"## Ticket {n:03d}: {slug}\n\n**Sources:** xp\n",
+                encoding="utf-8",
+            )
+
+        # Feature has rolled through to queued + in_progress; both
+        # tickets are in_progress mid-run.
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+        ticket_transition(
+            tmp_path, "alpha", TicketState.QUEUED, by="operator"
+        )
+        ticket_transition(
+            tmp_path, "alpha", TicketState.IN_PROGRESS, by="system"
+        )
+        ticket_transition(
+            tmp_path, "beta", TicketState.QUEUED, by="operator"
+        )
+        ticket_transition(
+            tmp_path, "beta", TicketState.IN_PROGRESS, by="system"
+        )
+
+        # M8 emits a review with verdict=request-changes.
+        review_utt = _utt(
+            thread_id="review-xp",
+            speaker="caterpillar",
+            artifacts=[
+                _art(
+                    "review",
+                    slug="xp-cross-ticket-coherence",
+                    title="cross-ticket coherence",
+                    verdict="request-changes",
+                )
+            ],
+        )
+
+        # Build the M8 Meeting object the substrate inspects.
+        from wonderland.workflow import Meeting as MeetingCls
+
+        m8 = MeetingCls.model_validate({
+            "id": "review",
+            "label": "M8",
+            "name": "The Trial",
+            "goal": "review the feature's deliverable",
+            "roster": ["caterpillar"],
+            "per_item": "feature",
+            "transition_iteration_to": "ready_for_review",
+            "seeds": [],
+        })
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        _apply_post_meeting_transitions(
+            meeting=m8,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            new_utterances=[review_utt],
+            current_item_slug="xp",
+        )
+
+        # Feature must NOT have advanced to ready_for_review.
+        assert (
+            get_feature_state(tmp_path, "xp")
+            == FeatureState.IN_PROGRESS
+        )
+        # Both tickets that were in_progress must be ABORTED with
+        # notes referencing the review.
+        for slug in ("alpha", "beta"):
+            assert (
+                get_ticket_state(tmp_path, slug) == TicketState.ABORTED
+            ), f"expected ticket {slug} to be ABORTED"
+
+    def test_accept_review_completes_tickets_and_derives_ready(
+        self, tmp_path: Path
+    ) -> None:
+        """The flip side of the request-changes test: an ``accept``
+        verdict marks the feature's in-flight tickets DONE. Under
+        derived-feature-state, all-tickets-DONE rolls up to
+        ready_for_review — no explicit feature transition needed."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            get_state as get_feature_state,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            _apply_post_meeting_transitions,
+        )
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-alpha.md").write_text(
+            "## Ticket 001: alpha\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+        ticket_transition(
+            tmp_path, "alpha", TicketState.QUEUED, by="operator"
+        )
+        ticket_transition(
+            tmp_path, "alpha", TicketState.IN_PROGRESS, by="system"
+        )
+
+        review_utt = _utt(
+            thread_id="review-xp",
+            speaker="caterpillar",
+            artifacts=[
+                _art(
+                    "review",
+                    slug="xp-shipped",
+                    title="cross-ticket coherence",
+                    verdict="accept",
+                )
+            ],
+        )
+        m8 = MeetingCls.model_validate({
+            "id": "review",
+            "label": "M8",
+            "name": "The Trial",
+            "goal": "review",
+            "roster": ["caterpillar"],
+            "per_item": "feature",
+            "transition_iteration_to": "ready_for_review",
+            "seeds": [],
+        })
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        _apply_post_meeting_transitions(
+            meeting=m8,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            new_utterances=[review_utt],
+            current_item_slug="xp",
+        )
+        # Ticket transitioned to DONE on accept.
+        assert (
+            get_ticket_state(tmp_path, "alpha") == TicketState.DONE
+        )
+        # All-tickets-DONE → derived feature state rolls up to
+        # ready_for_review.
+        assert (
+            get_feature_state(tmp_path, "xp")
+            == FeatureState.READY_FOR_REVIEW
+        )
+
+    def test_per_ticket_meeting_transitions_ticket_not_feature(
+        self, tmp_path: Path
+    ) -> None:
+        """Chunk B: when ``per_item: ticket`` and
+        ``transition_iteration_to`` names a TicketState, the
+        substrate transitions the TICKET via ticket_lifecycle —
+        not the parent feature. Under derived-feature-state, the
+        parent feature auto-rolls up from the ticket move."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            get_state as get_feature_state,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            _apply_post_meeting_transitions,
+        )
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-alpha.md").write_text(
+            "## Ticket 001: alpha\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+        ticket_transition(
+            tmp_path, "alpha", TicketState.QUEUED, by="operator"
+        )
+
+        m6 = MeetingCls.model_validate({
+            "id": "tea-party",
+            "label": "M6",
+            "name": "A Mad Tea Party",
+            "goal": "test scenarios",
+            "roster": ["mad_hatter"],
+            "per_item": "ticket",
+            "transition_iteration_to": "in_progress",
+            "seeds": [],
+        })
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        _apply_post_meeting_transitions(
+            meeting=m6,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            new_utterances=[],
+            current_item_slug="alpha",
+        )
+
+        # Ticket transitioned through ticket_lifecycle.
+        assert (
+            get_ticket_state(tmp_path, "alpha")
+            == TicketState.IN_PROGRESS
+        )
+        # Feature derives to IN_PROGRESS automatically (no separate
+        # feature_lifecycle transition was needed).
+        assert (
+            get_feature_state(tmp_path, "xp")
+            == FeatureState.IN_PROGRESS
+        )
+
     def test_collect_per_item_items_no_ticket_state_iterates_all(
         self, tmp_path: Path
     ) -> None:
