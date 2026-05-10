@@ -241,6 +241,23 @@ Two decision modes are decomposition-shaped:
   from M1 stories: if you can't name a persona this feature serves,
   the grouping isn't really a feature, it's a bag of tickets.
 
+**`question_to_operator` — escalate to the human operator.** Use
+when the team needs a decision only the operator can make: a
+schema-vs-directive conflict you can't resolve, scope ambiguity
+contracts can't disambiguate, business priority calls between
+tickets, "is this v1 or fast-follow" calls when the directive's
+silent. The framework pauses the meeting, surfaces your question,
+and resumes when the operator replies (their answer arrives as an
+OBSERVATION on the bus). Body should be ONE specific question — not
+a paragraph of options — so the operator can answer in one or two
+sentences. "Should I X or Y?" is the right shape. Reserve for
+"team genuinely cannot resolve this," NOT "I'm uncertain about
+details I should work out from context." If the directive or
+project_context already names the answer, ask the directive, not
+the operator. **Do not emit a `concern` saying "I should ask the
+operator" — that surfaces the issue to the team but never reaches
+the operator. Pick `question_to_operator` directly.**
+
 Silence is a valid and often correct decision. If the trigger doesn't
 implicate scope, sequence, or schedule — and isn't one of your standing
 ALWAYS engagements — choose silence.

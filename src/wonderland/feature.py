@@ -60,8 +60,20 @@ class FeaturePayload(BaseModel):
         description="What user-facing thing this feature delivers, in plain language.",
     )
     tickets: list[str] = Field(
-        min_length=1,
-        description="Slugs of constituent tickets this feature aggregates.",
+        default_factory=list,
+        description=(
+            "Slugs of constituent tickets this feature aggregates. "
+            "Informational only — the source-of-truth for "
+            "ticket→feature membership is each ticket's "
+            "``Sources:`` field, written by M3 (Rabbit's "
+            "decomposition meeting). When M2 ships a feature, "
+            "this list is typically empty; M3 populates it later "
+            "when tickets get decomposed (via the reverse-index "
+            "in ``_ticket_to_feature_map``). Pre-T88 workflows "
+            "where tickets came before features used this as the "
+            "primary link, hence the field stays for back-compat "
+            "even though it's no longer load-bearing."
+        ),
     )
     personas: list[str] = Field(
         default_factory=list,
@@ -105,7 +117,12 @@ def render_feature(number: int, payload: FeaturePayload) -> str:
     if payload.tickets:
         lines.extend(f"- {ticket}" for ticket in payload.tickets)
     else:
-        lines.append("- (none — this should not happen)")
+        # Empty tickets is normal at M2 ship time — M3 hasn't run
+        # yet. Surface a "to be decomposed" placeholder so the file
+        # is human-readable instead of "this should not happen,"
+        # which used to be true under the pre-T88 workflow but
+        # isn't anymore.
+        lines.append("- *(to be decomposed in M3)*")
     lines.append("")
     return "\n".join(lines)
 

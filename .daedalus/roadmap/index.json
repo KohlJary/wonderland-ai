@@ -1059,6 +1059,16 @@
       "status": "backlog",
       "created_at": "2026-05-10T07:30:43.180169",
       "created_by": "daedalus"
+    },
+    {
+      "id": "171b36e1-a05d-4203-a14b-db6d080c1901",
+      "title": "Rabbit feature merge/delete capability for M2 dedupe",
+      "description": "M2 (composition) can ship duplicate features when Rabbit revises mid-meeting \u2014 observed in the May 10 obol run after the post-T88 reshape: 4 first-pass features + 4 refined-pass features ended up on disk, both batches having the same ``sources`` field. The substrate has no merge or delete affordance, so the operator has to manually queue the right batch (or rm features by hand).\n\nTwo shapes worth considering:\n\n1. New Rabbit decision type \u2014 ``revise_features`` payload like {\"keep\": [slug], \"drop\": [slug, slug, ...]} that the substrate translates into file deletes + metadata updates. Lets Rabbit consciously dedupe at commit time.\n\n2. Auto-dedupe at M2 close \u2014 substrate detects features with overlapping sources and keeps the latest one. Operator-invisible. Risk: surprising; Rabbit's intent to ship two distinct features (with same source) gets silently overridden.\n\nProbably (1) \u2014 explicit operator control via Rabbit's decision schema preserves intent. (2) is a safety net.\n\nPairs with the operator-question affordance from 2cdb3c8: when Rabbit has shipped duplicate features, ``question_to_operator`` could ask \"I have two variants of the dashboard feature \u2014 keep both, merge, or pick one?\" before committing to revise. That's lighter weight than a new schema and uses existing machinery.\n\nFiled as P2 \u2014 not urgent (operator can manually dedupe), but worth doing before the next greenfield project.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T08:51:07.012159",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

@@ -41,16 +41,23 @@ def test_payload_requires_non_empty_description() -> None:
         )
 
 
-def test_payload_requires_at_least_one_ticket() -> None:
-    """A feature with zero tickets isn't a feature, it's a wish."""
-    with pytest.raises(ValidationError):
-        FeaturePayload(
-            title="empty feature",
-            description="this should fail",
-            tickets=[],
-            stack_span=StackSpan.FRONTEND,
-            tier=TicketTier.V1,
-        )
+def test_payload_accepts_empty_tickets_at_m2_ship_time() -> None:
+    """Post-T88 workflow: M2 ships features BEFORE M3 decomposes
+    them into tickets, so feature.tickets is empty when Rabbit
+    first emits the feature. The ticket→feature link is recorded
+    on the ticket side (ticket.sources). Old constraint
+    ``min_length=1`` is dropped because it fought the intended
+    flow — Rabbit was emitting concerns about the schema instead
+    of shipping features.
+    """
+    payload = FeaturePayload(
+        title="empty-at-ship-time",
+        description="M3 will populate tickets later",
+        tickets=[],  # empty at M2 ship time — M3 fills via reverse-index
+        stack_span=StackSpan.FRONTEND,
+        tier=TicketTier.V1,
+    )
+    assert payload.tickets == []
 
 
 def test_payload_validates_stack_span_enum() -> None:

@@ -283,23 +283,28 @@ def test_parse_rejects_feature_decision_with_no_features() -> None:
         )
 
 
-def test_parse_rejects_feature_with_no_tickets() -> None:
-    """A feature aggregates tickets — at least one is required."""
+def test_parse_accepts_feature_with_no_tickets_at_m2_ship_time() -> None:
+    """Post-T88 workflow: M2 ships features BEFORE M3 decomposes
+    tickets, so empty tickets at ship time is the expected shape.
+    Rabbit's M2 directive explicitly says "leave tickets as an
+    empty list; M3 will populate." The earlier constraint that
+    rejected this fought the intended flow."""
     payload = {
         "decision": "feature",
         "body": "...",
         "features": [
             {
-                "title": "empty",
-                "description": "no tickets",
+                "title": "ships at M2, decomposed at M3",
+                "description": "tickets empty at ship time",
                 "tickets": [],
                 "stack_span": "frontend",
                 "tier": "v1",
             }
         ],
     }
-    with pytest.raises(RabbitResponseParseError):
-        parse_rabbit_response(f"```json\n{json.dumps(payload)}\n```")
+    response = parse_rabbit_response(f"```json\n{json.dumps(payload)}\n```")
+    assert response.decision == "feature"
+    assert response.features[0].tickets == []
 
 
 def test_parse_rejects_invalid_decision() -> None:
