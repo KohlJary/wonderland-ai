@@ -44,6 +44,7 @@ _T = TypeVar("_T")
 from wonderland.llm import CachedBlock, Message, SystemPart
 from wonderland.parsing import ResponseParseError
 from wonderland.primer import FRAMEWORK_PRIMER
+from wonderland.telemetry import reset_current_thread_id, set_current_thread_id
 from wonderland.utterance import SpeechAct, Utterance
 
 if TYPE_CHECKING:
@@ -896,6 +897,13 @@ class WonderlandAgent:
             # exception, late-publish suppression) so the ThreadMonitor
             # reliably sees the agent become idle exactly once per turn.
             self._set_state(AgentState.AWAITING_RESPONSE)
+            # Stamp the contextvar so any LLM call inside this turn
+            # gets attributed to the originating meeting/iteration.
+            # Critical for parallel meetings — without this, every
+            # call lands against an empty thread_id and per-meeting
+            # budget checks fall back to the broken global counter.
+            turn_thread_id = triggers[0].thread_id if triggers else ""
+            telemetry_token = set_current_thread_id(turn_thread_id)
             try:
                 context = await self.compose_context(triggers)
                 try:
@@ -937,6 +945,7 @@ class WonderlandAgent:
                     await self.bus.publish(utterance)
                     await self.memory.record(utterance)
             finally:
+                reset_current_thread_id(telemetry_token)
                 self._set_state(AgentState.IDLE)
 
     def _apply_invite_if_any(self, utterance: Utterance) -> None:

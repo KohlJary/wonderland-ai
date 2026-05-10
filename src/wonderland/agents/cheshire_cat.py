@@ -51,6 +51,7 @@ from wonderland.utterance import (
     SpeechAct,
     Utterance,
     UtteranceContent,
+    operator_identity,
 )
 
 if TYPE_CHECKING:
@@ -130,7 +131,15 @@ def cheshire_cat_rules() -> EngagementRules:
 # LLM output protocol
 # --------------------------------------------------------------------- #
 
-CatDecision = Literal["proposal", "question", "reframe", "concern", "deference", "silence"]
+CatDecision = Literal[
+    "proposal",
+    "question",
+    "question_to_operator",
+    "reframe",
+    "concern",
+    "deference",
+    "silence",
+]
 
 
 class CatResponse(BaseModel):
@@ -174,7 +183,8 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "proposal" | "question" | "reframe" | "concern" | "deference" | "silence",
+  "decision": "proposal" | "question" | "question_to_operator" | "reframe" |
+              "concern" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "adr": {                            // include only when decision is "proposal"
                                       // AND there is a real architectural decision
@@ -186,6 +196,20 @@ The JSON must conform to this schema:
   }
 }
 ```
+
+**`question_to_operator` — escalate to the human operator.** Use this
+when the team needs a decision only the operator can make: a stack
+constraint that contradicts the directive, a UX call that can't be
+inferred from stories, a business priority that contracts can't
+disambiguate. The framework pauses the meeting, surfaces your
+question to the operator, and resumes when they reply (their answer
+arrives as an OBSERVATION on the bus, visible to the whole team).
+Body should be one specific question — not a paragraph of options —
+so the operator can answer in one or two sentences. Reserve for
+"team genuinely cannot resolve this," NOT "I'm uncertain about
+details I should work out from context." If the directive or the
+project_context already answers the question, ask the directive,
+not the operator. If `question` (in-team) suffices, prefer that.
 
 Silence is a valid and often correct decision. If the trigger does not
 implicate architecture — or if architecture has already been settled
@@ -350,12 +374,23 @@ class CheshireCat(WonderlandAgent):
                 artifacts.append(adr_artifact)
 
         thread_id, parent_id = self._derive_threading(context)
+        # ``question_to_operator`` is a special routing — the bus
+        # filter ``is_question_to_operator`` requires speech_act=
+        # QUESTION addressed_to a list containing the operator, so
+        # the runner's user-question watcher can pick it up. Other
+        # decisions broadcast to caucus per the in-team norm.
+        if response.decision == "question_to_operator":
+            addressed_to: str | list = [operator_identity()]
+            speech_act = SpeechAct.QUESTION
+        else:
+            addressed_to = "caucus"
+            speech_act = SpeechAct(response.decision)
         return Utterance(
             thread_id=thread_id,
             parent_id=parent_id,
             speaker=self.identity.as_agent_identity(),
-            addressed_to="caucus",
-            speech_act=SpeechAct(response.decision),
+            addressed_to=addressed_to,
+            speech_act=speech_act,
             content=UtteranceContent(body=response.body, artifacts=artifacts),
         )
 

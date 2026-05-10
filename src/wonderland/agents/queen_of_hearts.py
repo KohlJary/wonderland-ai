@@ -45,6 +45,7 @@ from wonderland.utterance import (
     SpeechAct,
     Utterance,
     UtteranceContent,
+    operator_identity,
 )
 
 if TYPE_CHECKING:
@@ -182,7 +183,14 @@ def queen_of_hearts_rules() -> EngagementRules:
 # --------------------------------------------------------------------- #
 
 
-QueenDecision = Literal["ruling", "concern", "question", "deference", "silence"]
+QueenDecision = Literal[
+    "ruling",
+    "concern",
+    "question",
+    "question_to_operator",
+    "deference",
+    "silence",
+]
 
 
 class QueenResponse(BaseModel):
@@ -249,7 +257,8 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "ruling" | "concern" | "question" | "deference" | "silence",
+  "decision": "ruling" | "concern" | "question" | "question_to_operator" |
+              "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "rulings": [                        // include ONLY when decision is "ruling"
     {
@@ -369,12 +378,18 @@ class QueenOfHearts(WonderlandAgent):
             artifacts.extend(self._record_rulings(response.rulings))
 
         thread_id, parent_id = self._derive_threading(context)
+        if response.decision == "question_to_operator":
+            addressed_to: str | list = [operator_identity()]
+            speech_act = SpeechAct.QUESTION
+        else:
+            addressed_to = "caucus"
+            speech_act = SpeechAct(response.decision)
         return Utterance(
             thread_id=thread_id,
             parent_id=parent_id,
             speaker=self.identity.as_agent_identity(),
-            addressed_to="caucus",
-            speech_act=SpeechAct(response.decision),
+            addressed_to=addressed_to,
+            speech_act=speech_act,
             content=UtteranceContent(body=response.body, artifacts=artifacts),
         )
 

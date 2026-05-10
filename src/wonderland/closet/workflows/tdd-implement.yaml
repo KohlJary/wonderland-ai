@@ -1,0 +1,282 @@
+name: tdd-implement
+description: |
+  Implement-phase atom of the TDD pipeline. Operates on features
+  designed by tdd-design that the operator has explicitly queued
+  for implementation. Hatter writes failing tests + Tweedles make
+  them pass per ticket; Caterpillar reviews per feature. Output:
+  features in lifecycle state ``ready_for_review``, awaiting
+  operator verification.
+
+  ## Input filter
+
+  Only iterates over tickets whose parent feature is in lifecycle
+  state ``queued`` (T86 ``iterate_only_in_states``). Features in
+  ``designed`` but not yet queued get skipped silently — the
+  operator's queue gate is the explicit signal "implement these
+  now." Run tdd-design first to produce designed features; pick a
+  batch via the dashboard's Features tab; then run tdd-implement.
+
+  ## TDD red-green-refactor structure
+
+  Tea Party (M6) is per ticket: Hatter writes a failing test +
+  Tweedle commits to an implementation contract for that ticket.
+  Implementation (M7) is per ticket: the responsible Tweedle ships
+  code that makes the test pass. Review (M8) is per feature:
+  Caterpillar evaluates the cohesive feature deliverable, including
+  cross-ticket consistency.
+
+  Per-iteration granularity is deliberately small. Per T88-note
+  (analysis 040 thread), tickets are the natural atomic unit —
+  the rotation cap was always calibrated for ticket-scope work,
+  even when the previous workflow named features as the iteration
+  unit. With tickets as the iteration unit, Rabbit's feature-
+  composition decisions don't silently override the orchestrator's
+  budget calibration.
+
+  ## Output
+
+  - Test files (Hatter's failing tests, then Tweedles' passing tests)
+  - Implementation code in src/ (or skeleton-equivalent paths)
+  - Review notes per feature (Caterpillar's verdict + concerns)
+  - Features end up in lifecycle state ``ready_for_review`` (M8 fires
+    transition_iteration_to: ready_for_review per feature)
+  - Operator gates ``ready_for_review → verified | rejected``;
+    that's not part of this workflow, that's the human verify step
+    via T90's TUI flow
+
+version: 1
+
+defaults:
+  budget_dollars: 8.00
+  quiescence_seconds: 300.0
+
+# Pipeline mode: each queued feature gets its own lane that flows
+# Hatter (M6) → Implementation (M7) → Trial (M8) sequentially within
+# the lane. Lanes run concurrently, so feature-A finishing M6 early
+# can start M7 while feature-B is still in M6 — earliest-feature-
+# first instead of stage-by-stage.
+#
+# Within a lane, ticket-level meetings (M6/M7) iterate over THIS
+# feature's tickets only, not all features' tickets. M8 runs once
+# per lane (per_item: feature, but the feature is implicitly the
+# lane's outer item).
+#
+# Cross-lane isolation: thread ids are namespaced
+# pipe.{feature_slug}.{meeting_id}-{ticket_slug}, and seed
+# resolution drops utterances from other lanes' threads. Lane A's
+# M8 reviewing feature-A's deliverable doesn't see lane B's M6
+# test scenarios for feature-B.
+#
+# File-level safety: M7 ships actual src/ code. Tweedles use diff-
+# based writes (str_replace) for surgical edits, which reduces but
+# doesn't eliminate the risk of two lanes touching the same file
+# concurrently. First-run-of-this-shape data will tell us whether
+# this needs locking or stricter scoping.
+pipeline:
+  per_item: feature
+  parallel: true
+  iterate_only_in_states: [queued, in_progress]
+
+meetings:
+
+  # ─────────────────────────────────────────────────────────────────
+  # M6 — Tea Party per ticket. Hatter writes failing test, Tweedle
+  # commits to implementation contract. The "red" of TDD's red-
+  # green-refactor.
+  # ─────────────────────────────────────────────────────────────────
+  - id: tea-party
+    label: M6
+    name: A Mad Tea Party
+    goal: |
+      produce a failing test + an implementation commitment for this
+      ticket — the red phase of TDD's red-green-refactor loop
+    roster: [mad_hatter, tweedledee, tweedledum]
+    per_item: ticket
+    # Filter spans queued + in_progress because the per-iteration
+    # transition (queued → in_progress on first ticket) would
+    # otherwise cause subsequent tickets of the same feature to be
+    # dropped — the parent feature flips state mid-meeting-set.
+    # Both states represent "feature is being worked on or about
+    # to be"; both should pass.
+    iterate_only_in_states: [queued, in_progress]
+    meeting_budget: 0.50
+    # Entry meeting — the runtime relays the user's directive
+    # verbatim. The seeds (features, tickets, ADRs, contracts —
+    # all from disk via the seed-fallback shipped in 0.3.0) carry
+    # everything Hatter and the Tweedles need; the user's directive
+    # at this stage can be terse like "implement the queued
+    # features per their contracts." Hatter's §V + Tweedles' Pair
+    # Protocol §IV carry the discipline.
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [feature, ticket, adr, ruling, contract_note]
+
+    transition_iteration_to: in_progress
+    phases:
+      - name: red
+        max_rotations: 3
+        team_groupings: [[mad_hatter, tweedledee, tweedledum]]
+      - name: commit
+        max_rotations: 2
+        team_groupings: [[mad_hatter, tweedledee, tweedledum]]
+        exit_condition_artifact: test_scenario
+
+  # ─────────────────────────────────────────────────────────────────
+  # M7 — Implementation per ticket. Tweedles ship code that makes
+  # Hatter's failing tests pass. The "green" of TDD red-green.
+  # No transition fires here — feature stays in_progress until M8
+  # reviews and transitions to ready_for_review.
+  # ─────────────────────────────────────────────────────────────────
+  - id: implementation
+    label: M7
+    name: The Tweedle Pair
+    goal: |
+      ship implementation code that makes the failing test pass —
+      the green phase of TDD's red-green-refactor loop
+    roster: [tweedledee, tweedledum, mad_hatter]
+    per_item: ticket
+    iterate_only_in_states: [queued]
+    meeting_budget: 0.70
+    convenor_directive: |
+      **Tweedles — make the failing test pass.** The ticket's owner
+      ships the implementation. Code lives in non-test directories
+      (src/ or its skeleton equivalent — production code lives
+      under src/, tests under tests/, never inline in conftest.py
+      or test_*.py).
+
+      Run the tests after each meaningful change; iterate until
+      green. Use the str_replace tool for incremental edits where
+      possible (cheaper than write_file when you're only changing
+      part of an existing file).
+
+      **Hatter — refine tests if the implementation surfaces edge
+      cases the original test missed.** Don't write new scenarios
+      from scratch; refine the existing red→green test if the
+      acceptance criteria need sharpening based on what Tweedles
+      ship. If a fundamentally new scenario emerges, that's a
+      signal the ticket's scope was wrong — surface as a concern,
+      Caterpillar's M8 review handles it.
+
+      Stay scoped to THIS ticket. If implementation surfaces
+      cross-ticket coordination needed, surface as a concern;
+      don't pull adjacent tickets' work into this iteration. The
+      per_item: ticket scope is calibrated for atomic work.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      # tickets + contracts come from disk via seed-fallback; tea-party
+      # output (test_scenarios) lives on the bus in this run.
+      - from: any
+        kinds: [ticket, contract_note]
+      - from: tea-party
+        kinds: [test_scenario]
+
+    phases:
+      - name: implement
+        max_rotations: 4
+        team_groupings: [[tweedledee, tweedledum, mad_hatter]]
+      - name: validate
+        max_rotations: 2
+        team_groupings: [[tweedledee, tweedledum, mad_hatter]]
+        exit_condition_artifact: implementation
+
+  # ─────────────────────────────────────────────────────────────────
+  # M8 — Review per feature. Caterpillar evaluates the cohesive
+  # feature deliverable. transition_iteration_to fires per feature
+  # (not per ticket) — feature moves in_progress → ready_for_review
+  # on M8 success.
+  # ─────────────────────────────────────────────────────────────────
+  - id: review
+    label: M8
+    name: The Trial
+    goal: |
+      review the feature's full deliverable — implementation,
+      tests, and cross-ticket coherence — produce a verdict
+    roster: [caterpillar, tweedledee, tweedledum]
+    per_item: feature
+    iterate_only_in_states: [queued]
+    meeting_budget: 0.40
+    convenor_directive: |
+      **Caterpillar — review this feature.**
+
+      The most expensive defects in feature work live *between* files:
+      a contract note says one thing, the backend implements 50% of
+      it, the frontend assumes 100% of it; or a component gets built
+      but never wired into the app entry point. Per-file reviews
+      can't catch these — they require reading multiple files
+      together. Per analysis 040, this is the M8 failure mode that
+      reproduces, and it's the one to ship FIRST when budget is
+      tight. Do these checks in order:
+
+        1. **Cross-ticket coherence FIRST.** Open these together
+           BEFORE any single-file review:
+             - The feature's contract note(s) (the agreement
+               between Tweedles on field semantics)
+             - At least one backend file the contract names
+             - At least one frontend / consumer file the contract
+               names
+             - The app entry point (e.g. ``App.tsx``, ``main.py``,
+               ``main.rs`` — wherever the feature gets mounted into
+               the running program)
+           Verify: do all three name the same fields with the same
+           semantics? Does a category at 85%-of-budget produce the
+           same display state in the frontend as in the backend's
+           response shape? Does the app entry point actually import
+           and render the component the work produced, or is it
+           still rendering the skeleton's placeholder UI?
+           Contract drift and orphaned components are the canonical
+           cross-ticket bugs; both are invisible to a single-file
+           review.
+
+        2. **Does the code match the contract?** Per-file: walk the
+           implementation against the ADR + contract notes.
+           Implementation that drifts from those commitments is a
+           concern even if tests pass — surface the gap.
+
+        3. **Do the tests cover the acceptance criteria?** Each
+           ticket has acceptance conditions; are there test
+           scenarios that demonstrate them? Missing coverage is a
+           concern.
+
+      Verdict: ``approve`` (ship it, transition to
+      ready_for_review) or ``request-changes`` (block, name what
+      must change). Be specific: quote line numbers, name fields,
+      cite contracts. If budget runs out partway through, the
+      cross-ticket check (#1) is the one that has to ship — it's
+      the only review that catches contract drift between Tweedles.
+
+      **Tweedles — defend or revise.** If Caterpillar requests
+      changes, the responsible Tweedle either revises in this
+      meeting (small scope) or surfaces the change as a follow-up
+      ticket (larger scope). Don't argue against valid concerns;
+      the team's collective standard for ``ready_for_review`` is
+      what M8 enforces.
+
+    seeds:
+      # project_context names the entry_point (load-bearing for the
+      # App.tsx-orphan check from analysis 040) + the runtime
+      # shape (Caterpillar uses this to skip stack-incompatible
+      # checks: don't expect App.tsx wiring on a TUI project, etc.)
+      - from: any
+        kinds: [project_context]
+      # Cross-workflow material (features, tickets, ADRs, contracts)
+      # comes from disk via seed-fallback. tea-party + implementation
+      # output lives on this run's bus.
+      - from: any
+        kinds: [feature, ticket, adr, ruling, contract_note]
+      - from: tea-party
+        kinds: [test_scenario]
+      - from: implementation
+        kinds: [implementation]
+
+    transition_iteration_to: ready_for_review
+    phases:
+      - name: review
+        max_rotations: 3
+        team_groupings: [[caterpillar, tweedledee, tweedledum]]
+      - name: defend
+        max_rotations: 2
+        team_groupings: [[caterpillar, tweedledee, tweedledum]]

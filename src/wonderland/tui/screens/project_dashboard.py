@@ -34,8 +34,13 @@ from textual.widgets import (
     Static,
     TabbedContent,
     TabPane,
+    Tree,
 )
 
+from wonderland.feature_lifecycle import (
+    FeatureState,
+    get_state as get_feature_state,
+)
 from wonderland.project import (
     Project,
     RunRecord,
@@ -126,9 +131,60 @@ class _FilteredDirectoryTree(DirectoryTree):
         ]
 
 
+class _FeatureRow:
+    """Lightweight container for a feature row in the dashboard list.
+    Holds slug, title, current lifecycle state, and the path to the
+    feature's markdown file so the detail pane can render the dossier."""
+
+    __slots__ = ("slug", "title", "state", "path")
+
+    def __init__(
+        self, slug: str, title: str, state: FeatureState | None, path: Path
+    ) -> None:
+        self.slug = slug
+        self.title = title
+        self.state = state
+        self.path = path
+
+
+_STATE_BADGE: dict[FeatureState | None, str] = {
+    None: "[dim]?[/dim]",
+    FeatureState.PROPOSED: "[grey50]●[/grey50] proposed",
+    FeatureState.IN_DESIGN: "[blue]●[/blue] in_design",
+    FeatureState.DESIGNED: "[cyan]●[/cyan] designed",
+    FeatureState.QUEUED: "[yellow]●[/yellow] queued",
+    FeatureState.IN_PROGRESS: "[magenta]●[/magenta] in_progress",
+    FeatureState.READY_FOR_REVIEW: "[green]◯[/green] ready_review",
+    FeatureState.VERIFIED: "[bright_green]✓[/bright_green] verified",
+    FeatureState.REJECTED: "[red]✗[/red] rejected",
+}
+
+
+# Filter chip definitions. None state means "all". FeatureState members
+# filter to that specific state. Order chosen to match the operator's
+# typical scan order: triage states first, then terminal states.
+_FILTER_CHIPS: tuple[tuple[str, str, FeatureState | None], ...] = (
+    ("filter-all", "all", None),
+    ("filter-designed", "designed", FeatureState.DESIGNED),
+    ("filter-queued", "queued", FeatureState.QUEUED),
+    ("filter-rfr", "ready_review", FeatureState.READY_FOR_REVIEW),
+    ("filter-in-progress", "in_progress", FeatureState.IN_PROGRESS),
+    ("filter-verified", "verified", FeatureState.VERIFIED),
+    ("filter-rejected", "rejected", FeatureState.REJECTED),
+)
+
+
 class ProjectDashboardScreen(Screen[None]):
-    """Per-project landing surface — tabs for runs / artifacts /
-    files / metrics."""
+    """Per-project landing surface — Features as primary content,
+    drill-downs (Runs / Artifacts / Files / Metrics) as secondary
+    tabs at the bottom.
+
+    Reshape per the P12 architectural conversation: Features are the
+    primary operator interaction surface ("what's the state of my
+    features? which need my attention?"); investigation surfaces
+    (run history, raw artifacts, code tree, metrics) are drill-downs
+    the operator opens when "wait, why did the team make this contract
+    decision?" comes up. Default focus lands on the features list."""
 
     BINDINGS = [
         Binding("escape", "back", "Back", show=True),
@@ -145,6 +201,8 @@ class ProjectDashboardScreen(Screen[None]):
         self.project = project
         self._runs: list[RunRecord] = []
         self._artifacts: list[tuple[str, Path]] = []
+        self._features: list[_FeatureRow] = []
+        self._filter: FeatureState | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -154,16 +212,101 @@ class ProjectDashboardScreen(Screen[None]):
                 f"[dim]{self.project.root_path}[/dim]",
                 id="dashboard-header",
             )
-            # Actions pane — always visible regardless of which tab is
-            # active. Starts with "New Run"; future operator-level
-            # actions (Edit project, Archive, Open in shell, Run-
-            # follow watcher) land in this row alongside.
+            # Actions pane (T92) — all P12 actions always visible so
+            # the operator's mental model of what's possible doesn't
+            # depend on lifecycle state. The state-aware part is
+            # PRIORITY: the highest-leverage action gets variant=
+            # primary (visually emphasized); secondary actions stay
+            # default. Buttons whose target state has zero features
+            # get disabled (greyed out) but stay visible — operator
+            # sees "Implement 0 queued" and understands they need to
+            # queue something first.
+            #
+            # Priority order (T92):
+            #   verify ready_for_review > implement queued >
+            #   design (always available; promoted when nothing else
+            #   is actionable)
             with Horizontal(id="dashboard-actions"):
                 yield Button(
-                    "▶ New Run",
-                    id="dashboard-new-run-button",
+                    "▶ Design features",
+                    id="action-design",
                     variant="primary",
                 )
+                yield Button(
+                    "▶ Implement queued",
+                    id="action-implement",
+                )
+                yield Button(
+                    "▶ Verify ready",
+                    id="action-verify-ready",
+                )
+                yield Button(
+                    "Custom run",
+                    id="action-custom-run",
+                )
+
+            # Features primary surface — left list (with state filter
+            # chips), right detail (dossier + per-feature actions).
+            # This is the operator's main attention surface in P12.
+            with Horizontal(id="features-row"):
+                with Vertical(id="features-list-pane"):
+                    yield Static("[b]Features[/b]", id="features-list-label")
+                    with Horizontal(id="features-filter-row"):
+                        for chip_id, label, _state in _FILTER_CHIPS:
+                            classes = "filter-chip"
+                            if _state is None:
+                                classes += " filter-active"
+                            yield Button(
+                                label, id=chip_id, classes=classes
+                            )
+                    # Tree (not DataTable): each feature is a parent
+                    # node; its tickets nest underneath like a file
+                    # tree. Operator can highlight a ticket and see
+                    # the same dossier shape as for features. Default
+                    # expanded so tickets are immediately visible —
+                    # typical project sizes (3-6 features × 1-4
+                    # tickets) fit fine.
+                    yield Tree(
+                        "Features",
+                        id="features-tree",
+                    )
+                with Vertical(id="features-detail-pane"):
+                    yield Static(
+                        "[b]Feature detail[/b]",
+                        id="features-detail-label",
+                    )
+                    with VerticalScroll(id="features-detail-scroll"):
+                        yield Static(
+                            "[dim](no feature selected)[/dim]",
+                            id="features-detail",
+                        )
+                    with Horizontal(id="feature-actions-row"):
+                        yield Button(
+                            "Queue", id="feature-action-queue"
+                        )
+                        yield Button(
+                            "Un-queue", id="feature-action-unqueue"
+                        )
+                        yield Button(
+                            "Verify",
+                            id="feature-action-verify",
+                            variant="success",
+                        )
+                        yield Button(
+                            "Reject",
+                            id="feature-action-reject",
+                            variant="error",
+                        )
+
+            # Drill-downs — investigation surfaces. Take less screen
+            # real estate than the Features section; operator opens
+            # them with 1/2/3/4 keybinds when investigating "why
+            # did the team make this decision?" types of questions.
+            yield Static(
+                "[dim]Drill-downs · 1=Runs  2=Artifacts  "
+                "3=Files  4=Metrics[/dim]",
+                id="dashboard-drilldown-label",
+            )
             with TabbedContent(id="dashboard-tabs"):
                 with TabPane("Runs", id="tab-runs"):
                     yield from self._compose_runs_tab()
@@ -320,6 +463,23 @@ class ProjectDashboardScreen(Screen[None]):
             if row is None or row < 0 or row >= len(self._artifacts):
                 return
             self._render_artifact_content(self._artifacts[row])
+
+    def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+        """Tree cursor moved → update the detail pane to match the
+        highlighted node. Features render their dossier; tickets
+        render the ticket markdown plus a header naming the parent
+        feature so the operator keeps context."""
+        if event.node.tree.id != "features-tree":
+            return
+        data = event.node.data
+        if data is None:
+            return
+        if data.get("kind") == "feature":
+            self._render_feature_detail(data["row"])
+        elif data.get("kind") == "ticket":
+            self._render_ticket_detail(
+                data["record"], data["feature_row"]
+            )
 
     # ------------------------------------------------------------------ #
     # Artifacts tab (T83)
@@ -656,13 +816,396 @@ class ProjectDashboardScreen(Screen[None]):
         detail.update(header + "\n" + text)
 
     # ------------------------------------------------------------------ #
+    # Features primary surface
+    # ------------------------------------------------------------------ #
+
+    def _load_features(self) -> list[_FeatureRow]:
+        """Read all features from the project's registry, attach
+        their current lifecycle state. Best-effort — missing
+        registry returns empty list.
+
+        Back-fill: features that exist on disk but have no transition
+        log entry (typically pre-T85 projects, but also any feature
+        emitted before lifecycle wiring caught it) get recorded as
+        ``designed`` via back_fill_state. Most accurate default for
+        the typical case — features came out of M2.5 with contracts
+        + scenarios, fully designed but not yet operator-touched.
+        Operator can then queue / verify normally.
+        """
+        from wonderland.feature_lifecycle import back_fill_state
+
+        try:
+            from wonderland.feature import FeatureRegistry
+
+            records = FeatureRegistry(self.project.root_path).list_features()
+        except Exception:  # noqa: BLE001
+            return []
+        out: list[_FeatureRow] = []
+        for rec in records:
+            state = get_feature_state(self.project.root_path, rec.slug)
+            if state is None:
+                # Pre-T85 feature without lifecycle record. Back-fill
+                # as designed — operator can queue / verify from there.
+                try:
+                    back_fill_state(
+                        self.project.root_path,
+                        rec.slug,
+                        FeatureState.DESIGNED,
+                        notes=(
+                            "Back-filled from pre-T85 feature on disk "
+                            "(no transition log)"
+                        ),
+                    )
+                    state = FeatureState.DESIGNED
+                except Exception:  # noqa: BLE001
+                    # If back-fill fails for any reason, leave state
+                    # as None and let the operator deal with it; the
+                    # dashboard renders ?-badge for None.
+                    pass
+            out.append(
+                _FeatureRow(
+                    slug=rec.slug,
+                    title=rec.title,
+                    state=state,
+                    path=rec.path,
+                )
+            )
+        # Sort: active states first (designed/queued/in_progress/
+        # ready_review), then proposed/in_design, then terminal
+        # (verified/rejected). Within each tier, alphabetical by slug.
+        priority = {
+            FeatureState.READY_FOR_REVIEW: 0,
+            FeatureState.QUEUED: 1,
+            FeatureState.DESIGNED: 2,
+            FeatureState.IN_PROGRESS: 3,
+            FeatureState.IN_DESIGN: 4,
+            FeatureState.PROPOSED: 5,
+            FeatureState.VERIFIED: 6,
+            FeatureState.REJECTED: 7,
+            None: 8,
+        }
+        out.sort(key=lambda r: (priority.get(r.state, 99), r.slug))
+        return out
+
+    def _refresh_action_buttons(self) -> None:
+        """T92: update the actions pane based on current feature
+        lifecycle distribution. Counts features per state, sets
+        button labels with counts, disables buttons whose target
+        state has zero features, and assigns variant=primary to the
+        highest-priority actionable button.
+
+        Priority order: verify > implement > design. The design
+        button is the always-on baseline (you can always make more
+        features); it gets primary variant only when no other
+        actions have features waiting."""
+        counts: dict[FeatureState, int] = {state: 0 for state in FeatureState}
+        for f in self._features:
+            if f.state is not None:
+                counts[f.state] = counts.get(f.state, 0) + 1
+
+        try:
+            design_btn = self.query_one("#action-design", Button)
+            implement_btn = self.query_one("#action-implement", Button)
+            verify_btn = self.query_one("#action-verify-ready", Button)
+            custom_btn = self.query_one("#action-custom-run", Button)
+        except Exception:  # noqa: BLE001 — pre-mount race; refresh fires later
+            return
+
+        n_queued = counts.get(FeatureState.QUEUED, 0)
+        n_ready = counts.get(FeatureState.READY_FOR_REVIEW, 0)
+
+        # Update labels with current counts.
+        implement_btn.label = f"▶ Implement {n_queued} queued"
+        verify_btn.label = f"▶ Verify {n_ready} ready"
+
+        # Disable empty-target buttons. Textual's Button.disabled
+        # greys out the button + blocks click events.
+        implement_btn.disabled = n_queued == 0
+        verify_btn.disabled = n_ready == 0
+
+        # Primary variant assignment — exactly one button gets the
+        # primary spotlight. Priority: verify > implement > design.
+        # Custom-run never gets primary; it's the escape hatch.
+        if n_ready > 0:
+            primary_id = "action-verify-ready"
+        elif n_queued > 0:
+            primary_id = "action-implement"
+        else:
+            primary_id = "action-design"
+
+        for btn in (design_btn, implement_btn, verify_btn, custom_btn):
+            if btn.id == primary_id:
+                btn.variant = "primary"
+            else:
+                btn.variant = "default"
+
+    def _action_run_design(self) -> None:
+        """Push NewRunScreen with project context + tdd-design pre-
+        selected. Design runs are cheap (~$3); operator can iterate
+        the design loop several times before committing
+        implementation budget. Operator writes their own directive —
+        design needs the operator's framing of what they want
+        designed."""
+        from wonderland.tui.screens.new_run import NewRunScreen
+
+        self.app.push_screen(
+            NewRunScreen(
+                project=self.project,
+                default_workflow="tdd-design",
+            )
+        )
+
+    def _action_run_implement(self) -> None:
+        """Push NewRunScreen with project context + tdd-implement
+        pre-selected + a boilerplate directive. Operator can edit
+        the directive (e.g. to add focus like 'prioritize the Plaid
+        integration'), or just hit Go — the team works from seeded
+        lifecycle artifacts (features, tickets, contracts on disk),
+        so the directive text isn't load-bearing."""
+        from wonderland.tui.screens.new_run import NewRunScreen
+
+        n_queued = sum(
+            1 for f in self._features if f.state == FeatureState.QUEUED
+        )
+        directive = (
+            f"Implement the {n_queued} queued feature(s) per their "
+            f"existing tickets and contracts. The team works from "
+            f"seeded lifecycle artifacts; this directive is a "
+            f"placeholder — edit to add focus if useful."
+        )
+        self.app.push_screen(
+            NewRunScreen(
+                project=self.project,
+                default_workflow="tdd-implement",
+                default_directive=directive,
+            )
+        )
+
+    def _action_verify_first_ready(self) -> None:
+        """Move cursor to the first ready_for_review feature and open
+        the verify modal. Operator can verify or reject; on dismiss,
+        action_refresh re-counts so the button updates if there are
+        more rfr features queued."""
+        # Find the first ready_for_review feature in display order
+        # (which is sort-priority sorted, so rfr is near the top).
+        target_row: _FeatureRow | None = None
+        visible = [
+            r for r in self._features
+            if self._filter is None or r.state == self._filter
+        ]
+        for row in visible:
+            if row.state == FeatureState.READY_FOR_REVIEW:
+                target_row = row
+                break
+        if target_row is None:
+            self.notify(
+                "No ready_for_review features. State changed — "
+                "refresh and try again.",
+                severity="warning",
+            )
+            return
+        try:
+            tree = self.query_one("#features-tree", Tree)
+            tree.focus()
+            # Find the matching feature node and move cursor to it.
+            for node in tree.root.children:
+                if (
+                    node.data is not None
+                    and node.data.get("kind") == "feature"
+                    and node.data["row"].slug == target_row.slug
+                ):
+                    tree.select_node(node)
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        # Open the verify modal directly — operator's intent at this
+        # action is "verify the first ready feature."
+        self._open_verify_modal("verify")
+
+    def _action_custom_run(self) -> None:
+        """Escape hatch — operator wants a workflow not in the typical
+        design/implement loop (smoke, canonical, dev variants, etc.).
+        Pushes NewRunScreen with project context but no hint."""
+        from wonderland.tui.screens.new_run import NewRunScreen
+
+        self.app.push_screen(NewRunScreen(project=self.project))
+
+    def _populate_features(self) -> None:
+        tree = self.query_one("#features-tree", Tree)
+        tree.clear()
+        tree.show_root = False  # the pane label "Features" is enough
+        self._features = self._load_features()
+        # T92: refresh the actions pane every time the features list
+        # changes so button state (counts, primary variant, disabled
+        # flags) tracks reality.
+        self._refresh_action_buttons()
+        visible = [
+            r for r in self._features
+            if self._filter is None or r.state == self._filter
+        ]
+        if not visible:
+            self._render_features_empty_state()
+            return
+
+        # feature_slug → list[TicketRecord]. Built from each ticket's
+        # Sources field (option-1 source-of-truth from the slug-
+        # mismatch fix in analysis 040 vintage).
+        feature_to_tickets = self._load_ticket_tree()
+
+        for row in visible:
+            badge = _STATE_BADGE.get(row.state, "[dim]?[/dim]")
+            title = row.title[:60] + ("…" if len(row.title) > 60 else "")
+            label = f"{badge}  [b]{title}[/b]  [dim]{row.slug}[/dim]"
+            node = tree.root.add(
+                label,
+                data={"kind": "feature", "row": row},
+                expand=True,
+            )
+            for ticket in feature_to_tickets.get(row.slug, []):
+                ticket_title = ticket.title[:55] + (
+                    "…" if len(ticket.title) > 55 else ""
+                )
+                ticket_label = (
+                    f"[dim]·[/dim] {ticket_title}  "
+                    f"[dim]{ticket.slug}[/dim]"
+                )
+                node.add_leaf(
+                    ticket_label,
+                    data={
+                        "kind": "ticket",
+                        "record": ticket,
+                        "feature_row": row,
+                    },
+                )
+
+        # Land cursor on the first feature + render its detail so the
+        # right pane isn't empty on initial mount.
+        if tree.root.children:
+            tree.cursor_line = 0
+        self._render_feature_detail(visible[0])
+
+    def _load_ticket_tree(self) -> dict[str, list]:
+        """Map each feature slug → list of TicketRecord that name it
+        as their parent (via the ticket's Sources field). Returns
+        empty dict on any I/O / registry error so the tree can still
+        render features as leaf-only nodes."""
+        try:
+            from wonderland.ticket import TicketRegistry
+            from wonderland.workflow import _ticket_to_feature_map
+        except Exception:  # noqa: BLE001
+            return {}
+        try:
+            records = TicketRegistry(
+                self.project.root_path
+            ).list_tickets()
+            ticket_to_feature = _ticket_to_feature_map(
+                self.project.root_path
+            )
+        except Exception:  # noqa: BLE001
+            return {}
+        out: dict[str, list] = {}
+        for rec in records:
+            feature_slug = ticket_to_feature.get(rec.slug)
+            if feature_slug is None:
+                continue
+            out.setdefault(feature_slug, []).append(rec)
+        # Sort tickets within each feature by ticket number for a
+        # stable, human-readable order.
+        for feature_slug in out:
+            out[feature_slug].sort(key=lambda r: r.number)
+        return out
+
+    def _render_features_empty_state(self) -> None:
+        detail = self.query_one("#features-detail", Static)
+        if not self._features:
+            detail.update(
+                "[b yellow]No features yet for this project.[/b yellow]\n\n"
+                "Run [b]tdd-design[/b] (or [b]tdd-serial-phased[/b] for the "
+                "all-in-one) and Rabbit will produce features in M2.\n\n"
+                "[dim]After at least one design run completes, the features "
+                "will surface here with state badges showing where each one "
+                "is in the lifecycle.[/dim]"
+            )
+        else:
+            filter_label = (
+                self._filter.value if self._filter else "all"
+            )
+            detail.update(
+                f"[dim]No features in state '[b]{filter_label}[/b]'. "
+                f"({len(self._features)} total — try a different filter.)[/dim]"
+            )
+
+    def _render_feature_detail(self, row: _FeatureRow) -> None:
+        detail = self.query_one("#features-detail", Static)
+        try:
+            body = row.path.read_text(encoding="utf-8")
+        except OSError as exc:
+            detail.update(f"[red]Read failed: {exc}[/red]")
+            return
+        badge = _STATE_BADGE.get(row.state, "[dim]?[/dim]")
+        header = f"[b]{row.title}[/b]   {badge}\n[dim]{row.slug}[/dim]\n\n"
+        detail.update(header + body)
+
+    def _render_ticket_detail(
+        self, record, feature_row: _FeatureRow
+    ) -> None:
+        """Render a ticket's markdown in the detail pane with a
+        header naming the parent feature. Same shape as the feature
+        detail render so the operator's eye doesn't have to retrain
+        when moving between feature and ticket nodes."""
+        detail = self.query_one("#features-detail", Static)
+        try:
+            body = record.path.read_text(encoding="utf-8")
+        except OSError as exc:
+            detail.update(f"[red]Read failed: {exc}[/red]")
+            return
+        badge = _STATE_BADGE.get(feature_row.state, "[dim]?[/dim]")
+        header = (
+            f"[b]Ticket — {record.title}[/b]\n"
+            f"[dim]{record.slug}[/dim]\n"
+            f"Parent feature: [dim]{feature_row.slug}[/dim]   {badge}\n\n"
+        )
+        detail.update(header + body)
+
+    def _filter_state_for(self, button_id: str) -> FeatureState | None:
+        for chip_id, _label, state in _FILTER_CHIPS:
+            if chip_id == button_id:
+                return state
+        return None
+
+    def _set_filter(self, state: FeatureState | None) -> None:
+        self._filter = state
+        # Update chip styling: 'filter-active' class on the chip that
+        # matches the new filter, removed from others.
+        active_id = next(
+            (chip_id for chip_id, _l, s in _FILTER_CHIPS if s == state),
+            "filter-all",
+        )
+        for chip_id, _label, _state in _FILTER_CHIPS:
+            try:
+                btn = self.query_one(f"#{chip_id}", Button)
+            except Exception:  # noqa: BLE001
+                continue
+            if chip_id == active_id:
+                btn.add_class("filter-active")
+            else:
+                btn.remove_class("filter-active")
+        self._populate_features()
+
+    # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
 
     def on_mount(self) -> None:
+        self._populate_features()
         self._populate_runs()
         self._populate_artifacts()
         self._populate_metrics()
+        # Land focus on the features tree — primary attention surface.
+        try:
+            self.query_one("#features-tree", Tree).focus()
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------ #
     # Actions
@@ -681,10 +1224,174 @@ class ProjectDashboardScreen(Screen[None]):
         self.app.push_screen(NewRunScreen(project=self.project))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "dashboard-new-run-button":
+        bid = event.button.id
+        if bid is None:
+            return
+        # T92 actions pane — state-aware dispatch.
+        if bid == "action-design":
+            self._action_run_design()
+        elif bid == "action-implement":
+            self._action_run_implement()
+        elif bid == "action-verify-ready":
+            self._action_verify_first_ready()
+        elif bid == "action-custom-run":
+            self._action_custom_run()
+        elif bid == "dashboard-new-run-button":
+            # Legacy id from before T92 — keep handler so any test or
+            # external trigger that still uses it works.
             self.action_new_run()
+        elif bid.startswith("filter-"):
+            # Filter chip — set the lifecycle-state filter and
+            # re-populate the features list.
+            state = self._filter_state_for(bid)
+            self._set_filter(state)
+        elif bid.startswith("feature-action-"):
+            # Per-feature actions. T90 wires verify/reject to actually
+            # transition state + capture notes; queue/un-queue work
+            # via direct lifecycle.transition() since they don't need
+            # operator notes. For now, queue/un-queue ship; verify
+            # and reject notify "T90 wires this" so the buttons exist
+            # but the verify-with-notes flow ships in its own task.
+            self._handle_feature_action(bid)
+
+    def _handle_feature_action(self, button_id: str) -> None:
+        """Per-feature action button dispatch. Queue / Un-queue ship
+        now (single-step transitions, no operator notes needed).
+        Verify / Reject defer to T90 which adds the notes-modal."""
+        from wonderland.feature_lifecycle import (
+            IllegalTransitionError,
+            transition,
+        )
+
+        row = self._currently_highlighted_feature()
+        if row is None:
+            self.notify("No feature selected.", severity="warning")
+            return
+
+        if button_id == "feature-action-queue":
+            try:
+                transition(
+                    self.project.root_path,
+                    row.slug,
+                    FeatureState.QUEUED,
+                    by="operator",
+                )
+                self.notify(
+                    f"Queued {row.slug} for next implementation run."
+                )
+                self.action_refresh()
+            except IllegalTransitionError as exc:
+                self.notify(f"Can't queue: {exc}", severity="warning")
+        elif button_id == "feature-action-unqueue":
+            try:
+                transition(
+                    self.project.root_path,
+                    row.slug,
+                    FeatureState.DESIGNED,
+                    by="operator",
+                    notes="Un-queued",
+                )
+                self.notify(f"Un-queued {row.slug}.")
+                self.action_refresh()
+            except IllegalTransitionError as exc:
+                self.notify(f"Can't un-queue: {exc}", severity="warning")
+        elif button_id == "feature-action-verify":
+            self._open_verify_modal("verify")
+        elif button_id == "feature-action-reject":
+            self._open_verify_modal("reject")
+
+    def _open_verify_modal(self, mode: str) -> None:
+        """Push the verify/reject modal for the highlighted feature.
+        Guards: feature must be selected AND in ready_for_review
+        state. Both branches surface a useful warning notify if the
+        guards fail."""
+        from wonderland.tui.screens.verify_modal import (
+            VerifyRejectModal,
+        )
+
+        row = self._currently_highlighted_feature()
+        if row is None:
+            self.notify("No feature selected.", severity="warning")
+            return
+        if row.state != FeatureState.READY_FOR_REVIEW:
+            current = row.state.value if row.state else "(no state)"
+            self.notify(
+                f"Can only {mode} features in 'ready_for_review' "
+                f"state. {row.slug!r} is currently {current!r}.",
+                severity="warning",
+                timeout=6,
+            )
+            return
+        self.app.push_screen(
+            VerifyRejectModal(
+                feature_slug=row.slug,
+                feature_title=row.title,
+                mode=mode,  # type: ignore[arg-type]
+            ),
+            self._on_verify_modal_done,
+        )
+
+    def _on_verify_modal_done(
+        self, result: tuple[FeatureState, str] | None
+    ) -> None:
+        """Callback for the verify/reject modal. Dismiss returned
+        either (target_state, notes) on submit or None on cancel."""
+        if result is None:
+            return
+        from wonderland.feature_lifecycle import (
+            IllegalTransitionError,
+            transition,
+        )
+
+        target_state, notes = result
+        # Highlighted row is what the modal acted on — re-resolve to
+        # be safe (cursor might have moved between the modal push
+        # and dismiss; rare but possible if the user navigated mid-
+        # modal somehow).
+        row = self._currently_highlighted_feature()
+        if row is None:
+            self.notify(
+                "Lost feature reference; refresh and try again.",
+                severity="error",
+            )
+            return
+        try:
+            transition(
+                self.project.root_path,
+                row.slug,
+                target_state,
+                by="operator",
+                notes=notes if notes else None,
+            )
+        except IllegalTransitionError as exc:
+            self.notify(f"Transition failed: {exc}", severity="error")
+            return
+        verb = "verified" if target_state == FeatureState.VERIFIED else "rejected"
+        self.notify(f"{row.slug} {verb}.", timeout=4)
+        self.action_refresh()
+
+    def _currently_highlighted_feature(self) -> _FeatureRow | None:
+        """Return the feature corresponding to the highlighted node
+        in the features tree. When a ticket is highlighted, returns
+        the parent feature — so action buttons (queue / verify /
+        reject) operate on the feature even while the operator is
+        scrolling around the ticket sub-tree."""
+        try:
+            tree = self.query_one("#features-tree", Tree)
+        except Exception:  # noqa: BLE001
+            return None
+        node = tree.cursor_node
+        if node is None or node.data is None:
+            return None
+        kind = node.data.get("kind")
+        if kind == "feature":
+            return node.data["row"]
+        if kind == "ticket":
+            return node.data["feature_row"]
+        return None
 
     def action_refresh(self) -> None:
+        self._populate_features()
         self._populate_runs()
         self._populate_artifacts()
         self._populate_metrics()

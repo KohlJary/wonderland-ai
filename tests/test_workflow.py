@@ -1287,6 +1287,10 @@ class FakeEvent:
 @dataclass
 class FakeTelemetry:
     call_count: int = 0
+    _per_thread_cost: dict[str, float] = field(default_factory=dict)
+
+    def cost_for_thread(self, thread_id: str) -> float:
+        return self._per_thread_cost.get(thread_id, 0.0)
 
 
 class FakeRunner:
@@ -1341,10 +1345,17 @@ class FakeRunner:
         # Mirrors the real Runner.events() filter: stale `complete`
         # events from other threads should be yielded but not end
         # iteration when terminal_thread_id is set.
-        for ev in self._scripts.get(self._current_thread or "", []):
+        thread = self._current_thread or ""
+        for ev in self._scripts.get(thread, []):
             if ev.kind == "utterance":
                 self.telemetry.call_count += 1
                 self.total_cost += 0.10
+                # Mirror per-thread cost so cost_for_thread-based
+                # budget checks see the same accounting the global
+                # counter does.
+                self.telemetry._per_thread_cost[thread] = (
+                    self.telemetry._per_thread_cost.get(thread, 0.0) + 0.10
+                )
             yield ev
             await asyncio.sleep(0)
             if ev.kind in ("aborted", "timeout"):
@@ -2146,3 +2157,293 @@ class TestTddSerialWorkflow:
         ]
         assert m4_threads == ["test-scenarios-sessions", "test-scenarios-breaks"]
         assert m5_threads == ["implementation-sessions", "implementation-breaks"]
+
+
+# --------------------------------------------------------------------- #
+# Pipeline mode (per-feature lanes flowing concurrently)
+# --------------------------------------------------------------------- #
+
+
+class TestPipelineMode:
+    """``Workflow.pipeline`` inverts the dispatch: lanes (one per outer
+    item) flow concurrently, each lane runs every meeting in order.
+    Built for tdd-implement's per-feature Hatter→Implementation→Trial
+    flow. These tests exercise dispatch shape; per-thread cost
+    isolation is covered in test_telemetry.py."""
+
+    def _three_meeting_pipeline_workflow(self) -> Workflow:
+        """A workflow with pipeline mode + three meetings, all
+        per_item: feature so they run once per lane (no sub-iteration).
+        Sub-iteration with ticket-level scoping requires a real
+        project_root with disk artifacts; smoke validation lives
+        in real-run telemetry, not unit tests."""
+        from wonderland.workflow import Pipeline
+
+        return Workflow(
+            name="pipe-test",
+            description="d",
+            pipeline=Pipeline(per_item="feature", parallel=True),
+            meetings=[
+                Meeting(
+                    id="m1",
+                    label="M1",
+                    goal="g",
+                    roster=["alice"],
+                    per_item="feature",
+                    seeds=[],
+                ),
+                Meeting(
+                    id="m2",
+                    label="M2",
+                    goal="g",
+                    roster=["alice"],
+                    per_item="feature",
+                    seeds=[
+                        SeedBinding(**{"from": "m1", "kinds": ["spec"]}),
+                    ],
+                ),
+                Meeting(
+                    id="m3",
+                    label="M3",
+                    goal="g",
+                    roster=["alice"],
+                    per_item="feature",
+                    seeds=[
+                        SeedBinding(**{"from": "m1", "kinds": ["spec"]}),
+                        SeedBinding(**{"from": "m2", "kinds": ["impl"]}),
+                    ],
+                ),
+            ],
+        )
+
+    async def test_pipeline_mode_runs_one_lane_per_outer_item(self):
+        """Two outer items → two lanes, each running m1+m2+m3."""
+        wf = self._three_meeting_pipeline_workflow()
+        # Seed the bus capture with two features by having a synthetic
+        # entry meeting publish them. In pipeline mode the runtime
+        # collects outer items from the capture; we inject them via
+        # the FakeRunner script path keyed on the lane thread_ids.
+        scripts: dict[str, list[FakeEvent]] = {}
+        for slug in ("alpha", "beta"):
+            for mid in ("m1", "m2", "m3"):
+                tid = f"pipe.{slug}.{mid}-{slug}"
+                scripts[tid] = [FakeEvent("complete", {"thread_id": tid})]
+
+        runner = FakeRunner(scripts)
+        # Inject the outer items by pre-seeding the capture: emit
+        # feature artifacts before run_workflow starts. Easiest path:
+        # add a pre-pipeline meeting whose script emits features —
+        # but pipeline mode skips the linear meetings list. Instead,
+        # we patch the capture with synthetic features.
+        from wonderland.workflow import _run_pipelined_workflow
+
+        # Stub the outer-item collection by writing features to
+        # capture before kickoff. Use the bus path: have the runner's
+        # convene mechanism publish feature artifacts on a "main"
+        # thread that the pipeline runtime sees during _collect_per_item_items.
+        # Simpler: monkeypatch _collect_per_item_items to return our
+        # two features for the outer collection call.
+        from wonderland import workflow as wf_module
+
+        original = wf_module._collect_per_item_items
+        outer_items = [
+            {"slug": "alpha", "title": "Alpha"},
+            {"slug": "beta", "title": "Beta"},
+        ]
+
+        def _stub(*, item_kind, state_filter, capture, runner, lane_outer_kind=None, lane_outer_slug=None):
+            if lane_outer_slug is None:
+                # Outer collection — return the two features.
+                return outer_items
+            # Sub-collection (none in this workflow shape, all
+            # meetings are per_item: feature == outer_kind so this
+            # branch isn't taken).
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            starts: list[MeetingStartEvent] = []
+            ends: list[MeetingEndEvent] = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingStartEvent):
+                    starts.append(ev)
+                elif isinstance(ev, MeetingEndEvent):
+                    ends.append(ev)
+        finally:
+            wf_module._collect_per_item_items = original
+
+        # 2 lanes × 3 meetings = 6 starts + 6 ends.
+        assert len(starts) == 6
+        assert len(ends) == 6
+        # Each lane covers all three meetings.
+        per_lane: dict[str, list[str]] = {}
+        for s in starts:
+            # Extract lane prefix: "pipe.{slug}." then the rest.
+            assert s.thread_id.startswith("pipe.")
+            slug = s.thread_id.split(".", 2)[1]
+            per_lane.setdefault(slug, []).append(s.meeting.id)
+        assert set(per_lane) == {"alpha", "beta"}
+        for slug, meeting_ids in per_lane.items():
+            assert sorted(meeting_ids) == ["m1", "m2", "m3"], (slug, meeting_ids)
+
+    async def test_pipeline_thread_ids_are_namespaced_with_lane_prefix(self):
+        """Each lane's meeting thread_id has shape
+        ``pipe.{lane_slug}.{meeting_id}-{lane_slug}`` so resolve_seeds'
+        lane filter can drop other-lane utterances."""
+        wf = self._three_meeting_pipeline_workflow()
+        scripts: dict[str, list[FakeEvent]] = {}
+        for slug in ("alpha",):
+            for mid in ("m1", "m2", "m3"):
+                tid = f"pipe.{slug}.{mid}-{slug}"
+                scripts[tid] = [FakeEvent("complete", {"thread_id": tid})]
+        runner = FakeRunner(scripts)
+        from wonderland import workflow as wf_module
+        from wonderland.workflow import _run_pipelined_workflow
+
+        original = wf_module._collect_per_item_items
+
+        def _stub(**kw):
+            if kw.get("lane_outer_slug") is None:
+                return [{"slug": "alpha", "title": "Alpha"}]
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            thread_ids: list[str] = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingStartEvent):
+                    thread_ids.append(ev.thread_id)
+        finally:
+            wf_module._collect_per_item_items = original
+
+        assert thread_ids == [
+            "pipe.alpha.m1-alpha",
+            "pipe.alpha.m2-alpha",
+            "pipe.alpha.m3-alpha",
+        ]
+
+    async def test_pipeline_no_outer_items_emits_synthetic_skip(self):
+        """Empty outer-item set → one synthetic start+end per
+        meeting (mirrors the legacy per_item empty-items path).
+        Operator sees the workflow was acknowledged."""
+        wf = self._three_meeting_pipeline_workflow()
+        runner = FakeRunner({})
+        from wonderland import workflow as wf_module
+        from wonderland.workflow import _run_pipelined_workflow
+
+        original = wf_module._collect_per_item_items
+
+        def _stub(**kw):
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            starts: list[MeetingStartEvent] = []
+            ends: list[MeetingEndEvent] = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingStartEvent):
+                    starts.append(ev)
+                elif isinstance(ev, MeetingEndEvent):
+                    ends.append(ev)
+        finally:
+            wf_module._collect_per_item_items = original
+
+        # One synthetic start+end per meeting (3 meetings = 3 of each).
+        assert len(starts) == 3
+        assert len(ends) == 3
+        for s in starts:
+            assert s.iteration_label == "(no items)"
+            assert s.iteration_total == 0
+
+
+class TestResolveSeedsLaneScoping:
+    """``lane_thread_prefix`` drops utterances from OTHER lanes so
+    lane A's M2 sees lane A's M1 output but not lane B's. Non-pipe
+    threads (entry meetings, sequential workflows) are always
+    allowed through."""
+
+    def test_lane_filter_drops_other_lane_threads(self):
+        capture = WorkflowCapture()
+        # Lane A's M1 output:
+        capture.observe(_utt(
+            thread_id="pipe.alpha.m1-alpha",
+            artifacts=[_art("spec", slug="alpha-spec")],
+        ))
+        # Lane B's M1 output:
+        capture.observe(_utt(
+            thread_id="pipe.beta.m1-beta",
+            artifacts=[_art("spec", slug="beta-spec")],
+        ))
+
+        bindings = [SeedBinding(**{"from": "any", "kinds": ["spec"]})]
+
+        # Lane A's perspective — only lane A's spec should be visible.
+        result = resolve_seeds(
+            bindings,
+            capture,
+            lane_thread_prefix="pipe.alpha.",
+        )
+        slugs = [
+            a.payload["slug"]
+            for u in result
+            for a in u.content.artifacts
+            if a.kind == "spec"
+        ]
+        assert slugs == ["alpha-spec"]
+
+    def test_lane_filter_keeps_non_pipe_threads(self):
+        """Sequential-mode threads (no ``pipe.`` prefix) and the
+        entry meeting's "main" thread are visible to all lanes."""
+        capture = WorkflowCapture()
+        # Cross-cutting (entry-meeting) artifact on a non-pipe thread:
+        capture.observe(_utt(
+            thread_id="main",
+            artifacts=[_art("config", slug="root")],
+        ))
+        # Lane B's M1:
+        capture.observe(_utt(
+            thread_id="pipe.beta.m1-beta",
+            artifacts=[_art("config", slug="beta-config")],
+        ))
+
+        bindings = [SeedBinding(**{"from": "any", "kinds": ["config"]})]
+
+        result = resolve_seeds(
+            bindings,
+            capture,
+            lane_thread_prefix="pipe.alpha.",
+        )
+        slugs = [
+            a.payload["slug"]
+            for u in result
+            for a in u.content.artifacts
+            if a.kind == "config"
+        ]
+        # The "main" config is kept (cross-cutting); lane B's config
+        # is dropped (other lane).
+        assert slugs == ["root"]
+
+    def test_no_lane_prefix_keeps_everything(self):
+        """Sequential mode (no lane_thread_prefix) doesn't filter
+        by lane — preserves the pre-pipeline behavior."""
+        capture = WorkflowCapture()
+        capture.observe(_utt(
+            thread_id="pipe.alpha.m1-alpha",
+            artifacts=[_art("spec", slug="alpha-spec")],
+        ))
+        capture.observe(_utt(
+            thread_id="pipe.beta.m1-beta",
+            artifacts=[_art("spec", slug="beta-spec")],
+        ))
+
+        bindings = [SeedBinding(**{"from": "any", "kinds": ["spec"]})]
+
+        result = resolve_seeds(bindings, capture)
+        slugs = [
+            a.payload["slug"]
+            for u in result
+            for a in u.content.artifacts
+            if a.kind == "spec"
+        ]
+        # Both visible — no filter applied.
+        assert sorted(slugs) == ["alpha-spec", "beta-spec"]

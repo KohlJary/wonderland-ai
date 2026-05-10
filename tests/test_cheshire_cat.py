@@ -363,6 +363,58 @@ async def test_deliberate_writes_adr_when_payload_present(tmp_path: Path) -> Non
     assert "familiar ops" in contents
 
 
+async def test_deliberate_question_to_operator_routes_to_operator_with_question_act(
+    tmp_path: Path,
+) -> None:
+    """When Cat picks ``decision: "question_to_operator"``, the
+    emitted utterance must have ``speech_act=QUESTION`` AND
+    ``addressed_to`` containing the operator identity — that's the
+    shape the runner's user-question watcher matches against
+    (``is_question_to_operator``). Without this, the question gets
+    broadcast to caucus and the operator never sees it.
+
+    Regression guard for the bug where every agent hardcoded
+    ``addressed_to="caucus"`` so the operator-question pipeline was
+    structurally bricked despite the runner-side machinery being in
+    place.
+    """
+    from wonderland.utterance import (
+        OPERATOR_NAME,
+        is_question_to_operator,
+    )
+
+    payload = {
+        "decision": "question_to_operator",
+        "body": (
+            "The directive says 'TUI' but the team's contracts are "
+            "drifting toward HTTP boundaries — should the runtime "
+            "be a single-process TUI or do we need a backend service?"
+        ),
+    }
+    llm = _mock_llm(f"```json\n{json.dumps(payload)}\n```")
+    cat = await _cat(tmp_path, llm=llm)
+    trigger = _u(thread_id="architecture", body="ADR drift")
+    ctx = Context(constitution=cat.identity.constitution_text, triggers=(trigger,))
+
+    utterance = await cat.deliberate(ctx)
+
+    assert utterance is not None
+    # speech_act = QUESTION (not "question_to_operator" — that's
+    # the schema decision name; the bus-level type is QUESTION).
+    assert utterance.speech_act is SpeechAct.QUESTION
+    # addressed_to is a list (not "caucus") containing operator.
+    assert isinstance(utterance.addressed_to, list)
+    assert any(
+        aid.name == OPERATOR_NAME for aid in utterance.addressed_to
+    )
+    # The runner's filter recognizes this as an operator-question.
+    assert is_question_to_operator(utterance)
+    # Body is preserved verbatim.
+    assert "TUI" in utterance.content.body
+    # In-team question routing not affected — caucus addressing
+    # only kicks in when decision != question_to_operator.
+
+
 async def test_deliberate_skips_adr_when_no_registry(tmp_path: Path) -> None:
     """If no ADR registry was supplied, the proposal still ships — without artifact."""
     payload = {

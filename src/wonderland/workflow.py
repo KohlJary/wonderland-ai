@@ -245,6 +245,60 @@ class Meeting(BaseModel):
         ),
     )
 
+    # --- Feature lifecycle integration (P12 T86 + T87) ---
+
+    iterate_only_in_states: list[str] | None = Field(
+        default=None,
+        description=(
+            "T86 input filter for per_item meetings. When set, only "
+            "iterate over items whose feature lifecycle state is in "
+            "the named set. Used by tdd-implement's M5 to scope "
+            "iterations to features in 'queued' state. Values match "
+            "FeatureState enum members (proposed, in_design, "
+            "designed, queued, in_progress, ready_for_review, "
+            "verified, rejected). None means no filter — iterate "
+            "over every candidate item (legacy behavior)."
+        ),
+    )
+    transition_emitted_to: str | None = Field(
+        default=None,
+        description=(
+            "T87 output transition for meetings that EMIT features "
+            "(M2.5). After the meeting completes, every feature "
+            "artifact emitted gets transitioned to this state via "
+            "feature_lifecycle.transition(). Idempotent — features "
+            "already in a non-allowed state are skipped silently. "
+            "Used by M2.5 to mark fresh emissions as 'proposed'."
+        ),
+    )
+    transition_iteration_to: str | None = Field(
+        default=None,
+        description=(
+            "T87 output transition for per_item meetings that "
+            "OPERATE ON existing features (M3, M4, M5, M6). After "
+            "each iteration completes successfully, the iteration's "
+            "feature transitions to this state. Idempotent. Used "
+            "by M4 to mark features as 'designed' when scenarios "
+            "ship; by M6 to mark as 'ready_for_review' when reviews "
+            "approve."
+        ),
+    )
+    parallel: bool = Field(
+        default=False,
+        description=(
+            "T93: when True, per_item iterations run concurrently "
+            "via asyncio.gather + stream-merge instead of sequentially "
+            "via a for-loop. Used by tdd-design's M3 + M5 where "
+            "iterations are structurally independent (decomposition "
+            "and contract-negotiation per feature don't share state). "
+            "Default False preserves the safe sequential behavior; "
+            "opt-in per workflow YAML for meetings whose iterations "
+            "have no cross-iteration coupling. Implementation-phase "
+            "meetings (M6/M7) should NOT use this — tickets in the "
+            "same feature can race on src/ files."
+        ),
+    )
+
     @model_validator(mode="after")
     def _validate_phase_names_unique(self) -> "Meeting":
         if not self.phases:
@@ -304,6 +358,61 @@ class WorkflowDefaults(BaseModel):
     model: str | None = None
 
 
+class Pipeline(BaseModel):
+    """Run a workflow's meetings as per-item lanes that flow concurrently.
+
+    The pipeline shape inverts the dispatch model: instead of "for each
+    meeting, iterate items" (stage-style — wait for all M1 to finish
+    before any M2 starts), it's "for each item (lane), iterate meetings"
+    (pipeline-style — lane A can be in M2 while lane B is still in M1).
+
+    Used by tdd-implement: each queued feature gets a lane that runs
+    Hatter→Implementation→Trial as its own dependency chain. One feature
+    finishing its tea-party early can start its implementation while
+    other features are still writing tests.
+
+    Within a lane:
+    - meetings whose ``per_item`` matches the pipeline's ``per_item``
+      run once for the lane's outer item (e.g. M8 ``per_item: feature``
+      runs once per feature lane).
+    - meetings whose ``per_item`` is a sub-kind (e.g. M6/M7
+      ``per_item: ticket`` within a feature lane) iterate over the
+      sub-items belonging to this lane's outer item — only feature-A's
+      tickets get processed in feature-A's lane.
+    - meetings without ``per_item`` are ambiguous in pipeline mode and
+      get treated as the outer kind (run once per lane).
+
+    Cross-lane isolation is enforced via thread_id namespacing
+    (``pipe.{outer_slug}.{meeting_id}-{sub_slug}``) and a
+    ``lane_thread_prefix`` filter on seed resolution: lane A's M2
+    seeing M1 output sees only lane A's M1, not lane B's.
+    """
+
+    per_item: str = Field(
+        description=(
+            "Lane iteration kind — typically 'feature'. The workflow "
+            "spawns one lane per matching outer item."
+        ),
+    )
+    parallel: bool = Field(
+        default=True,
+        description=(
+            "When true, lanes run via asyncio.gather (concurrent). "
+            "When false, lanes run sequentially. The whole reason for "
+            "the pipeline shape is the parallel case; the sequential "
+            "fallback exists for debugging + tests."
+        ),
+    )
+    iterate_only_in_states: list[str] | None = Field(
+        default=None,
+        description=(
+            "Lifecycle-state filter on outer items, mirroring "
+            "``Meeting.iterate_only_in_states``. None → run a lane "
+            "for every outer item the bus + disk fallback surface."
+        ),
+    )
+
+
 class Workflow(BaseModel):
     """A complete workflow — name, description, ordered meetings."""
 
@@ -312,6 +421,14 @@ class Workflow(BaseModel):
     version: int = 1
     defaults: WorkflowDefaults = Field(default_factory=WorkflowDefaults)
     meetings: list[Meeting]
+    pipeline: Pipeline | None = Field(
+        default=None,
+        description=(
+            "If set, the workflow runs in pipeline mode: meetings "
+            "execute as per-item lanes rather than stage-by-stage. "
+            "See Pipeline docstring for semantics."
+        ),
+    )
 
     def meeting_by_id(self, meeting_id: str) -> Meeting | None:
         """Look up a meeting by id; None if not present."""
@@ -430,6 +547,7 @@ def resolve_seeds(
     current_item_kind: str | None = None,
     current_item_slug: str | None = None,
     project_root: Path | None = None,
+    lane_thread_prefix: str | None = None,
 ) -> list[Utterance]:
     """Apply seed-binding rules to produce the seed utterance list for
     a meeting. Mirrors the hand-rolled filtering in T38 scripts.
@@ -471,21 +589,44 @@ def resolve_seeds(
             candidates = capture.utterances
         elif binding.from_meeting in per_item_meetings:
             # Source meeting was per_item — gather utterances from any
-            # of its iteration threads (thread_ids prefixed with
-            # ``<meeting_id>-``).
+            # of its iteration threads. Pipeline mode prefixes thread
+            # ids with ``pipe.{lane_slug}.``; sequential mode uses the
+            # plain ``{meeting_id}-{slug}`` form. The endswith match
+            # covers both.
             prefix = f"{binding.from_meeting}-"
-            candidates = [u for u in capture.utterances if u.thread_id.startswith(prefix)]
+            candidates = [
+                u for u in capture.utterances
+                if u.thread_id.startswith(prefix)
+                or f".{binding.from_meeting}-" in u.thread_id
+            ]
             # If we're currently in a per_item iteration, slice to the
             # paired iteration's thread_id when present. Falls through
             # to the full per_item-meeting candidate set if no exact
             # match (e.g., the paired iteration produced no artifacts).
             if current_item_slug is not None:
-                paired_thread_id = f"{binding.from_meeting}-{current_item_slug}"
-                paired = [u for u in candidates if u.thread_id == paired_thread_id]
+                paired_suffix = f"{binding.from_meeting}-{current_item_slug}"
+                paired = [
+                    u for u in candidates
+                    if u.thread_id == paired_suffix
+                    or u.thread_id.endswith(f".{paired_suffix}")
+                ]
                 if paired:
                     candidates = paired
         else:
             candidates = capture.utterances_for(binding.from_meeting)
+
+        # Pipeline lane scoping: drop utterances from OTHER lanes so
+        # lane A's M8 doesn't seed from lane B's M6 output. Threads
+        # without a ``pipe.`` prefix (e.g., the entry meeting's
+        # directive on "main", or sequential-mode meetings) are
+        # always allowed through — they're either cross-cutting or
+        # not in any lane.
+        if lane_thread_prefix is not None:
+            candidates = [
+                u for u in candidates
+                if not u.thread_id.startswith("pipe.")
+                or u.thread_id.startswith(lane_thread_prefix)
+            ]
 
         kinded = [
             u
@@ -633,6 +774,358 @@ class MeetingEndEvent:
 
 
 
+def _collect_per_item_items(
+    *,
+    item_kind: str,
+    state_filter: list[str] | None,
+    capture: WorkflowCapture,
+    runner: Runner,
+    lane_outer_kind: str | None = None,
+    lane_outer_slug: str | None = None,
+) -> list[dict[str, Any]]:
+    """Collect items for a per_item iteration: bus → disk fallback →
+    state filter → optional lane scoping.
+
+    Extracted from run_workflow's per_item branch so the pipeline
+    runtime can reuse it. ``lane_outer_kind`` / ``lane_outer_slug``
+    add a "this lane's children only" filter — e.g. when a lane is
+    keyed on a feature and the meeting iterates over tickets, the
+    lane keeps only tickets whose parent feature matches the lane's
+    feature slug.
+    """
+    items: list[dict[str, Any]] = []
+    seen_slugs: set[str] = set()
+
+    for u in capture.utterances:
+        for a in u.content.artifacts:
+            if a.kind != item_kind:
+                continue
+            slug = a.payload.get("slug")
+            if not slug or slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+            items.append(a.payload)
+
+    project_root = getattr(runner, "project_root", None)
+    if not items and project_root is not None:
+        from wonderland.seeds_fallback import disk_seeds_for_kinds
+
+        synthetic = disk_seeds_for_kinds(
+            project_root,
+            [item_kind],
+            thread_id=item_kind,
+        )
+        for u in synthetic:
+            for a in u.content.artifacts:
+                if a.kind != item_kind:
+                    continue
+                slug = a.payload.get("slug")
+                if not slug or slug in seen_slugs:
+                    continue
+                seen_slugs.add(slug)
+                items.append(a.payload)
+
+    # State filter mirroring the legacy meeting.iterate_only_in_states
+    # path. Kept here so a synthetic Pipeline-derived collection picks
+    # up the same lifecycle gating.
+    if state_filter is not None and project_root is not None:
+        from wonderland.feature_lifecycle import FeatureState, get_state
+
+        allowed = {FeatureState(s) for s in state_filter}
+        filtered: list[dict[str, Any]] = []
+
+        if item_kind == "ticket":
+            ticket_to_feature = _ticket_to_feature_map(project_root)
+            for item in items:
+                feature_slug = ticket_to_feature.get(item["slug"])
+                if feature_slug is None:
+                    continue
+                state = get_state(project_root, feature_slug)
+                if state is not None and state in allowed:
+                    filtered.append(item)
+        else:
+            for item in items:
+                state = get_state(project_root, item["slug"])
+                if state is not None and state in allowed:
+                    filtered.append(item)
+        items = filtered
+
+    # Lane scoping: keep only items belonging to this lane's outer
+    # item. ``feature/ticket`` is the canonical case (lane keyed on
+    # feature, sub-meeting iterates over tickets). Other lane shapes
+    # fall through unscoped — the substrate doesn't know how to
+    # match them and the operator can add support if it ever matters.
+    if (
+        lane_outer_slug is not None
+        and lane_outer_kind == "feature"
+        and item_kind == "ticket"
+        and project_root is not None
+    ):
+        ticket_to_feature = _ticket_to_feature_map(project_root)
+        items = [
+            it for it in items
+            if ticket_to_feature.get(it["slug"]) == lane_outer_slug
+        ]
+    elif (
+        lane_outer_slug is not None
+        and lane_outer_kind is not None
+        and item_kind == lane_outer_kind
+    ):
+        # Lane's outer kind matches the meeting's iteration kind —
+        # the meeting runs once for THIS lane's outer item.
+        items = [it for it in items if it.get("slug") == lane_outer_slug]
+
+    return items
+
+
+async def _run_pipelined_workflow(
+    workflow: Workflow,
+    runner: Runner,
+    directive: str,
+) -> AsyncIterator[Any]:
+    """Pipeline-mode entry: spawn one lane per outer item, run lanes
+    concurrently (or serially when ``pipeline.parallel: false``), each
+    lane runs all of ``workflow.meetings`` in declaration order.
+
+    Pipeline shape inverts the dispatch: instead of waiting for all of
+    M1 across every feature before any M2 starts, lane A can be in M2
+    while lane B is still in M1. Built for tdd-implement's per-feature
+    Hatter→Implementation→Trial flow.
+    """
+    pipeline = workflow.pipeline
+    assert pipeline is not None  # caller guards
+    capture = WorkflowCapture()
+
+    per_item_meetings: dict[str, str] = {
+        m.id: m.per_item for m in workflow.meetings if m.per_item is not None
+    }
+
+    outer_items = _collect_per_item_items(
+        item_kind=pipeline.per_item,
+        state_filter=pipeline.iterate_only_in_states,
+        capture=capture,
+        runner=runner,
+    )
+
+    if not outer_items:
+        # Nothing to pipeline — synthesize a skip per meeting so the
+        # consumer sees the workflow was acknowledged. Mirrors the
+        # empty-items path in run_workflow's per_item branch.
+        for meeting in workflow.meetings:
+            yield MeetingStartEvent(
+                meeting=meeting,
+                seeds=[],
+                thread_id=meeting.id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label="(no items)",
+            )
+            yield MeetingEndEvent(
+                meeting=meeting,
+                outcome="COMPLETE",
+                elapsed_s=0.0,
+                calls_delta=0,
+                cost_delta=0.0,
+                artifact_kinds={},
+                thread_id=meeting.id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label="(no items)",
+            )
+        return
+
+    def _make_lane(idx: int, outer_item: dict[str, Any]):
+        outer_slug = outer_item["slug"]
+        lane_thread_prefix = f"pipe.{outer_slug}."
+        lane_label = outer_item.get("title") or outer_slug
+
+        async def _gen():
+            async for event in _run_lane(
+                workflow=workflow,
+                runner=runner,
+                capture=capture,
+                per_item_meetings=per_item_meetings,
+                outer_kind=pipeline.per_item,
+                outer_slug=outer_slug,
+                outer_label=lane_label,
+                lane_index=idx + 1,
+                lane_total=len(outer_items),
+                lane_thread_prefix=lane_thread_prefix,
+                # Only the very first lane's first meeting is the
+                # "entry" — receives the operator's directive. Other
+                # lanes pick up the directive from the bus / disk.
+                directive=directive if idx == 0 else None,
+            ):
+                yield event
+
+        return _gen()
+
+    iterators = [_make_lane(idx, item) for idx, item in enumerate(outer_items)]
+
+    if pipeline.parallel:
+        global_budget_hit = False
+        async for event in _merge_async_iterators(iterators):
+            if isinstance(event, _OutcomeSentinel):
+                if event.outcome == "GLOBAL_BUDGET":
+                    global_budget_hit = True
+                continue
+            yield event
+        if global_budget_hit:
+            return
+    else:
+        for it in iterators:
+            global_budget_hit = False
+            async for event in it:
+                if isinstance(event, _OutcomeSentinel):
+                    if event.outcome == "GLOBAL_BUDGET":
+                        global_budget_hit = True
+                    continue
+                yield event
+            if global_budget_hit:
+                return
+
+
+async def _run_lane(
+    *,
+    workflow: Workflow,
+    runner: Runner,
+    capture: WorkflowCapture,
+    per_item_meetings: dict[str, str],
+    outer_kind: str,
+    outer_slug: str,
+    outer_label: str,
+    lane_index: int,
+    lane_total: int,
+    lane_thread_prefix: str,
+    directive: str | None,
+) -> AsyncIterator[Any]:
+    """One lane of a pipelined workflow — runs every meeting in
+    declaration order, scoped to a single outer item.
+
+    Per-meeting dispatch:
+    - ``per_item: <outer_kind>`` (e.g., per_item: feature in a feature
+      lane): runs once for THIS lane's outer item.
+    - ``per_item: <sub-kind>`` (e.g., per_item: ticket within a
+      feature lane): iterates over the sub-items belonging to this
+      lane's outer item.
+    - ``per_item: None``: runs once for the lane (treated as the
+      outer kind). Rare; included for consistency.
+
+    Thread ids are namespaced with ``lane_thread_prefix`` so
+    ``resolve_seeds`` can scope cross-meeting bindings to this lane
+    only.
+    """
+    is_first_meeting = True
+    for meeting in workflow.meetings:
+        meeting_directive = directive if is_first_meeting else None
+        is_first_meeting = False
+
+        # Resolve the meeting's iteration shape for this lane.
+        if meeting.per_item is None or meeting.per_item == outer_kind:
+            # Single iteration for this lane's outer item.
+            iteration_slug = outer_slug
+            iteration_label = outer_label
+            thread_id = f"{lane_thread_prefix}{meeting.id}-{outer_slug}"
+            outcome = "RUNNING"
+            async for event in _run_one_meeting(
+                meeting=meeting,
+                runner=runner,
+                capture=capture,
+                directive=meeting_directive,
+                per_item_meetings=per_item_meetings,
+                current_item_kind=outer_kind,
+                current_item_slug=iteration_slug,
+                thread_id=thread_id,
+                iteration_index=lane_index,
+                iteration_total=lane_total,
+                iteration_label=iteration_label,
+                lane_thread_prefix=lane_thread_prefix,
+            ):
+                if isinstance(event, _OutcomeSentinel):
+                    outcome = event.outcome
+                    yield event
+                    continue
+                yield event
+            if outcome == "GLOBAL_BUDGET":
+                return
+            continue
+
+        # Sub-kind iteration scoped to this lane (e.g., tickets-of-
+        # feature-X). Collect lane-scoped items, then iterate
+        # sequentially within the lane (lanes are the parallelism
+        # boundary; within a lane, ticket-level work is sequential
+        # to avoid src/ races and keep per-ticket TDD discipline).
+        #
+        # ``state_filter=None`` here on purpose: the pipeline's outer
+        # filter already gated WHICH features get a lane; per-meeting
+        # state filters within a lane would just fight the per-
+        # iteration transitions (M6 fires queued → in_progress; M7's
+        # legacy [queued] filter would then reject that same feature).
+        # In pipeline mode the lane is the gate.
+        sub_items = _collect_per_item_items(
+            item_kind=meeting.per_item,
+            state_filter=None,
+            capture=capture,
+            runner=runner,
+            lane_outer_kind=outer_kind,
+            lane_outer_slug=outer_slug,
+        )
+
+        if not sub_items:
+            # Lane has no children for this meeting — synthetic skip
+            # so the consumer still sees the meeting acknowledged in
+            # this lane's stream.
+            thread_id = f"{lane_thread_prefix}{meeting.id}"
+            yield MeetingStartEvent(
+                meeting=meeting,
+                seeds=[],
+                thread_id=thread_id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label=f"{outer_label} (no items)",
+            )
+            yield MeetingEndEvent(
+                meeting=meeting,
+                outcome="COMPLETE",
+                elapsed_s=0.0,
+                calls_delta=0,
+                cost_delta=0.0,
+                artifact_kinds={},
+                thread_id=thread_id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label=f"{outer_label} (no items)",
+            )
+            continue
+
+        for sub_idx, sub_item in enumerate(sub_items):
+            sub_slug = sub_item["slug"]
+            sub_label = sub_item.get("title") or sub_slug
+            thread_id = f"{lane_thread_prefix}{meeting.id}-{sub_slug}"
+            outcome = "RUNNING"
+            async for event in _run_one_meeting(
+                meeting=meeting,
+                runner=runner,
+                capture=capture,
+                directive=None,  # sub-meetings never receive directive
+                per_item_meetings=per_item_meetings,
+                current_item_kind=meeting.per_item,
+                current_item_slug=sub_slug,
+                thread_id=thread_id,
+                iteration_index=sub_idx + 1,
+                iteration_total=len(sub_items),
+                iteration_label=f"{outer_label} / {sub_label}",
+                lane_thread_prefix=lane_thread_prefix,
+            ):
+                if isinstance(event, _OutcomeSentinel):
+                    outcome = event.outcome
+                    yield event
+                    continue
+                yield event
+            if outcome == "GLOBAL_BUDGET":
+                return
+
+
 async def run_workflow(
     workflow: Workflow,
     runner: Runner,
@@ -662,6 +1155,11 @@ async def run_workflow(
     matching artifact found in the capture. Each iteration emits its own
     MeetingStart/MeetingEnd events with iteration metadata populated.
     """
+    if workflow.pipeline is not None:
+        async for event in _run_pipelined_workflow(workflow, runner, directive):
+            yield event
+        return
+
     capture = WorkflowCapture()
 
     # Map of meeting_id → per_item kind for every per_item meeting.
@@ -711,6 +1209,96 @@ async def run_workflow(
                 seen_slugs.add(slug)
                 items.append(a.payload)
 
+        # Cross-run / cross-workflow fallback: when the bus is empty
+        # for this meeting's per_item kind but the project has matching
+        # artifacts on disk (typical for tdd-implement, which is the
+        # entry meeting of its own workflow and has no upstream
+        # in-this-run material), pull them from disk via the same
+        # seed-fallback mechanism that resolve_seeds uses. Without
+        # this, the per_item iteration finds zero items, hits the
+        # synthetic-skip path, and the meeting completes empty —
+        # exactly what tdd-implement was doing before this fix.
+        project_root = getattr(runner, "project_root", None)
+        if not items and project_root is not None:
+            from wonderland.seeds_fallback import disk_seeds_for_kinds
+
+            synthetic = disk_seeds_for_kinds(
+                project_root,
+                [meeting.per_item],
+                thread_id=meeting.id,
+            )
+            for u in synthetic:
+                for a in u.content.artifacts:
+                    if a.kind != meeting.per_item:
+                        continue
+                    slug = a.payload.get("slug")
+                    if not slug or slug in seen_slugs:
+                        continue
+                    seen_slugs.add(slug)
+                    items.append(a.payload)
+
+        # T86 input filter: when iterate_only_in_states is set on the
+        # meeting, drop items whose feature lifecycle state isn't in
+        # the allowed set. Lets tdd-implement's M7 scope to tickets
+        # whose parent feature is in 'queued' state. Skipped if
+        # project_root unavailable (e.g. FakeRunner test fixtures) —
+        # back-compat preserved.
+        #
+        # Two semantics depending on per_item kind:
+        #   - per_item: feature → check the item's own lifecycle state
+        #   - per_item: ticket  → look up which feature this ticket
+        #     belongs to (via FeaturePayload.tickets), check that
+        #     feature's state. Tickets don't have their own lifecycle
+        #     in v1; the parent feature's state gates them. Per
+        #     T88-note: feature is the human-meaningful unit, ticket
+        #     is the iteration atom.
+        if (
+            meeting.iterate_only_in_states is not None
+            and getattr(runner, "project_root", None) is not None
+        ):
+            from wonderland.feature_lifecycle import (
+                FeatureState,
+                get_state,
+            )
+
+            allowed = {
+                FeatureState(s) for s in meeting.iterate_only_in_states
+            }
+            filtered: list[dict[str, Any]] = []
+
+            if meeting.per_item == "ticket":
+                # Reverse-index tickets to parent features so we can
+                # gate ticket iterations by the parent feature's
+                # lifecycle state. Shared helper with the T87
+                # transition logic — same lookup, two consumers.
+                ticket_to_feature = _ticket_to_feature_map(
+                    runner.project_root
+                )
+                for item in items:
+                    ticket_slug = item["slug"]
+                    feature_slug = ticket_to_feature.get(ticket_slug)
+                    if feature_slug is None:
+                        # Orphan ticket (no parent feature) — drop
+                        # under the strict interpretation. Filtering's
+                        # job is to surface only work the operator
+                        # explicitly queued.
+                        continue
+                    state = get_state(
+                        runner.project_root, feature_slug
+                    )
+                    if state is not None and state in allowed:
+                        filtered.append(item)
+            else:
+                # per_item: feature (or any other kind we treat
+                # directly): the item's own slug IS the feature slug.
+                for item in items:
+                    slug = item["slug"]
+                    state = get_state(runner.project_root, slug)
+                    if state is not None and state in allowed:
+                        filtered.append(item)
+
+            items = filtered
+
         if not items:
             # Nothing to iterate over — emit a synthetic skip so the
             # consumer sees the meeting was acknowledged. Fail-loud
@@ -737,30 +1325,81 @@ async def run_workflow(
             )
             continue
 
-        for idx, item in enumerate(items):
-            slug = item["slug"]
-            iteration_thread_id = f"{meeting.id}-{slug}"
-            label = item.get("title") or slug
-            outcome = "RUNNING"
-            async for event in _run_one_meeting(
-                meeting=meeting,
-                runner=runner,
-                capture=capture,
-                directive=None,  # per_item meetings can't be entry
-                per_item_meetings=per_item_meetings,
-                current_item_kind=meeting.per_item,
-                current_item_slug=slug,
-                thread_id=iteration_thread_id,
-                iteration_index=idx + 1,
-                iteration_total=len(items),
-                iteration_label=label,
-            ):
+        if meeting.parallel:
+            # T93: parallel iteration — fan out via asyncio.gather
+            # + stream-merge so iterations run concurrently and the
+            # operator sees real-time progress across the fan-out.
+            # Safe for meetings with structurally independent
+            # iterations (M3 decomposition + M5 contracts in the
+            # split workflow); NOT safe for ticket-level meetings
+            # (M6/M7) where iterations might race on src/ files.
+            #
+            # Disk-write safety: registries (TicketRegistry,
+            # FeatureRegistry, etc.) read-then-write next_number
+            # synchronously. Since asyncio is single-threaded and
+            # registry.write() has no awaits, two concurrent tasks
+            # naturally serialize during the write — no explicit
+            # lock needed.
+
+            def _make_iter(idx: int, item: dict[str, Any]):
+                slug = item["slug"]
+                iteration_thread_id = f"{meeting.id}-{slug}"
+                label = item.get("title") or slug
+
+                async def _gen():
+                    async for event in _run_one_meeting(
+                        meeting=meeting,
+                        runner=runner,
+                        capture=capture,
+                        directive=None,
+                        per_item_meetings=per_item_meetings,
+                        current_item_kind=meeting.per_item,
+                        current_item_slug=slug,
+                        thread_id=iteration_thread_id,
+                        iteration_index=idx + 1,
+                        iteration_total=len(items),
+                        iteration_label=label,
+                    ):
+                        yield event
+
+                return _gen()
+
+            iterators = [_make_iter(idx, item) for idx, item in enumerate(items)]
+            global_budget_hit = False
+            async for event in _merge_async_iterators(iterators):
                 if isinstance(event, _OutcomeSentinel):
-                    outcome = event.outcome
+                    if event.outcome == "GLOBAL_BUDGET":
+                        global_budget_hit = True
                     continue
                 yield event
-            if outcome == "GLOBAL_BUDGET":
+            if global_budget_hit:
                 return
+        else:
+            # Sequential iteration — original safe default.
+            for idx, item in enumerate(items):
+                slug = item["slug"]
+                iteration_thread_id = f"{meeting.id}-{slug}"
+                label = item.get("title") or slug
+                outcome = "RUNNING"
+                async for event in _run_one_meeting(
+                    meeting=meeting,
+                    runner=runner,
+                    capture=capture,
+                    directive=None,  # per_item meetings can't be entry
+                    per_item_meetings=per_item_meetings,
+                    current_item_kind=meeting.per_item,
+                    current_item_slug=slug,
+                    thread_id=iteration_thread_id,
+                    iteration_index=idx + 1,
+                    iteration_total=len(items),
+                    iteration_label=label,
+                ):
+                    if isinstance(event, _OutcomeSentinel):
+                        outcome = event.outcome
+                        continue
+                    yield event
+                if outcome == "GLOBAL_BUDGET":
+                    return
 
 
 @dataclass
@@ -771,6 +1410,243 @@ class _OutcomeSentinel:
     events reach the caller."""
 
     outcome: str
+
+
+async def _merge_async_iterators(
+    iterators: list,
+):
+    """Merge multiple async iterators into a single stream — yields
+    events as they fire from any iterator. Per-iterator order is
+    preserved; events from different iterators interleave naturally.
+
+    Used by the T93 parallel per_item branch: each iteration is an
+    async generator yielding RunnerEvent / MeetingStartEvent / etc.
+    The merge lets the operator see real-time progress across all
+    parallel iterations rather than waiting for the entire fan-out
+    to complete.
+
+    Implementation: one feeder task per iterator, all push events
+    onto a shared asyncio.Queue. A sentinel marks each iterator's
+    completion; we yield until every sentinel has come back.
+    """
+    import asyncio
+
+    if not iterators:
+        return
+    queue: asyncio.Queue = asyncio.Queue()
+    sentinel = object()
+
+    async def _feeder(it):
+        try:
+            async for event in it:
+                await queue.put(event)
+        except Exception as exc:  # noqa: BLE001
+            await queue.put(("__feeder_error__", exc))
+        finally:
+            await queue.put(sentinel)
+
+    tasks = [asyncio.create_task(_feeder(it)) for it in iterators]
+    n_remaining = len(iterators)
+    try:
+        while n_remaining > 0:
+            event = await queue.get()
+            if event is sentinel:
+                n_remaining -= 1
+                continue
+            if (
+                isinstance(event, tuple)
+                and len(event) == 2
+                and event[0] == "__feeder_error__"
+            ):
+                # An iteration raised; surface the exception so the
+                # caller can decide what to do. Other iterations
+                # keep going via their own feeder tasks.
+                raise event[1]
+            yield event
+    finally:
+        # Best-effort cleanup if the consumer broke out early.
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+
+def _ticket_to_feature_map(project_root: Path) -> dict[str, str]:
+    """Build a reverse index: ticket_slug → parent_feature_slug.
+
+    Source-of-truth: each ticket's ``Sources:`` field. M3 (the
+    per_item: feature decomposition meeting) emits tickets whose
+    sources field includes the iteration's feature slug — the
+    ticket's own record carries the parent reference. We walk the
+    ticket registry, parse each ticket's Sources line, and match
+    source slugs against the feature registry to find the parent.
+
+    Why ticket-side not feature-side (changed from earlier): the
+    feature payload's ``tickets:`` list is fragile — Rabbit emits
+    it at M2 time before M3 has produced any tickets, so the slugs
+    listed there don't always match the actual tickets that get
+    decomposed in M3. The ticket-side reference is naturally
+    one-directional and tracks reality. Feature.tickets stays
+    informational; a wrong list there doesn't break iteration.
+
+    Best-effort: returns empty map on any error so the caller can
+    gracefully fall through to no-filter / no-transition behavior.
+    """
+    import re
+
+    out: dict[str, str] = {}
+    try:
+        from wonderland.feature import FeatureRegistry
+        from wonderland.ticket import TicketRegistry
+
+        feature_slugs = {
+            f.slug for f in FeatureRegistry(project_root).list_features()
+        }
+        if not feature_slugs:
+            return {}
+
+        sources_re = re.compile(
+            r"^\s*\*\*Sources?:\*\*\s*(.+?)$",
+            re.MULTILINE,
+        )
+
+        for ticket_record in TicketRegistry(project_root).list_tickets():
+            try:
+                text = ticket_record.path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            match = sources_re.search(text)
+            if not match:
+                continue
+            # Comma-separated slug list. Strip whitespace, ignore
+            # empty entries (e.g., the literal "—" placeholder when
+            # sources was empty at write time).
+            sources_line = match.group(1).strip()
+            if sources_line in ("", "—", "-"):
+                continue
+            for source in (s.strip() for s in sources_line.split(",")):
+                if source and source in feature_slugs:
+                    # First feature-shaped source wins. M3 directive
+                    # requires the parent feature to be the first
+                    # entry; this matches that contract.
+                    out[ticket_record.slug] = source
+                    break
+    except Exception:  # noqa: BLE001 — best-effort
+        return {}
+    return out
+
+
+def _apply_post_meeting_transitions(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    new_utterances: list[Utterance],
+    current_item_slug: str | None,
+) -> None:
+    """T87 output transitions — fire feature lifecycle transitions
+    after a meeting completes successfully.
+
+    Two semantics, both opt-in via Meeting fields:
+
+    - ``transition_emitted_to``: meetings that EMIT features (M2.5).
+      Every feature artifact in this meeting's emissions transitions
+      to the named state. Idempotent — IllegalTransition errors
+      (e.g. feature already in a non-allowed state) get caught and
+      logged-as-skip rather than failing the meeting.
+
+    - ``transition_iteration_to``: per_item meetings that operate
+      ON existing features (M3, M4, M5, M6). The iteration's
+      feature_slug (from ``current_item_slug``) transitions to the
+      named state. Fires once per iteration that completed — the
+      caller already gates on outcome=='COMPLETE' so failed
+      iterations don't transition.
+
+    Skipped silently if project_root is unavailable (FakeRunner
+    test fixtures, etc.) so the transition layer never breaks the
+    meeting flow.
+    """
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        IllegalTransitionError,
+        transition,
+    )
+
+    actor = "system"  # transitions fired by workflow are system-level
+
+    # transition_emitted_to: fire for every feature artifact emitted
+    # in this meeting. M2.5's natural use case.
+    if meeting.transition_emitted_to:
+        try:
+            target = FeatureState(meeting.transition_emitted_to)
+        except ValueError:
+            target = None
+        if target is not None:
+            seen: set[str] = set()
+            for u in new_utterances:
+                for a in u.content.artifacts:
+                    if a.kind != "feature":
+                        continue
+                    slug = a.payload.get("slug")
+                    if not slug or slug in seen:
+                        continue
+                    seen.add(slug)
+                    try:
+                        transition(
+                            project_root,
+                            slug,
+                            target,
+                            by=actor,
+                            notes=(
+                                f"Auto-transition from meeting "
+                                f"{meeting.id!r} on COMPLETE"
+                            ),
+                        )
+                    except IllegalTransitionError:
+                        # Already in a non-allowed state — idempotent
+                        # behavior. Re-running the workflow on a
+                        # project that's already past this point
+                        # shouldn't fail.
+                        pass
+
+    # transition_iteration_to: fire once for the iteration's feature.
+    # Two semantics depending on per_item kind (T88 split workflow
+    # support):
+    #   - per_item: feature → current_item_slug IS the feature slug;
+    #     transition directly.
+    #   - per_item: ticket  → current_item_slug is a ticket slug; look
+    #     up which feature the ticket belongs to, transition that
+    #     feature. Lets tdd-implement's M6 (per_item: ticket) move
+    #     the parent feature → in_progress on first ticket; subsequent
+    #     tickets find the feature already in_progress so the
+    #     idempotent illegal-transition swallow no-ops them.
+    if meeting.transition_iteration_to and current_item_slug:
+        try:
+            target = FeatureState(meeting.transition_iteration_to)
+        except ValueError:
+            target = None
+        if target is not None:
+            if meeting.per_item == "ticket":
+                lookup = _ticket_to_feature_map(project_root)
+                feature_slug = lookup.get(current_item_slug)
+            else:
+                feature_slug = current_item_slug
+            if feature_slug:
+                try:
+                    transition(
+                        project_root,
+                        feature_slug,
+                        target,
+                        by=actor,
+                        notes=(
+                            f"Auto-transition from iteration of "
+                            f"{meeting.id!r} on COMPLETE"
+                        ),
+                    )
+                except IllegalTransitionError:
+                    pass
 
 
 async def _run_one_meeting(
@@ -786,6 +1662,7 @@ async def _run_one_meeting(
     iteration_index: int | None,
     iteration_total: int | None,
     iteration_label: str | None,
+    lane_thread_prefix: str | None = None,
 ) -> AsyncIterator[Any]:
     """Dispatch a single meeting (or per_item iteration) onto either
     the legacy engagement-policy path (``_convene_one``) or the
@@ -829,6 +1706,7 @@ async def _run_one_meeting(
             iteration_total=iteration_total,
             iteration_label=iteration_label,
             phase_event_writer=phase_writer,
+            lane_thread_prefix=lane_thread_prefix,
         ):
             yield event
         return
@@ -845,6 +1723,7 @@ async def _run_one_meeting(
         iteration_index=iteration_index,
         iteration_total=iteration_total,
         iteration_label=iteration_label,
+        lane_thread_prefix=lane_thread_prefix,
     ):
         yield event
 
@@ -862,6 +1741,7 @@ async def _convene_one(
     iteration_index: int | None,
     iteration_total: int | None,
     iteration_label: str | None,
+    lane_thread_prefix: str | None = None,
 ) -> AsyncIterator[Any]:
     """Convene a single meeting (or one per_item iteration) and drain
     its events. Async iterator; yields MeetingStartEvent, then runner
@@ -881,6 +1761,7 @@ async def _convene_one(
         # back-compat for the existing test surface, which doesn't
         # need disk fallback.
         project_root=getattr(runner, "project_root", None),
+        lane_thread_prefix=lane_thread_prefix,
     )
 
     convenor_directive = directive if directive is not None else meeting.convenor_directive
@@ -905,73 +1786,96 @@ async def _convene_one(
         header = f"**{meeting.label}.**"
     convenor_directive = f"{header}\n\n{convenor_directive}"
 
-    cost_before = runner.total_cost
     calls_before = runner.telemetry.call_count
     artifact_count_before = len(capture.utterances)
     meeting_start = time.monotonic()
 
-    yield MeetingStartEvent(
-        meeting=meeting,
-        seeds=seeds,
-        thread_id=thread_id,
-        iteration_index=iteration_index,
-        iteration_total=iteration_total,
-        iteration_label=iteration_label,
+    # Per-thread cost attribution for parallel meetings — see
+    # meeting.run_phased_meeting for the full rationale. Setting the
+    # contextvar here covers the legacy non-phased path's
+    # orchestrator-driven calls as well.
+    from wonderland.telemetry import (
+        reset_current_thread_id,
+        set_current_thread_id,
     )
 
-    # Reset per-thread completion tracking so the runner can fire
-    # complete again for this new thread.
-    runner._completed = False
+    telemetry_token = set_current_thread_id(thread_id)
+    try:
+        yield MeetingStartEvent(
+            meeting=meeting,
+            seeds=seeds,
+            thread_id=thread_id,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+            iteration_label=iteration_label,
+        )
 
-    await runner.convene(
-        thread_id=thread_id,
-        goal=meeting.goal,
-        roster=meeting.roster,
-        seed_utterances=seeds,
-        convenor_directive=convenor_directive,
-    )
+        # Reset per-thread completion tracking so the runner can fire
+        # complete again for this new thread.
+        runner._completed = False
 
-    outcome = "RUNNING"
-    # terminal_thread_id ensures complete events from prior meetings
-    # don't end this iteration's loop. See analysis 030.
-    async for event in runner.events(terminal_thread_id=thread_id):
-        if event.kind == "utterance":
-            capture.observe(event.payload["utterance"])
+        await runner.convene(
+            thread_id=thread_id,
+            goal=meeting.goal,
+            roster=meeting.roster,
+            seed_utterances=seeds,
+            convenor_directive=convenor_directive,
+        )
 
-        yield event
+        outcome = "RUNNING"
+        # terminal_thread_id ensures complete events from prior meetings
+        # don't end this iteration's loop. See analysis 030.
+        async for event in runner.events(terminal_thread_id=thread_id):
+            if event.kind == "utterance":
+                capture.observe(event.payload["utterance"])
 
-        if event.kind == "budget_exceeded":
-            outcome = "GLOBAL_BUDGET"
-            break
+            yield event
 
-        if meeting.meeting_budget is not None:
-            spent = runner.total_cost - cost_before
-            if spent >= meeting.meeting_budget:
-                outcome = "MEETING_BUDGET"
+            if event.kind == "budget_exceeded":
+                outcome = "GLOBAL_BUDGET"
                 break
 
-        if event.kind == "complete":
-            event_thread_id = (event.payload or {}).get("thread_id")
-            if event_thread_id is not None and event_thread_id != thread_id:
-                continue
-            outcome = "COMPLETE"
-            break
+            if meeting.meeting_budget is not None:
+                spent = runner.telemetry.cost_for_thread(thread_id)
+                if spent >= meeting.meeting_budget:
+                    outcome = "MEETING_BUDGET"
+                    break
 
-        if event.kind in ("timeout", "aborted"):
-            outcome = event.kind.upper()
-            break
+            if event.kind == "complete":
+                event_thread_id = (event.payload or {}).get("thread_id")
+                if event_thread_id is not None and event_thread_id != thread_id:
+                    continue
+                outcome = "COMPLETE"
+                break
+
+            if event.kind in ("timeout", "aborted"):
+                outcome = event.kind.upper()
+                break
+    finally:
+        reset_current_thread_id(telemetry_token)
 
     if outcome in ("MEETING_BUDGET", "TIMEOUT", "ABORTED"):
         runner.mark_thread_complete(thread_id, f"meeting ended via {outcome}")
 
     elapsed = time.monotonic() - meeting_start
     calls_delta = runner.telemetry.call_count - calls_before
-    cost_delta = runner.total_cost - cost_before
+    cost_delta = runner.telemetry.cost_for_thread(thread_id)
     new_utterances = capture.utterances[artifact_count_before:]
     kinds_count: dict[str, int] = {}
     for u in new_utterances:
         for a in u.content.artifacts:
             kinds_count[a.kind] = kinds_count.get(a.kind, 0) + 1
+
+    # T87 output transitions — fire on successful completion only.
+    # Failed meetings (BUDGET / TIMEOUT / ABORTED) leave feature state
+    # untouched so the operator can see what shipped vs. didn't.
+    if outcome == "COMPLETE":
+        _apply_post_meeting_transitions(
+            meeting=meeting,
+            runner=runner,
+            new_utterances=new_utterances,
+            current_item_slug=current_item_slug,
+        )
 
     yield MeetingEndEvent(
         meeting=meeting,

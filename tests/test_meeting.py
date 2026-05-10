@@ -49,6 +49,10 @@ from wonderland.workflow import (
 class FakeTelemetry:
     def __init__(self) -> None:
         self.call_count: int = 0
+        self._per_thread_cost: dict[str, float] = {}
+
+    def cost_for_thread(self, thread_id: str) -> float:
+        return self._per_thread_cost.get(thread_id, 0.0)
 
 
 @dataclass
@@ -208,6 +212,13 @@ async def _drive(meeting: Meeting, runner: FakePhaseRunner) -> list[Any]:
             if u is not None and u.speaker.name != "dodo":
                 runner.total_cost += runner.cost_per_act
                 runner.telemetry.call_count += 1
+                # Mirror the per-thread cost path so meeting_budget
+                # checks and cost_delta calculations exercise the
+                # post-fix code paths against this fake.
+                runner.telemetry._per_thread_cost[u.thread_id] = (
+                    runner.telemetry._per_thread_cost.get(u.thread_id, 0.0)
+                    + runner.cost_per_act
+                )
     return events
 
 

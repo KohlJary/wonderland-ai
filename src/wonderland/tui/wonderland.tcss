@@ -725,8 +725,96 @@ CastBrowserScreen #cast-constitution-pane {
     min-width: 18;
 }
 
+/* Features primary surface — dominant content area on the dashboard
+ * (per the P12 reshape: features are the operator's main attention
+ * point, not a tab among equals). */
+
+#features-row {
+    height: 2fr;
+    padding: 0 2;
+}
+
+#features-list-pane {
+    width: 5fr;
+    height: 1fr;
+    margin: 0 1 1 0;
+}
+
+#features-detail-pane {
+    width: 3fr;
+    height: 1fr;
+    margin: 0 0 1 1;
+}
+
+#features-list-label,
+#features-detail-label {
+    padding: 0 1;
+    color: $primary;
+    height: auto;
+}
+
+#features-filter-row {
+    height: auto;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+#features-filter-row Button {
+    margin: 0 1 0 0;
+    min-width: 12;
+    height: 1;
+    padding: 0 1;
+    background: $panel;
+    color: $foreground;
+    border: none;
+}
+
+#features-filter-row Button.filter-active {
+    background: $accent;
+    color: $background;
+}
+
+#features-tree {
+    height: 1fr;
+    border: round $panel;
+}
+
+#features-detail-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1;
+}
+
+#features-detail {
+    color: $foreground;
+}
+
+#feature-actions-row {
+    height: auto;
+    padding: 1 0;
+    margin: 1 0 0 0;
+    align: center middle;
+}
+
+#feature-actions-row Button {
+    margin: 0 1;
+    min-width: 12;
+}
+
+/* Drill-downs — investigation surfaces below the features section,
+ * smaller real estate. Operator opens via 1/2/3/4 keybinds when
+ * digging into "why did the team make this decision?" questions. */
+
+#dashboard-drilldown-label {
+    padding: 0 2;
+    margin: 1 0 0 0;
+    color: $primary;
+    height: auto;
+}
+
 #dashboard-tabs {
     height: 1fr;
+    margin: 0 0 0 0;
 }
 
 #runs-tab-row,
@@ -825,4 +913,106 @@ CastBrowserScreen #cast-constitution-pane {
 
 #metrics-content {
     color: $foreground;
+}
+
+/* VerifyRejectModal — operator's verify/reject decision dialog
+ * (P12 T90). Lazygit-style centered modal with notes textarea. */
+
+VerifyRejectModal {
+    align: center middle;
+}
+
+#verify-modal-root {
+    width: 80%;
+    max-width: 100;
+    height: auto;
+    max-height: 80%;
+    background: $surface;
+    border: round $accent;
+    padding: 1 2;
+}
+
+#verify-modal-header {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+#verify-modal-feature {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: $panel;
+    border: round $panel;
+}
+
+#verify-modal-guidance {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    color: $foreground;
+}
+
+#verify-modal-notes-scroll {
+    height: 12;
+    border: round $panel;
+    margin-bottom: 1;
+}
+
+#verify-modal-notes {
+    height: auto;
+    background: $background;
+}
+
+#verify-modal-actions {
+    height: auto;
+    padding: 1 0;
+    align: center middle;
+}
+
+#verify-modal-actions Button {
+    margin: 0 1;
+    min-width: 24;
+}
+
+/* EmptyDirectiveConfirmModal — confirms launching with empty
+ * directive (P12 follow-up; for tdd-implement and similar). */
+
+EmptyDirectiveConfirmModal {
+    align: center middle;
+}
+
+#empty-dir-modal-root {
+    width: 70%;
+    max-width: 80;
+    height: auto;
+    background: $surface;
+    border: round $accent;
+    padding: 1 2;
+}
+
+#empty-dir-modal-header {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+#empty-dir-modal-body {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    color: $foreground;
+}
+
+#empty-dir-modal-actions {
+    height: auto;
+    padding: 1 0;
+    align: center middle;
+}
+
+#empty-dir-modal-actions Button {
+    margin: 0 1;
+    min-width: 28;
 }

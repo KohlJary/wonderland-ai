@@ -355,6 +355,7 @@ async def run_phased_meeting(
     iteration_label: str | None,
     window_timeout_seconds: float = DEFAULT_WINDOW_TIMEOUT_SECONDS,
     phase_event_writer: PhaseEventWriter | None = None,
+    lane_thread_prefix: str | None = None,
 ) -> AsyncIterator[Any]:
     """Drive one phased meeting end-to-end.
 
@@ -379,6 +380,8 @@ async def run_phased_meeting(
         per_item_meetings=per_item_meetings,
         current_item_kind=current_item_kind,
         current_item_slug=current_item_slug,
+        project_root=getattr(runner, "project_root", None),
+        lane_thread_prefix=lane_thread_prefix,
     )
 
     convenor_directive = (
@@ -403,10 +406,24 @@ async def run_phased_meeting(
         header = f"**{meeting.label}.**"
     convenor_directive = f"{header}\n\n{convenor_directive}"
 
-    cost_before = runner.total_cost
     calls_before = runner.telemetry.call_count
     artifact_count_before = len(capture.utterances)
     meeting_start = time.monotonic()
+
+    # Stamp the contextvar so every LLM call inside this meeting
+    # gets attributed to thread_id — including orchestrator-driven
+    # deliberate() calls in _deliberate_window (which run in
+    # asyncio.gather child tasks; child tasks copy parent context).
+    # This is what makes per-meeting budget checks and cost_delta
+    # accurate when meetings run in parallel — otherwise every
+    # iteration reads the global counter and trips its budget cap
+    # on the first sibling's call.
+    from wonderland.telemetry import (
+        reset_current_thread_id,
+        set_current_thread_id,
+    )
+
+    telemetry_token = set_current_thread_id(thread_id)
 
     yield MeetingStartEvent(
         meeting=meeting,
@@ -487,9 +504,13 @@ async def run_phased_meeting(
 
             while not state.is_complete():
                 # Meeting budget gate (Decision 4).
+                # Per-thread cost (not global) so parallel meetings
+                # don't cannibalize each other's budgets — see
+                # telemetry.cost_for_thread docstring + the May 10
+                # parallelization-cost-bug analysis.
                 if meeting.meeting_budget is not None:
                     if (
-                        runner.total_cost - cost_before
+                        runner.telemetry.cost_for_thread(thread_id)
                         >= meeting.meeting_budget
                     ):
                         outcome = "MEETING_BUDGET"
@@ -720,6 +741,10 @@ async def run_phased_meeting(
             agent = runner.agents.get(agent_name)
             if agent is not None:
                 setattr(agent, "_orchestrator_owned", False)
+        # Always unwind the contextvar so a meeting cancellation
+        # doesn't leak this thread_id onto subsequent unrelated
+        # work (e.g. teardown calls).
+        reset_current_thread_id(telemetry_token)
 
     if outcome in ("MEETING_BUDGET", "TIMEOUT", "ABORTED"):
         runner.mark_thread_complete(
@@ -728,7 +753,10 @@ async def run_phased_meeting(
 
     elapsed = time.monotonic() - meeting_start
     calls_delta = runner.telemetry.call_count - calls_before
-    cost_delta = runner.total_cost - cost_before
+    # Per-thread cost: under parallel iteration, runner.total_cost
+    # includes sibling iterations' spend, but cost_for_thread
+    # isolates this iteration's spend.
+    cost_delta = runner.telemetry.cost_for_thread(thread_id)
     new_utterances = capture.utterances[artifact_count_before:]
     kinds_count: dict[str, int] = {}
     for u in new_utterances:

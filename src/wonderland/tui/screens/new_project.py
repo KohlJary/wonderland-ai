@@ -51,6 +51,7 @@ from wonderland.skeleton import (
     is_bare_project_root,
     list_skeletons,
     load_skeleton,
+    write_project_context_from_skeleton,
 )
 from wonderland.workflow import list_workflows
 
@@ -352,29 +353,47 @@ class NewProjectScreen(Screen[Project | None]):
             return
 
         # Skeleton apply (optional, only on bare roots) ---------------
+        # Two paths:
+        #   - Bare root → full apply: lay files + write project.yaml
+        #   - Non-bare root → retrofit only: write project.yaml from
+        #     the picked skeleton's manifest. Doesn't clobber existing
+        #     files; gives the team's substrate the runtime fact
+        #     even when the operator is adopting an existing tree.
         if apply_now and skeleton_norm is not None:
-            if not is_bare_project_root(resolved_path):
-                self.notify(
-                    f"Project registered. Skeleton not applied: "
-                    f"path is not bare (would risk clobbering).",
-                    timeout=6,
-                )
-            else:
-                try:
-                    skeleton = load_skeleton(skeleton_norm)
+            try:
+                skeleton = load_skeleton(skeleton_norm)
+                if is_bare_project_root(resolved_path):
                     written = apply_skeleton(skeleton, resolved_path)
                     self.notify(
                         f"Project registered + skeleton applied "
                         f"({len(written)} files).",
                         timeout=4,
                     )
-                except Exception as exc:  # noqa: BLE001
-                    self.notify(
-                        f"Project registered, but skeleton apply "
-                        f"failed: {exc}",
-                        severity="error",
-                        timeout=8,
+                else:
+                    pc_path = write_project_context_from_skeleton(
+                        skeleton, resolved_path
                     )
+                    if pc_path is not None:
+                        self.notify(
+                            f"Project registered. Files not laid down "
+                            f"(non-bare root); project context written "
+                            f"to .wonderland/project.yaml.",
+                            timeout=6,
+                        )
+                    else:
+                        # Manifest had no stack — nothing to retrofit.
+                        self.notify(
+                            f"Project registered. Skeleton not applied: "
+                            f"path is not bare (would risk clobbering).",
+                            timeout=6,
+                        )
+            except Exception as exc:  # noqa: BLE001
+                self.notify(
+                    f"Project registered, but skeleton apply "
+                    f"failed: {exc}",
+                    severity="error",
+                    timeout=8,
+                )
         else:
             self.notify(f"Project {name!r} registered.", timeout=3)
 

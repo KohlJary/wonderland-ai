@@ -1,5 +1,13 @@
 language: python
 
+stack:
+  runtime: tui
+  language: python
+  ui_framework: textual
+  test_framework: pytest
+
+entry_point: src/app.py
+
 post_apply:
   - description: Install Python dependencies (Textual + pytest-asyncio)
     command: pip install -e .[dev]

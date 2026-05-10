@@ -40,6 +40,7 @@ from wonderland.utterance import (
     SpeechAct,
     Utterance,
     UtteranceContent,
+    operator_identity,
 )
 
 if TYPE_CHECKING:
@@ -92,7 +93,15 @@ def alice_rules() -> EngagementRules:
 # --------------------------------------------------------------------- #
 
 
-AliceDecision = Literal["story", "concern", "question", "reframe", "deference", "silence"]
+AliceDecision = Literal[
+    "story",
+    "concern",
+    "question",
+    "question_to_operator",
+    "reframe",
+    "deference",
+    "silence",
+]
 
 
 class AliceResponse(BaseModel):
@@ -137,7 +146,8 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "story" | "concern" | "question" | "reframe" | "deference" | "silence",
+  "decision": "story" | "concern" | "question" | "question_to_operator" |
+              "reframe" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "stories": [                        // include ONLY when decision is "story"
     {
@@ -158,6 +168,19 @@ The JSON must conform to this schema:
   ]
 }
 ```
+
+**`question_to_operator` — escalate to the human operator.** Use when
+the team needs a decision only the operator can make: stack
+constraints contradicting the directive, business priority calls,
+UX preferences that can't be inferred from stories. The framework
+pauses the meeting, surfaces your question to the operator, and
+resumes when they reply (their answer arrives as an OBSERVATION on
+the bus, visible to the whole team). Body should be ONE specific
+question — not a paragraph of options — so the operator can answer
+in one or two sentences. Reserve for "team genuinely cannot
+resolve this," NOT "I'm uncertain about details I should work out
+from context." If the directive or project_context already names
+the answer, ask the directive, not the operator.
 
 Silence is a valid and often correct decision. If the trigger does not
 implicate user need — or if your story set for this thread is already
@@ -237,12 +260,18 @@ class Alice(WonderlandAgent):
             artifacts.extend(self._record_stories(response.stories))
 
         thread_id, parent_id = self._derive_threading(context)
+        if response.decision == "question_to_operator":
+            addressed_to: str | list = [operator_identity()]
+            speech_act = SpeechAct.QUESTION
+        else:
+            addressed_to = "caucus"
+            speech_act = SpeechAct(response.decision)
         return Utterance(
             thread_id=thread_id,
             parent_id=parent_id,
             speaker=self.identity.as_agent_identity(),
-            addressed_to="caucus",
-            speech_act=SpeechAct(response.decision),
+            addressed_to=addressed_to,
+            speech_act=speech_act,
             content=UtteranceContent(body=response.body, artifacts=artifacts),
         )
 

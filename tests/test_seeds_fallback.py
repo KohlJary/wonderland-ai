@@ -177,6 +177,80 @@ def test_supported_disk_kinds_includes_load_bearing_artifacts() -> None:
     assert "feature" in kinds
     assert "adr" in kinds
     assert "contract_note" in kinds
+    # The operator's directive — gives architectural meetings (Cat's
+    # M4) a way to read the launching prompt verbatim.
+    assert "directive" in kinds
+
+
+# --- Directive seed (operator's literal launching prompt) ---
+
+
+def test_disk_seeds_loads_directive_body_not_yaml_envelope(
+    tmp_path: Path,
+) -> None:
+    """The synthetic utterance body should be the directive's
+    ``body`` field (the operator's literal prompt), not the YAML
+    envelope. Otherwise Cat reads ``name: obol\\ntitle: obol\\n...``
+    and has to mentally parse to find the actual prompt."""
+    from wonderland.directive import DirectivePreset, save_directive
+
+    save_directive(
+        DirectivePreset(
+            name="my-app",
+            title="My App",
+            body="Build a TUI dashboard for personal finance.",
+        ),
+        tmp_path,
+    )
+    seeds = disk_seeds_for_kinds(
+        tmp_path, ["directive"], thread_id="architecture"
+    )
+    assert len(seeds) == 1
+    body = seeds[0].content.body
+    # The directive's prompt is the body, verbatim. (save_directive
+    # appends a trailing newline as part of its serialization
+    # convention; we rstrip here to compare against the source text.)
+    assert body.rstrip() == "Build a TUI dashboard for personal finance."
+    # Crucial: the YAML envelope (name:/title:/body:) does NOT leak
+    # into the body — Cat reads the prompt as-if a teammate said it.
+    assert "name:" not in body
+    assert "title:" not in body
+
+
+def test_disk_seeds_directive_attributed_to_dodo(tmp_path: Path) -> None:
+    """The directive flows in via the Dodo at runtime via
+    relay_directive(). The disk-fallback synthetic utterance keeps
+    the same speaker identity so post-hoc analysis can't tell the
+    two paths apart."""
+    from wonderland.directive import DirectivePreset, save_directive
+
+    save_directive(
+        DirectivePreset(name="x", title="x", body="do the thing"),
+        tmp_path,
+    )
+    seeds = disk_seeds_for_kinds(tmp_path, ["directive"], thread_id="t")
+    assert seeds[0].speaker.name == "dodo"
+    assert seeds[0].speech_act == SpeechAct.DIRECTIVE
+
+
+def test_disk_seeds_directive_carries_artifact_for_per_item_slicing(
+    tmp_path: Path,
+) -> None:
+    """Each directive seed carries one ``directive`` artifact whose
+    payload has the standard slug/title/path shape — so per_item
+    iteration code that filters by artifact kind treats directives
+    consistently with stories/tickets/features."""
+    from wonderland.directive import DirectivePreset, save_directive
+
+    save_directive(
+        DirectivePreset(name="my-app", title="My App", body="x"),
+        tmp_path,
+    )
+    seeds = disk_seeds_for_kinds(tmp_path, ["directive"], thread_id="t")
+    artifact = seeds[0].content.artifacts[0]
+    assert artifact.kind == "directive"
+    assert artifact.payload["slug"] == "my-app"
+    assert artifact.payload["title"] == "My App"
 
 
 # --- Integration with resolve_seeds ---

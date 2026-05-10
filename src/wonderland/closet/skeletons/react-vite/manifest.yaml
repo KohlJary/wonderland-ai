@@ -1,5 +1,13 @@
 language: javascript
 
+stack:
+  runtime: web
+  language: typescript
+  ui_framework: react
+  test_framework: vitest
+
+entry_point: src/main.tsx
+
 post_apply:
   - description: Install Node dependencies (React + Vite + Vitest)
     command: npm install

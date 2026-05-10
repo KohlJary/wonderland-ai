@@ -895,6 +895,10 @@ async def test_live_run_screen_phase_events_pane_populates_via_stream() -> None:
     class _FakeTel:
         def __init__(self) -> None:
             self.call_count = 0
+            self._per_thread_cost: dict[str, float] = {}
+
+        def cost_for_thread(self, thread_id: str) -> float:
+            return self._per_thread_cost.get(thread_id, 0.0)
 
     class _FakeRunner:
         def __init__(self, project_root: Path) -> None:
@@ -2688,9 +2692,10 @@ async def test_project_library_enter_opens_dashboard(
 async def test_dashboard_actions_pane_has_new_run_button(
     monkeypatch, tmp_path
 ) -> None:
-    """The dashboard's actions pane (always visible, above tabs)
-    surfaces a 'New Run' button. Clicking it pushes NewRunScreen
-    with the project context attached."""
+    """The dashboard's actions pane surfaces a Custom Run button
+    (escape hatch for picking any workflow). Post-T92 reshape: the
+    primary action is now state-aware (Design/Implement/Verify);
+    'Custom run' is the legacy escape for ad-hoc workflows."""
     from textual.widgets import Button
 
     from wonderland.project import Project, register_project, load_project
@@ -2715,12 +2720,10 @@ async def test_dashboard_actions_pane_has_new_run_button(
         screen = app.screen
         assert isinstance(screen, ProjectDashboardScreen)
 
-        new_run_btn = screen.query_one(
-            "#dashboard-new-run-button", Button
-        )
-        assert "New Run" in str(new_run_btn.label)
+        custom_btn = screen.query_one("#action-custom-run", Button)
+        assert "Custom run" in str(custom_btn.label)
 
-        screen.post_message(Button.Pressed(new_run_btn))
+        screen.post_message(Button.Pressed(custom_btn))
         await pilot.pause()
         # Pushed NewRunScreen with the project context.
         assert isinstance(app.screen, NewRunScreen)
@@ -3545,5 +3548,743 @@ async def test_dashboard_metrics_tab_renders_charts(
         assert "20260509T120000" in rendered
         # No raw ANSI escape sequences leaked through.
         assert "\x1b[" not in rendered
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+# ---------- Features primary surface (P12 T89 dashboard reshape) ----------
+
+
+async def test_dashboard_features_table_mounts(monkeypatch, tmp_path) -> None:
+    """The dashboard's primary content is now the features tree
+    (each feature is a parent node, tickets nest under it). The
+    tree mounts at the top level of the dashboard, above the
+    drill-down tabs."""
+    from textual.widgets import Tree
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        # Features tree is queryable directly (not nested in a tab).
+        features_tree = screen.query_one("#features-tree", Tree)
+        assert features_tree is not None
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_features_empty_state_guides_first_design_run(
+    monkeypatch, tmp_path
+) -> None:
+    """Before any design run, the detail pane explains that running
+    tdd-design will produce features."""
+    from textual.widgets import Static
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        detail = app.screen.query_one("#features-detail", Static)
+        rendered = str(detail.render())
+        assert "No features yet" in rendered
+        assert "tdd-design" in rendered
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_features_filter_chips_present(
+    monkeypatch, tmp_path
+) -> None:
+    """All filter chips render, with 'all' as the default-active chip."""
+    from textual.widgets import Button
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        # All chips queryable
+        for chip_id in [
+            "filter-all", "filter-designed", "filter-queued",
+            "filter-rfr", "filter-in-progress", "filter-verified",
+            "filter-rejected",
+        ]:
+            chip = screen.query_one(f"#{chip_id}", Button)
+            assert chip is not None
+        # 'all' is the default-active chip
+        assert "filter-active" in str(
+            screen.query_one("#filter-all", Button).classes
+        )
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_drilldown_tabs_still_present(
+    monkeypatch, tmp_path
+) -> None:
+    """Reshape didn't drop the drill-down tabs — Runs/Artifacts/
+    Files/Metrics still mount, just below the features section now."""
+    from textual.widgets import TabbedContent
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        tabs = app.screen.query_one("#dashboard-tabs", TabbedContent)
+        # All four drill-down tabs still present
+        active = tabs.active
+        assert active in ("tab-runs", None)  # default tab is runs
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_queue_button_transitions_designed_feature(
+    monkeypatch, tmp_path
+) -> None:
+    """Clicking 'Queue' on a designed feature transitions it to
+    queued state — operator's batch-select gate. Refresh reflects
+    the new state."""
+    from textual.widgets import Button, DataTable, Tree
+
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        get_state,
+        transition,
+    )
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    # Create a feature in 'designed' state.
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="Account dashboard",
+        description="View balances at a glance.",
+        tickets=["balance-card"],
+        stack_span="full-stack",
+        tier="v1",
+        sources=["see-money-at-a-glance"],
+    ))
+    transition(project_root, "account-dashboard", FeatureState.PROPOSED, by="rabbit")
+    transition(project_root, "account-dashboard", FeatureState.IN_DESIGN, by="rabbit")
+    transition(project_root, "account-dashboard", FeatureState.DESIGNED, by="system")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        # Cursor on the only feature row.
+        ft = screen.query_one("#features-tree", Tree)
+        ft.cursor_line = 0
+        await pilot.pause()
+        # Click Queue
+        queue_btn = screen.query_one("#feature-action-queue", Button)
+        screen.post_message(Button.Pressed(queue_btn))
+        await pilot.pause()
+        # Feature now in queued state
+        assert get_state(project_root, "account-dashboard") == FeatureState.QUEUED
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+# ---------- VerifyRejectModal (P12 T90) ----------
+
+
+async def test_verify_modal_dismisses_with_verified_state(
+    monkeypatch, tmp_path
+) -> None:
+    """Submitting the modal in verify mode dismisses with
+    (FeatureState.VERIFIED, notes)."""
+    from wonderland.feature_lifecycle import FeatureState
+    from wonderland.tui.screens.verify_modal import VerifyRejectModal
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    result_holder: list = []
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            VerifyRejectModal(
+                feature_slug="alpha",
+                feature_title="Alpha feature",
+                mode="verify",
+            ),
+            lambda r: result_holder.append(r),
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, VerifyRejectModal)
+        screen.action_submit()
+        await pilot.pause()
+
+    assert len(result_holder) == 1
+    state, notes = result_holder[0]
+    assert state == FeatureState.VERIFIED
+    assert notes == ""  # optional for verify; empty allowed
+
+
+async def test_verify_modal_reject_requires_notes(
+    monkeypatch, tmp_path
+) -> None:
+    """Reject mode with empty notes must NOT dismiss — operator
+    must say why."""
+    from wonderland.tui.screens.verify_modal import VerifyRejectModal
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    result_holder: list = []
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            VerifyRejectModal(
+                feature_slug="alpha",
+                feature_title="Alpha",
+                mode="reject",
+            ),
+            lambda r: result_holder.append(r),
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, VerifyRejectModal)
+        # Submit with empty notes — should NOT dismiss.
+        screen.action_submit()
+        await pilot.pause()
+        # Modal still present; no callback fired yet.
+        assert isinstance(app.screen, VerifyRejectModal)
+        assert result_holder == []
+
+
+async def test_verify_modal_reject_with_notes_dismisses(
+    monkeypatch, tmp_path
+) -> None:
+    """Reject mode with non-empty notes dismisses with
+    (FeatureState.REJECTED, notes)."""
+    from textual.widgets import TextArea
+
+    from wonderland.feature_lifecycle import FeatureState
+    from wonderland.tui.screens.verify_modal import VerifyRejectModal
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    result_holder: list = []
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            VerifyRejectModal(
+                feature_slug="alpha",
+                feature_title="Alpha",
+                mode="reject",
+            ),
+            lambda r: result_holder.append(r),
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, VerifyRejectModal)
+        notes_widget = screen.query_one("#verify-modal-notes", TextArea)
+        notes_widget.text = "Plaid auth handling is hand-waved; redesign first."
+        await pilot.pause()
+        screen.action_submit()
+        await pilot.pause()
+
+    assert len(result_holder) == 1
+    state, notes = result_holder[0]
+    assert state == FeatureState.REJECTED
+    assert "Plaid auth" in notes
+
+
+async def test_verify_modal_cancel_dismisses_with_none(
+    monkeypatch, tmp_path
+) -> None:
+    """Escape / Cancel button dismisses with None — operator changed
+    their mind, no transition fires."""
+    from wonderland.tui.screens.verify_modal import VerifyRejectModal
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    result_holder: list = []
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            VerifyRejectModal(
+                feature_slug="alpha",
+                feature_title="Alpha",
+                mode="verify",
+            ),
+            lambda r: result_holder.append(r),
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, VerifyRejectModal)
+        screen.action_cancel()
+        await pilot.pause()
+
+    assert result_holder == [None]
+
+
+async def test_dashboard_verify_button_opens_modal_for_rfr_feature(
+    monkeypatch, tmp_path
+) -> None:
+    """Pressing Verify on a feature in ready_for_review state pushes
+    the modal."""
+    from textual.widgets import Button, DataTable, Tree
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import FeatureState, transition
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+    from wonderland.tui.screens.verify_modal import VerifyRejectModal
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="Account dashboard",
+        description="Balance at a glance.",
+        tickets=["balance-card"],
+        stack_span="full-stack",
+        tier="v1",
+        sources=["see-money"],
+    ))
+    # Walk it through to ready_for_review
+    for s in [
+        FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+        FeatureState.DESIGNED, FeatureState.QUEUED,
+        FeatureState.IN_PROGRESS, FeatureState.READY_FOR_REVIEW,
+    ]:
+        transition(project_root, "account-dashboard", s, by="test")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        ft = screen.query_one("#features-tree", Tree)
+        ft.cursor_line = 0
+        await pilot.pause()
+        verify_btn = screen.query_one("#feature-action-verify", Button)
+        screen.post_message(Button.Pressed(verify_btn))
+        await pilot.pause()
+        assert isinstance(app.screen, VerifyRejectModal)
+        assert app.screen.mode == "verify"
+        await pilot.press("escape")
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_verify_blocked_for_non_rfr_feature(
+    monkeypatch, tmp_path
+) -> None:
+    """Verify on a feature NOT in ready_for_review state shows a
+    warning notify; modal does NOT open."""
+    from textual.widgets import Button, DataTable, Tree
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import FeatureState, transition
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="Alpha",
+        description="x",
+        tickets=["t1"],
+        stack_span="full-stack",
+        tier="v1",
+        sources=["s"],
+    ))
+    transition(project_root, "alpha", FeatureState.PROPOSED, by="t")
+    # Stays at proposed — not ready_for_review
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        ft = screen.query_one("#features-tree", Tree)
+        ft.cursor_line = 0
+        await pilot.pause()
+        verify_btn = screen.query_one("#feature-action-verify", Button)
+        screen.post_message(Button.Pressed(verify_btn))
+        await pilot.pause()
+        # Modal should NOT have been pushed — still on dashboard.
+        assert isinstance(app.screen, ProjectDashboardScreen)
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+# ---------- T92 — state-aware actions pane ----------
+
+
+async def test_dashboard_actions_pane_all_buttons_present(
+    monkeypatch, tmp_path
+) -> None:
+    """All four action buttons (Design / Implement / Verify / Custom)
+    are always visible regardless of lifecycle state."""
+    from textual.widgets import Button
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        for bid in ("action-design", "action-implement",
+                    "action-verify-ready", "action-custom-run"):
+            btn = screen.query_one(f"#{bid}", Button)
+            assert btn is not None
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_empty_state_design_button_primary(
+    monkeypatch, tmp_path
+) -> None:
+    """No features → Design Features button is the primary; Implement
+    and Verify are disabled with '0 queued'/'0 ready' labels."""
+    from textual.widgets import Button
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        design_btn = screen.query_one("#action-design", Button)
+        impl_btn = screen.query_one("#action-implement", Button)
+        verify_btn = screen.query_one("#action-verify-ready", Button)
+        assert design_btn.variant == "primary"
+        assert impl_btn.disabled is True
+        assert verify_btn.disabled is True
+        assert "0 queued" in str(impl_btn.label)
+        assert "0 ready" in str(verify_btn.label)
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_verify_primary_when_rfr_features_exist(
+    monkeypatch, tmp_path
+) -> None:
+    """≥1 ready_for_review → Verify button is primary; counts shown."""
+    from textual.widgets import Button
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import FeatureState, back_fill_state
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    for slug, title in [("feature-a", "Feature A"), ("feature-b", "Feature B")]:
+        FeatureRegistry(project_root).write(FeaturePayload(
+            title=title, description="x", tickets=["t1"],
+            stack_span="full-stack", tier="v1", sources=["s"],
+        ))
+        back_fill_state(
+            project_root, slug,
+            FeatureState.READY_FOR_REVIEW, notes="test"
+        )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        verify_btn = screen.query_one("#action-verify-ready", Button)
+        design_btn = screen.query_one("#action-design", Button)
+        assert verify_btn.variant == "primary"
+        assert design_btn.variant == "default"
+        assert "2 ready" in str(verify_btn.label)
+        assert verify_btn.disabled is False
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_implement_primary_when_queued_features_exist(
+    monkeypatch, tmp_path
+) -> None:
+    """≥1 queued (no rfr) → Implement is primary."""
+    from textual.widgets import Button
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import FeatureState, back_fill_state
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="A", description="x", tickets=["t1"],
+        stack_span="full-stack", tier="v1", sources=["s"],
+    ))
+    back_fill_state(project_root, "a", FeatureState.QUEUED, notes="t")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        impl_btn = screen.query_one("#action-implement", Button)
+        verify_btn = screen.query_one("#action-verify-ready", Button)
+        design_btn = screen.query_one("#action-design", Button)
+        assert impl_btn.variant == "primary"
+        assert verify_btn.variant == "default"
+        assert design_btn.variant == "default"
+        assert "1 queued" in str(impl_btn.label)
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_verify_button_opens_modal_for_first_rfr(
+    monkeypatch, tmp_path
+) -> None:
+    """Clicking Verify (state-aware action) jumps to the first
+    ready_for_review feature and opens the verify modal."""
+    from textual.widgets import Button
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import FeatureState, back_fill_state
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+    from wonderland.tui.screens.verify_modal import VerifyRejectModal
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="A", description="x", tickets=["t1"],
+        stack_span="full-stack", tier="v1", sources=["s"],
+    ))
+    back_fill_state(
+        project_root, "a", FeatureState.READY_FOR_REVIEW, notes="t"
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        verify_btn = screen.query_one("#action-verify-ready", Button)
+        screen.post_message(Button.Pressed(verify_btn))
+        await pilot.pause()
+        # Modal should have opened.
+        assert isinstance(app.screen, VerifyRejectModal)
+        assert app.screen.mode == "verify"
+        await pilot.press("escape")
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+# ---------- NewRunScreen pre-fill from action buttons ----------
+
+
+async def test_new_run_screen_default_workflow_prefills_select(
+    monkeypatch, tmp_path
+) -> None:
+    """When NewRunScreen is constructed with default_workflow, the
+    workflow Select pre-selects that value on mount."""
+    from textual.widgets import Select
+
+    from wonderland.project import Project, register_project, load_project
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            NewRunScreen(project=project, default_workflow="tdd-implement")
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+        wf_select = screen.query_one("#workflow-select", Select)
+        assert wf_select.value == "tdd-implement"
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_new_run_screen_default_directive_prefills_textarea(
+    monkeypatch, tmp_path
+) -> None:
+    """When NewRunScreen is constructed with default_directive, the
+    composer textarea pre-fills."""
+    from textual.widgets import TextArea
+
+    from wonderland.project import Project, register_project, load_project
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            NewRunScreen(
+                project=project,
+                default_directive="Implement the queued features.",
+            )
+        )
+        await pilot.pause()
+        composer = app.screen.query_one("#directive-composer", TextArea)
+        assert composer.text == "Implement the queued features."
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_new_run_screen_empty_directive_pushes_confirmation_modal(
+    monkeypatch, tmp_path
+) -> None:
+    """When the operator hits Go with an empty directive, a
+    confirmation modal pushes (instead of just notify-and-block)."""
+    from textual.widgets import TextArea, Select
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.empty_directive_modal import (
+        EmptyDirectiveConfirmModal,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(
+            NewRunScreen(
+                project=project,
+                default_workflow="tdd-implement",
+            )
+        )
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+        # Verify directive is empty and workflow is set.
+        composer = screen.query_one("#directive-composer", TextArea)
+        composer.text = ""
+        wf = screen.query_one("#workflow-select", Select)
+        assert wf.value == "tdd-implement"
+        await pilot.pause()
+        # Trigger Go
+        screen.action_go()
+        await pilot.pause()
+        # Modal should be on top now.
+        assert isinstance(app.screen, EmptyDirectiveConfirmModal)
+        # Cancel the modal — should land back on NewRunScreen.
+        screen_modal = app.screen
+        screen_modal.action_cancel()
+        await pilot.pause()
+        assert isinstance(app.screen, NewRunScreen)
         await pilot.press("escape")
         await pilot.press("q")

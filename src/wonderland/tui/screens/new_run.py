@@ -100,6 +100,8 @@ class NewRunScreen(Screen[None]):
         project_root: Path | None = None,
         *,
         project: Project | None = None,
+        default_workflow: str | None = None,
+        default_directive: str | None = None,
     ) -> None:
         super().__init__()
         # P11: when a Project is supplied, prefill defaults from it
@@ -115,9 +117,23 @@ class NewRunScreen(Screen[None]):
             # Default is cwd for users running wonderland-tui from
             # inside the project they want to operate on.
             self.project_root = project_root or Path.cwd()
+        # T92 path: dashboard's Implement/Design buttons pass these
+        # so operator lands on NewRunScreen with workflow + directive
+        # pre-filled. Operator can still edit either before launching.
+        # default_workflow overrides the project's last_workflow if
+        # both are set; explicit-from-action-button > project default.
+        self._default_workflow = default_workflow
+        self._default_directive = default_directive
         # Cache of (display_name, preset) tuples in display order so
         # row index → preset is a constant-time lookup.
         self._presets: list[tuple[str, DirectivePreset]] = []
+        # Track whether the operator has explicitly OK'd launching
+        # without a directive (via the empty-directive confirmation
+        # modal). Lets the team work from seeds alone (features /
+        # tickets / contracts on disk) for workflows like
+        # tdd-implement where the lifecycle artifacts are the
+        # directive.
+        self._empty_directive_confirmed: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -218,21 +234,53 @@ class NewRunScreen(Screen[None]):
     def on_mount(self) -> None:
         # Populate the preset table.
         self._populate_presets()
-        # P11 T78: when a project context is set, prefill the workflow
-        # Select from the project's default. We do this post-compose
-        # to avoid Select-constructor sentinel issues across Textual
-        # versions; setting .value on a mounted Select is reliable.
+        # T92 path: explicit default_workflow from a state-aware
+        # action button takes precedence over project.last_workflow.
+        # Falls back to project's last workflow when no explicit
+        # default was passed.
+        target_workflow: str | None = None
         if (
+            self._default_workflow
+            and self._default_workflow in list_workflows()
+        ):
+            target_workflow = self._default_workflow
+        elif (
             self.project is not None
             and self.project.last_workflow
             and self.project.last_workflow in list_workflows()
         ):
+            target_workflow = self.project.last_workflow
+        if target_workflow:
             self.query_one(
                 "#workflow-select", Select
-            ).value = self.project.last_workflow
+            ).value = target_workflow
+
+        # T92 path: pre-fill the directive textarea when the action
+        # button supplied one. Deferred via call_after_refresh because
+        # _populate_presets queues a row_highlighted event for the
+        # blank-preset row that clears the composer; we need our
+        # default to win over that clear, which means setting it
+        # after the highlighted-row handler runs.
+        if self._default_directive is not None:
+            self.call_after_refresh(self._apply_default_directive)
+
         # Focus the preset table by default — j/k navigates presets,
         # Enter selects, Tab moves to the composer.
         self.query_one("#preset-table", DataTable).focus()
+
+    def _apply_default_directive(self) -> None:
+        """Set the composer textarea to the operator-supplied default
+        directive. Called via call_after_refresh from on_mount so
+        we land after the blank-preset row_highlighted handler
+        clears the composer."""
+        if self._default_directive is None:
+            return
+        try:
+            self.query_one(
+                "#directive-composer", TextArea
+            ).text = self._default_directive
+        except Exception:  # noqa: BLE001
+            pass
 
     def _populate_presets(self) -> None:
         """Build the preset table from bundled + per-project sources.
@@ -352,6 +400,15 @@ class NewRunScreen(Screen[None]):
     def action_back(self) -> None:
         self.app.pop_screen()
 
+    def _on_empty_directive_decision(self, confirmed: bool | None) -> None:
+        """Callback for the empty-directive confirmation modal.
+        Confirmed → set the bypass flag and re-enter action_go to
+        continue the launch flow. Cancelled → leave the operator on
+        NewRunScreen so they can write a directive (or hit Cancel)."""
+        if confirmed:
+            self._empty_directive_confirmed = True
+            self.action_go()
+
     def action_go(self) -> None:
         """Launch the run. Validates inputs, optionally persists a
         preset, pre-flights the API key, then pushes the launch
@@ -367,10 +424,24 @@ class NewRunScreen(Screen[None]):
         save_checked = self.query_one("#save-checkbox", Checkbox).value
         save_name = self.query_one("#save-name-input", Input).value.strip()
 
-        if not directive:
-            self.notify(
-                "Directive is empty — write or pick a preset.",
-                severity="warning",
+        if not directive and not self._empty_directive_confirmed:
+            # Push confirmation modal: launching with an empty
+            # directive is unusual but valid for workflows like
+            # tdd-implement where the team works from seeded
+            # lifecycle artifacts (features, tickets, contracts on
+            # disk). Modal callback either re-enters action_go with
+            # the confirmed flag set, or no-ops.
+            from wonderland.tui.screens.empty_directive_modal import (
+                EmptyDirectiveConfirmModal,
+            )
+
+            self.app.push_screen(
+                EmptyDirectiveConfirmModal(
+                    workflow_name=str(workflow_name)
+                    if workflow_name and workflow_name != Select.BLANK
+                    else None,
+                ),
+                self._on_empty_directive_decision,
             )
             return
         if workflow_name == Select.BLANK or not workflow_name:

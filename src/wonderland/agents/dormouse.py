@@ -45,6 +45,7 @@ from wonderland.utterance import (
     SpeechAct,
     Utterance,
     UtteranceContent,
+    operator_identity,
 )
 
 if TYPE_CHECKING:
@@ -131,7 +132,14 @@ def dormouse_rules() -> EngagementRules:
 # --------------------------------------------------------------------- #
 
 
-DormouseDecision = Literal["observation", "concern", "question", "deference", "silence"]
+DormouseDecision = Literal[
+    "observation",
+    "concern",
+    "question",
+    "question_to_operator",
+    "deference",
+    "silence",
+]
 
 
 class DormouseResponse(BaseModel):
@@ -177,7 +185,8 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "observation" | "concern" | "question" | "deference" | "silence",
+  "decision": "observation" | "concern" | "question" |
+              "question_to_operator" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "observations": [                  // include ONLY when decision is "observation"
     {
@@ -294,12 +303,18 @@ class Dormouse(WonderlandAgent):
             artifacts.extend(self._record_observations(response.observations))
 
         thread_id, parent_id = self._derive_threading(context)
+        if response.decision == "question_to_operator":
+            addressed_to: str | list = [operator_identity()]
+            speech_act = SpeechAct.QUESTION
+        else:
+            addressed_to = "caucus"
+            speech_act = SpeechAct(response.decision)
         return Utterance(
             thread_id=thread_id,
             parent_id=parent_id,
             speaker=self.identity.as_agent_identity(),
-            addressed_to="caucus",
-            speech_act=SpeechAct(response.decision),
+            addressed_to=addressed_to,
+            speech_act=speech_act,
             content=UtteranceContent(body=response.body, artifacts=artifacts),
         )
 

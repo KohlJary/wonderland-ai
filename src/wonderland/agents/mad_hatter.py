@@ -42,6 +42,7 @@ from wonderland.utterance import (
     SpeechAct,
     Utterance,
     UtteranceContent,
+    operator_identity,
 )
 
 if TYPE_CHECKING:
@@ -104,6 +105,7 @@ HatterDecision = Literal[
     "test_scenario",
     "concern",
     "question",
+    "question_to_operator",
     "observation",
     "deference",
     "silence",
@@ -151,7 +153,8 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "test_scenario" | "concern" | "question" | "observation" | "deference" | "silence",
+  "decision": "test_scenario" | "concern" | "question" |
+              "question_to_operator" | "observation" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "scenarios": [                      // include ONLY when decision is "test_scenario"
     {
@@ -307,12 +310,18 @@ class MadHatter(WonderlandAgent):
             artifacts.extend(self._record_scenarios(response.scenarios))
 
         thread_id, parent_id = self._derive_threading(context)
+        if response.decision == "question_to_operator":
+            addressed_to: str | list = [operator_identity()]
+            speech_act = SpeechAct.QUESTION
+        else:
+            addressed_to = "caucus"
+            speech_act = SpeechAct(response.decision)
         return Utterance(
             thread_id=thread_id,
             parent_id=parent_id,
             speaker=self.identity.as_agent_identity(),
-            addressed_to="caucus",
-            speech_act=SpeechAct(response.decision),
+            addressed_to=addressed_to,
+            speech_act=speech_act,
             content=UtteranceContent(body=response.body, artifacts=artifacts),
         )
 

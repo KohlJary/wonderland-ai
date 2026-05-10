@@ -1,5 +1,13 @@
 language: python
 
+stack:
+  runtime: cli
+  language: python
+  ui_framework: click
+  test_framework: pytest
+
+entry_point: src/cli.py
+
 post_apply:
   - description: Install Python dependencies (Click + pytest)
     command: pip install -e .[dev]

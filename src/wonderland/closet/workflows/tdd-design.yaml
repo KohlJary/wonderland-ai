@@ -1,0 +1,393 @@
+name: tdd-design
+description: |
+  Design-phase atom of the TDD pipeline. Produces designed features —
+  features with constituent tickets, an architectural commitment, and
+  per-feature contracts — but does not implement them. Operator runs
+  this phase, reviews the designed features, picks which to queue for
+  implementation, then runs tdd-implement (the implement-phase atom)
+  separately.
+
+  The split exists for cost-of-iteration reasons: design runs are
+  ~$0.50–$2 territory; implementation is $5–$15. Being able to
+  iterate design 5–10× before committing implementation budget is a
+  structural change in the cost curve. Cross-run continuity (the
+  seed-fallback shipped in 0.3.0) means refined ADRs and stories
+  from prior design runs carry forward, so iterating design on the
+  same project is meaningful work, not redundant regeneration.
+
+  ## Order rationale (analysis 040)
+
+  Stories → features → tickets → architecture → contracts. Two
+  changes vs the previous tdd-serial-phased shape:
+
+  1. **Features come BEFORE tickets** (was the other way around).
+     Tickets are implementation atoms; features are user-meaningful
+     capabilities. Going stories → features → tickets matches how
+     product → engineering decomposes work in real teams. The
+     previous order (tickets first, features composed from them)
+     led to monolithic-feature collapse in r43-obol — Rabbit lumped
+     six tickets into one feature because the grouping was post-hoc
+     rationalization. Features-first means natural cleavage and
+     stable per-feature ticket granularity.
+
+  2. **Architecture + security come AFTER feature/ticket generation**
+     (was Cat alongside Alice in M1). Cat architecting from concrete
+     features + tickets produces grounded ADRs (see r42-obol's
+     ADR-002 — "three backend domains" was grounded in personas).
+     Cat architecting from stories alone (r41-obol's ADR-001) is
+     more abstract and less actionable. Same logic for the Queen's
+     security pass — concrete material to threat-model against.
+
+  Hatter doesn't appear in this workflow. Tea Party (Hatter writing
+  failing tests) is part of TDD's red-green loop and lives in
+  tdd-implement, not here. Designed features ship without test
+  scenarios; the implementation phase generates failing tests +
+  passing implementation as a paired loop per ticket.
+
+  ## Output
+
+  - User stories (Alice's M1 work)
+  - Features grouped by user-meaningful capability
+  - Tickets per feature (implementation atoms with stack_span tier)
+  - One or more ADRs (architectural commitments)
+  - Zero or more security rulings (Queen's threat-model output)
+  - Contract notes per feature (Tweedles' negotiated seams)
+  - Features end up in lifecycle state ``designed``
+
+  ## A/B baseline
+
+  When tdd-implement runs against features designed by this workflow,
+  the per-iteration payloads should be tighter than tdd-serial-phased
+  (no scenario sprawl mid-design; each meeting focused on one job).
+  Watch r-obol-design-vs-monolithic for the comparison.
+
+version: 1
+
+defaults:
+  budget_dollars: 3.00
+  quiescence_seconds: 300.0
+
+meetings:
+
+  # ─────────────────────────────────────────────────────────────────
+  # M1 — Stories. Alice's pure generative step.
+  # ─────────────────────────────────────────────────────────────────
+  - id: scoping
+    label: M1
+    name: The Caucus Race
+    goal: produce user stories from inhabited personas
+    roster: [alice]
+    meeting_budget: 0.30
+    # Entry meeting — the runtime relays the user's directive
+    # verbatim. Alice's constitution (§V) carries the discipline
+    # for story shape (personas, situations, needs, acceptance,
+    # confusion-flags); no per-meeting convenor framing needed.
+    # project_context tells Alice the runtime shape so personas
+    # are realistically situated ("opens a terminal" vs "opens a
+    # browser tab") instead of generic.
+    seeds:
+      - from: any
+        kinds: [project_context]
+
+  # ─────────────────────────────────────────────────────────────────
+  # M2 — Features composed from stories. Rabbit's job, with Alice
+  # grounding and Caterpillar checking the composition pass.
+  # ─────────────────────────────────────────────────────────────────
+  - id: composition
+    label: M2
+    name: Advice from a Caterpillar
+    goal: compose user-facing features from the M1 stories
+    roster: [alice, white_rabbit, caterpillar]
+    meeting_budget: 0.40
+    convenor_directive: |
+      **Rabbit, ship features.** Read the stories in your context and
+      compose them into features — capabilities a user can describe
+      in one sentence. Features are the user-meaningful units of
+      value; tickets (next meeting) decompose them into work atoms.
+
+      For each feature, name:
+        - ``stack_span`` (frontend / backend / full-stack)
+        - ``personas`` — at least one persona name from M1; if you
+          can't name a persona, the grouping isn't a feature
+        - ``tickets`` — leave as an empty list; M3 will populate
+        - ``tier`` (v1 / fast-follow / post-launch)
+        - ``sources`` — story slugs this feature realizes
+
+      Aim for 3–6 features. Multiple stories can converge on one
+      feature when they describe the same capability from different
+      personas; one story can split into multiple features when
+      the persona's need spans distinct user-visible surfaces.
+
+      **Silence is wrong here — your job is to produce features.**
+      Without features, M3 has no input.
+
+      **Alice — grounding voice.** You wrote the stories. Push back
+      when a feature has drifted from a story your persona would
+      recognize, or when a story you wrote has no feature serving
+      it. Default to silence unless a grounding intervention is
+      needed.
+
+      **Caterpillar — composition pass.** For each feature Rabbit
+      ships, ask: does this claim hold against the stories that
+      sourced it? If a feature aggregates incoherent stories or
+      makes a claim the stories don't support, surface the gap
+      so Rabbit can revise.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: scoping
+        kinds: [story]
+
+    transition_emitted_to: proposed
+    phases:
+      - name: discussion
+        max_rotations: 3
+      - name: commit
+        max_rotations: 2
+        exit_condition_artifact: feature
+
+  # ─────────────────────────────────────────────────────────────────
+  # M3 — Tickets per feature. Rabbit decomposes one feature at a
+  # time into v1 tickets. Per-feature iteration so each feature gets
+  # focused decomposition.
+  # ─────────────────────────────────────────────────────────────────
+  - id: decomposition
+    label: M3
+    name: The Rabbit's Errand
+    goal: decompose each feature into v1 tickets the Tweedles can pick up
+    roster: [alice, white_rabbit]
+    per_item: feature
+    parallel: true  # T93: feature-level decomposition is structurally
+                    # independent — feature A's tickets and feature B's
+                    # never reference each other's payloads.
+    meeting_budget: 0.30
+    convenor_directive: |
+      **Rabbit, decompose this feature into tickets.** The feature
+      in your context is a user-facing capability; your job is to
+      name the implementation atoms that ship together to deliver it.
+
+      For each ticket, name:
+        - ``title`` — what the ticket is, in one short phrase
+        - ``owner`` — which Tweedle (tweedledee for frontend bias,
+          tweedledum for backend bias, or "either" for full-stack)
+        - ``tier`` (v1 / fast-follow / post-launch — usually
+          inherits from feature tier)
+        - ``estimate`` (your honest read; the Tweedles will adjust)
+        - ``description`` — what shipping this ticket means
+        - ``sources`` — **REQUIRED**: the parent feature's slug must
+          be the FIRST entry in this list. The substrate uses this
+          link to know which tickets belong to which feature when
+          tdd-implement iterates per-ticket. You may add additional
+          source slugs (other features the ticket touches, story
+          slugs the ticket realizes), but the parent feature comes
+          first. Without this, the substrate can't tell which
+          tickets to implement when the operator queues a feature.
+        - ``acceptance`` — observable conditions of done
+
+      Aim for 1–4 tickets per feature. A feature with 0 tickets is
+      a feature that's not actually decomposed; a feature with 6+
+      tickets is probably actually 2 features that should be split
+      back in M2. (M2 is closed by now; if you find this, ship the
+      tickets you have but flag the feature for re-composition in
+      a future design run.)
+
+      **Alice — same grounding role.** Defend the user-facing point
+      of the tickets. Push back when a ticket compresses a story
+      past user-recognition or drifts toward technical convenience.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: scoping
+        kinds: [story]
+      - from: composition
+        kinds: [feature]
+
+    transition_iteration_to: in_design
+    phases:
+      - name: decompose
+        max_rotations: 3
+
+  # ─────────────────────────────────────────────────────────────────
+  # M4 — Architecture + security. Cat ADR + Queen ruling, both
+  # grounded in concrete features + tickets. Single project-wide
+  # meeting; doesn't transition individual features (architecture
+  # commitment isn't per-feature).
+  # ─────────────────────────────────────────────────────────────────
+  - id: architecture
+    label: M4
+    name: A Mock Turtle's Lament
+    goal: |
+      produce architectural commitments (ADRs) and security rulings,
+      grounded in the features + tickets the team has shipped
+    roster: [alice, cheshire_cat, queen_of_hearts]
+    meeting_budget: 0.40
+    convenor_directive: |
+      The features + tickets are settled. Now the team commits to
+      the architectural shape that delivers them.
+
+      **First, re-read the operator's directive in your context.**
+      The directive seed is the operator's literal launching prompt
+      — read it before drafting the ADR. Stack constraints named
+      there (e.g. "TUI", "CLI", "mobile app", "web app") are
+      non-negotiable architectural commitments. If the directive
+      says "TUI" and you're considering a frontend/backend split,
+      stop — the directive constrains the runtime shape, and the
+      ADR must serve it. Stories paraphrase; the directive is
+      verbatim.
+
+      **Cat — write ADR(s).** Each ADR names a structural decision
+      (storage shape, integration patterns, data flow) with explicit
+      tradeoffs (what the alternative would have been + why we're
+      not choosing it). Ground every claim in the directive +
+      features + tickets; don't architect for hypothetical
+      extensions. Use status "Proposed" so M5 can challenge if
+      contracts can't realize the ADR.
+
+      **Queen — security ruling pass.** For each feature, name the
+      threat model: what's the attack surface, what could go wrong,
+      what's the team committing NOT to do (deferred to fast-follow
+      vs. accepted as inherent risk). One ruling per feature where
+      the threat model is non-trivial; skip features with no
+      meaningful security posture.
+
+      **Alice — grounding voice.** Push back when an architectural
+      decision drifts from the user-facing point of the features
+      it supports OR drifts from the operator's directive. The
+      architecture serves the personas + the directive's runtime
+      shape, not the other way around.
+
+    seeds:
+      # Project context memory — authoritative project-level facts
+      # (stack, entry point). When the skeleton populated it on
+      # apply, Cat reads "runtime: tui" as a hard constraint and
+      # can't drift into frontend/backend split language. Falls
+      # through gracefully when the project predates context
+      # memory (greenfield via legacy paths).
+      - from: any
+        kinds: [project_context]
+      # Operator's literal launching prompt. Even when project
+      # context names the stack, the directive carries intent for
+      # *this* run — what feature, what scope. Cat reads both:
+      # context for stack ground truth, directive for run intent.
+      - from: any
+        kinds: [directive]
+      - from: scoping
+        kinds: [story]
+      - from: composition
+        kinds: [feature]
+      - from: decomposition
+        kinds: [ticket]
+    phases:
+      - name: discussion
+        max_rotations: 3
+        team_groupings: [[cheshire_cat, queen_of_hearts, alice]]
+      - name: commit
+        max_rotations: 2
+        team_groupings: [[cheshire_cat, queen_of_hearts, alice]]
+        exit_condition_artifact: adr
+
+  # ─────────────────────────────────────────────────────────────────
+  # M5 — Contracts per feature. Tweedles negotiate seams informed
+  # by the ADR. Per-feature iteration.
+  # ─────────────────────────────────────────────────────────────────
+  - id: contract-negotiation
+    label: M5
+    name: The Pair Protocol
+    goal: negotiate per-feature contracts informed by the ADR
+    roster: [tweedledee, tweedledum, alice]
+    per_item: feature
+    parallel: true  # T93: contracts negotiate per-feature seams
+                    # independently. Feature A's API shape and
+                    # feature B's UI envelope are separate concerns.
+    meeting_budget: 0.40
+    convenor_directive: |
+      **Tweedles — negotiate the contract for this feature.**
+
+      **First, read project_context (in your seed context) for the
+      runtime shape.** Your role names ("tweedledee = frontend
+      bias", "tweedledum = backend bias") describe a division of
+      labor that interprets DIFFERENTLY in different runtimes.
+      Translate before negotiating:
+
+        - ``runtime: tui`` (single-process terminal app):
+          tweedledee = widget / screen / layout layer; tweedledum
+          = data / model / persistence layer. The boundary between
+          you is module imports, not HTTP. Contracts that name
+          REST endpoints, fetch shapes, response envelopes, or
+          cache-TTL semantics across this boundary are wrong —
+          you're inside the same process. Use function signatures,
+          dataclass shapes, and module-level invariants.
+
+        - ``runtime: cli`` (single-shot command-line):
+          tweedledee = argparse / output formatting; tweedledum =
+          subcommand logic + persistence. Same in-process rule:
+          no HTTP between you.
+
+        - ``runtime: web`` (client-server, browser + service):
+          legacy interpretation applies. tweedledee owns the
+          browser surface, tweedledum owns the API service, the
+          boundary IS HTTP, contracts name endpoints + verbs +
+          response envelopes.
+
+        - ``runtime: service`` (long-running daemon, no UI):
+          tweedledum carries; tweedledee may not be relevant.
+
+      If the directive named a runtime the project_context block
+      doesn't list, default to single-process unless the directive
+      explicitly says client-server.
+
+      Read the feature, its constituent tickets, and the ADRs in
+      your context. Produce contract notes that name the seams in
+      the right shape for the runtime: function signatures + data
+      classes for in-process; endpoints + envelopes for HTTP.
+      Contracts are the bridge from architectural intent (ADR) to
+      per-ticket implementation work (next phase).
+
+      Stack span (the feature's own ``stack_span`` field) guides
+      who leads, AS INTERPRETED through the runtime above:
+        - ``full-stack`` features: both negotiate the seam together
+        - ``frontend`` features: tweedledee leads, tweedledum confirms
+        - ``backend`` features: tweedledum leads, tweedledee confirms
+
+      A contract note carries: ``proposed_change`` (required, non-
+      empty — what shape are we committing to?), ``current_shape``
+      (the existing contract or "n/a, fresh feature"), and
+      ``rationale`` (why this shape and not the obvious alternative).
+
+      **Alice — grounding voice.** Push back when a contract
+      compresses the user-facing point of a feature past
+      recognition, OR when a contract drifts from the runtime
+      shape (HTTP language in a TUI project, etc.). Default to
+      silence; engage when a seam decision threatens a story your
+      persona would recognize OR threatens the runtime fact in
+      project_context.
+
+    seeds:
+      # Project context memory — runtime shape is the FIRST thing
+      # the Tweedles read so their division of labor adapts to
+      # the project's actual architecture (analysis 040 / r42-obol
+      # post-fix: ADR was framework-agnostic but contracts still
+      # drifted to HTTP because role-shape was fixed in their
+      # constitutions and not in M5's frame).
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [directive]
+      - from: composition
+        kinds: [feature]
+      - from: decomposition
+        kinds: [ticket]
+      - from: architecture
+        kinds: [adr, ruling]
+
+    transition_iteration_to: designed
+    phases:
+      - name: discussion
+        max_rotations: 3
+        team_groupings: [[tweedledee, tweedledum, alice]]
+      - name: commit
+        max_rotations: 2
+        team_groupings: [[tweedledee, tweedledum, alice]]
+        exit_condition_artifact: contract_note

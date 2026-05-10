@@ -192,6 +192,7 @@ TweedleDecision = Literal[
     "contract_note",
     "concern",
     "question",
+    "question_to_operator",
     "deference",
     "invite",
     "silence",
@@ -443,7 +444,8 @@ The JSON must conform to this schema:
 
 ```
 {{
-  "decision": "implementation" | "contract_note" | "concern" | "question" | "deference" | "invite" | "silence",
+  "decision": "implementation" | "contract_note" | "concern" | "question" |
+              "question_to_operator" | "deference" | "invite" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "implementations": [               // include ONLY when decision is "implementation"
     {{
@@ -766,6 +768,8 @@ class _TweedleBase(WonderlandAgent):
         # addressed_to to the invitee identities so WonderlandAgent.speak's
         # _apply_invite_if_any picks them up and updates the roster
         # before the bus publishes.
+        # question_to_operator: route to the operator with QUESTION
+        # speech_act so the runner's user-question watcher fires.
         addressed_to: list | str
         if response.decision == "invite":
             from wonderland.utterance import AgentIdentity
@@ -774,18 +778,29 @@ class _TweedleBase(WonderlandAgent):
                 AgentIdentity(name=name, constitution_version="0.1")
                 for name in response.invitees
             ]
+        elif response.decision == "question_to_operator":
+            from wonderland.utterance import operator_identity
+
+            addressed_to = [operator_identity()]
         else:
             addressed_to = "caucus"
 
         thread_id, parent_id = self._derive_threading(context)
         final_decision = coerced_decision or response.decision
+        # question_to_operator maps to a QUESTION speech_act on the
+        # bus (the schema decision is the user-facing name; the
+        # speech_act is the type the bus carries).
+        if final_decision == "question_to_operator":
+            final_speech_act = SpeechAct.QUESTION
+        else:
+            final_speech_act = SpeechAct(final_decision)
         final_body = coerced_body if coerced_body is not None else response.body
         return Utterance(
             thread_id=thread_id,
             parent_id=parent_id,
             speaker=self.identity.as_agent_identity(),
             addressed_to=addressed_to,
-            speech_act=SpeechAct(final_decision),
+            speech_act=final_speech_act,
             content=UtteranceContent(body=final_body, artifacts=artifacts),
         )
 

@@ -100,6 +100,93 @@ def _load_observations(project_root: Path) -> list[Any]:
     return ObservationRegistry(project_root).list_observations()
 
 
+class _DirectiveRecord:
+    """Adapter so the directive loader can return objects with the
+    same shape as Story/Ticket/Feature records: ``.path``, ``.title``,
+    ``.slug``, ``.number``. The body extractor below pulls
+    ``preset.body`` instead of reading the YAML envelope so seed
+    consumers see just the operator's prompt, not the metadata
+    around it.
+    """
+
+    def __init__(self, path: Path, preset: Any) -> None:
+        self.path = path
+        self.title = preset.title or preset.name
+        self.slug = preset.name
+        self.number = 0
+        self.body = preset.body
+
+
+class _ProjectContextRecord:
+    """Adapter exposing the standard ``.path`` / ``.title`` /
+    ``.slug`` / ``.number`` shape so the ``project_context`` loader
+    plugs into the same disk-fallback pipeline as story / ticket /
+    feature loaders. ``.body`` carries the rendered prose summary
+    (not the YAML envelope) so agents read facts, not metadata.
+    """
+
+    def __init__(self, path: Path, context: Any, body: str) -> None:
+        self.path = path
+        self.title = context.name
+        self.slug = context.name
+        self.number = 0
+        self.body = body
+
+
+def _load_project_context(project_root: Path) -> list[Any]:
+    """Read ``<project>/.wonderland/project.yaml`` if present and
+    return a single synthetic record carrying the rendered context
+    body. Empty list when no project context has been written —
+    legacy projects without context memory operate from directive
+    grounding only.
+    """
+    from wonderland.project_context import (
+        load_project_context,
+        project_context_path,
+        render_context_body,
+    )
+
+    context = load_project_context(project_root)
+    if context is None:
+        return []
+    body = render_context_body(context)
+    return [
+        _ProjectContextRecord(
+            path=project_context_path(project_root),
+            context=context,
+            body=body,
+        )
+    ]
+
+
+def _load_directives(project_root: Path) -> list[Any]:
+    """Read ``<project>/.wonderland/directives/*.yaml`` as
+    ``_DirectiveRecord`` instances. Operator's launching prompt
+    (the ``body`` field of each preset) becomes a seed kind that
+    architecturally-load-bearing meetings (e.g. Cat's M4) can
+    request via ``from: any kinds: [directive]`` — keeps stack
+    constraints in the literal directive visible during ADR work
+    instead of relying on stories paraphrasing them.
+    """
+    from wonderland.directive import (
+        list_project_directives,
+        load_project_directive,
+        project_directives_dir,
+    )
+
+    out: list[Any] = []
+    base = project_directives_dir(project_root)
+    if not base.is_dir():
+        return out
+    for name in list_project_directives(project_root):
+        try:
+            preset = load_project_directive(name, project_root)
+        except Exception:  # noqa: BLE001 — best-effort
+            continue
+        out.append(_DirectiveRecord(base / f"{name}.yaml", preset))
+    return out
+
+
 # kind → (loader, default_speaker_name, speech_act)
 #
 # default_speaker_name: the agent whose constitution makes this their
@@ -133,6 +220,21 @@ _LOADERS: dict[str, tuple[Callable[[Path], list[Any]], str, SpeechAct]] = {
     ),
     "review": (_load_reviews, "caterpillar", SpeechAct.REVIEW),
     "observation": (_load_observations, "dormouse", SpeechAct.OBSERVATION),
+    # The Dodo "speaks" the directive in-run via relay_directive.
+    # When restoring from disk for a meeting that didn't see the
+    # original launch (e.g. M4 architecture), we attribute the
+    # synthetic utterance to the Dodo too — keeps the speaker
+    # identity consistent with the in-run path.
+    "directive": (_load_directives, "dodo", SpeechAct.DIRECTIVE),
+    # Project context memory — authoritative project-level facts
+    # (stack, entry point, conventions). Surfaced into M4 / M5 /
+    # M8 seed contexts so architectural + contract decisions can
+    # ground in the project's actual runtime shape, not the
+    # Tweedles' default web-app prior. Speaker = Dodo (relay-
+    # the-operator) since the Dodo is the team's interface to
+    # what the operator wants and project context is operator-
+    # authored.
+    "project_context": (_load_project_context, "dodo", SpeechAct.DIRECTIVE),
 }
 
 
@@ -173,10 +275,18 @@ def disk_seeds_for_kinds(
         except Exception:  # noqa: BLE001 — best-effort; missing dirs etc.
             continue
         for record in records:
-            try:
-                body = record.path.read_text(encoding="utf-8")
-            except OSError:
-                body = ""
+            # Some record types carry a pre-extracted body (directives
+            # wrap a YAML envelope around the operator's literal prompt;
+            # we want just the prompt). Default path is the on-disk
+            # file's full text — what stories/tickets/etc. need.
+            preset_body = getattr(record, "body", None)
+            if preset_body is not None:
+                body = preset_body
+            else:
+                try:
+                    body = record.path.read_text(encoding="utf-8")
+                except OSError:
+                    body = ""
             try:
                 mtime = datetime.fromtimestamp(
                     record.path.stat().st_mtime, tz=UTC

@@ -83,7 +83,33 @@ class SkeletonManifest(BaseModel):
         default=None,
         description=(
             "Language stack tag for picker filtering / display. "
-            "Examples: 'python', 'javascript', 'rust'. Optional."
+            "Examples: 'python', 'javascript', 'rust'. Optional. "
+            "Superseded by ``stack.language`` for runtime-shape use; "
+            "kept for back-compat + picker filtering."
+        ),
+    )
+    stack: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Project stack shape — runtime / language / "
+            "ui_framework / storage / test_framework. When set, "
+            "``apply_skeleton`` writes a ``.wonderland/project.yaml`` "
+            "from these fields so the substrate's project_context "
+            "loader sees the stack at run time. Optional but "
+            "strongly recommended for skeletons on a fixed runtime "
+            "(tui / web / cli) — without it, agents have to guess "
+            "the runtime from the directive alone, which is the "
+            "M5-Tweedle-drift failure mode named in analysis 040. "
+            "See ``ProjectStack`` for the field set."
+        ),
+    )
+    entry_point: str | None = Field(
+        default=None,
+        description=(
+            "Path to the file the runtime enters at. Written into "
+            "project.yaml if set. Helps M8 review check the "
+            "App.tsx-orphan failure mode (component built but "
+            "never imported into the entry point)."
         ),
     )
     post_apply: list[PostApplyStep] = Field(
@@ -285,7 +311,76 @@ def apply_skeleton(
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         written.append(dst)
+
+    # Write project context memory from manifest.stack so the
+    # substrate's seed-fallback loader sees the runtime shape at
+    # run time. Skipped when the manifest doesn't declare a stack
+    # — leaves the project to operate from directive-only
+    # grounding (legacy behavior).
+    project_yaml = _write_project_context_from_manifest(
+        skeleton, project_root, overwrite=overwrite
+    )
+    if project_yaml is not None:
+        written.append(project_yaml)
+
     return written
+
+
+def write_project_context_from_skeleton(
+    skeleton: Skeleton,
+    project_root: Path,
+    *,
+    overwrite: bool = False,
+) -> Path | None:
+    """Translate the skeleton's manifest.stack into a
+    ``.wonderland/project.yaml`` so the team's seed loader can
+    surface the runtime shape during architecture + contract
+    meetings.
+
+    Public counterpart to ``apply_skeleton``'s file-laying path:
+    callable on its own for retrofit (non-bare roots that already
+    have skeleton files but lack project_context — typical for
+    projects created before context memory landed, or for adopt-
+    existing-codebase flows where the operator picked the
+    skeleton that matches an existing tree).
+
+    Returns the written path, or None when the manifest didn't
+    declare a stack OR when a project.yaml already exists and
+    ``overwrite`` is False (don't clobber operator-edited
+    context).
+    """
+    stack_data = skeleton.manifest.stack
+    if not stack_data or "runtime" not in stack_data:
+        return None
+
+    from wonderland.project_context import (
+        ProjectContext,
+        ProjectStack,
+        project_context_path,
+        save_project_context,
+    )
+
+    target = project_context_path(project_root)
+    if target.exists() and not overwrite:
+        return None
+
+    stack = ProjectStack(
+        runtime=stack_data["runtime"],
+        language=stack_data.get("language") or skeleton.manifest.language,
+        ui_framework=stack_data.get("ui_framework"),
+        storage=stack_data.get("storage"),
+        test_framework=stack_data.get("test_framework"),
+    )
+    context = ProjectContext(
+        name=project_root.name,
+        stack=stack,
+        entry_point=skeleton.manifest.entry_point,
+    )
+    return save_project_context(context, project_root)
+
+
+# Internal alias kept so apply_skeleton's call site doesn't move.
+_write_project_context_from_manifest = write_project_context_from_skeleton
 
 
 def is_bare_project_root(project_root: Path) -> bool:
@@ -311,4 +406,5 @@ __all__ = [
     "list_skeletons",
     "load_skeleton",
     "skeletons_dir",
+    "write_project_context_from_skeleton",
 ]

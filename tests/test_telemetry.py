@@ -13,6 +13,9 @@ from wonderland.telemetry import (
     HAIKU_4_5_OUTPUT_PER_MTOK,
     Telemetry,
     estimate_cost,
+    get_current_thread_id,
+    reset_current_thread_id,
+    set_current_thread_id,
 )
 
 # --------------------------------------------------------------------- #
@@ -180,3 +183,79 @@ def test_run_record_entries_match_recorded_usage(tmp_path: Path) -> None:
     assert record["entries"][0]["input_tokens"] == 1000
     assert record["entries"][1]["agent"] == "cheshire_cat"
     assert record["entries"][1]["cache_read_input_tokens"] == 100
+
+
+# --------------------------------------------------------------------- #
+# Per-thread cost (parallel meeting fix — May 10 cost-attribution bug)
+# --------------------------------------------------------------------- #
+
+
+def test_thread_id_default_is_empty_string() -> None:
+    """No context set → empty thread_id, no per-thread accounting."""
+    tel = Telemetry()
+    tel.record("alice", TokenUsage(input_tokens=1000))
+    assert get_current_thread_id() == ""
+    # Empty thread_id doesn't accumulate to per_thread_cost so an
+    # outside-meeting setup call can't bleed into a meeting's budget.
+    assert tel.cost_for_thread("") == 0.0
+    assert tel.entries[0].thread_id == ""
+
+
+def test_record_attributes_to_current_thread_id() -> None:
+    tel = Telemetry()
+    token = set_current_thread_id("m5-feature-a")
+    try:
+        tel.record("tweedledee", TokenUsage(input_tokens=10_000))  # $0.01
+    finally:
+        reset_current_thread_id(token)
+    assert tel.cost_for_thread("m5-feature-a") == tel.total_cost
+    assert tel.entries[0].thread_id == "m5-feature-a"
+
+
+def test_concurrent_threads_get_isolated_cost() -> None:
+    """The bug this fixes: two parallel meetings each see global cost,
+    not their own cost. After the fix each thread's cost stays
+    isolated even when the global counter accumulates both.
+    """
+    tel = Telemetry()
+
+    tok_a = set_current_thread_id("m5-a")
+    tel.record("tweedledee", TokenUsage(input_tokens=10_000))  # +$0.01 → A
+    reset_current_thread_id(tok_a)
+
+    tok_b = set_current_thread_id("m5-b")
+    tel.record("tweedledum", TokenUsage(input_tokens=20_000))  # +$0.02 → B
+    reset_current_thread_id(tok_b)
+
+    tok_a2 = set_current_thread_id("m5-a")
+    tel.record("alice", TokenUsage(input_tokens=10_000))  # +$0.01 → A
+    reset_current_thread_id(tok_a2)
+
+    # Each thread sees only its own spend, not the global $0.04.
+    assert abs(tel.cost_for_thread("m5-a") - 0.02) < 1e-6
+    assert abs(tel.cost_for_thread("m5-b") - 0.02) < 1e-6
+    assert abs(tel.total_cost - 0.04) < 1e-6
+
+
+def test_cost_for_thread_unknown_returns_zero() -> None:
+    tel = Telemetry()
+    tel.record("alice", TokenUsage(input_tokens=1000))
+    assert tel.cost_for_thread("never-existed") == 0.0
+
+
+def test_per_thread_cost_persisted_in_run_record(tmp_path: Path) -> None:
+    """The run record carries per_thread_cost so post-hoc analysis
+    can attribute spend back to specific iterations without re-
+    summing entries by thread_id."""
+    tel = Telemetry()
+    tok = set_current_thread_id("contract-negotiation-feature-x")
+    try:
+        tel.record("tweedledee", TokenUsage(input_tokens=5000))
+    finally:
+        reset_current_thread_id(tok)
+    path = tel.write_run_record(tmp_path, "test-pt")
+    record = json.loads(path.read_text())
+    assert "per_thread_cost" in record
+    assert "contract-negotiation-feature-x" in record["per_thread_cost"]
+    # Entries also stamped with thread_id for full traceability.
+    assert record["entries"][0]["thread_id"] == "contract-negotiation-feature-x"

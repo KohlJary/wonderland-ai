@@ -1,5 +1,13 @@
 language: python
 
+stack:
+  runtime: service
+  language: python
+  ui_framework: fastapi
+  test_framework: pytest
+
+entry_point: src/api.py
+
 post_apply:
   - description: Install Python dependencies (FastAPI + uvicorn + pytest)
     command: pip install -e .[dev]
