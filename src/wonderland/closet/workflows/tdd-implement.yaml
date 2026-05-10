@@ -152,15 +152,16 @@ meetings:
     # ships, then commit needs ANOTHER scenario emission to exit
     # (which Hatter usually doesn't produce — he ships one scenario
     # per ticket). Result: meeting runs to budget cap on every iter.
-    # Post-fix: scenario lands → meeting exits regardless of which
-    # phase produced it. Saves ~30-50% per ticket on fast convergence.
+    # Single-phase: red exits as soon as Hatter+Alice ship the
+    # test_scenario. Pre-this-fix the meeting had a separate
+    # "commit" phase running 1 rotation post-exit; that rotation
+    # always added cost without adding value because the
+    # exit_condition was already satisfied by the artifact in the
+    # bus from red. Dropping commit removes that wasted rotation
+    # without changing convergence semantics.
     phases:
       - name: red
         max_rotations: 2
-        team_groupings: [[mad_hatter, alice]]
-        exit_condition_artifact: test_scenario
-      - name: commit
-        max_rotations: 1
         team_groupings: [[mad_hatter, alice]]
         exit_condition_artifact: test_scenario
 
@@ -361,19 +362,18 @@ meetings:
 
     transition_iteration_to: ready_for_review
     # M8 had no exit_condition before this fix — Caterpillar shipped
-    # her review verdict, then the meeting rotated to budget cap with
-    # no exit signal. Result: M8 averaged $0.90/feature against $0.40
-    # budget, almost entirely post-verdict slop. Adding
-    # exit_condition_artifact: review to both phases ends the meeting
-    # as soon as the verdict lands. Tweedle defense (if needed) shows
-    # up as concerns during the review phase before Caterpillar ships
-    # the verdict; no separate "defend" stage required.
+    # Single-phase: review exits as soon as Caterpillar ships her
+    # verdict. Pre-this-fix the meeting had a separate "defend"
+    # phase running 1 rotation post-exit, which on every recent run
+    # tipped total spend over the meeting_budget cap and stranded
+    # the lifecycle transition_iteration_to: ready_for_review (M8
+    # outcome wasn't COMPLETE because defend hit MEETING_BUDGET).
+    # Tweedle defense, if relevant, shows up as concerns during the
+    # review phase before Caterpillar's verdict lands — the §III
+    # selectively-engaging rules let Tweedles buzz in without a
+    # standing roster slot.
     phases:
       - name: review
         max_rotations: 2
-        team_groupings: [[caterpillar, tweedledee, tweedledum]]
-        exit_condition_artifact: review
-      - name: defend
-        max_rotations: 1
         team_groupings: [[caterpillar, tweedledee, tweedledum]]
         exit_condition_artifact: review
