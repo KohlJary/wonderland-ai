@@ -939,6 +939,46 @@
       "status": "backlog",
       "created_at": "2026-05-09T23:15:43.964213",
       "created_by": "daedalus"
+    },
+    {
+      "id": "f1193c7a-ebea-49b8-86ee-d3c7eabe8b2b",
+      "title": "Hatter test-file scaffolding in skeletons (output-share optimization)",
+      "description": "Per analysis 038 token-share investigation: Hatter's output share is 33% of agent cost vs ~20% for Tweedles, because Hatter writes new test files (write_file dumps full file content as output tokens at $5/MTok). Diff tool can't help when the file doesn't exist yet. Mitigation: extend the skeleton bundle system (T70-T73) so each skeleton ships per-feature test stub scaffolding \u2014 placeholder test files Hatter can str_replace into instead of creating from scratch. Concretely: a skeleton manifest field like 'test_stub_template' that the M3-output 'feature contract' triggers \u2014 when contract-note-NNN-<slug>.md lands, generate a tests/test_<slug>_<phase>.py stub from the template (red-by-default test markers, fixture imports already wired). Hatter then str_replaces real assertions in. Should pull Hatter output share toward 20% (Tweedle-equivalent) and side-effect: keeps Hatter on-task by giving structural cues for what each feature's tests should look like. Bundle-level work \u2014 applies to fullstack, python-fastapi, python-cli, python-tui equally.",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T00:24:46.060598",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "71a4a586-d3f3-4856-aedf-22ebfe2c5a2e",
+      "title": "git_diff defaults to --stat; full diff opt-in via separate tool",
+      "description": "Per analysis 038 token-share investigation: Tweedles spend 19.3% (tweedledee) and 19.2% (tweedledum) of bytes-through-context on git_diff. Diffs change turn-to-turn so they're mostly uncached, hitting full $1/MTok input rate. Mitigation: change the default git_diff Tools.git_diff() shape to return --stat output (file paths + LOC delta counts) instead of full patch. Tweedles can still inspect specifics via a new git_diff_full tool when they need the patch content. Two-call pattern (stat first, full-on-demand) saves tokens on the common case where the agent just needs to know which files changed how much. Same shape as how senior engineers actually skim diffs \u2014 read --stat first, only zoom in when something looks interesting. Estimated savings: if 70% of git_diff calls were satisfied by --stat alone, Tweedle git_diff cost share drops from 19% to ~6% (input bytes drop ~10x for stat vs full diff).",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T00:24:52.898061",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "a35a171f-7252-4d50-9e3d-06b3cee81ee2",
+      "title": "Investigate 1-hour cache writes for long M5 iterations (uncached input share)",
+      "description": "Per analysis 038 token-share investigation: ~30% of Tweedles+Hatter cost is uncached input \u2014 first-time file reads OR content that fell out of the 5-minute prompt cache window. Suspected cause: long M5 iterations with Caterpillar reviews in the loop can pause >5min between same-file reads, forcing re-pay on first read. Investigation: instrument the LLMClient to log time-since-last-cache-hit per file path. If clustering shows frequent gaps in [5min, 60min] range, switch cache_control 'ttl' from default 5m to 1h (priced at $2/MTok cache write instead of $1.25/MTok, but valid 12x longer). Net savings if cache hits at 1h are >2x what they'd have been at 5m. Could be configurable per-meeting or per-agent (Tweedles benefit most because they iterate slowly across long phases). Anthropic's 1h cache only valid since claude-3-5-sonnet-v2 onwards; verify Haiku 4.5 supports it before designing.",
+      "priority": "P2",
+      "item_type": "task",
+      "status": "backlog",
+      "created_at": "2026-05-10T00:25:00.267726",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "24e8ce94-7372-4249-9b8f-77d7e4847eb1",
+      "title": "Notify operator when auto-sentinel timer is about to fire / has fired",
+      "description": "Per analysis 038 F3: r40 was unattended; team STUCK on main thread + Dodo escalated; auto-sentinel (T69 follow-up) presumably fired since outcome=complete, but the operator received no notification (no toast, no system-level alert) signalling that human input was being requested. Operator's mental model \u2014 'I'll get a notification if the team needs me' \u2014 didn't hold. Two failure modes worth investigating: (1) auto-sentinel fired silently and resolved the deadlock without surfacing the question in operator-visible UI; (2) no sentinel fired; the run terminated via budget-exceeded path independently of the user-question affordance. Either way: for unattended runs to be reliable, the operator needs *some* signal when a question is pending past the auto-sentinel timer. Implementation: (a) Textual notification + native OS notification via notify-send / equivalent when AskUserModal pushes; (b) audible chime option (configurable via Settings); (c) terminal bell as zero-dependency fallback; (d) in the run's final report, surface 'auto-sentinel fired N times during run' so operator can audit unattended decisions post-hoc. T69 followup; touches LiveRunScreen + ask_user_modal.py.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-10T00:25:44.558897",
+      "created_by": "daedalus"
     }
   ],
   "version": 1
