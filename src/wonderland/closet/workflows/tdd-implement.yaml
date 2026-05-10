@@ -147,7 +147,15 @@ meetings:
     goal: |
       ship implementation code that makes the failing test pass —
       the green phase of TDD's red-green-refactor loop
-    roster: [tweedledee, tweedledum, mad_hatter]
+    # Hatter intentionally NOT on M7's roster — he keeps shipping
+    # new test scenarios during implementation despite directive
+    # prose telling him to refine, not regenerate. His sprawling
+    # nature is contained to M6 (Tea Party) where scenario
+    # generation is the explicit job. If implementation surfaces
+    # genuinely new edge cases, the Tweedles surface as a concern
+    # and Caterpillar's M8 review handles it (or it becomes a
+    # follow-up ticket back through M6).
+    roster: [tweedledee, tweedledum]
     per_item: ticket
     iterate_only_in_states: [queued]
     meeting_budget: 0.70
@@ -163,13 +171,10 @@ meetings:
       possible (cheaper than write_file when you're only changing
       part of an existing file).
 
-      **Hatter — refine tests if the implementation surfaces edge
-      cases the original test missed.** Don't write new scenarios
-      from scratch; refine the existing red→green test if the
-      acceptance criteria need sharpening based on what Tweedles
-      ship. If a fundamentally new scenario emerges, that's a
-      signal the ticket's scope was wrong — surface as a concern,
-      Caterpillar's M8 review handles it.
+      The failing test from M6 is in your seed pool. Don't write
+      new tests in this meeting — if the existing test needs
+      refinement based on what implementation surfaces, surface as
+      a concern; new tests are M6's job, not yours.
 
       Stay scoped to THIS ticket. If implementation surfaces
       cross-ticket coordination needed, surface as a concern;
@@ -189,10 +194,10 @@ meetings:
     phases:
       - name: implement
         max_rotations: 4
-        team_groupings: [[tweedledee, tweedledum, mad_hatter]]
+        team_groupings: [[tweedledee, tweedledum]]
       - name: validate
         max_rotations: 2
-        team_groupings: [[tweedledee, tweedledum, mad_hatter]]
+        team_groupings: [[tweedledee, tweedledum]]
         exit_condition_artifact: implementation
 
   # ─────────────────────────────────────────────────────────────────
