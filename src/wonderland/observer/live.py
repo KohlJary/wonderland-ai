@@ -379,6 +379,27 @@ class LiveRunHandle(RunHandle):
                     # run because the digest can't render.
                     pass
         finally:
+            # Safety-net telemetry flush BEFORE teardown. Pre-this-fix
+            # (squathero2 aborted run) telemetry never landed on disk
+            # because teardown's task-cancellation-and-await sequence
+            # could be interrupted by the same cancellation that
+            # triggered the abort, skipping the write_run_record call
+            # at the end of teardown. Flushing first means partial
+            # telemetry survives even if teardown is interrupted; if
+            # teardown completes normally, its own write_run_record
+            # overwrites this partial file with the final version.
+            try:
+                project_root = getattr(self._runner, "project_root", None)
+                run_id = getattr(self._runner, "run_id", None)
+                if project_root is not None and run_id is not None:
+                    self._runner.telemetry.write_run_record(
+                        project_root,
+                        run_id,
+                        extra={"outcome": "interrupted_pre_teardown"},
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
             # Best-effort teardown. Even on cancellation, the runner's
             # background threads / dispatcher tasks need to stop or
             # they'll leak past the screen unmount.
