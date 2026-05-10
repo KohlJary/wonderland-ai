@@ -271,7 +271,13 @@ meetings:
     roster: [caterpillar, tweedledee, tweedledum]
     per_item: feature
     iterate_only_in_states: [queued]
-    meeting_budget: 0.40
+    # Bumped \$0.40 → \$0.60 based on real-run data: M8 consistently
+    # ships verdicts at \$0.40-\$0.50 actual spend post-exit_condition
+    # fix (commit 00e1b58). The \$0.40 budget was calibrated against
+    # tdd-serial-phased's review timing where Caterpillar reviewed
+    # smaller artifact sets; the per-feature shape with full
+    # cross-ticket coherence checks needs more headroom.
+    meeting_budget: 0.60
     convenor_directive: |
       **Caterpillar — review this feature.**
 
