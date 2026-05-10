@@ -122,8 +122,17 @@ meetings:
     seeds:
       - from: any
         kinds: [project_context]
+      # Iteration-kind binding (ticket) is split out so the slice
+      # in resolve_seeds keeps only THIS ticket's artifact for the
+      # iteration. Non-iteration kinds get a separate binding so
+      # they don't get dropped by the slice — without this split,
+      # contract_note utterances (which carry no ticket artifacts)
+      # are filtered out entirely and the Tweedles can't see the
+      # contract decisions M5 made for the parent feature.
       - from: any
-        kinds: [feature, ticket, adr, ruling, contract_note]
+        kinds: [ticket]
+      - from: any
+        kinds: [feature, adr, ruling, contract_note]
 
     transition_iteration_to: in_progress
     # exit_condition on BOTH phases so the meeting ends as soon as
@@ -208,8 +217,14 @@ meetings:
         kinds: [project_context]
       # tickets + contracts come from disk via seed-fallback; tea-party
       # output (test_scenarios) lives on the bus in this run.
+      # Same iteration-kind-slice fix as M6: split ticket (iteration
+      # kind, gets sliced to current ticket) from contract_note
+      # (passes through unfiltered so the Tweedles see the parent
+      # feature's contract decisions).
       - from: any
-        kinds: [ticket, contract_note]
+        kinds: [ticket]
+      - from: any
+        kinds: [contract_note]
       - from: tea-party
         kinds: [test_scenario]
 
@@ -312,8 +327,16 @@ meetings:
       # Cross-workflow material (features, tickets, ADRs, contracts)
       # comes from disk via seed-fallback. tea-party + implementation
       # output lives on this run's bus.
+      # Same iteration-kind-slice fix: M8's per_item is feature, so
+      # the feature binding gets sliced to the current feature; the
+      # rest pass through unfiltered. Without the split, contract_note
+      # / adr / ruling / ticket utterances (no feature artifacts
+      # attached) all get dropped before reaching Caterpillar's
+      # cross-ticket coherence review.
       - from: any
-        kinds: [feature, ticket, adr, ruling, contract_note]
+        kinds: [feature]
+      - from: any
+        kinds: [ticket, adr, ruling, contract_note]
       - from: tea-party
         kinds: [test_scenario]
       - from: implementation
