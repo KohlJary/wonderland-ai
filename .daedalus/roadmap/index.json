@@ -1071,6 +1071,26 @@
       "created_by": "daedalus",
       "priority_changed_from": "P2",
       "priority_changed_at": "2026-05-10T05:22:17.319714"
+    },
+    {
+      "id": "da578e2d-fdfa-496e-98cd-fce699ffadaf",
+      "title": "Queen as plumbing-story author (security/compliance)",
+      "description": "",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T11:00:58.500572",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "7f572021-4ee3-41ed-acf1-49ae0726328a",
+      "title": "Multi-skeleton support: one project, N skeletons + port workflow",
+      "description": "Today's project.yaml assumes a single stack/skeleton. Multi-skeleton support would let a project have N (skeleton, stack) tuples — e.g. squathero ships as web first, then ports to mobile, with a third TUI variant possible later. Shape: features live at the project level above any one skeleton; contracts negotiated to be skeleton-agnostic where they touch domain (session record schema, quest state machine) and skeleton-specific where they touch UI (web component vs native screen). New 'port' workflow takes a verified feature in skeleton A and asks Tweedles to ship it in skeleton B, with original tickets + contracts as seeds — interesting part is which contracts transfer cleanly (data model, API surface) and which need re-design (gesture vs click, push notifications vs websocket). Squathero as the testbed: once web is verified, run port-to-mobile against same project; watch second-skeleton ADR for shared-domain-divergent-UI vs accidental data model fork. Surface is non-trivial: single-skeleton assumption is baked into project.yaml schema, lane_thread_prefix, FeatureRegistry, possibly more. Worth flagging at idea stage so future-Daedalus knows the surface to plan.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-10T13:36:56.033848",
+      "created_by": "daedalus"
     }
   ],
   "version": 1
