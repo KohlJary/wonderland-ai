@@ -1016,3 +1016,45 @@ EmptyDirectiveConfirmModal {
     margin: 0 1;
     min-width: 28;
 }
+
+/* QuitConfirmModal — fingerslip-guard for the q binding. Same
+ * centered layout as the other confirmation modals; sized smaller
+ * because the body text is short. */
+
+QuitConfirmModal {
+    align: center middle;
+}
+
+#quit-modal-root {
+    width: 60%;
+    max-width: 60;
+    height: auto;
+    background: $surface;
+    border: round $warning;
+    padding: 1 2;
+}
+
+#quit-modal-header {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    text-align: center;
+}
+
+#quit-modal-body {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+    color: $foreground;
+}
+
+#quit-modal-actions {
+    height: auto;
+    padding: 1 0;
+    align: center middle;
+}
+
+#quit-modal-actions Button {
+    margin: 0 1;
+    min-width: 14;
+}

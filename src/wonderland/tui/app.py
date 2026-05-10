@@ -103,6 +103,32 @@ class WonderlandApp(App):
         if (table := self._focused_data_table()) is not None and table.row_count > 0:
             table.cursor_coordinate = (table.row_count - 1, table.cursor_column)
 
+    def action_quit(self) -> None:
+        """Override the default Textual quit to push a confirmation
+        modal first. Operator confirms with Enter / Y / clicking Quit;
+        cancels with Escape / N / clicking Cancel. Without this guard,
+        a stray ``q`` keystroke drops the operator out mid-session
+        and loses live-watch state + dashboard cursor positions.
+
+        If a quit modal is already on the screen stack (operator hit
+        ``q`` twice), the second press confirms by re-pressing ``q``
+        through the modal's binding. So the guard isn't a hard block;
+        it's just one more keystroke.
+        """
+        from wonderland.tui.screens.quit_confirm_modal import (
+            QuitConfirmModal,
+        )
+
+        # Avoid stacking multiple modals if the user mashes q.
+        if isinstance(self.screen, QuitConfirmModal):
+            return
+
+        def _on_dismiss(confirmed: bool | None) -> None:
+            if confirmed:
+                self.exit()
+
+        self.push_screen(QuitConfirmModal(), _on_dismiss)
+
     def action_cycle_theme(self) -> None:
         """htop-style theme cycling: advance to the next Wonderland
         theme, wrapping at the end. Notifies which theme is now active
