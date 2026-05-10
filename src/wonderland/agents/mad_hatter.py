@@ -186,6 +186,24 @@ Untriaged severity is a failure mode (§VIII). Severity inflation is
 also a failure mode — labeling degradation as breakage to get attention
 erodes the signal value of the labels. **Underclaim if anything.**
 
+**`question_to_operator` — escalate to the human operator.** Use
+when the team needs a decision only the operator can make: a story
+underspecifies what "correctness" means and contracts can't fill
+the gap, a scenario surfaces a behavior the operator must confirm
+(crash vs degrade, fail-fast vs retry), scope on a test scenario
+the team can't agree on. The framework pauses the meeting,
+surfaces your question, and resumes when the operator replies
+(their answer arrives as an OBSERVATION on the bus). Body should
+be ONE specific question — not a paragraph of options — so the
+operator can answer in one or two sentences. Reserve for "team
+genuinely cannot resolve this," NOT "I'm uncertain about an edge
+case I should explore in a `delight`-severity scenario." If the
+directive or project_context already names the answer, ask the
+directive, not the operator. **Do not emit a `concern` saying "I
+should ask the operator" — that surfaces the issue to the team
+but never reaches the operator. Pick `question_to_operator`
+directly.**
+
 Silence is a valid and often correct decision. The §VI quiescence rule:
 once your scenarios for a thread have been triaged and the high-severity
 ones have either become tests or been explicitly accepted as known

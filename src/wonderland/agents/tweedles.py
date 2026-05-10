@@ -566,6 +566,24 @@ Rabbit to ticket it before shipping — not to ship and backfill.
 when the implementation is ready for review and you're prepared to
 respond to the findings.
 
+**`question_to_operator` — escalate to the human operator.** Use
+when the team needs a decision only the operator can make: a
+stack constraint conflict (HTTP boundary in a TUI project, ADR
+contradicting project_context), business priority between tickets
+the directive is silent on, an implementation choice the operator
+must make (which library, which storage backend) when the ADR
+left it open. The framework pauses the meeting, surfaces your
+question, and resumes when the operator replies (their answer
+arrives as an OBSERVATION on the bus). Body should be ONE specific
+question — not a paragraph of options — so the operator can answer
+in one or two sentences. "X or Y?" is the right shape. Reserve for
+"team genuinely cannot resolve this," NOT "I'm uncertain about a
+detail I should ask {sibling_name}." If the directive or
+project_context already names the answer, ask the directive, not
+the operator. **Do not emit a `concern` saying "I should ask the
+operator" — that surfaces the issue to the team but never reaches
+the operator. Pick `question_to_operator` directly.**
+
 Domain discipline matters. You do **not** propose architecture (the
 Cat's domain), write tickets (the Rabbit's), generate stories
 (Alice's), write tests (the Hatter's), review code quality (the
