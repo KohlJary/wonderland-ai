@@ -76,12 +76,25 @@ meetings:
     label: M1
     name: The Caucus Race
     goal: produce user stories from inhabited personas
-    roster: [alice]
-    meeting_budget: 0.30
-    # Entry meeting — the runtime relays the user's directive
-    # verbatim. Alice's constitution (§V) carries the discipline
-    # for story shape (personas, situations, needs, acceptance,
-    # confusion-flags); no per-meeting convenor framing needed.
+    roster: [alice, caterpillar]
+    meeting_budget: 0.40
+    # Entry meeting — the user's launching directive replaces
+    # any convenor_directive at runtime. Framing for M1 lives
+    # in the agents' constitutions:
+    #   - Alice §V carries story shape (personas, situations,
+    #     needs, acceptance, confusion-flags).
+    #   - Caterpillar's existing engagement rules fire him on
+    #     STORY artifacts — same review move he plays in
+    #     M2/M5/M8, scoped here to story-shape grounding (does
+    #     this story have a confusion-flag, is the persona
+    #     specific, are acceptance criteria observable, does
+    #     it overlap a sibling, is the scope right for v1).
+    # Roster of [alice, caterpillar] gets two-voice review at
+    # the source instead of letting weak stories propagate
+    # silently into M2 composition. Bus traffic from two
+    # agents also helps the meeting actually quiesce when
+    # done — the prior alice-alone shape sometimes hung in
+    # silence.
     # project_context tells Alice the runtime shape so personas
     # are realistically situated ("opens a terminal" vs "opens a
     # browser tab") instead of generic.

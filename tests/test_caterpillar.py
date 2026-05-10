@@ -219,10 +219,32 @@ def test_rules_deference_is_rare() -> None:
     assert rules.categorize(_u(act=SpeechAct.DEFERENCE)) is Engagement.RARELY
 
 
-def test_rules_story_is_almost_never() -> None:
-    """The Caterpillar does not engage with stories — Alice's domain."""
+def test_rules_alice_stories_engage_always() -> None:
+    """Caterpillar joined Alice on M1 (was Alice-only before): on
+    each story Alice ships he engages and either reviews the shape
+    (concern/question on missing confusion-flag, generic persona,
+    overlap, etc.) OR ships a plumbing-side story of his own
+    covering surfaces Alice's "inhabit users" frame doesn't reach
+    (testing infra, observability, deployment). Replaces the
+    earlier assertion that he didn't engage with stories at all
+    — that was the legacy roster shape."""
     rules = caterpillar_rules()
-    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="alice")) is Engagement.ALMOST_NEVER
+    assert (
+        rules.categorize(_u(act=SpeechAct.STORY, speaker="alice"))
+        is Engagement.ALWAYS
+    )
+
+
+def test_rules_non_alice_stories_remain_default() -> None:
+    """Stories from speakers other than Alice (e.g., disk-fallback
+    re-publishes from prior runs, or another agent that shouldn't
+    be writing stories) don't fire the ALWAYS rule — caterpillar
+    stays at the default (ALMOST_NEVER)."""
+    rules = caterpillar_rules()
+    assert (
+        rules.categorize(_u(act=SpeechAct.STORY, speaker="white_rabbit"))
+        is Engagement.ALMOST_NEVER
+    )
 
 
 # ---------- parse_caterpillar_response ----------

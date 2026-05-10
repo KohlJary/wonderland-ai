@@ -40,6 +40,7 @@ from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
 from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.review import ReviewPayload, ReviewRegistry
+from wonderland.story import StoryPayload, StoryRegistry
 from wonderland.utterance import (
     Artifact,
     SpeechAct,
@@ -102,6 +103,12 @@ def caterpillar_rules() -> EngagementRules:
         always(SpeechAct.CONCERN, condition=quality_words),
         always(SpeechAct.TEST_SCENARIO, condition=speaker_is("mad_hatter")),
         always(SpeechAct.QUESTION, condition=addressed_to(CATERPILLAR_NAME)),
+        # M1 review pass + plumbing-story generation: engage on Alice's
+        # stories so deliberate() can produce a concern/question
+        # (review the shape) or a story of its own (cover the
+        # plumbing surfaces Alice's "inhabit users" frame doesn't
+        # reach — testing infra, observability, deployment, etc.).
+        always(SpeechAct.STORY, condition=speaker_is("alice")),
         # SELECTIVELY — speaker matches; deliberate() decides whether to act
         selectively(SpeechAct.PROPOSAL, condition=speaker_is("cheshire_cat")),
         selectively(SpeechAct.TICKET, condition=speaker_is("white_rabbit")),
@@ -126,6 +133,7 @@ def caterpillar_rules() -> EngagementRules:
 
 CaterpillarDecision = Literal[
     "review",
+    "story",
     "concern",
     "question",
     "question_to_operator",
@@ -142,11 +150,21 @@ class CaterpillarResponse(BaseModel):
     pace is one careful read at a time — but the schema permits more
     so a single trigger that batches multiple implementations can be
     handled in one turn if needed.
+
+    When ``decision == "story"``, ``stories`` must contain at least
+    one ``StoryPayload``. M1 added Caterpillar to the roster (was
+    Alice-only) so stories about plumbing — testing infrastructure,
+    observability, error-handling, deployment, internal tools — get
+    written too. Alice owns user-facing stories; Caterpillar covers
+    the developer-as-user / operator-as-user / sysadmin-as-user
+    surfaces Alice's "inhabit USERS" framing doesn't reach. Same
+    schema (StoryPayload), different persona convention.
     """
 
     decision: CaterpillarDecision
     body: str = ""
     reviews: list[ReviewPayload] = Field(default_factory=list)
+    stories: list[StoryPayload] = Field(default_factory=list)
 
     @field_validator("body", mode="before")
     @classmethod
@@ -176,9 +194,25 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "review" | "concern" | "question" | "question_to_operator" |
-              "deference" | "silence",
+  "decision": "review" | "story" | "concern" | "question" |
+              "question_to_operator" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
+  "stories": [                        // include ONLY when decision is "story"
+    {
+      "title": "short, specific title",
+      "persona": "developer/operator/sysadmin/etc. — name, role, situation, why they need this. Specific, not generic.",
+      "situation": "what is happening when they encounter this part of the system",
+      "need": "As [persona], I want [outcome], so that [purpose].",
+      "acceptance": [
+        "observable, testable condition of done",
+        "another condition"
+      ],
+      "tier": "core" | "enrichment" | "fast-follow",
+      "confusion_flags": [
+        "things that felt wrong as you wrote this — at least one is required"
+      ]
+    }
+  ],
   "reviews": [                        // include ONLY when decision is "review"
     {
       "title": "short human-readable summary, e.g. 'Payment refund handler'",
@@ -251,6 +285,28 @@ Verdict ↔ findings ↔ approvals must agree:
   needs something specific to act on).
 - `verdict='block'` requires at least one finding *with severity='block'*.
   A "block" verdict whose findings are all suggestions is incoherent.
+
+**`story` — write a plumbing-side user story.** This is your M1
+generative move; you and Alice both write stories at the scoping
+meeting. Alice's frame is "inhabit users" — end-user-facing
+needs. Your frame is "developer / operator / sysadmin as user" —
+the surfaces Alice's framing doesn't reach: testing infrastructure
+("As Maya the developer, I want to run the dashboard with
+OBOL_MOCK=1 so I can exercise UX without setting up Plaid"),
+observability ("As Sam the on-call engineer, I want structured
+logs at ERROR severity when sync fails, so I can diagnose
+production issues without re-running locally"), error-handling
+discipline, deployment ergonomics, internal tools, build
+hygiene. Same StoryPayload shape as Alice's stories (persona,
+situation, need, acceptance, confusion_flags), different persona
+convention. Aim for 1–3 plumbing stories per M1 — fewer than
+Alice's 3–6 user stories, since user-facing concerns dominate.
+**Don't write user-facing stories yourself** — that's Alice's
+domain. If your story's persona is an end user (Jordan checking
+balances, Maya tracking invoices), it belongs to Alice; defer.
+At meetings other than M1, `story` is rare — use it when you
+notice during a review that a missing plumbing story was the
+upstream cause of the bug you're flagging.
 
 **`question_to_operator` — escalate to the human operator.** Use
 when the team needs a decision only the operator can make: a
@@ -355,6 +411,7 @@ class Caterpillar(WonderlandAgent):
         bus: Caucus,
         llm: LLMClient | None = None,
         review_registry: ReviewRegistry | None = None,
+        story_registry: StoryRegistry | None = None,
         tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
@@ -365,11 +422,16 @@ class Caterpillar(WonderlandAgent):
         )
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._review_registry = review_registry
+        self._story_registry = story_registry
         self._tools = tools
 
     @property
     def review_registry(self) -> ReviewRegistry | None:
         return self._review_registry
+
+    @property
+    def story_registry(self) -> StoryRegistry | None:
+        return self._story_registry
 
     async def deliberate(self, context: Context) -> Utterance | None:
         if self.llm is None:
@@ -394,6 +456,8 @@ class Caterpillar(WonderlandAgent):
         artifacts: list[Artifact] = []
         if response.decision == "review":
             artifacts.extend(self._record_reviews(response.reviews))
+        elif response.decision == "story":
+            artifacts.extend(self._record_stories(response.stories))
 
         thread_id, parent_id = self._derive_threading(context)
         if response.decision == "question_to_operator":
@@ -448,6 +512,34 @@ class Caterpillar(WonderlandAgent):
                         "title": record.title,
                         "verdict": record.verdict.value,
                         "target_files": list(record.target_files),
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_stories(self, payloads: list[StoryPayload]) -> list[Artifact]:
+        """Persist plumbing stories through the StoryRegistry. Mirrors
+        Alice's ``_record_stories`` — same artifact shape, same
+        registry, different generative authority. Caterpillar's
+        domain at M1 is developer-as-user / operator-as-user /
+        sysadmin-as-user surfaces (testing infra, observability,
+        deployment, error handling, internal tools); Alice owns
+        end-user-facing concerns. Both ship as ``story`` artifacts
+        on the same registry — M2 composition aggregates them
+        identically into features."""
+        if self._story_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._story_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="story",
+                    payload={
+                        "number": record.number,
+                        "slug": record.slug,
+                        "title": record.title,
                         "path": str(record.path),
                     },
                 )

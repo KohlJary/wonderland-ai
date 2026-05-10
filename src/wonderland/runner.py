@@ -454,6 +454,7 @@ class Runner:
                 bus=bus,
                 llm=llm_factory("caterpillar", telemetry),
                 review_registry=ReviewRegistry(project_root),
+                story_registry=StoryRegistry(project_root),
                 tools=shared_tools,
             ),
             "queen_of_hearts": QueenOfHearts(
