@@ -388,19 +388,37 @@ class LiveRunHandle(RunHandle):
                 yield u
 
     def per_agent_telemetry(self) -> list[AgentTelemetry]:
-        # Snapshot from runner.telemetry. The Runner's TokenTelemetry
-        # accumulates per-agent totals as deliberate() calls land.
-        per_agent_data = getattr(
-            self._runner.telemetry, "per_agent", {}
-        )
+        # Snapshot from runner.telemetry. The Telemetry class exposes
+        # per_agent_summary() (a method, not an attribute) returning
+        # the aggregated per-agent stats.
+        #
+        # Pre-fix this method was reading via getattr(telemetry,
+        # "per_agent", {}) which silently returned {} because no such
+        # attribute exists — so the live-watch's end-of-run
+        # AgentTelemetryDelta events fired with empty data, leaving
+        # _total_cost stuck at whatever _meeting_cost_total last
+        # accumulated. In pipeline-mode runs where late MeetingEnded
+        # events from concurrent lanes never bumped the meeting
+        # accumulator (timing race or event-stream cancellation),
+        # the displayed total stayed at the partial value (squathero2
+        # design pass: \$1.88 displayed vs \$2.45 actual).
+        #
+        # Fallback to the legacy getattr path for any test fixture
+        # that mocks a "per_agent" attribute directly without the
+        # full Telemetry surface.
+        telemetry = self._runner.telemetry
+        if hasattr(telemetry, "per_agent_summary"):
+            per_agent_data = telemetry.per_agent_summary()
+        else:
+            per_agent_data = getattr(telemetry, "per_agent", {})
+
         out: list[AgentTelemetry] = []
         for name, row in per_agent_data.items():
             if isinstance(row, dict):
                 calls = int(row.get("calls", 0))
                 cost = float(row.get("cost", 0.0))
             else:
-                # TokenTelemetry's per-agent rows may be objects with
-                # attributes rather than dicts depending on internals.
+                # Object-with-attributes shape (legacy / test fixtures).
                 calls = int(getattr(row, "calls", 0))
                 cost = float(getattr(row, "cost", 0.0))
             out.append(AgentTelemetry(name=name, calls=calls, cost=cost))
