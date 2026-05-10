@@ -313,6 +313,23 @@ class ProjectDashboardScreen(Screen[None]):
                         yield Button(
                             "Un-queue", id="feature-action-unqueue"
                         )
+                        # in_progress controls — escape hatches for
+                        # features stuck mid-implementation. Mark Ready
+                        # advances to ready_for_review (skip M8 and go
+                        # straight to operator verify); Re-design
+                        # aborts implementation and sends back to
+                        # designed (operator wants to re-run design
+                        # phase against new directive).
+                        yield Button(
+                            "Mark Ready",
+                            id="feature-action-mark-ready",
+                            variant="primary",
+                        )
+                        yield Button(
+                            "Re-design",
+                            id="feature-action-redesign",
+                            variant="warning",
+                        )
                         yield Button(
                             "Verify",
                             id="feature-action-verify",
@@ -523,7 +540,8 @@ class ProjectDashboardScreen(Screen[None]):
           - in_design → Promote to Designed
           - designed → Queue
           - queued → Un-queue
-          - in_progress → none (work mid-flight; nothing to act on)
+          - in_progress → Mark Ready, Re-design (escape hatches when
+            M8 budget-aborted or operator wants to abandon impl)
           - ready_for_review → Verify, Reject
           - proposed / verified / rejected → none
 
@@ -544,6 +562,12 @@ class ProjectDashboardScreen(Screen[None]):
             unqueue_btn = self.query_one(
                 "#feature-action-unqueue", Button
             )
+            mark_ready_btn = self.query_one(
+                "#feature-action-mark-ready", Button
+            )
+            redesign_btn = self.query_one(
+                "#feature-action-redesign", Button
+            )
             verify_btn = self.query_one(
                 "#feature-action-verify", Button
             )
@@ -557,6 +581,8 @@ class ProjectDashboardScreen(Screen[None]):
         promote_btn.display = state == FeatureState.IN_DESIGN
         queue_btn.display = state == FeatureState.DESIGNED
         unqueue_btn.display = state == FeatureState.QUEUED
+        mark_ready_btn.display = state == FeatureState.IN_PROGRESS
+        redesign_btn.display = state == FeatureState.IN_PROGRESS
         verify_btn.display = state == FeatureState.READY_FOR_REVIEW
         reject_btn.display = state == FeatureState.READY_FOR_REVIEW
 
@@ -1426,6 +1452,51 @@ class ProjectDashboardScreen(Screen[None]):
                 self.action_refresh()
             except IllegalTransitionError as exc:
                 self.notify(f"Can't un-queue: {exc}", severity="warning")
+        elif button_id == "feature-action-mark-ready":
+            try:
+                transition(
+                    self.project.root_path,
+                    row.slug,
+                    FeatureState.READY_FOR_REVIEW,
+                    by="operator",
+                    notes=(
+                        "Manually marked ready_for_review from "
+                        "in_progress via dashboard "
+                        "(M8 didn't auto-transition — likely "
+                        "budget-aborted post-verdict)"
+                    ),
+                )
+                self.notify(
+                    f"Marked {row.slug} ready_for_review — "
+                    f"verify or reject when ready."
+                )
+                self.action_refresh()
+            except IllegalTransitionError as exc:
+                self.notify(
+                    f"Can't mark ready: {exc}", severity="warning"
+                )
+        elif button_id == "feature-action-redesign":
+            try:
+                transition(
+                    self.project.root_path,
+                    row.slug,
+                    FeatureState.DESIGNED,
+                    by="operator",
+                    notes=(
+                        "Aborted in_progress; sent back to designed "
+                        "via dashboard (operator wants to re-run "
+                        "design phase)"
+                    ),
+                )
+                self.notify(
+                    f"Sent {row.slug} back to designed — "
+                    f"re-run tdd-design or queue again."
+                )
+                self.action_refresh()
+            except IllegalTransitionError as exc:
+                self.notify(
+                    f"Can't re-design: {exc}", severity="warning"
+                )
         elif button_id == "feature-action-verify":
             self._open_verify_modal("verify")
         elif button_id == "feature-action-reject":

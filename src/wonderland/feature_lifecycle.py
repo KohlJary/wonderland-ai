@@ -125,6 +125,7 @@ LEGAL_TRANSITIONS: dict[FeatureState | None, frozenset[FeatureState]] = {
     }),
     FeatureState.IN_PROGRESS: frozenset({
         FeatureState.READY_FOR_REVIEW,
+        FeatureState.DESIGNED,  # operator escape hatch — abort impl, send back to design
         FeatureState.REJECTED,  # implementation aborted
     }),
     FeatureState.READY_FOR_REVIEW: frozenset({
