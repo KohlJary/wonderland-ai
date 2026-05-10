@@ -15,7 +15,11 @@ from wonderland.feature_lifecycle import (
     transition,
     transitions_for,
 )
-from wonderland.workflow import Meeting, _apply_post_meeting_transitions
+from wonderland.workflow import (
+    Meeting,
+    _apply_emission_transition_for_utterance,
+    _apply_post_meeting_transitions,
+)
 
 
 # --- Meeting model: new fields ---
@@ -96,8 +100,13 @@ class TestApplyPostMeetingTransitions:
     def test_transition_emitted_fires_for_emitted_features(
         self, tmp_path: Path
     ) -> None:
-        """M2.5-style: meeting emits feature artifacts; helper
-        transitions each one to transition_emitted_to."""
+        """M2.5-style: meeting emits feature artifacts; per-utterance
+        helper transitions each one to transition_emitted_to.
+
+        transition_emitted_to fires per-utterance (not post-MeetingEnd)
+        to close the dashboard-backfill race — see workflow.py docstring
+        on _apply_emission_transition_for_utterance.
+        """
         meeting = Meeting(
             id="composition",
             label="M2.5",
@@ -110,12 +119,10 @@ class TestApplyPostMeetingTransitions:
             _feature_utterance("alpha"),
             _feature_utterance("bravo"),
         ]
-        _apply_post_meeting_transitions(
-            meeting=meeting,
-            runner=runner,
-            new_utterances=emissions,
-            current_item_slug=None,
-        )
+        for u in emissions:
+            _apply_emission_transition_for_utterance(
+                meeting=meeting, runner=runner, utterance=u
+            )
         assert get_state(tmp_path, "alpha") == FeatureState.PROPOSED
         assert get_state(tmp_path, "bravo") == FeatureState.PROPOSED
 
@@ -137,11 +144,10 @@ class TestApplyPostMeetingTransitions:
             transition_emitted_to="proposed",
         )
         runner = _runner_with_root(tmp_path)
-        _apply_post_meeting_transitions(
+        _apply_emission_transition_for_utterance(
             meeting=meeting,
             runner=runner,
-            new_utterances=[_feature_utterance("alpha")],
-            current_item_slug=None,
+            utterance=_feature_utterance("alpha"),
         )
         # alpha stays where it was — not corrupted.
         assert get_state(tmp_path, "alpha") == FeatureState.IN_DESIGN
@@ -180,11 +186,10 @@ class TestApplyPostMeetingTransitions:
             roster=["white_rabbit"],
             transition_emitted_to="proposed",
         )
-        _apply_post_meeting_transitions(
+        _apply_emission_transition_for_utterance(
             meeting=meeting,
             runner=_runner_with_root(tmp_path),
-            new_utterances=[ticket_emission],
-            current_item_slug=None,
+            utterance=ticket_emission,
         )
         # No feature transitions happened.
         assert get_state(tmp_path, "t-1") is None
@@ -333,11 +338,10 @@ class TestApplyPostMeetingTransitions:
             roster=["white_rabbit"],
             transition_emitted_to="proposed",
         )
-        _apply_post_meeting_transitions(
+        _apply_emission_transition_for_utterance(
             meeting=meeting,
             runner=_runner_with_root(tmp_path),
-            new_utterances=[_feature_utterance("alpha")],
-            current_item_slug=None,
+            utterance=_feature_utterance("alpha"),
         )
         history = transitions_for(tmp_path, "alpha")
         assert len(history) == 1

@@ -1643,6 +1643,71 @@ def _consumed_source_slugs(
     return consumed
 
 
+def _apply_emission_transition_for_utterance(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    utterance: Utterance,
+) -> None:
+    """Per-utterance transition_emitted_to. Fires immediately when
+    a feature artifact lands on the bus, not post-MeetingEnd.
+
+    Closes the race between feature.md being persisted to disk
+    (synchronous inside the agent's decide-loop) and the lifecycle
+    state record being written. The dashboard's auto-refresh
+    subscribes to bus events and re-reads features on every emission;
+    without an inline transition, it sees a feature.md without a
+    state record and back-fills DESIGNED (project_dashboard.py:858),
+    which then prevents the legitimate transition_emitted_to:
+    proposed from succeeding (DESIGNED → PROPOSED is illegal).
+
+    Symptom in obol's May 10 mock-data design pass: features 008-013
+    all landed at ``designed`` state instead of ``proposed``, so M3's
+    ``iterate_only_in_states: [proposed]`` filtered them all out and
+    M3 hit the synthetic-skip path (zero items).
+
+    Skipped silently when project_root is unavailable (FakeRunner)
+    so the transition layer never breaks meeting flow.
+    """
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None or not meeting.transition_emitted_to:
+        return
+
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        IllegalTransitionError,
+        transition,
+    )
+
+    try:
+        target = FeatureState(meeting.transition_emitted_to)
+    except ValueError:
+        return
+
+    for a in utterance.content.artifacts:
+        if a.kind != "feature":
+            continue
+        slug = a.payload.get("slug")
+        if not slug:
+            continue
+        try:
+            transition(
+                project_root,
+                slug,
+                target,
+                by="system",
+                notes=(
+                    f"Auto-transition from meeting "
+                    f"{meeting.id!r} on emission"
+                ),
+            )
+        except IllegalTransitionError:
+            # Already in a non-allowed state — idempotent behavior.
+            # Re-running the workflow on a project past this point
+            # shouldn't fail.
+            pass
+
+
 def _apply_post_meeting_transitions(
     *,
     meeting: Meeting,
@@ -1653,20 +1718,16 @@ def _apply_post_meeting_transitions(
     """T87 output transitions — fire feature lifecycle transitions
     after a meeting completes successfully.
 
-    Two semantics, both opt-in via Meeting fields:
+    Handles ``transition_iteration_to`` for per_item meetings that
+    operate ON existing features (M3, M4, M5, M6). The iteration's
+    feature_slug (from ``current_item_slug``) transitions to the
+    named state. Fires once per iteration that completed — the
+    caller gates on outcome=='COMPLETE' so failed iterations don't
+    transition.
 
-    - ``transition_emitted_to``: meetings that EMIT features (M2.5).
-      Every feature artifact in this meeting's emissions transitions
-      to the named state. Idempotent — IllegalTransition errors
-      (e.g. feature already in a non-allowed state) get caught and
-      logged-as-skip rather than failing the meeting.
-
-    - ``transition_iteration_to``: per_item meetings that operate
-      ON existing features (M3, M4, M5, M6). The iteration's
-      feature_slug (from ``current_item_slug``) transitions to the
-      named state. Fires once per iteration that completed — the
-      caller already gates on outcome=='COMPLETE' so failed
-      iterations don't transition.
+    ``transition_emitted_to`` is handled per-utterance (see
+    ``_apply_emission_transition_for_utterance``) to close the
+    dashboard-backfill race; not duplicated here.
 
     Skipped silently if project_root is unavailable (FakeRunner
     test fixtures, etc.) so the transition layer never breaks the
@@ -1683,41 +1744,6 @@ def _apply_post_meeting_transitions(
     )
 
     actor = "system"  # transitions fired by workflow are system-level
-
-    # transition_emitted_to: fire for every feature artifact emitted
-    # in this meeting. M2.5's natural use case.
-    if meeting.transition_emitted_to:
-        try:
-            target = FeatureState(meeting.transition_emitted_to)
-        except ValueError:
-            target = None
-        if target is not None:
-            seen: set[str] = set()
-            for u in new_utterances:
-                for a in u.content.artifacts:
-                    if a.kind != "feature":
-                        continue
-                    slug = a.payload.get("slug")
-                    if not slug or slug in seen:
-                        continue
-                    seen.add(slug)
-                    try:
-                        transition(
-                            project_root,
-                            slug,
-                            target,
-                            by=actor,
-                            notes=(
-                                f"Auto-transition from meeting "
-                                f"{meeting.id!r} on COMPLETE"
-                            ),
-                        )
-                    except IllegalTransitionError:
-                        # Already in a non-allowed state — idempotent
-                        # behavior. Re-running the workflow on a
-                        # project that's already past this point
-                        # shouldn't fail.
-                        pass
 
     # transition_iteration_to: fire once for the iteration's feature.
     # Two semantics depending on per_item kind (T88 split workflow
@@ -1935,7 +1961,17 @@ async def _convene_one(
         # don't end this iteration's loop. See analysis 030.
         async for event in runner.events(terminal_thread_id=thread_id):
             if event.kind == "utterance":
-                capture.observe(event.payload["utterance"])
+                emitted = event.payload["utterance"]
+                capture.observe(emitted)
+                # transition_emitted_to fires per-utterance, not post-
+                # MeetingEnd, to close the dashboard-backfill race
+                # (project_dashboard.py:858 backfills DESIGNED on
+                # auto-refresh if there's no lifecycle record yet).
+                _apply_emission_transition_for_utterance(
+                    meeting=meeting,
+                    runner=runner,
+                    utterance=emitted,
+                )
 
             yield event
 

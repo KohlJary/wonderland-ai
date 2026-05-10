@@ -98,9 +98,25 @@ meetings:
     # project_context tells Alice the runtime shape so personas
     # are realistically situated ("opens a terminal" vs "opens a
     # browser tab") instead of generic.
+    #
+    # Existing stories from prior runs are seeded so Alice and
+    # Caterpillar can recognize coverage of the operator's directive
+    # rather than regenerating duplicates or churning on concerns
+    # until the wall-clock quiescence safety net fires. With prior
+    # stories visible, the natural exit is turn-based quiescence:
+    # if the directive is already covered, both agents go silent on
+    # the first rotation and the meeting closes immediately.
+    #
+    # consumed_by: feature scopes to stories *without* a feature
+    # sourcing them — same logic as M2's binding. A story that
+    # already has a feature is past M1's job; surfacing it here
+    # would re-prompt Alice/Caterpillar on settled material.
     seeds:
       - from: any
         kinds: [project_context]
+      - from: any
+        kinds: [story]
+        consumed_by: feature
 
   # ─────────────────────────────────────────────────────────────────
   # M2 — Features composed from stories. Rabbit's job, with Alice
