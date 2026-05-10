@@ -2574,8 +2574,9 @@ async def test_project_library_is_home_screen(monkeypatch, tmp_path) -> None:
 async def test_project_library_empty_state_guides_first_time_user(
     monkeypatch, tmp_path
 ) -> None:
-    """First-time launch (no projects registered): detail pane shows
-    explicit guidance for creating the first project."""
+    """First-time launch (no projects registered) with the ``Open
+    project`` action highlighted: detail pane shows explicit guidance
+    for creating the first project."""
     from textual.widgets import Static
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
@@ -2584,7 +2585,9 @@ async def test_project_library_empty_state_guides_first_time_user(
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, ProjectLibraryScreen)
-        detail = screen.query_one("#project-detail", Static)
+        # First action in the new layout is "Open project"; with no
+        # projects registered, the detail-text widget shows guidance.
+        detail = screen.query_one("#detail-text", Static)
         rendered = str(detail.render())
         assert "No projects" in rendered
         assert "wonderland project add" in rendered
@@ -3160,14 +3163,13 @@ async def test_project_library_actions_menu_is_default_focus(
         await pilot.press("q")
 
 
-async def test_project_library_buttons_are_under_project_list(
+async def test_project_library_actions_menu_includes_open_and_new_project(
     monkeypatch, tmp_path
 ) -> None:
-    """The 'New run on selected' + 'New project' buttons live inside
-    the project-list-pane (under the project DataTable), not in a
-    separate full-width row at the bottom of the screen. Visually
-    groups the affordance with the data it acts on."""
-    from textual.widgets import Button
+    """The action menu is the primary surface; ``Open project`` and
+    ``＋ New project`` are both rows in it (replacing the old
+    project-list-pane buttons that were split out separately)."""
+    from textual.widgets import DataTable
 
     monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
     app = WonderlandApp(show_welcome=False)
@@ -3175,14 +3177,15 @@ async def test_project_library_buttons_are_under_project_list(
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, ProjectLibraryScreen)
-        # Both buttons should query inside #project-list-pane.
-        list_pane = screen.query_one("#project-list-pane")
-        open_button = list_pane.query_one("#open-button", Button)
-        new_project_button = list_pane.query_one("#new-project-button", Button)
-        # Label updated post-dashboard-pivot: the primary affordance is
-        # 'open dashboard'; runs launch from inside the dashboard.
-        assert "dashboard" in str(open_button.label).lower()
-        assert "New project" in str(new_project_button.label)
+        action_table = screen.query_one("#action-table", DataTable)
+        # Pull the rendered first column for each row.
+        labels = [
+            str(action_table.get_cell_at((i, 0)))
+            for i in range(action_table.row_count)
+        ]
+        joined = " | ".join(labels)
+        assert "Open project" in joined
+        assert "New project" in joined
         await pilot.press("q")
 
 

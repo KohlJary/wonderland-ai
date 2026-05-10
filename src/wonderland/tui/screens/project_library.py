@@ -1,25 +1,24 @@
-"""ProjectLibraryScreen — the TUI's new home (P11 T75).
+"""ProjectLibraryScreen — the TUI's home (P11+).
 
-Replaces SnapshotLibraryScreen as the landing screen. Operators land
-on a list of registered projects with per-project metadata + last-run
-summary; runs without a project context still work (back-compat) via
-the 'r' key which pushes NewRunScreen with no Project attached.
+Action-driven layout. Lazygit-shape per project_tui_lazygit_principle:
+focus + selection drives filtering across panes.
 
-Lazygit-shape per project_tui_lazygit_principle: project list left,
-metadata + recent-run summary right. The right pane updates on row
-highlight (selection-driven population).
+Two columns:
+  - LEFT: action menu (the primary surface — what can I do here?)
+  - RIGHT: contextual detail pane that shows different content
+    based on which action is highlighted
 
-P11 chunk T74→T75→T78 wires:
-  - enter: open NewRunScreen with the highlighted project's defaults
-    pre-filled (T78 reads the project context)
-  - n: hint to use ``wonderland project add`` from CLI (T76 ships
-    the proper TUI form later)
-  - e: hint to use ``wonderland project edit`` (T77 ships TUI form)
-  - a: archive selected project
-  - r: 'run without project' — push NewRunScreen with no context
-  - L: open the cross-project Snapshot Library (for browsing all runs
-    regardless of project association — useful while transitioning)
-  - S: settings, A: analyses, c: cast, q: quit (top-level concerns)
+The "Open project" action is special: highlighting it surfaces the
+project list in the detail pane (preview state); pressing Enter on
+"Open project" moves focus into the project list; pressing Enter on
+a project opens its dashboard. Per-project actions (archive, edit,
+unarchive) are bound at the screen level — they fire on the
+highlighted project when the project table is focused.
+
+Other actions (New project, New run, Settings, Analyses, etc.) are
+self-contained: highlight to read the description, Enter to dispatch.
+The detail pane shows the description text instead of the project
+table.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, DataTable, Footer, Header, Static
+from textual.widgets import DataTable, Footer, Header, Static
 
 from wonderland.project import (
     Project,
@@ -58,85 +57,91 @@ def _fmt_relative(dt: datetime | None) -> str:
 
 
 class ProjectLibraryScreen(Screen[None]):
-    """Lists registered projects; selecting one launches the run flow
-    with the project's defaults pre-filled."""
+    """Action-driven home screen.
+
+    Selection-driven detail pane: action highlighted → detail
+    pane content updates. ``open_project`` action surfaces the
+    project list; other actions show description text.
+    """
 
     BINDINGS = [
-        Binding("enter", "open_selected", "Open dashboard", show=True),
-        # 'd' kept as an explicit alias — most operators will use
-        # Enter, but the keybind reads cleanly in the footer hint and
-        # supports vim-style "press d to dive into details" muscle
-        # memory.
-        Binding("d", "open_selected", "Dashboard", show=False),
-        # Legacy muscle memory: 'n' opens NewRunScreen (no project
-        # context, same as pre-P11). 'N' (uppercase) opens the new
-        # project form. The compromise keeps every test that pressed
-        # 'n' on the home screen working without modification.
+        # Enter / d on the action table dispatches the action; on the
+        # project table opens the dashboard.
+        Binding("enter", "activate", "Activate", show=True),
+        Binding("d", "activate", "", show=False),
+        # Per-project actions — only meaningful when the project
+        # table is focused. e/x/u still work everywhere as a
+        # convenience, but the description hint matches the project
+        # context.
+        Binding("e", "edit_project", "Edit project", show=False),
+        Binding("x", "archive_selected", "Archive", show=False),
+        Binding("u", "unarchive_selected", "Unarchive", show=False),
+        # Top-level shortcuts that bypass the action menu — keep
+        # operator muscle memory working.
         Binding("n", "run_without_project", "New run", show=True),
         Binding("N", "new_project", "New project", show=True),
-        Binding("e", "edit_project", "Edit", show=True),
-        Binding("x", "archive_selected", "Archive", show=True),
-        Binding("u", "unarchive_selected", "Unarchive", show=True),
-        # 'h' for history — 'L' is reserved by WonderlandApp for vim
-        # bottom-jump (priority=True). 'h' is free at app level
-        # (lowercase isn't bound; only 'H' is taken).
-        Binding("h", "open_library", "All runs", show=True),
-        # Lowercase 'a' on the old SnapshotLibrary opened the analyses
-        # screen; preserve that muscle memory here too.
-        Binding("a", "open_analyses", "Analyses", show=True),
-        Binding("c", "open_cast", "Cast", show=True),
+        Binding("h", "open_library", "All runs", show=False),
+        Binding("a", "open_analyses", "Analyses", show=False),
+        Binding("c", "open_cast", "Cast", show=False),
         Binding("S", "open_settings", "Settings", show=True),
-        Binding("R", "refresh", "Refresh", show=True),
-        Binding("ctrl+a", "toggle_archived", "Show archived", show=True),
+        Binding("R", "refresh", "Refresh", show=False),
+        Binding("ctrl+a", "toggle_archived", "Archived", show=False),
         # Vim nav (j/k/g/G/H/L) is provided by WonderlandApp.
     ]
 
-    # Action menu rows — each entry is (action_id, label, description).
-    # Highlighting a row populates the detail pane with the description;
-    # pressing Enter on a row dispatches to action_<action_id>().
-    # Project-context actions live in the bottom button row, not here —
-    # this menu is for things you can do regardless of selection.
+    # Action menu rows — (action_id, label, description). Order is
+    # discoverability-driven: open project first (most common), then
+    # creation actions, then settings, then meta-browsing.
     _ACTION_ROWS: tuple[tuple[str, str, str], ...] = (
         (
+            "open_project",
+            "▶ Open project",
+            "Pick a registered project and dive into its dashboard. "
+            "From the dashboard you can review features, queue work, "
+            "and launch implementation runs.",
+        ),
+        (
+            "new_project",
+            "＋ New project",
+            "Register a new project — name, root path, optional "
+            "starter workflow + skeleton. Once registered, the "
+            "project shows up under Open project and the dashboard "
+            "is one step away.",
+        ),
+        (
             "run_without_project",
-            "▶ New run",
-            "Launch a one-off run without a project context. Same flow "
-            "as before P11 — operator types path / picks workflow / "
-            "etc. manually. Use this for ad-hoc work or when you "
-            "don't want to register a project yet.",
+            "▶ New run (no project)",
+            "Launch a one-off run without a project context. Useful "
+            "for ad-hoc work or trying out a sample directive before "
+            "committing to registering a project.",
         ),
         (
-            "open_analyses",
-            "📖 Analyses",
-            "Browse the field-notes corpus — analyses 001..N tracking "
-            "what each Wonderland run revealed about the substrate, "
-            "the directives, and the agents. The project's running "
-            "lab notebook.",
-        ),
-        (
-            "open_cast",
-            "👤 The Cast",
-            "Browse the ten Wonderland agents — Alice, the Cheshire "
-            "Cat, the White Rabbit, the Dodo, the Mad Hatter, the "
-            "Caterpillar, the Queen of Hearts, the Dormouse, "
-            "Tweedledee + Tweedledum. Each card shows the character's "
-            "constitution + characteristic failure mode (§VIII).",
+            "open_settings",
+            "⚙ Settings",
+            "Edit user-level settings — Anthropic API key, default "
+            "model, welcome-screen toggle. Stored in "
+            "~/.config/wonderland/config.json.",
         ),
         (
             "open_library",
             "📁 All runs",
             "Cross-project run browser — every snapshot under the "
-            "wonderland-ai checkout's runs/ + analyses/data/ trees. "
-            "Pre-P11 this was the TUI's home; now it's a sub-screen "
-            "for cases where you want to compare runs across "
-            "projects.",
+            "wonderland-ai checkout's runs/ and analyses/data/ "
+            "trees. Useful for comparing runs across projects.",
         ),
         (
-            "open_settings",
-            "⚙ Settings",
-            "Edit user-level settings — Anthropic API key + default "
-            "model. Stored in ~/.config/wonderland/config.json (or "
-            "the env var path). Project-level overrides land in T77.",
+            "open_analyses",
+            "📖 Analyses",
+            "Browse the field-notes corpus — analyses 001..N "
+            "tracking what each Wonderland run revealed about the "
+            "substrate, the directives, and the agents.",
+        ),
+        (
+            "open_cast",
+            "👤 The Cast",
+            "Browse the ten Wonderland agents. Each card shows the "
+            "character's constitution + characteristic failure mode "
+            "(§VIII).",
         ),
         (
             "refresh",
@@ -146,10 +151,10 @@ class ProjectLibraryScreen(Screen[None]):
         ),
         (
             "toggle_archived",
-            "⊘ Show archived",
-            "Toggle archived projects in the list. Archived projects "
-            "still have their full run history; they just don't "
-            "clutter the active view.",
+            "⊘ Show / hide archived projects",
+            "Toggle archived projects in the Open project list. "
+            "Archived projects keep their full run history; this "
+            "just controls whether they appear by default.",
         ),
     )
 
@@ -157,44 +162,18 @@ class ProjectLibraryScreen(Screen[None]):
         super().__init__()
         self._projects: list[Project] = []
         self._show_archived = False
+        # Track which detail-pane mode is active so we know whether
+        # to show the project list or the action description text.
+        self._detail_mode: str = "action_description"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Vertical():
-            yield Static("[b]Wonderland · Projects[/b]", id="home-title")
-            # Three-column row: project list (with project-context
-            # buttons stacked under it), action menu, detail pane.
-            # The project buttons sit directly under the projects
-            # list — visually grouping the affordance with the data
-            # it acts on. Detail pane updates based on which table is
-            # highlighted (project rows → project metadata; action
-            # rows → action description).
-            with Horizontal(id="project-library-row"):
-                with Vertical(id="project-list-pane"):
-                    yield Static(
-                        "[b]Projects[/b]",
-                        id="project-list-label",
-                    )
-                    yield DataTable(
-                        id="project-table",
-                        cursor_type="row",
-                    )
-                    # Big stacked buttons under the project list —
-                    # full-column-width, visually prominent so they
-                    # read as the primary call-to-action for whatever
-                    # is selected above. Open-dashboard is the
-                    # entrypoint for "act on this project"; run
-                    # launches happen from inside the dashboard.
-                    with Vertical(id="project-list-buttons"):
-                        yield Button(
-                            "▶ Open dashboard",
-                            id="open-button",
-                            variant="primary",
-                        )
-                        yield Button(
-                            "＋ New project",
-                            id="new-project-button",
-                        )
+            yield Static(
+                "[b]Wonderland · Home[/b]",
+                id="home-title",
+            )
+            with Horizontal(id="home-row"):
                 with Vertical(id="action-menu-pane"):
                     yield Static(
                         "[b]Actions[/b]",
@@ -205,91 +184,154 @@ class ProjectLibraryScreen(Screen[None]):
                         cursor_type="row",
                         show_header=False,
                     )
-                with Vertical(id="project-detail-pane"):
+                with Vertical(id="detail-pane"):
                     yield Static(
                         "[b]Detail[/b]",
-                        id="project-detail-label",
+                        id="detail-label",
                     )
-                    with VerticalScroll(id="project-detail-scroll"):
+                    # The detail pane has two stacked content
+                    # widgets: the action-description text (default)
+                    # and the project list (shown when "Open
+                    # project" is highlighted). Visibility toggles
+                    # via display=True/False.
+                    with VerticalScroll(id="detail-scroll"):
                         yield Static(
-                            "[dim](no project selected)[/dim]",
+                            "",
+                            id="detail-text",
+                        )
+                        yield DataTable(
+                            id="project-table",
+                            cursor_type="row",
+                        )
+                        yield Static(
+                            "",
                             id="project-detail",
                         )
         yield Footer()
 
     def on_mount(self) -> None:
         self._populate_actions()
-        self._populate()
+        self._refresh_projects()
+        # Default: actions menu focused, "Open project" highlighted,
+        # detail pane shows the project list preview. Operator can
+        # immediately see what they have.
+        self._render_for_action_row(0)
+        self._focus_action_table()
 
     # ------------------------------------------------------------------ #
     # Population
     # ------------------------------------------------------------------ #
 
-    def _populate(self) -> None:
+    def _populate_actions(self) -> None:
+        """Fill the action menu. Static across the screen's lifetime."""
+        table = self.query_one("#action-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns("Action")
+        for _, label, _desc in self._ACTION_ROWS:
+            table.add_row(label)
+        table.cursor_coordinate = (0, 0)
+
+    def _refresh_projects(self) -> None:
+        """Re-read the projects registry. Called on mount + after
+        actions that change the registry (add / archive / refresh)."""
         table = self.query_one("#project-table", DataTable)
         table.clear(columns=True)
         table.add_columns(
             "Name", "Path", "Workflow", "Last run", "Status"
         )
         self._projects = list_projects(include_archived=self._show_archived)
-        if not self._projects:
-            self._render_empty_state()
-            self._focus_action_table()
-            return
         for p in self._projects:
-            status = "[dim]archived[/dim]" if p.archived else "[green]active[/green]"
+            status = (
+                "[dim]archived[/dim]"
+                if p.archived
+                else "[green]active[/green]"
+            )
             table.add_row(
                 p.name,
                 str(p.root_path),
                 p.last_workflow or "—",
-                _fmt_relative(p.created_at if p.last_run_id is None else p.created_at),
+                _fmt_relative(p.created_at),
                 status,
             )
-        table.cursor_coordinate = (0, 0)
-        self._render_detail(self._projects[0])
-        # Default focus is the actions menu (per project-library UX
-        # decision): the operator can immediately read what's
-        # available, then Tab to the project list when they want to
-        # pick one.
-        self._focus_action_table()
+        if self._projects:
+            table.cursor_coordinate = (0, 0)
 
-    def _focus_action_table(self) -> None:
-        """Move keyboard focus to the actions menu — the default
-        landing point for the screen. Pulled out so both populated
-        and empty-state branches share the call site."""
-        try:
-            self.query_one("#action-table", DataTable).focus()
-        except Exception:  # noqa: BLE001
-            # Action table may not exist yet during early mount;
-            # populate is occasionally called from places where
-            # the action-table widget isn't realized.
-            pass
+    # ------------------------------------------------------------------ #
+    # Detail pane content driver
+    # ------------------------------------------------------------------ #
 
-    def _render_empty_state(self) -> None:
-        """First-time state — no projects yet. Detail pane explains
-        how to register one. The actions menu (middle pane) and the
-        '＋ New project' button at the bottom both lead the operator
-        into NewProjectScreen."""
-        detail = self.query_one("#project-detail", Static)
-        detail.update(
-            "[b yellow]No projects registered yet.[/b yellow]\n\n"
-            "Get started:\n\n"
-            "  [b]1.[/b] Click [b]＋ New project[/b] at the bottom\n"
-            "      (or press [b]N[/b]) to open the registration form.\n\n"
-            "  [b]2.[/b] Fill in name + path (and optionally pick a\n"
-            "      starter workflow + skeleton). Press [b]ctrl+s[/b] to\n"
-            "      create.\n\n"
-            "  [b]3.[/b] Press [b]Enter[/b] on the new row to launch a run\n"
-            "      with the project's defaults.\n\n"
-            "[dim]Alternative: run [b]wonderland project add NAME PATH[/b] "
-            "from a shell, then refresh (R or the [italic]↻ Refresh[/italic] "
-            "action).[/dim]\n\n"
-            "[dim]Browse the actions menu in the middle column — "
-            "highlighting an action shows its description here.[/dim]"
+    def _render_for_action_row(self, row_idx: int) -> None:
+        """Update the detail pane based on which action is
+        highlighted. ``open_project`` shows the project list +
+        per-project metadata; everything else shows the action's
+        description text."""
+        if row_idx < 0 or row_idx >= len(self._ACTION_ROWS):
+            return
+        action_id, label, description = self._ACTION_ROWS[row_idx]
+
+        if action_id == "open_project":
+            self._show_project_list_in_detail()
+        else:
+            self._show_action_description(label, description)
+
+    def _show_action_description(self, label: str, description: str) -> None:
+        """Detail pane shows the highlighted action's description.
+        Hides the project table since that's only relevant under
+        Open project."""
+        self._detail_mode = "action_description"
+        self.query_one("#detail-label", Static).update("[b]Detail[/b]")
+        text = self.query_one("#detail-text", Static)
+        text.update(
+            f"[b]{label}[/b]\n\n"
+            f"{description}\n\n"
+            "[dim]Press Enter (or click the row) to run this action.[/dim]"
         )
+        text.display = True
+        self.query_one("#project-table", DataTable).display = False
+        self.query_one("#project-detail", Static).display = False
 
-    def _render_detail(self, project: Project) -> None:
+    def _show_project_list_in_detail(self) -> None:
+        """Detail pane shows the project list. Below the table, a
+        small Static surfaces the highlighted project's metadata.
+        Operator presses Enter on Open project to focus the table,
+        then Enter on a project row to open the dashboard."""
+        self._detail_mode = "project_list"
+        self.query_one("#detail-label", Static).update(
+            "[b]Open project[/b]  "
+            "[dim](Enter focuses the list)[/dim]"
+        )
+        text = self.query_one("#detail-text", Static)
+        if not self._projects:
+            text.update(
+                "[b yellow]No projects registered yet.[/b yellow]\n\n"
+                "[dim]Press [b]N[/b] (uppercase) or pick "
+                "[b]＋ New project[/b] from the actions menu to "
+                "register one. Or run [b]wonderland project add NAME "
+                "PATH[/b] from a shell, then [b]R[/b] to refresh."
+                "[/dim]"
+            )
+            text.display = True
+            self.query_one("#project-table", DataTable).display = False
+            self.query_one("#project-detail", Static).display = False
+            return
+        text.update(
+            "[dim]These are your registered projects. Press Enter "
+            "on this row to focus the list, then Enter on a project "
+            "to open its dashboard.[/dim]"
+        )
+        text.display = True
+        self.query_one("#project-table", DataTable).display = True
         detail = self.query_one("#project-detail", Static)
+        detail.display = True
+        # Render metadata for the currently-highlighted project.
+        table = self.query_one("#project-table", DataTable)
+        row = table.cursor_row if table.cursor_row is not None else 0
+        if 0 <= row < len(self._projects):
+            self._render_project_detail(self._projects[row])
+
+    def _render_project_detail(self, project: Project) -> None:
+        """Per-project metadata displayed below the project table
+        when Open project is the active mode."""
         lines = [
             f"[b]{project.name}[/b]",
             "",
@@ -315,72 +357,83 @@ class ProjectLibraryScreen(Screen[None]):
             f"  · OS: {'on' if prefs.os_notification else 'off'}",
             f"  · Audible chime: {'on' if prefs.audible_chime else 'off'}",
             f"  · Terminal bell: {'on' if prefs.terminal_bell else 'off'}",
-        ])
-        lines.extend([
             "",
-            "[dim]Press [b]Enter[/b] to launch a new run with this "
-            "project's defaults.[/dim]",
+            "[dim]Press Enter to open the dashboard for this project. "
+            "[b]e[/b] edit · [b]x[/b] archive · [b]u[/b] unarchive[/dim]",
         ])
-        detail.update("\n".join(lines))
+        self.query_one("#project-detail", Static).update("\n".join(lines))
 
     # ------------------------------------------------------------------ #
-    # Selection-driven population
+    # Selection wiring
     # ------------------------------------------------------------------ #
-
-    def _populate_actions(self) -> None:
-        """Fill the action menu with the static row set defined on
-        the class. Run once at on_mount; the action set doesn't change
-        during the screen's lifetime."""
-        table = self.query_one("#action-table", DataTable)
-        table.clear(columns=True)
-        table.add_columns("Action")
-        for _, label, _desc in self._ACTION_ROWS:
-            table.add_row(label)
 
     def on_data_table_row_highlighted(
         self, event: DataTable.RowHighlighted
     ) -> None:
-        """Selection-driven detail pane: project rows render metadata;
-        action rows render the action's description."""
-        if event.data_table.id == "project-table":
+        """Action highlighted → swap detail pane.
+        Project highlighted (only relevant in open_project mode) →
+        update per-project metadata."""
+        tid = event.data_table.id
+        if tid == "action-table":
             row = event.cursor_row
-            if row is None or row < 0 or row >= len(self._projects):
-                return
-            self._render_detail(self._projects[row])
-        elif event.data_table.id == "action-table":
+            if row is not None and 0 <= row < len(self._ACTION_ROWS):
+                self._render_for_action_row(row)
+        elif tid == "project-table":
             row = event.cursor_row
-            if row is None or row < 0 or row >= len(self._ACTION_ROWS):
+            if row is not None and 0 <= row < len(self._projects):
+                self._render_project_detail(self._projects[row])
+
+    def on_data_table_row_selected(
+        self, event: DataTable.RowSelected
+    ) -> None:
+        """Enter on action row dispatches the action; on project
+        row opens the dashboard."""
+        tid = event.data_table.id
+        if tid == "action-table":
+            row = event.cursor_row
+            if row is None or not (0 <= row < len(self._ACTION_ROWS)):
                 return
-            self._render_action_description(row)
+            action_id, _label, _desc = self._ACTION_ROWS[row]
+            if action_id == "open_project":
+                # Focus the project table for picking — Enter again
+                # opens the highlighted project.
+                self._focus_project_table()
+                return
+            handler = getattr(self, f"action_{action_id}", None)
+            if handler is not None:
+                handler()
+        elif tid == "project-table":
+            self.action_open_selected()
 
-    def _render_action_description(self, row_idx: int) -> None:
-        """Show the highlighted action's description in the detail
-        pane. Operator can read what an action does before pressing
-        Enter on it — the pattern most lazygit-shaped TUIs use for
-        their command palettes.
+    def _focus_action_table(self) -> None:
+        try:
+            self.query_one("#action-table", DataTable).focus()
+        except Exception:  # noqa: BLE001
+            pass
 
-        Empty-state suppression: when no projects are registered, the
-        detail pane shows the first-time guidance permanently — action
-        hovers don't overwrite it. The operator's first job is to
-        create a project; once they have one, action descriptions
-        become available.
-        """
-        if not self._projects:
-            return
-        action_id, label, description = self._ACTION_ROWS[row_idx]
-        detail = self.query_one("#project-detail", Static)
-        detail.update(
-            f"[b]{label}[/b]\n\n"
-            f"{description}\n\n"
-            "[dim]Press Enter (or click the row) to run this action.[/dim]"
-        )
+    def _focus_project_table(self) -> None:
+        try:
+            self.query_one("#project-table", DataTable).focus()
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------ #
     # Actions
     # ------------------------------------------------------------------ #
 
+    def action_activate(self) -> None:
+        """Generic Enter — dispatch to whichever table is focused.
+        DataTable's default row-selected handler covers this; this
+        action exists so the Enter binding is visible in the footer."""
+        focused = self.focused
+        if isinstance(focused, DataTable):
+            focused.action_select_cursor()
+
     def action_refresh(self) -> None:
-        self._populate()
+        self._refresh_projects()
+        # Re-render whichever mode is active so the new state lands.
+        if self._detail_mode == "project_list":
+            self._show_project_list_in_detail()
 
     def action_toggle_archived(self) -> None:
         self._show_archived = not self._show_archived
@@ -388,25 +441,27 @@ class ProjectLibraryScreen(Screen[None]):
             f"Archived projects: {'shown' if self._show_archived else 'hidden'}",
             timeout=2,
         )
-        self._populate()
+        self._refresh_projects()
+        if self._detail_mode == "project_list":
+            self._show_project_list_in_detail()
 
     def _selected_project(self) -> Project | None:
-        table = self.query_one("#project-table", DataTable)
+        try:
+            table = self.query_one("#project-table", DataTable)
+        except Exception:  # noqa: BLE001
+            return None
         row = table.cursor_row
         if row is None or row < 0 or row >= len(self._projects):
             return None
         return self._projects[row]
 
     def action_open_selected(self) -> None:
-        """Open the dashboard for the selected project. From the
-        dashboard's actions pane the operator can launch a new run,
-        edit defaults, etc. — the library is for *picking* a project,
-        the dashboard is for *acting on* one."""
+        """Open the dashboard for the selected project."""
         project = self._selected_project()
         if project is None:
             self.notify(
                 "No project selected — register one with "
-                "`wonderland project add` first.",
+                "`wonderland project add` or pick ＋ New project.",
                 severity="warning",
             )
             return
@@ -423,32 +478,24 @@ class ProjectLibraryScreen(Screen[None]):
         self.app.push_screen(ProjectDashboardScreen(project))
 
     def action_run_without_project(self) -> None:
-        """Back-compat path — push NewRunScreen with no project
-        context. Operator types path / picks workflow / etc. manually,
-        same as before P11."""
         from wonderland.tui.screens.new_run import NewRunScreen
 
         self.app.push_screen(NewRunScreen())
 
     def action_new_project(self) -> None:
-        """Push the NewProjectScreen registration form (T76). On
-        successful registration: refresh the library so the new
-        project appears immediately."""
         from wonderland.tui.screens.new_project import NewProjectScreen
 
         self.app.push_screen(NewProjectScreen(), self._on_new_project_done)
 
     def _on_new_project_done(self, project: Project | None) -> None:
-        """Callback for NewProjectScreen.dismiss — None means cancel,
-        a Project means the operator created one. Either way: refresh
-        the table so the new project is visible (and selected if
-        we got one back)."""
-        self._populate()
+        self._refresh_projects()
         if project is None:
             return
-        # Move the cursor to the newly registered project so the
-        # detail pane shows it. list is alphabetically sorted, so
-        # find the row by name.
+        # Move to "Open project" action so the new project is visible.
+        action_table = self.query_one("#action-table", DataTable)
+        action_table.cursor_coordinate = (0, 0)
+        self._render_for_action_row(0)
+        # Cursor onto the new project in the project table.
         for i, p in enumerate(self._projects):
             if p.name == project.name:
                 table = self.query_one("#project-table", DataTable)
@@ -456,12 +503,12 @@ class ProjectLibraryScreen(Screen[None]):
                 break
 
     def action_edit_project(self) -> None:
-        """Push the EditProjectScreen for the currently-selected
-        project (T77). On save: refresh the library so the updated
-        defaults render immediately."""
         project = self._selected_project()
         if project is None:
-            self.notify("No project selected.", severity="warning")
+            self.notify(
+                "No project selected — focus the project list first.",
+                severity="warning",
+            )
             return
         from wonderland.tui.screens.edit_project import EditProjectScreen
 
@@ -470,11 +517,8 @@ class ProjectLibraryScreen(Screen[None]):
         )
 
     def _on_edit_project_done(self, project: Project | None) -> None:
-        """Callback for EditProjectScreen.dismiss. Either way, refresh
-        the table so any updates render. Re-cursors onto the same
-        project by name to preserve focus."""
         prior_name = project.name if project is not None else None
-        self._populate()
+        self._refresh_projects()
         if prior_name is None:
             return
         for i, p in enumerate(self._projects):
@@ -489,7 +533,9 @@ class ProjectLibraryScreen(Screen[None]):
             return
         archive_project(project.name)
         self.notify(f"Archived: {project.name}", timeout=3)
-        self._populate()
+        self._refresh_projects()
+        if self._detail_mode == "project_list":
+            self._show_project_list_in_detail()
 
     def action_unarchive_selected(self) -> None:
         project = self._selected_project()
@@ -497,17 +543,14 @@ class ProjectLibraryScreen(Screen[None]):
             return
         unarchive_project(project.name)
         self.notify(f"Unarchived: {project.name}", timeout=3)
-        self._populate()
+        self._refresh_projects()
+        if self._detail_mode == "project_list":
+            self._show_project_list_in_detail()
 
     def action_open_library(self) -> None:
-        """All-runs view — pushes the existing SnapshotLibraryScreen
-        for cross-project run browsing."""
-        from pathlib import Path as _P  # local import to avoid TC clash
+        from pathlib import Path as _P
         from wonderland.tui.screens.snapshot_library import SnapshotLibraryScreen
 
-        # Snapshot library walks the wonderland-ai checkout's runs/
-        # and analyses/data/ trees. Reuse the app's snapshot_root
-        # (set by WonderlandApp.__init__).
         root = getattr(self.app, "snapshot_root", _P.cwd())
         self.app.push_screen(SnapshotLibraryScreen(root))
 
@@ -526,31 +569,15 @@ class ProjectLibraryScreen(Screen[None]):
 
         self.app.push_screen(SettingsScreen())
 
-    # ------------------------------------------------------------------ #
-    # Button routing
-    # ------------------------------------------------------------------ #
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "open-button":
-            self.action_open_selected()
-        elif event.button.id == "new-project-button":
-            self.action_new_project()
-
-    def on_data_table_row_selected(
-        self, event: DataTable.RowSelected
-    ) -> None:
-        """Enter on a project row → open run; enter on an action row
-        → dispatch that action by name."""
-        if event.data_table.id == "project-table":
-            self.action_open_selected()
-        elif event.data_table.id == "action-table":
-            row = event.cursor_row
-            if row is None or row < 0 or row >= len(self._ACTION_ROWS):
-                return
-            action_id, _label, _desc = self._ACTION_ROWS[row]
-            handler = getattr(self, f"action_{action_id}", None)
-            if handler is not None:
-                handler()
+    def action_open_project(self) -> None:
+        """Operator-typed shortcut for landing on the Open project
+        action without going through the action table. Highlights
+        the action and focuses the project table directly."""
+        action_table = self.query_one("#action-table", DataTable)
+        action_table.cursor_coordinate = (0, 0)
+        self._render_for_action_row(0)
+        if self._projects:
+            self._focus_project_table()
 
 
 __all__ = ["ProjectLibraryScreen"]
