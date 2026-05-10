@@ -363,6 +363,11 @@ class LiveRunScreen(Screen[None]):
         # only adds new entries / nodes instead of redrawing.
         self._call_feed_cursor: int = 0
         self._files_touched: dict[str, str] = {}  # path → indicator
+        # Cache rendered file detail (Syntax objects + markup) so
+        # repeated highlight events don't re-shell-out to git for
+        # the same file. Invalidated when _files_touched changes
+        # (since indicator could differ on a fresh tool-call wave).
+        self._file_render_cache: dict[tuple[str, str], object] = {}
 
         if self.handle is None and self.snapshot_dir is None:
             # No source bound — fall back to the T45 dummy data so
@@ -1199,6 +1204,10 @@ class LiveRunScreen(Screen[None]):
         if touched == self._files_touched:
             return
         self._files_touched = touched
+        # Touched-set changed — file content may have changed for any
+        # of the tracked paths. Invalidate the rendered-detail cache
+        # so the next highlight re-pulls fresh content + diff.
+        self._file_render_cache.clear()
         try:
             tree = self.query_one("#live-files-tree", Tree)
         except Exception:  # noqa: BLE001
@@ -1208,12 +1217,38 @@ class LiveRunScreen(Screen[None]):
             tree.label = "(no files touched yet)"
             return
         tree.label = f"{len(touched)} file(s) touched"
-        # Build a flat list view: each file under the project root
-        # with its indicator + relative path. A real recursive
-        # directory tree comes in Phase 3; flat list is a useful
-        # MVP that surfaces the data without the layout complexity.
+        # Build a hierarchical tree from the touched paths. Each path
+        # like "src/backend/db.py" becomes nodes
+        #   src/ → backend/ → db.py
+        # so the operator can see structural context for the changes.
+        # Directories without modifications don't appear; only paths
+        # that contain at least one touched file get expanded.
+        dir_nodes: dict[str, "Any"] = {}  # noqa: F821 — Tree node type
+
+        def _ensure_dir(rel_dir: str):
+            """Walk parent components, creating tree nodes on demand.
+            Returns the leaf directory node (or tree.root for empty)."""
+            if rel_dir in ("", "."):
+                return tree.root
+            if rel_dir in dir_nodes:
+                return dir_nodes[rel_dir]
+            parent_dir = "/".join(rel_dir.split("/")[:-1])
+            parent_node = _ensure_dir(parent_dir)
+            name = rel_dir.split("/")[-1]
+            node = parent_node.add(
+                f"[dim]📁[/dim] {name}",
+                data={"path": rel_dir, "is_dir": True},
+                expand=True,
+            )
+            dir_nodes[rel_dir] = node
+            return node
+
         for path in sorted(touched.keys()):
             indicator = touched[path]
+            parts = path.split("/")
+            parent = "/".join(parts[:-1])
+            filename = parts[-1]
+            parent_node = _ensure_dir(parent)
             color = (
                 "[green]+[/green]"
                 if indicator == "+"
@@ -1221,21 +1256,53 @@ class LiveRunScreen(Screen[None]):
                 if indicator == "-"
                 else "[yellow]~[/yellow]"
             )
-            node = tree.root.add(
-                f"{color} {path}",
+            file_node = parent_node.add(
+                f"{color} {filename}",
                 data={"path": path, "indicator": indicator},
             )
-            node.allow_expand = False
+            file_node.allow_expand = False
 
     def on_tree_node_highlighted(self, event) -> None:
-        """Render the highlighted file's contents in the right-detail
-        pane. Best-effort — errors render an inline message rather
-        than crashing the screen."""
+        """Render the highlighted file in the right-detail pane.
+
+        Three modes based on the indicator:
+          - ``+`` (new file): render full content with syntax
+            highlighting based on the file's extension
+          - ``~`` (modified): render ``git diff HEAD -- path`` with
+            the diff lexer so +/- lines colorize naturally
+          - ``-`` (deleted): try ``git show HEAD:path`` so the
+            operator can see what was lost; falls back to a marker
+            if git can't recover
+
+        Directory nodes show an aggregate count instead.
+        Best-effort — errors render an inline message rather than
+        crashing the screen.
+        """
         if event.node.tree.id != "live-files-tree":
             return
         data = event.node.data
         if data is None:
             return
+        try:
+            detail = self.query_one("#right-detail", Static)
+        except Exception:  # noqa: BLE001
+            return
+
+        # Directory node — show a summary instead of opening a file.
+        if data.get("is_dir"):
+            dir_path = data["path"]
+            n_under = sum(
+                1
+                for p in self._files_touched
+                if p == dir_path or p.startswith(dir_path + "/")
+            )
+            detail.update(
+                f"[b]📁 {dir_path}/[/b]  "
+                f"[dim]({n_under} touched files inside)[/dim]\n\n"
+                "[dim]Highlight a file to see its diff or contents.[/dim]"
+            )
+            return
+
         runner = (
             getattr(self.handle, "_runner", None)
             if self.handle is not None
@@ -1248,33 +1315,193 @@ class LiveRunScreen(Screen[None]):
         )
         if project_root is None:
             return
-        target = project_root / data["path"]
-        try:
-            detail = self.query_one("#right-detail", Static)
-        except Exception:  # noqa: BLE001
-            return
-        if not target.is_file():
-            detail.update(
-                f"[dim]File no longer exists: {data['path']}[/dim]"
-            )
-            return
-        try:
-            content = target.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            detail.update(
-                f"[red]Read error: {exc}[/red]"
-            )
-            return
-        # Truncate large files so the detail pane stays usable; full
-        # syntax-highlighted diff view comes in Phase 3.
-        max_chars = 8000
-        if len(content) > max_chars:
-            content = content[:max_chars] + f"\n\n[dim]... ({len(content) - max_chars} more chars)[/dim]"
-        detail.update(
-            f"[b]{data['path']}[/b]  "
-            f"[dim](indicator: {data['indicator']})[/dim]\n\n"
-            f"{content}"
+
+        path = data["path"]
+        indicator = data["indicator"]
+        rendered = self._render_file_for_detail(
+            project_root, path, indicator
         )
+        detail.update(rendered)
+
+    # ------------------------------------------------------------------ #
+    # Diff-aware file rendering
+    # ------------------------------------------------------------------ #
+
+    def _render_file_for_detail(
+        self, project_root: "Path", path: str, indicator: str
+    ):
+        """Build a Rich-renderable for the right-detail pane based on
+        the file's indicator. Returns either a string (markup) or a
+        ``rich.syntax.Syntax`` instance — Static.update() accepts
+        both. Caches per (path, indicator) tuple so repeated cursor
+        moves don't re-shell-out to git on every highlight event."""
+        cache_key = (path, indicator)
+        if cache_key in self._file_render_cache:
+            return self._file_render_cache[cache_key]
+
+        from rich.syntax import Syntax
+
+        full_path = project_root / path
+        rendered: object
+
+        if indicator == "-":
+            # Deleted — recover content from git HEAD if possible.
+            head_content = self._git_show_head(project_root, path)
+            if head_content is None:
+                rendered = (
+                    f"[b][red]-[/red] {path}[/b]\n\n"
+                    f"[dim]File was deleted; git couldn't recover "
+                    f"prior content (untracked or new repo).[/dim]"
+                )
+            else:
+                lexer = Syntax.guess_lexer(path, code=head_content)
+                rendered = Syntax(
+                    head_content,
+                    lexer,
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=False,
+                )
+                # We can't combine markup header + Syntax cleanly in
+                # one update; the header lives via the file-tree
+                # label so this is just the content. Operator sees
+                # the deletion icon in the tree and the prior
+                # content here.
+
+        elif indicator == "+":
+            # New file — full content with syntax highlighting.
+            if not full_path.is_file():
+                rendered = (
+                    f"[b][green]+[/green] {path}[/b]\n\n"
+                    f"[red]File listed as new but not on disk.[/red]"
+                )
+            else:
+                try:
+                    content = full_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as exc:
+                    rendered = f"[red]Read error: {exc}[/red]"
+                else:
+                    lexer = Syntax.guess_lexer(path, code=content)
+                    rendered = Syntax(
+                        content,
+                        lexer,
+                        theme="monokai",
+                        line_numbers=True,
+                        word_wrap=False,
+                    )
+
+        else:  # "~" modified
+            # Modified — show git diff against HEAD with the diff
+            # lexer so +/- lines pick up red/green automatically.
+            diff = self._git_diff_against_head(project_root, path)
+            if diff is None:
+                # Fall back to plain content if git diff isn't
+                # available (e.g. project not under git, or path
+                # untracked at HEAD which means it's effectively new).
+                if not full_path.is_file():
+                    rendered = (
+                        f"[red]Read error: file missing[/red]"
+                    )
+                else:
+                    try:
+                        content = full_path.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError) as exc:
+                        rendered = f"[red]Read error: {exc}[/red]"
+                    else:
+                        lexer = Syntax.guess_lexer(
+                            path, code=content
+                        )
+                        rendered = Syntax(
+                            content,
+                            lexer,
+                            theme="monokai",
+                            line_numbers=True,
+                            word_wrap=False,
+                        )
+            elif not diff.strip():
+                # git diff is empty — file got touched (matched the
+                # str_replace / insert / write pattern) but ended up
+                # identical to HEAD. Render content as-is.
+                try:
+                    content = full_path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    content = ""
+                lexer = Syntax.guess_lexer(path, code=content)
+                rendered = Syntax(
+                    content,
+                    lexer,
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=False,
+                )
+            else:
+                rendered = Syntax(
+                    diff,
+                    "diff",
+                    theme="monokai",
+                    line_numbers=False,
+                    word_wrap=False,
+                )
+
+        self._file_render_cache[cache_key] = rendered
+        return rendered
+
+    def _git_diff_against_head(
+        self, project_root: "Path", path: str
+    ) -> str | None:
+        """Return the unified diff of ``path`` vs HEAD, or None if
+        git can't produce one (not a repo, path untracked, etc).
+        Subprocess call; cached at the caller level via
+        _file_render_cache so repeated highlights don't re-run git."""
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(project_root),
+                    "diff",
+                    "--no-color",
+                    "HEAD",
+                    "--",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0:
+            return None
+        return result.stdout
+
+    def _git_show_head(
+        self, project_root: "Path", path: str
+    ) -> str | None:
+        """Return the content of ``path`` at HEAD (for deleted
+        files). None if git can't recover it."""
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(project_root),
+                    "show",
+                    f"HEAD:{path}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0:
+            return None
+        return result.stdout
 
     def _refresh_pause_button_label(self) -> None:
         """Toggle the Pause/Resume button label based on the runner's
