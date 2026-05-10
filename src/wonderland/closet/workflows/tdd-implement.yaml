@@ -92,17 +92,28 @@ pipeline:
 meetings:
 
   # ─────────────────────────────────────────────────────────────────
-  # M6 — Tea Party per ticket. Hatter writes failing test, Tweedle
-  # commits to implementation contract. The "red" of TDD's red-
-  # green-refactor.
+  # M6 — Tea Party per ticket. Hatter writes a failing test, Alice
+  # grounds it in the persona's acceptance criteria. The "red" of
+  # TDD's red-green-refactor.
+  #
+  # Roster history: [hatter, dee, dum] → [hatter, alice]. The
+  # Tweedles' contribution at M6 was implementation pressure
+  # (anti-productive at red phase — pushes Hatter toward "what's
+  # a test we can pass quickly" rather than "what's a test that
+  # captures the acceptance criterion"). Alice's pushback is
+  # persona-shaped — "would the persona recognize this assertion?" —
+  # which is the right grounding for test design. Tweedles see the
+  # test_scenario artifact when they enter M7 and can buzz in via
+  # their selectively-engaging §III rules if Hatter ships a test
+  # that contradicts their M5-negotiated contract.
   # ─────────────────────────────────────────────────────────────────
   - id: tea-party
     label: M6
     name: A Mad Tea Party
     goal: |
-      produce a failing test + an implementation commitment for this
-      ticket — the red phase of TDD's red-green-refactor loop
-    roster: [mad_hatter, tweedledee, tweedledum]
+      produce a failing test grounded in the ticket's acceptance
+      criteria — the red phase of TDD's red-green-refactor loop
+    roster: [mad_hatter, alice]
     per_item: ticket
     # Filter spans queued + in_progress because the per-iteration
     # transition (queued → in_progress on first ticket) would
@@ -115,10 +126,10 @@ meetings:
     # Entry meeting — the runtime relays the user's directive
     # verbatim. The seeds (features, tickets, ADRs, contracts —
     # all from disk via the seed-fallback shipped in 0.3.0) carry
-    # everything Hatter and the Tweedles need; the user's directive
-    # at this stage can be terse like "implement the queued
-    # features per their contracts." Hatter's §V + Tweedles' Pair
-    # Protocol §IV carry the discipline.
+    # everything Hatter and Alice need; the user's directive at
+    # this stage can be terse like "implement the queued features
+    # per their contracts." Hatter's §V + Alice's persona-grounding
+    # carry the discipline.
     seeds:
       - from: any
         kinds: [project_context]
@@ -146,11 +157,11 @@ meetings:
     phases:
       - name: red
         max_rotations: 2
-        team_groupings: [[mad_hatter, tweedledee, tweedledum]]
+        team_groupings: [[mad_hatter, alice]]
         exit_condition_artifact: test_scenario
       - name: commit
         max_rotations: 1
-        team_groupings: [[mad_hatter, tweedledee, tweedledum]]
+        team_groupings: [[mad_hatter, alice]]
         exit_condition_artifact: test_scenario
 
   # ─────────────────────────────────────────────────────────────────
