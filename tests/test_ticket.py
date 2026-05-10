@@ -367,6 +367,46 @@ def test_next_number_with_gaps_picks_max_plus_one(tmp_path: Path) -> None:
     assert registry.next_number() == 10
 
 
+# ---------- delete_by_slug ----------
+
+
+def test_delete_by_slug_removes_file(tmp_path: Path) -> None:
+    """The dashboard's prune flow uses this to drop duplicate tickets
+    Rabbit shipped during M3 revision passes (analysis 040 issue)."""
+    registry = TicketRegistry(tmp_path)
+    record = registry.write(_simple("To be deleted"))
+    assert record.path.is_file()
+
+    assert registry.delete_by_slug("to-be-deleted") is True
+    assert not record.path.is_file()
+    # Registry list reflects the deletion.
+    assert registry.find_by_slug("to-be-deleted") is None
+
+
+def test_delete_by_slug_returns_false_for_unknown_slug(tmp_path: Path) -> None:
+    registry = TicketRegistry(tmp_path)
+    registry.write(_simple("Existing ticket"))
+    assert registry.delete_by_slug("never-existed") is False
+    # Existing ticket survives.
+    assert registry.find_by_slug("existing-ticket") is not None
+
+
+def test_delete_by_slug_doesnt_repack_numbering(tmp_path: Path) -> None:
+    """Numbering tolerates gaps — deleting ticket-002 leaves
+    ticket-001 and ticket-003 in place; next_number() returns 4
+    (max + 1), matching the on-disk source-of-truth contract."""
+    registry = TicketRegistry(tmp_path)
+    a = registry.write(_simple("A"))
+    b = registry.write(_simple("B"))
+    c = registry.write(_simple("C"))
+    assert (a.number, b.number, c.number) == (1, 2, 3)
+
+    registry.delete_by_slug("b")
+    remaining = registry.list_tickets()
+    assert [r.number for r in remaining] == [1, 3]
+    assert registry.next_number() == 4
+
+
 # ---------- helpers ----------
 
 

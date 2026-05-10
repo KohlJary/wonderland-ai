@@ -199,6 +199,25 @@ class TicketRegistry:
             path=full_path,
         )
 
+    def delete_by_slug(self, slug: str) -> bool:
+        """Remove a ticket file from disk by slug. Returns True if a
+        matching ticket was found and deleted, False otherwise.
+
+        Numbering deliberately doesn't repack — list_tickets walks the
+        filename pattern and tolerates gaps. Used by the dashboard's
+        ticket-prune flow when an operator wants to drop duplicates
+        Rabbit shipped during M3 revision passes (see analysis 040
+        + roadmap 171b36e1).
+        """
+        record = self.find_by_slug(slug)
+        if record is None:
+            return False
+        try:
+            record.path.unlink()
+        except OSError:
+            return False
+        return True
+
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #

@@ -190,6 +190,8 @@ class ProjectDashboardScreen(Screen[None]):
         Binding("escape", "back", "Back", show=True),
         Binding("n", "new_run", "New run", show=True),
         Binding("R", "refresh", "Refresh", show=True),
+        Binding("m", "toggle_mark", "Mark ticket", show=True),
+        Binding("D", "prune_marked", "Delete marked", show=True),
         Binding("1", "show_runs", "Runs", show=False),
         Binding("2", "show_artifacts", "Artifacts", show=False),
         Binding("3", "show_files", "Files", show=False),
@@ -203,6 +205,13 @@ class ProjectDashboardScreen(Screen[None]):
         self._artifacts: list[tuple[str, Path]] = []
         self._features: list[_FeatureRow] = []
         self._filter: FeatureState | None = None
+        # Marked-for-deletion ticket slugs. Operator presses ``m`` on
+        # a ticket node in the features tree to toggle membership;
+        # ``D`` opens the prune confirmation modal. Used to deduplicate
+        # M3 output when Rabbit ships duplicate tickets across revision
+        # passes (see analysis 040 + roadmap 171b36e1) — the
+        # substrate-side dedup hasn't landed yet.
+        self._marked_ticket_slugs: set[str] = set()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -1065,10 +1074,20 @@ class ProjectDashboardScreen(Screen[None]):
                 ticket_title = ticket.title[:55] + (
                     "…" if len(ticket.title) > 55 else ""
                 )
-                ticket_label = (
-                    f"[dim]·[/dim] {ticket_title}  "
-                    f"[dim]{ticket.slug}[/dim]"
-                )
+                # Marked tickets render with a red ✗ prefix +
+                # strikethrough so the operator can scan the tree
+                # and see what's queued for deletion before
+                # confirming. Unmarked uses the standard dim bullet.
+                if ticket.slug in self._marked_ticket_slugs:
+                    ticket_label = (
+                        f"[red]✗[/red] [strike]{ticket_title}[/strike]  "
+                        f"[dim]{ticket.slug}[/dim]"
+                    )
+                else:
+                    ticket_label = (
+                        f"[dim]·[/dim] {ticket_title}  "
+                        f"[dim]{ticket.slug}[/dim]"
+                    )
                 node.add_leaf(
                     ticket_label,
                     data={
@@ -1395,6 +1414,127 @@ class ProjectDashboardScreen(Screen[None]):
         self._populate_runs()
         self._populate_artifacts()
         self._populate_metrics()
+
+    def action_toggle_mark(self) -> None:
+        """Toggle the highlighted ticket node's mark-for-deletion
+        state. No-op when the cursor is on a feature node — only
+        tickets are deletable from this UI (feature deletion would
+        cascade through the lifecycle log + tickets, separate flow).
+        """
+        try:
+            tree = self.query_one("#features-tree", Tree)
+        except Exception:  # noqa: BLE001
+            return
+        node = tree.cursor_node
+        if node is None or node.data is None:
+            return
+        if node.data.get("kind") != "ticket":
+            self.notify(
+                "Mark only applies to ticket nodes — move cursor "
+                "to a ticket under a feature.",
+                timeout=3,
+            )
+            return
+        slug = node.data["record"].slug
+        if slug in self._marked_ticket_slugs:
+            self._marked_ticket_slugs.discard(slug)
+            verb = "unmarked"
+        else:
+            self._marked_ticket_slugs.add(slug)
+            verb = "marked for deletion"
+        # Repaint the tree so the prefix changes immediately. Cheap
+        # — features tree is small.
+        self._populate_features()
+        # Reposition cursor on the same ticket node so the operator
+        # can keep marking siblings without losing their place.
+        self._restore_tree_cursor_to_ticket(slug)
+        self.notify(
+            f"Ticket {slug} {verb}. {len(self._marked_ticket_slugs)} "
+            f"total marked. Press D to delete.",
+            timeout=2,
+        )
+
+    def action_prune_marked(self) -> None:
+        """Open the prune-confirm modal listing marked tickets.
+        On confirm, delete the files from disk, clear the mark set,
+        refresh the tree."""
+        if not self._marked_ticket_slugs:
+            self.notify(
+                "No tickets marked. Highlight a ticket node and "
+                "press m to mark it for deletion.",
+                timeout=4,
+            )
+            return
+        # Build the (slug, title) list in tree-order so the modal's
+        # list reads top-to-bottom matching what the operator sees.
+        from wonderland.ticket import TicketRegistry
+
+        try:
+            records = TicketRegistry(self.project.root_path).list_tickets()
+        except Exception:  # noqa: BLE001
+            records = []
+        marked_pairs: list[tuple[str, str]] = [
+            (rec.slug, rec.title)
+            for rec in records
+            if rec.slug in self._marked_ticket_slugs
+        ]
+
+        from wonderland.tui.screens.ticket_prune_modal import TicketPruneModal
+
+        def _on_close(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            self._execute_prune()
+
+        self.app.push_screen(
+            TicketPruneModal(marked_pairs), _on_close
+        )
+
+    def _execute_prune(self) -> None:
+        """Delete the marked tickets from disk, clear the mark set,
+        refresh the tree. Reports the success count."""
+        from wonderland.ticket import TicketRegistry
+
+        registry = TicketRegistry(self.project.root_path)
+        deleted = 0
+        failed: list[str] = []
+        for slug in list(self._marked_ticket_slugs):
+            if registry.delete_by_slug(slug):
+                deleted += 1
+            else:
+                failed.append(slug)
+        self._marked_ticket_slugs.clear()
+        self._populate_features()
+        if failed:
+            self.notify(
+                f"Deleted {deleted} ticket(s); {len(failed)} could "
+                f"not be deleted ({', '.join(failed[:3])}...).",
+                severity="warning",
+                timeout=6,
+            )
+        else:
+            self.notify(
+                f"Deleted {deleted} ticket(s).", timeout=3
+            )
+
+    def _restore_tree_cursor_to_ticket(self, slug: str) -> None:
+        """After a tree rebuild, walk the tree to find the ticket
+        node whose data.record.slug matches and select it. Best-
+        effort — no-op if not found (e.g., the ticket was deleted).
+        """
+        try:
+            tree = self.query_one("#features-tree", Tree)
+        except Exception:  # noqa: BLE001
+            return
+        for feature_node in tree.root.children:
+            for child in feature_node.children:
+                if (
+                    child.data is not None
+                    and child.data.get("kind") == "ticket"
+                    and child.data["record"].slug == slug
+                ):
+                    tree.select_node(child)
+                    return
 
     def action_show_runs(self) -> None:
         self.query_one("#dashboard-tabs", TabbedContent).active = "tab-runs"
