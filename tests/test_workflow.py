@@ -2322,6 +2322,209 @@ class TestPipelineMode:
             "pipe.alpha.m3-alpha",
         ]
 
+    async def test_multi_level_pipeline_runs_inner_block_per_subitem(self):
+        """Two-level pipeline: outer feature (sequential) + inner
+        ticket (parallel). M6 + M7 are per_item: ticket → grouped
+        into a block that runs as a per-ticket inner pipeline. M8
+        is per_item: feature → runs once after the inner block.
+
+        Validates the dispatch shape — each ticket gets its own
+        inner lane that flows M6 → M7 in declaration order, then
+        the feature lane runs M8.
+        """
+        from wonderland.workflow import (
+            Pipeline,
+            PipelineLevel,
+            _run_pipelined_workflow,
+        )
+
+        wf = Workflow(
+            name="multi-level-pipe",
+            description="d",
+            pipeline=Pipeline(
+                levels=[
+                    PipelineLevel(per_item="feature", parallel=False),
+                    PipelineLevel(per_item="ticket", parallel=True),
+                ]
+            ),
+            meetings=[
+                # M6 (per_item: ticket) — inner block start
+                Meeting(
+                    id="m6",
+                    label="M6",
+                    goal="g",
+                    roster=["mad_hatter"],
+                    per_item="ticket",
+                    seeds=[],
+                ),
+                # M7 (per_item: ticket) — inner block continues
+                Meeting(
+                    id="m7",
+                    label="M7",
+                    goal="g",
+                    roster=["tweedledum"],
+                    per_item="ticket",
+                    seeds=[],
+                ),
+                # M8 (per_item: feature) — outer level, runs after inner block
+                Meeting(
+                    id="m8",
+                    label="M8",
+                    goal="g",
+                    roster=["caterpillar"],
+                    per_item="feature",
+                    seeds=[],
+                ),
+            ],
+        )
+
+        # 1 feature → 1 outer lane. Inside it: 2 tickets running
+        # M6 + M7 each → 4 ticket-meeting events. Plus M8 once for
+        # the feature → 1 more event. Total 5 starts + 5 ends.
+        scripts: dict[str, list[FakeEvent]] = {}
+        for tid in (
+            "pipe.feat-A.m6-tic-1",
+            "pipe.feat-A.m6-tic-2",
+            "pipe.feat-A.m7-tic-1",
+            "pipe.feat-A.m7-tic-2",
+            "pipe.feat-A.m8-feat-A",
+        ):
+            scripts[tid] = [FakeEvent("complete", {"thread_id": tid})]
+        runner = FakeRunner(scripts)
+
+        from wonderland import workflow as wf_module
+
+        original = wf_module._collect_per_item_items
+
+        def _stub(*, item_kind, **kw):
+            if item_kind == "feature":
+                return [{"slug": "feat-A", "title": "Feature A"}]
+            if item_kind == "ticket":
+                return [
+                    {"slug": "tic-1", "title": "Ticket 1"},
+                    {"slug": "tic-2", "title": "Ticket 2"},
+                ]
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            starts: list[MeetingStartEvent] = []
+            ends: list[MeetingEndEvent] = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingStartEvent):
+                    starts.append(ev)
+                elif isinstance(ev, MeetingEndEvent):
+                    ends.append(ev)
+        finally:
+            wf_module._collect_per_item_items = original
+
+        # 4 ticket events (M6×2 + M7×2) + 1 feature event (M8) = 5
+        assert len(starts) == 5, [s.thread_id for s in starts]
+        assert len(ends) == 5
+
+        # Each ticket should be touched by both M6 and M7
+        per_ticket: dict[str, set[str]] = {}
+        for s in starts:
+            if "tic-" in s.thread_id:
+                tic = s.thread_id.split("-tic-")[1]
+                per_ticket.setdefault(tic, set()).add(s.meeting.id)
+        assert per_ticket == {"1": {"m6", "m7"}, "2": {"m6", "m7"}}
+
+        # M8 runs exactly once for the feature
+        m8_starts = [s for s in starts if s.meeting.id == "m8"]
+        assert len(m8_starts) == 1
+        assert m8_starts[0].thread_id == "pipe.feat-A.m8-feat-A"
+
+    async def test_multi_level_pipeline_runs_outer_sequentially(self):
+        """outer level parallel=False: feature 2 doesn't start until
+        feature 1's lane (including its inner block + M8) finishes."""
+        from wonderland.workflow import (
+            Pipeline,
+            PipelineLevel,
+            _run_pipelined_workflow,
+        )
+
+        wf = Workflow(
+            name="multi-seq",
+            description="d",
+            pipeline=Pipeline(
+                levels=[
+                    PipelineLevel(per_item="feature", parallel=False),
+                    PipelineLevel(per_item="ticket", parallel=True),
+                ]
+            ),
+            meetings=[
+                Meeting(
+                    id="m6",
+                    label="M6",
+                    goal="g",
+                    roster=["mad_hatter"],
+                    per_item="ticket",
+                    seeds=[],
+                ),
+                Meeting(
+                    id="m8",
+                    label="M8",
+                    goal="g",
+                    roster=["caterpillar"],
+                    per_item="feature",
+                    seeds=[],
+                ),
+            ],
+        )
+
+        scripts: dict[str, list[FakeEvent]] = {}
+        for tid in (
+            "pipe.feat-A.m6-tic-A1",
+            "pipe.feat-A.m8-feat-A",
+            "pipe.feat-B.m6-tic-B1",
+            "pipe.feat-B.m8-feat-B",
+        ):
+            scripts[tid] = [FakeEvent("complete", {"thread_id": tid})]
+        runner = FakeRunner(scripts)
+
+        from wonderland import workflow as wf_module
+
+        original = wf_module._collect_per_item_items
+
+        def _stub(*, item_kind, lane_outer_slug=None, **kw):
+            if item_kind == "feature":
+                return [
+                    {"slug": "feat-A", "title": "A"},
+                    {"slug": "feat-B", "title": "B"},
+                ]
+            if item_kind == "ticket":
+                if lane_outer_slug == "feat-A":
+                    return [{"slug": "tic-A1", "title": "A1"}]
+                if lane_outer_slug == "feat-B":
+                    return [{"slug": "tic-B1", "title": "B1"}]
+            return []
+
+        wf_module._collect_per_item_items = _stub
+        try:
+            event_order: list[str] = []
+            async for ev in _run_pipelined_workflow(wf, runner, "go"):
+                if isinstance(ev, MeetingStartEvent):
+                    event_order.append(f"start:{ev.thread_id}")
+                elif isinstance(ev, MeetingEndEvent):
+                    event_order.append(f"end:{ev.thread_id}")
+        finally:
+            wf_module._collect_per_item_items = original
+
+        # Sequential outer: feature-A's events fully precede feature-B's.
+        a_indices = [
+            i for i, e in enumerate(event_order) if "feat-A" in e
+        ]
+        b_indices = [
+            i for i, e in enumerate(event_order) if "feat-B" in e
+        ]
+        assert a_indices, event_order
+        assert b_indices, event_order
+        assert max(a_indices) < min(b_indices), (
+            "feature-A events should fully precede feature-B's "
+            "(outer level parallel=False); got: " + str(event_order)
+        )
+
     async def test_pipeline_no_outer_items_emits_synthetic_skip(self):
         """Empty outer-item set → one synthetic start+end per
         meeting (mirrors the legacy per_item empty-items path).

@@ -50,32 +50,44 @@ defaults:
   budget_dollars: 8.00
   quiescence_seconds: 300.0
 
-# Pipeline mode: each queued feature gets its own lane that flows
-# Hatter (M6) → Implementation (M7) → Trial (M8) sequentially within
-# the lane. Lanes run concurrently, so feature-A finishing M6 early
-# can start M7 while feature-B is still in M6 — earliest-feature-
-# first instead of stage-by-stage.
+# Pipeline mode: two-level. Features run sequentially (one feature
+# at a time); within each feature, tickets flow through M6 → M7 in
+# true parallel pipeline (ticket A finishing M6 starts M7 while
+# ticket B is still in M6). M8 runs once per feature after all
+# per-ticket lanes finish.
 #
-# Within a lane, ticket-level meetings (M6/M7) iterate over THIS
-# feature's tickets only, not all features' tickets. M8 runs once
-# per lane (per_item: feature, but the feature is implicitly the
-# lane's outer item).
+# Why feature-sequential, ticket-parallel (the inverse of the
+# original single-level shape):
+#   - Tickets within a feature are typically more separable
+#     (backend ticket touches src/api, frontend touches src/ui) so
+#     parallel ticket execution races on src/ files less than
+#     parallel feature execution would.
+#   - Feature-sequential keeps the operator's mental model focused:
+#     watch one feature flow through start to finish, then the next.
+#   - The barrier at M8 (per-feature review) is a natural sync
+#     point — Caterpillar reviews the cohesive feature deliverable
+#     after all tickets converge.
 #
 # Cross-lane isolation: thread ids are namespaced
 # pipe.{feature_slug}.{meeting_id}-{ticket_slug}, and seed
 # resolution drops utterances from other lanes' threads. Lane A's
 # M8 reviewing feature-A's deliverable doesn't see lane B's M6
-# test scenarios for feature-B.
+# test scenarios for feature-B (when features run sequentially
+# this matters less, but the scoping still applies for safety).
 #
 # File-level safety: M7 ships actual src/ code. Tweedles use diff-
-# based writes (str_replace) for surgical edits, which reduces but
-# doesn't eliminate the risk of two lanes touching the same file
-# concurrently. First-run-of-this-shape data will tell us whether
-# this needs locking or stricter scoping.
+# based writes (str_replace) for surgical edits. With ticket-
+# parallel within a feature, two tickets touching the same file
+# remains the principal risk; first-run-of-this-shape data will
+# tell us whether per-feature serialization (the design choice
+# above) is enough or whether finer-grained locking is needed.
 pipeline:
-  per_item: feature
-  parallel: true
-  iterate_only_in_states: [queued, in_progress]
+  levels:
+    - per_item: feature
+      parallel: false  # features sequential — one feature at a time
+      iterate_only_in_states: [queued, in_progress]
+    - per_item: ticket
+      parallel: true  # tickets within a feature run in true pipeline
 
 meetings:
 

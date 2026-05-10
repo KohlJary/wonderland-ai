@@ -371,6 +371,51 @@ class WorkflowDefaults(BaseModel):
     model: str | None = None
 
 
+class PipelineLevel(BaseModel):
+    """One level of a (possibly multi-level) pipeline.
+
+    Workflows can declare 1+ levels. Each level has its own iteration
+    kind, parallel flag, and lifecycle filter. Meetings are matched to
+    a level by their ``per_item`` field — meeting with
+    ``per_item: feature`` runs at the feature-level; meeting with
+    ``per_item: ticket`` runs at the ticket-level.
+
+    Two-level example (tdd-implement):
+      level 0: per_item=feature, parallel=false → features sequential
+      level 1: per_item=ticket, parallel=true → tickets within each
+        feature run in true pipeline (ticket A finishing M6 starts
+        M7 while ticket B is still in M6)
+
+    The flow within a feature lane: walk meetings in declaration
+    order. Consecutive ticket-level meetings (M6, M7) get grouped
+    into a block that runs as a per-ticket inner pipeline. Once the
+    block finishes (all per-ticket inner lanes done), the lane
+    continues with the next outer-level meeting (M8 review per
+    feature). This is the recursive shape; works for arbitrary
+    nesting if future workflows want it.
+    """
+
+    per_item: str = Field(
+        description=(
+            "Iteration kind for this level — e.g. 'feature' or 'ticket'."
+        ),
+    )
+    parallel: bool = Field(
+        default=True,
+        description=(
+            "When true, items at this level run concurrently. False "
+            "means sequential iteration."
+        ),
+    )
+    iterate_only_in_states: list[str] | None = Field(
+        default=None,
+        description=(
+            "Lifecycle-state filter on items at this level, mirroring "
+            "``Meeting.iterate_only_in_states``."
+        ),
+    )
+
+
 class Pipeline(BaseModel):
     """Run a workflow's meetings as per-item lanes that flow concurrently.
 
@@ -379,51 +424,111 @@ class Pipeline(BaseModel):
     before any M2 starts), it's "for each item (lane), iterate meetings"
     (pipeline-style — lane A can be in M2 while lane B is still in M1).
 
-    Used by tdd-implement: each queued feature gets a lane that runs
-    Hatter→Implementation→Trial as its own dependency chain. One feature
-    finishing its tea-party early can start its implementation while
-    other features are still writing tests.
+    Two declaration shapes:
 
-    Within a lane:
-    - meetings whose ``per_item`` matches the pipeline's ``per_item``
-      run once for the lane's outer item (e.g. M8 ``per_item: feature``
-      runs once per feature lane).
-    - meetings whose ``per_item`` is a sub-kind (e.g. M6/M7
-      ``per_item: ticket`` within a feature lane) iterate over the
-      sub-items belonging to this lane's outer item — only feature-A's
-      tickets get processed in feature-A's lane.
-    - meetings without ``per_item`` are ambiguous in pipeline mode and
-      get treated as the outer kind (run once per lane).
+    1. **Single-level (legacy)** — top-level fields:
+
+           pipeline:
+             per_item: feature
+             parallel: true
+             iterate_only_in_states: [queued]
+
+       Equivalent to ``levels: [{per_item: feature, parallel: true,
+       iterate_only_in_states: [queued]}]``. Backward-compatible with
+       workflows shipped before nested-level support.
+
+    2. **Multi-level** — explicit ``levels`` list:
+
+           pipeline:
+             levels:
+               - per_item: feature
+                 parallel: false        # features sequential
+                 iterate_only_in_states: [queued, in_progress]
+               - per_item: ticket
+                 parallel: true         # tickets within feature parallel
+
+       Used by tdd-implement to flow each ticket through M6→M7 in
+       parallel within a feature, with M8 (per_item: feature) running
+       once after all per-ticket lanes finish.
+
+    Within a lane (any level):
+    - meetings whose ``per_item`` matches the lane's level run once
+      for the lane's item (e.g. M8 ``per_item: feature`` runs once
+      per feature lane).
+    - meetings whose ``per_item`` matches an inner level kick off a
+      nested per-item pipeline scoped to this lane's item.
+    - meetings without ``per_item`` are treated as the outer kind
+      (run once per lane).
 
     Cross-lane isolation is enforced via thread_id namespacing
     (``pipe.{outer_slug}.{meeting_id}-{sub_slug}``) and a
-    ``lane_thread_prefix`` filter on seed resolution: lane A's M2
-    seeing M1 output sees only lane A's M1, not lane B's.
+    ``lane_thread_prefix`` filter on seed resolution.
     """
 
-    per_item: str = Field(
+    # Legacy single-level fields. Optional when ``levels`` is set.
+    per_item: str | None = Field(
+        default=None,
         description=(
-            "Lane iteration kind — typically 'feature'. The workflow "
-            "spawns one lane per matching outer item."
+            "Single-level shorthand: lane iteration kind. Mutually "
+            "exclusive with ``levels`` — set one or the other."
         ),
     )
     parallel: bool = Field(
         default=True,
         description=(
-            "When true, lanes run via asyncio.gather (concurrent). "
-            "When false, lanes run sequentially. The whole reason for "
-            "the pipeline shape is the parallel case; the sequential "
-            "fallback exists for debugging + tests."
+            "Single-level shorthand: parallel flag. Ignored when "
+            "``levels`` is set (each level has its own flag)."
         ),
     )
     iterate_only_in_states: list[str] | None = Field(
         default=None,
         description=(
-            "Lifecycle-state filter on outer items, mirroring "
-            "``Meeting.iterate_only_in_states``. None → run a lane "
-            "for every outer item the bus + disk fallback surface."
+            "Single-level shorthand: lifecycle-state filter. Ignored "
+            "when ``levels`` is set."
         ),
     )
+
+    # Multi-level declaration. Mutually exclusive with the single-level
+    # shorthand fields above; the validator normalizes the legacy
+    # form into a 1-element levels list so downstream code only sees
+    # ``levels``.
+    levels: list[PipelineLevel] | None = Field(
+        default=None,
+        description=(
+            "Ordered list of pipeline levels (outer → inner). When "
+            "set, supersedes the single-level shorthand fields."
+        ),
+    )
+
+    def model_post_init(self, _context: Any) -> None:
+        """Normalize legacy single-level form into a 1-element levels
+        list. Downstream readers only access ``self.levels`` — they
+        don't need to know about the legacy fields."""
+        if self.levels is None:
+            if self.per_item is None:
+                raise ValueError(
+                    "Pipeline requires either 'per_item' (legacy) or "
+                    "'levels' (multi-level) to be set."
+                )
+            # Mutate; this only runs at construction.
+            object.__setattr__(
+                self,
+                "levels",
+                [
+                    PipelineLevel(
+                        per_item=self.per_item,
+                        parallel=self.parallel,
+                        iterate_only_in_states=self.iterate_only_in_states,
+                    )
+                ],
+            )
+        else:
+            if self.per_item is not None:
+                raise ValueError(
+                    "Pipeline declares both 'per_item' (legacy) and "
+                    "'levels' (multi-level). Set one or the other, "
+                    "not both."
+                )
 
 
 class Workflow(BaseModel):
@@ -929,15 +1034,20 @@ async def _run_pipelined_workflow(
     """
     pipeline = workflow.pipeline
     assert pipeline is not None  # caller guards
+    assert pipeline.levels is not None  # validator guarantees
     capture = WorkflowCapture()
 
     per_item_meetings: dict[str, str] = {
         m.id: m.per_item for m in workflow.meetings if m.per_item is not None
     }
 
+    # Outer level — levels[0]. Inner levels (if any) get dispatched
+    # by _run_lane when it encounters a meeting whose per_item matches
+    # an inner level's per_item.
+    outer_level = pipeline.levels[0]
     outer_items = _collect_per_item_items(
-        item_kind=pipeline.per_item,
-        state_filter=pipeline.iterate_only_in_states,
+        item_kind=outer_level.per_item,
+        state_filter=outer_level.iterate_only_in_states,
         capture=capture,
         runner=runner,
     )
@@ -980,12 +1090,13 @@ async def _run_pipelined_workflow(
                 runner=runner,
                 capture=capture,
                 per_item_meetings=per_item_meetings,
-                outer_kind=pipeline.per_item,
+                outer_kind=outer_level.per_item,
                 outer_slug=outer_slug,
                 outer_label=lane_label,
                 lane_index=idx + 1,
                 lane_total=len(outer_items),
                 lane_thread_prefix=lane_thread_prefix,
+                inner_levels=pipeline.levels[1:],
                 # Only the very first lane's first meeting is the
                 # "entry" — receives the operator's directive. Other
                 # lanes pick up the directive from the bus / disk.
@@ -997,7 +1108,7 @@ async def _run_pipelined_workflow(
 
     iterators = [_make_lane(idx, item) for idx, item in enumerate(outer_items)]
 
-    if pipeline.parallel:
+    if outer_level.parallel:
         global_budget_hit = False
         async for event in _merge_async_iterators(iterators):
             if isinstance(event, _OutcomeSentinel):
@@ -1033,31 +1144,46 @@ async def _run_lane(
     lane_total: int,
     lane_thread_prefix: str,
     directive: str | None,
+    inner_levels: list[PipelineLevel] | None = None,
 ) -> AsyncIterator[Any]:
-    """One lane of a pipelined workflow — runs every meeting in
-    declaration order, scoped to a single outer item.
+    """One lane of a pipelined workflow — runs meetings in declaration
+    order, scoped to a single outer item.
 
     Per-meeting dispatch:
     - ``per_item: <outer_kind>`` (e.g., per_item: feature in a feature
       lane): runs once for THIS lane's outer item.
-    - ``per_item: <sub-kind>`` (e.g., per_item: ticket within a
-      feature lane): iterates over the sub-items belonging to this
-      lane's outer item.
-    - ``per_item: None``: runs once for the lane (treated as the
-      outer kind). Rare; included for consistency.
+    - ``per_item: <inner-level kind>`` (e.g., per_item: ticket inside
+      a feature lane when inner_levels declares a ticket level):
+      groups consecutive same-inner-level meetings into a block,
+      then runs the block as a per-sub-item inner pipeline. Inner
+      sub-items run in parallel if the inner level says so.
+    - ``per_item: <unscoped sub-kind>`` (no matching inner level):
+      legacy behavior — iterate sub-items sequentially within the
+      lane, one meeting at a time. Preserves single-level pipeline
+      semantics for back-compat.
+    - ``per_item: None``: runs once for the lane (treated as outer).
+
+    True per-sub-item pipelining requires ``inner_levels`` to declare
+    that level. Without inner_levels, the block fall-through is
+    sequential (same as the original single-level pipeline).
 
     Thread ids are namespaced with ``lane_thread_prefix`` so
     ``resolve_seeds`` can scope cross-meeting bindings to this lane
     only.
     """
+    inner_levels = inner_levels or []
+    inner_kinds = {lvl.per_item: lvl for lvl in inner_levels}
+
+    meetings = workflow.meetings
+    i = 0
     is_first_meeting = True
-    for meeting in workflow.meetings:
+    while i < len(meetings):
+        meeting = meetings[i]
         meeting_directive = directive if is_first_meeting else None
         is_first_meeting = False
 
-        # Resolve the meeting's iteration shape for this lane.
+        # Outer-level meeting: runs once for this lane's outer item.
         if meeting.per_item is None or meeting.per_item == outer_kind:
-            # Single iteration for this lane's outer item.
             iteration_slug = outer_slug
             iteration_label = outer_label
             thread_id = f"{lane_thread_prefix}{meeting.id}-{outer_slug}"
@@ -1083,20 +1209,64 @@ async def _run_lane(
                 yield event
             if outcome == "GLOBAL_BUDGET":
                 return
+            i += 1
             continue
 
-        # Sub-kind iteration scoped to this lane (e.g., tickets-of-
-        # feature-X). Collect lane-scoped items, then iterate
-        # sequentially within the lane (lanes are the parallelism
-        # boundary; within a lane, ticket-level work is sequential
-        # to avoid src/ races and keep per-ticket TDD discipline).
+        # Inner-level meeting: gather consecutive meetings at the
+        # same inner level into a block. The block runs as a per-
+        # sub-item pipeline — each sub-item gets a lane that flows
+        # through the block in declaration order. Lanes run in
+        # parallel if the inner level config says so.
+        if meeting.per_item in inner_kinds:
+            inner_level = inner_kinds[meeting.per_item]
+            block: list[Meeting] = []
+            while (
+                i < len(meetings)
+                and meetings[i].per_item == inner_level.per_item
+            ):
+                block.append(meetings[i])
+                i += 1
+
+            sub_items = _collect_per_item_items(
+                item_kind=inner_level.per_item,
+                state_filter=None,
+                capture=capture,
+                runner=runner,
+                lane_outer_kind=outer_kind,
+                lane_outer_slug=outer_slug,
+            )
+
+            outcome = "RUNNING"
+            async for event in _run_inner_block(
+                block=block,
+                sub_items=sub_items,
+                parallel=inner_level.parallel,
+                runner=runner,
+                capture=capture,
+                per_item_meetings=per_item_meetings,
+                outer_label=outer_label,
+                lane_thread_prefix=lane_thread_prefix,
+            ):
+                if isinstance(event, _OutcomeSentinel):
+                    outcome = event.outcome
+                    yield event
+                    continue
+                yield event
+            if outcome == "GLOBAL_BUDGET":
+                return
+            continue
+
+        # Legacy sub-kind (no matching inner level): iterate sub-items
+        # sequentially within the lane, one meeting at a time. This is
+        # the original single-level pipeline semantic — preserved
+        # exactly so workflows that don't declare ``levels`` keep
+        # their pre-multi-level behavior.
         #
         # ``state_filter=None`` here on purpose: the pipeline's outer
         # filter already gated WHICH features get a lane; per-meeting
         # state filters within a lane would just fight the per-
         # iteration transitions (M6 fires queued → in_progress; M7's
         # legacy [queued] filter would then reject that same feature).
-        # In pipeline mode the lane is the gate.
         sub_items = _collect_per_item_items(
             item_kind=meeting.per_item,
             state_filter=None,
@@ -1107,9 +1277,6 @@ async def _run_lane(
         )
 
         if not sub_items:
-            # Lane has no children for this meeting — synthetic skip
-            # so the consumer still sees the meeting acknowledged in
-            # this lane's stream.
             thread_id = f"{lane_thread_prefix}{meeting.id}"
             yield MeetingStartEvent(
                 meeting=meeting,
@@ -1131,6 +1298,7 @@ async def _run_lane(
                 iteration_total=0,
                 iteration_label=f"{outer_label} (no items)",
             )
+            i += 1
             continue
 
         for sub_idx, sub_item in enumerate(sub_items):
@@ -1142,7 +1310,7 @@ async def _run_lane(
                 meeting=meeting,
                 runner=runner,
                 capture=capture,
-                directive=None,  # sub-meetings never receive directive
+                directive=None,
                 per_item_meetings=per_item_meetings,
                 current_item_kind=meeting.per_item,
                 current_item_slug=sub_slug,
@@ -1159,6 +1327,105 @@ async def _run_lane(
                 yield event
             if outcome == "GLOBAL_BUDGET":
                 return
+        i += 1
+
+
+async def _run_inner_block(
+    *,
+    block: list[Meeting],
+    sub_items: list[dict[str, Any]],
+    parallel: bool,
+    runner: Runner,
+    capture: WorkflowCapture,
+    per_item_meetings: dict[str, str],
+    outer_label: str,
+    lane_thread_prefix: str,
+) -> AsyncIterator[Any]:
+    """Run a block of inner-level meetings as a per-sub-item pipeline.
+
+    Each sub-item gets its own lane that flows through every meeting
+    in ``block`` in declaration order. Lanes run via
+    ``_merge_async_iterators`` when ``parallel=True`` (true pipeline:
+    sub-item A finishing M6 immediately advances to M7 while sub-item
+    B is still in M6), or sequentially when ``parallel=False``.
+
+    Thread ids inside the inner block are namespaced
+    ``{lane_thread_prefix}{meeting.id}-{sub_slug}`` — the SAME
+    namespace as the lane's outer-level meetings, so seed resolution
+    via ``lane_thread_prefix`` continues to scope correctly. The
+    inner pipeline doesn't introduce a new prefix; it stays within
+    the outer lane's scope.
+    """
+    if not sub_items:
+        # No items to iterate — synthesize end events for each meeting
+        # in the block so the consumer sees the meetings acknowledged.
+        for meeting in block:
+            thread_id = f"{lane_thread_prefix}{meeting.id}"
+            yield MeetingStartEvent(
+                meeting=meeting,
+                seeds=[],
+                thread_id=thread_id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label=f"{outer_label} (no items)",
+            )
+            yield MeetingEndEvent(
+                meeting=meeting,
+                outcome="COMPLETE",
+                elapsed_s=0.0,
+                calls_delta=0,
+                cost_delta=0.0,
+                artifact_kinds={},
+                thread_id=thread_id,
+                iteration_index=0,
+                iteration_total=0,
+                iteration_label=f"{outer_label} (no items)",
+            )
+        return
+
+    def _make_inner_lane(idx: int, sub_item: dict[str, Any]):
+        sub_slug = sub_item["slug"]
+        sub_label = sub_item.get("title") or sub_slug
+
+        async def _gen():
+            for meeting in block:
+                thread_id = f"{lane_thread_prefix}{meeting.id}-{sub_slug}"
+                outcome = "RUNNING"
+                async for event in _run_one_meeting(
+                    meeting=meeting,
+                    runner=runner,
+                    capture=capture,
+                    directive=None,
+                    per_item_meetings=per_item_meetings,
+                    current_item_kind=meeting.per_item,
+                    current_item_slug=sub_slug,
+                    thread_id=thread_id,
+                    iteration_index=idx + 1,
+                    iteration_total=len(sub_items),
+                    iteration_label=f"{outer_label} / {sub_label}",
+                    lane_thread_prefix=lane_thread_prefix,
+                ):
+                    if isinstance(event, _OutcomeSentinel):
+                        outcome = event.outcome
+                        yield event
+                        continue
+                    yield event
+                if outcome == "GLOBAL_BUDGET":
+                    return
+
+        return _gen()
+
+    inner_iterators = [
+        _make_inner_lane(idx, item) for idx, item in enumerate(sub_items)
+    ]
+
+    if parallel:
+        async for event in _merge_async_iterators(inner_iterators):
+            yield event
+    else:
+        for it in inner_iterators:
+            async for event in it:
+                yield event
 
 
 async def run_workflow(

@@ -928,20 +928,39 @@ class TestParallelPerItem:
                 f"parallelism; meeting-level parallel would double up"
             )
 
-    def test_tdd_implement_uses_pipeline_mode(self) -> None:
-        """tdd-implement opts into pipeline mode: each queued feature
-        runs Hatter→Implementation→Trial as its own lane, lanes flow
-        concurrently. Regression-guards the YAML wiring."""
+    def test_tdd_implement_uses_two_level_pipeline(self) -> None:
+        """tdd-implement uses a two-level pipeline: outer feature
+        (sequential) + inner ticket (parallel). Tickets within a
+        feature flow M6→M7 in true pipeline; M8 runs once per
+        feature after the ticket block. Regression-guards the YAML
+        wiring."""
         from wonderland.workflow import load_workflow
 
         wf = load_workflow("tdd-implement")
         assert wf.pipeline is not None, (
-            "tdd-implement must declare pipeline: — that's how cross-"
-            "feature parallelism is expressed in this workflow"
+            "tdd-implement must declare pipeline: — that's how the "
+            "ticket-parallel-within-sequential-feature shape is "
+            "expressed"
         )
-        assert wf.pipeline.per_item == "feature"
-        assert wf.pipeline.parallel is True
-        assert wf.pipeline.iterate_only_in_states == [
-            "queued",
-            "in_progress",
-        ]
+        assert wf.pipeline.levels is not None
+        assert len(wf.pipeline.levels) == 2, (
+            "tdd-implement is two-level (feature → ticket); single-"
+            "level shape was the pre-0.3.4 form"
+        )
+
+        # Outer level: feature, sequential, gated on queued/in_progress
+        outer = wf.pipeline.levels[0]
+        assert outer.per_item == "feature"
+        assert outer.parallel is False, (
+            "features run sequentially — operator-mental-model + "
+            "src/ race avoidance"
+        )
+        assert outer.iterate_only_in_states == ["queued", "in_progress"]
+
+        # Inner level: ticket, parallel
+        inner = wf.pipeline.levels[1]
+        assert inner.per_item == "ticket"
+        assert inner.parallel is True, (
+            "tickets within a feature run in true pipeline — that's "
+            "the whole point of two-level"
+        )
