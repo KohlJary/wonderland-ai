@@ -824,7 +824,7 @@ class TestLabelFromThreadId:
 
 async def test_live_run_screen_mounts_with_dummy_data() -> None:
     """T45 + T48: layout-only check. The screen should mount cleanly
-    and render its multi-pane layout (meetings ribbon, transcript
+    and render its multi-pane layout (meetings pane, transcript
     table + body preview, artifacts table, status bar) populated
     with the hand-built dummy data when no snapshot is bound."""
     from textual.widgets import DataTable
@@ -1252,18 +1252,122 @@ async def test_live_run_screen_streams_v3_per_item_snapshot() -> None:
         # 11 actual meetings + All-Meetings pseudo-row = 12 rows.
         assert table.row_count == 12
 
-        # Verify per_item iterations got distinct labels (the slug-
-        # derived discriminator at minimum).
+        # Per_item iterations are distinct rows (3 each for M4 and
+        # M5) but their cell labels collapse to the same static
+        # ``M<N> — <name>`` value — the ribbon prioritises
+        # newcomer-legibility over per-iteration disambiguation.
+        # Operators drill into a row via cursor-down to see which
+        # iteration they're looking at via transcript + body.
         thread_ids = screen._meeting_order
         m4_iters = [t for t in thread_ids if t.startswith("test-scenarios-")]
         m5_iters = [t for t in thread_ids if t.startswith("implementation-")]
         assert len(m4_iters) == 3
         assert len(m5_iters) == 3
-        # Labels should differ across iterations of the same base
-        # meeting (the discriminator is doing its job).
         m4_labels = [screen._meetings_seen[t]["label"] for t in m4_iters]
-        assert len(set(m4_labels)) == 3
+        # All three M4 iteration rows render with the same static
+        # label (set size == 1 by design).
+        assert len(set(m4_labels)) == 1
         await pilot.press("q")
+
+
+def test_compose_meeting_label_appends_iteration_when_present() -> None:
+    """Live runs carry iteration metadata (``iteration_label`` +
+    ``iteration_index/total``) on the event — the cell appends
+    them so per-iteration rows are disambiguated:
+    ``M6 — A Mad Tea Party (2/5: Earn XP through workouts)``."""
+    import datetime as _dt
+
+    from wonderland.observer.events import MeetingStarted
+    from wonderland.observer.interface import RunMeeting
+    from wonderland.tui.screens.live_run import LiveRunScreen
+
+    screen = LiveRunScreen.__new__(LiveRunScreen)
+    rm = RunMeeting(
+        id="pipe.earn-xp-feature.tea-party-backend-accumulate-xp",
+        label="M6",
+        name="The Mad Tea Party",
+        started_at=None,
+        ended_at=None,
+        outcome=None,
+        elapsed_seconds=None,
+        calls=0,
+        cost=0.0,
+    )
+    event = MeetingStarted(
+        timestamp=_dt.datetime.now(),
+        meeting=rm,
+        thread_id="pipe.earn-xp-feature.tea-party-backend-accumulate-xp",
+        iteration_index=2,
+        iteration_total=5,
+        iteration_label="Earn XP through workouts",
+    )
+    label = screen._compose_meeting_label(event, base_meeting_ids=[])
+    assert label == (
+        "M6 — The Mad Tea Party (2/5: Earn XP through workouts)"
+    )
+    assert "pipe." not in label
+
+
+def test_compose_meeting_label_label_only_falls_back_to_static() -> None:
+    """When iteration metadata is absent (single-meeting runs,
+    root-level threads), the cell stays at the static
+    ``M<N> — <name>``."""
+    import datetime as _dt
+
+    from wonderland.observer.events import MeetingStarted
+    from wonderland.observer.interface import RunMeeting
+    from wonderland.tui.screens.live_run import LiveRunScreen
+
+    screen = LiveRunScreen.__new__(LiveRunScreen)
+    rm = RunMeeting(
+        id="m1",
+        label="M1",
+        name="Caucus Race",
+        started_at=None,
+        ended_at=None,
+        outcome=None,
+        elapsed_seconds=None,
+        calls=0,
+        cost=0.0,
+    )
+    event = MeetingStarted(
+        timestamp=_dt.datetime.now(),
+        meeting=rm,
+        thread_id="m1",
+    )
+    assert (
+        screen._compose_meeting_label(event, base_meeting_ids=[])
+        == "M1 — Caucus Race"
+    )
+
+
+def test_compose_meeting_label_uses_just_label_when_name_is_empty() -> None:
+    """Meeting with no name field renders as just ``M<N>``."""
+    import datetime as _dt
+
+    from wonderland.observer.events import MeetingStarted
+    from wonderland.observer.interface import RunMeeting
+    from wonderland.tui.screens.live_run import LiveRunScreen
+
+    screen = LiveRunScreen.__new__(LiveRunScreen)
+    rm = RunMeeting(
+        id="pipe.foo.bar",
+        label="M3",
+        name=None,
+        started_at=None,
+        ended_at=None,
+        outcome=None,
+        elapsed_seconds=None,
+        calls=0,
+        cost=0.0,
+    )
+    event = MeetingStarted(
+        timestamp=_dt.datetime.now(),
+        meeting=rm,
+        thread_id="pipe.foo.bar",
+    )
+    label = screen._compose_meeting_label(event, base_meeting_ids=[])
+    assert label == "M3"
 
 
 async def test_live_run_screen_body_preview_updates_on_transcript_cursor() -> None:
@@ -1473,7 +1577,7 @@ async def test_live_run_screen_transcript_populated_after_stream() -> None:
 
 
 async def test_live_run_screen_vim_navigation_works() -> None:
-    """j/k should move the cursor in the meetings ribbon (vim nav
+    """j/k should move the cursor in the meetings pane (vim nav
     comes from WonderlandApp app-level bindings)."""
     from textual.widgets import DataTable
 
@@ -3195,10 +3299,11 @@ async def test_project_library_actions_menu_includes_open_and_new_project(
 async def test_project_dashboard_mounts_with_tabs(
     monkeypatch, tmp_path
 ) -> None:
-    """ProjectDashboardScreen mounts with all four tabs (Runs,
-    Artifacts, Files, Metrics) and shows the project name in the
-    header."""
-    from textual.widgets import TabbedContent
+    """ProjectDashboardScreen mounts with the runs column visible
+    (always-on, P14 reshape) and the drill-down tabs (Artifacts,
+    Files, Metrics) for investigation surfaces. Runs is no longer
+    a tab — it has its own column to the left of features."""
+    from textual.widgets import DataTable, TabbedContent
 
     from wonderland.project import Project, register_project, load_project
     from wonderland.tui.screens.project_dashboard import (
@@ -3216,9 +3321,12 @@ async def test_project_dashboard_mounts_with_tabs(
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, ProjectDashboardScreen)
+        # Runs column: always-visible list pane, not a tab.
+        screen.query_one("#runs-column")
+        screen.query_one("#runs-table", DataTable)
+        # Drill-down tabs: Artifacts (default) / Files / Metrics.
         tabs = screen.query_one("#dashboard-tabs", TabbedContent)
-        # Initial tab is Runs.
-        assert tabs.active == "tab-runs"
+        assert tabs.active == "tab-artifacts"
         await pilot.press("escape")
         await pilot.press("q")
 
@@ -3274,6 +3382,65 @@ async def test_project_dashboard_runs_tab_shows_runs(
         rendered = str(detail.render())
         assert "20260509T120000" in rendered
         assert "tweedledum" in rendered
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_project_dashboard_runs_row_enter_opens_live_run(
+    monkeypatch, tmp_path
+) -> None:
+    """Enter on a runs-table row opens LiveRunScreen wrapping a
+    HistoricalRunHandle pointing at the project's .wonderland/.
+    Same path will support reattaching to background runs once
+    those land — just a different RunHandle implementation behind
+    the same screen."""
+    import json
+    from textual.widgets import DataTable
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.live_run import LiveRunScreen
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    root = tmp_path / "alpha"
+    root.mkdir()
+    register_project(Project(name="alpha", root_path=root))
+    project = load_project("alpha")
+
+    telemetry_dir = root / ".wonderland" / "telemetry"
+    telemetry_dir.mkdir(parents=True)
+    (telemetry_dir / "run-20260510T140000.json").write_text(json.dumps({
+        "run_id": "20260510T140000",
+        "total_cost": 0.42,
+        "total_calls": 12,
+        "elapsed_seconds": 90.0,
+        "outcome": "complete",
+        "model": "claude-haiku-4-5-20251001",
+        "budget_dollars": 1.00,
+        "budget_exceeded": False,
+        "per_agent": {"alice": {"calls": 12, "cost": 0.42}},
+    }))
+
+    app = WonderlandApp(show_welcome=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+        runs_table = screen.query_one("#runs-table", DataTable)
+        assert runs_table.row_count == 1
+        # Focus the runs table and press enter to open the run.
+        runs_table.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        # LiveRunScreen should now be on top, with a handle wired up.
+        assert isinstance(app.screen, LiveRunScreen)
+        assert app.screen.handle is not None
+        await pilot.press("escape")
         await pilot.press("escape")
         await pilot.press("q")
 
@@ -3656,8 +3823,8 @@ async def test_dashboard_features_filter_chips_present(
 async def test_dashboard_drilldown_tabs_still_present(
     monkeypatch, tmp_path
 ) -> None:
-    """Reshape didn't drop the drill-down tabs — Runs/Artifacts/
-    Files/Metrics still mount, just below the features section now."""
+    """P14 reshape: Runs moved to its own column. Drill-down tabs
+    are now Artifacts/Files/Metrics (no Runs tab)."""
     from textual.widgets import TabbedContent
 
     from wonderland.project import Project, register_project, load_project
@@ -3675,9 +3842,11 @@ async def test_dashboard_drilldown_tabs_still_present(
         app.push_screen(ProjectDashboardScreen(project))
         await pilot.pause()
         tabs = app.screen.query_one("#dashboard-tabs", TabbedContent)
-        # All four drill-down tabs still present
-        active = tabs.active
-        assert active in ("tab-runs", None)  # default tab is runs
+        # Drill-down tabs after the reshape: Artifacts / Files /
+        # Metrics. Runs is no longer a tab.
+        assert tabs.active in ("tab-artifacts", None)
+        # And the runs column is mounted (not as a tab pane).
+        app.screen.query_one("#runs-column")
         await pilot.press("escape")
         await pilot.press("q")
 
@@ -3736,6 +3905,169 @@ async def test_dashboard_queue_button_transitions_designed_feature(
         await pilot.pause()
         # Feature now in queued state
         assert get_state(project_root, "account-dashboard") == FeatureState.QUEUED
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_implement_button_enabled_by_queued_ticket(
+    monkeypatch, tmp_path
+) -> None:
+    """A queued ticket on a feature whose own state isn't QUEUED
+    should still enable the '▶ Implement' button. The substrate
+    runs the iteration; the UI was previously gating on
+    queued-features-only and greying the button out, leaving the
+    operator stuck."""
+    from textual.widgets import Button
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        transition as feature_transition,
+    )
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.ticket import TicketPayload, TicketRegistry, TicketTier
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        transition as ticket_transition,
+    )
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    # Feature ran imp and ended up in_progress (one ticket aborted,
+    # operator now wants to retry just that ticket).
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="XP",
+        description="d",
+        tickets=["alpha"],
+        stack_span="full-stack",
+        tier="v1",
+        sources=["s"],
+    ))
+    for st in (
+        FeatureState.PROPOSED,
+        FeatureState.IN_DESIGN,
+        FeatureState.DESIGNED,
+        FeatureState.QUEUED,
+        FeatureState.IN_PROGRESS,
+    ):
+        feature_transition(project_root, "xp", st, by="test")
+    TicketRegistry(project_root).write(TicketPayload(
+        title="alpha",
+        description="d",
+        sources=["xp"],
+        stack_span="backend",
+        acceptance_criteria=["t"],
+        owner="tweedledum",
+        tier=TicketTier.V1,
+        estimate="s",
+    ))
+    ticket_transition(
+        project_root, "alpha", TicketState.QUEUED, by="operator"
+    )
+
+    app = WonderlandApp(show_welcome=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        btn = screen.query_one("#action-implement", Button)
+        assert btn.disabled is False, (
+            "queued ticket on an in_progress feature should keep "
+            "the Implement button enabled"
+        )
+        # Label should reflect the queued-ticket count.
+        assert "queued tickets" in str(btn.label), str(btn.label)
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_queue_ticket_button_transitions_ticket(
+    monkeypatch, tmp_path
+) -> None:
+    """Clicking 'Queue ticket' on a highlighted ticket node moves
+    it through ``ticket_lifecycle`` to QUEUED — the operator's
+    per-ticket retry path after a budget-aborted iteration."""
+    from textual.widgets import Button, Tree
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        transition as feature_transition,
+    )
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.ticket import TicketPayload, TicketRegistry
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        get_state as get_ticket_state,
+    )
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="XP",
+        description="d",
+        tickets=["accumulate"],
+        stack_span="full-stack",
+        tier="v1",
+        sources=["s"],
+    ))
+    feature_transition(
+        project_root, "xp", FeatureState.PROPOSED, by="rabbit"
+    )
+    feature_transition(
+        project_root, "xp", FeatureState.IN_DESIGN, by="rabbit"
+    )
+    feature_transition(
+        project_root, "xp", FeatureState.DESIGNED, by="system"
+    )
+    from wonderland.ticket import TicketTier
+
+    TicketRegistry(project_root).write(TicketPayload(
+        title="accumulate",
+        description="d",
+        sources=["xp"],
+        stack_span="backend",
+        acceptance_criteria=["test"],
+        owner="tweedledum",
+        tier=TicketTier.V1,
+        estimate="s",
+    ))
+
+    app = WonderlandApp(show_welcome=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        ft = screen.query_one("#features-tree", Tree)
+        # Cursor on the feature, expand, then move to the ticket row.
+        ft.cursor_line = 0
+        await pilot.pause()
+        ft.cursor_line = 1  # ticket child node
+        await pilot.pause()
+        # Press the Queue ticket button.
+        btn = screen.query_one("#ticket-action-queue", Button)
+        screen.post_message(Button.Pressed(btn))
+        await pilot.pause()
+        assert (
+            get_ticket_state(project_root, "accumulate")
+            == TicketState.QUEUED
+        )
         await pilot.press("escape")
         await pilot.press("q")
 

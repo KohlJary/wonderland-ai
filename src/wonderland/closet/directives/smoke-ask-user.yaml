@@ -1,0 +1,58 @@
+name: smoke-ask-user
+title: AskUserModal render smoke (long-option wrapping)
+description: |
+  Modal-validation smoke directive. Pairs with the
+  ``smoke-ask-user`` workflow: Alice is asked to immediately fire
+  one ``question_to_operator`` decision with four longish suggested
+  answers, then quiesce. The point is to render the AskUserModal
+  in a controlled way so the operator can eyeball the layout —
+  modal sized correctly, options stacked vertically (column not
+  row), long option text wraps cleanly instead of truncating at
+  the modal border.
+
+  Run this when you've touched ``ask_user_modal.py`` (CSS, layout,
+  button styling, options rendering) and want a fast loop to
+  validate the result against realistic option lengths. Not a
+  substrate test — a UI test.
+
+  Typical cost: ~$0.05 / ~30 seconds.
+body: |
+  You are the **AskUserModal smoke harness**. Your only job in this
+  thread is to fire one ``question_to_operator`` decision so the
+  operator can validate that the modal renders correctly with
+  realistic option lengths. This is a UI test, not a product-
+  design exercise.
+
+  **Your one move:** emit a ``question_to_operator`` decision with
+  these exact four options (verbatim — do not paraphrase or
+  shorten, the option lengths are the point):
+
+  1. "Tight, scoped MVP — ship a single-user prototype this sprint
+     with no auth, no persistence, just the core flow working
+     end-to-end on localhost"
+  2. "Multi-tenant from day one — accept the longer build to get
+     auth, org boundaries, and per-tenant data isolation baked in
+     before any user touches it"
+  3. "Spike a throwaway to learn the shape of the problem, then
+     throw it away and rebuild the production version with
+     everything you learned"
+  4. "Ship the simplest possible version to a small alpha cohort
+     tomorrow, then iterate weekly based on what they actually
+     hit (ignore the rest of the wishlist until they ask for it)"
+
+  The ``body`` field of your decision should be a 2–3 sentence
+  question framing the choice (something like: "Before I draft
+  stories I need a steer on the scope shape — these four framings
+  each imply very different stories. Which framing should I write
+  to?").
+
+  After you fire the question, **quiesce** — do not draft stories,
+  do not pre-empt the operator's answer. The point of this run is
+  the modal render; the rest of the meeting is filler.
+
+  **Do not** pick ``story`` or any other decision on your first
+  turn. The very first decision must be ``question_to_operator``
+  with the four options above.
+suggested_workflow: smoke-ask-user
+suggested_skeleton: fullstack-fastapi-react
+tags: [smoke, ui, modal, ask-user]

@@ -1,19 +1,27 @@
 """ProjectDashboardScreen — per-project landing surface (P11 T79).
 
-Shell + tab structure for the in-depth project view. Operators reach
-this from ProjectLibraryScreen by selecting a project and pressing
-the dashboard binding (currently bound to a separate key — Enter
+Shell for the in-depth project view. Operators reach this from
+ProjectLibraryScreen by selecting a project and pressing the
+dashboard binding (currently bound to a separate key — Enter
 still launches a new run, since that's the higher-frequency action).
 
-Tabs:
-  - Runs (T80): list of past runs with per-run detail
-  - Artifacts (T83): browse .wonderland/ contents per run
-  - Files (T81 — placeholder): DirectoryTree of project_root,
-    coming in the next chunk
-  - Metrics (T82 — placeholder): plotext graphs across runs,
-    coming in the next chunk
+Layout:
+  - Top: actions row (design / implement / verify / custom)
+  - Middle: a content row split into two columns —
+      * Runs column (left): list of runs (top) + run detail (below).
+        Always visible so background runs can surface here without
+        the operator hunting through a tab. Tees up P? where runs
+        become background processes the operator can leave running
+        across screens.
+      * Features column (right): the operator's main attention
+        surface — feature tree + dossier detail + per-feature
+        action buttons.
+  - Bottom: drill-down tabs (Artifacts / Files / Metrics) for
+    investigation surfaces.
 
-Lazygit-shape inside each tab: list left, detail right.
+Lazygit-shape inside each split: list-then-detail; selection on
+the left drives content on the right (or below, for the runs
+column).
 """
 
 from __future__ import annotations
@@ -167,6 +175,57 @@ _STATE_BADGE: dict[FeatureState | None, str] = {
 }
 
 
+# Ticket-state badges rendered as tree-node prefixes. None /
+# TicketState.PENDING render as the bare bullet ([dim]·) so the
+# default no-record case stays visually quiet and only opinionated
+# states (queued / in_progress / done / aborted) stand out.
+_TICKET_STATE_BADGE: dict[object, str] = {
+    None: "[dim]·[/dim]",
+    # Lazy import inside the module avoids a top-level ImportError
+    # when ticket_lifecycle hasn't been loaded yet (tests / pyright).
+}
+
+
+def _ticket_state_for(project_root, ticket_slug):
+    """Wrap ``ticket_lifecycle.get_state`` with a try/except so
+    pre-mount / missing-registry callers degrade to None cleanly."""
+    try:
+        from wonderland.ticket_lifecycle import get_state
+
+        return get_state(project_root, ticket_slug)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _populate_ticket_badge_map() -> None:
+    """Populate the ticket-state badge lookup. Called lazily so the
+    enum-typed keys are only constructed if ticket_lifecycle is
+    importable — preserves the dashboard's pre-substrate test
+    surface."""
+    try:
+        from wonderland.ticket_lifecycle import TicketState
+    except Exception:  # noqa: BLE001
+        return
+    _TICKET_STATE_BADGE.setdefault(
+        TicketState.PENDING, "[dim]·[/dim]"
+    )
+    _TICKET_STATE_BADGE.setdefault(
+        TicketState.QUEUED, "[yellow]▶[/yellow]"
+    )
+    _TICKET_STATE_BADGE.setdefault(
+        TicketState.IN_PROGRESS, "[magenta]⟳[/magenta]"
+    )
+    _TICKET_STATE_BADGE.setdefault(
+        TicketState.DONE, "[bright_green]✓[/bright_green]"
+    )
+    _TICKET_STATE_BADGE.setdefault(
+        TicketState.ABORTED, "[red]⚠[/red]"
+    )
+
+
+_populate_ticket_badge_map()
+
+
 # Filter chip definitions. None state means "all". FeatureState members
 # filter to that specific state. Order chosen to match the operator's
 # typical scan order: triage states first, then terminal states.
@@ -199,10 +258,12 @@ class ProjectDashboardScreen(Screen[None]):
         Binding("R", "refresh", "Refresh", show=True),
         Binding("m", "toggle_mark", "Mark ticket", show=True),
         Binding("D", "prune_marked", "Delete marked", show=True),
-        Binding("1", "show_runs", "Runs", show=False),
-        Binding("2", "show_artifacts", "Artifacts", show=False),
-        Binding("3", "show_files", "Files", show=False),
-        Binding("4", "show_metrics", "Metrics", show=False),
+        # Drill-down keybinds — Runs has its own column now (always
+        # visible), so the tab keybinds only cover the remaining
+        # investigation surfaces.
+        Binding("1", "show_artifacts", "Artifacts", show=False),
+        Binding("2", "show_files", "Files", show=False),
+        Binding("3", "show_metrics", "Metrics", show=False),
     ]
 
     def __init__(self, project: Project) -> None:
@@ -261,98 +322,139 @@ class ProjectDashboardScreen(Screen[None]):
                     id="action-custom-run",
                 )
 
-            # Features primary surface — left list (with state filter
-            # chips), right detail (dossier + per-feature actions).
-            # This is the operator's main attention surface in P12.
-            with Horizontal(id="features-row"):
-                with Vertical(id="features-list-pane"):
-                    yield Static("[b]Features[/b]", id="features-list-label")
-                    with Horizontal(id="features-filter-row"):
-                        for chip_id, label, _state in _FILTER_CHIPS:
-                            classes = "filter-chip"
-                            if _state is None:
-                                classes += " filter-active"
-                            yield Button(
-                                label, id=chip_id, classes=classes
-                            )
-                    # Tree (not DataTable): each feature is a parent
-                    # node; its tickets nest underneath like a file
-                    # tree. Operator can highlight a ticket and see
-                    # the same dossier shape as for features. Default
-                    # expanded so tickets are immediately visible —
-                    # typical project sizes (3-6 features × 1-4
-                    # tickets) fit fine.
-                    yield Tree(
-                        "Features",
-                        id="features-tree",
-                    )
-                with Vertical(id="features-detail-pane"):
+            # Content row: Runs column (left) + Features section
+            # (right). Runs is now always visible — preparation for
+            # background runs the operator can leave going while
+            # navigating other views.
+            with Horizontal(id="content-row"):
+                # Runs column: list (top) + detail (below). Slim
+                # column — the operator scans recent runs and drills
+                # in via the detail pane; the meaty per-feature work
+                # happens in the Features section to the right.
+                with Vertical(id="runs-column"):
+                    yield Static("[b]Runs[/b]", id="runs-list-label")
+                    yield DataTable(id="runs-table", cursor_type="row")
                     yield Static(
-                        "[b]Feature detail[/b]",
-                        id="features-detail-label",
+                        "[b]Run detail[/b]", id="runs-detail-label"
                     )
-                    with VerticalScroll(id="features-detail-scroll"):
+                    with VerticalScroll(id="runs-detail-scroll"):
                         yield Static(
-                            "[dim](no feature selected)[/dim]",
-                            id="features-detail",
+                            "[dim](no run selected)[/dim]",
+                            id="runs-detail",
                         )
-                    with Horizontal(id="feature-actions-row"):
-                        # Promote → Designed shows when the selected
-                        # feature is in_design (M5 didn't fully fire,
-                        # or operator un-promoted earlier). Replaces
-                        # queue/un-queue in that view since those
-                        # transitions aren't legal from in_design.
-                        yield Button(
-                            "Promote to Designed",
-                            id="feature-action-promote-designed",
-                            variant="primary",
+                # Features primary surface — left list (with state
+                # filter chips), right detail (dossier + per-feature
+                # actions). This is the operator's main attention
+                # surface in P12.
+                with Horizontal(id="features-row"):
+                    with Vertical(id="features-list-pane"):
+                        yield Static(
+                            "[b]Features[/b]", id="features-list-label"
                         )
-                        yield Button(
-                            "Queue", id="feature-action-queue"
+                        with Horizontal(id="features-filter-row"):
+                            for chip_id, label, _state in _FILTER_CHIPS:
+                                classes = "filter-chip"
+                                if _state is None:
+                                    classes += " filter-active"
+                                yield Button(
+                                    label, id=chip_id, classes=classes
+                                )
+                        # Tree (not DataTable): each feature is a
+                        # parent node; its tickets nest underneath
+                        # like a file tree. Operator can highlight a
+                        # ticket and see the same dossier shape as
+                        # for features. Default expanded so tickets
+                        # are immediately visible — typical project
+                        # sizes (3-6 features × 1-4 tickets) fit fine.
+                        yield Tree(
+                            "Features",
+                            id="features-tree",
                         )
-                        yield Button(
-                            "Un-queue", id="feature-action-unqueue"
+                    with Vertical(id="features-detail-pane"):
+                        yield Static(
+                            "[b]Feature detail[/b]",
+                            id="features-detail-label",
                         )
-                        # in_progress controls — escape hatches for
-                        # features stuck mid-implementation. Mark Ready
-                        # advances to ready_for_review (skip M8 and go
-                        # straight to operator verify); Re-design
-                        # aborts implementation and sends back to
-                        # designed (operator wants to re-run design
-                        # phase against new directive).
-                        yield Button(
-                            "Mark Ready",
-                            id="feature-action-mark-ready",
-                            variant="primary",
-                        )
-                        yield Button(
-                            "Re-design",
-                            id="feature-action-redesign",
-                            variant="warning",
-                        )
-                        yield Button(
-                            "Verify",
-                            id="feature-action-verify",
-                            variant="success",
-                        )
-                        yield Button(
-                            "Reject",
-                            id="feature-action-reject",
-                            variant="error",
-                        )
+                        with VerticalScroll(id="features-detail-scroll"):
+                            yield Static(
+                                "[dim](no feature selected)[/dim]",
+                                id="features-detail",
+                            )
+                        with Horizontal(id="feature-actions-row"):
+                            # Promote → Designed shows when the
+                            # selected feature is in_design (M5 didn't
+                            # fully fire, or operator un-promoted
+                            # earlier). Replaces queue/un-queue in
+                            # that view since those transitions
+                            # aren't legal from in_design.
+                            yield Button(
+                                "Promote to Designed",
+                                id="feature-action-promote-designed",
+                                variant="primary",
+                            )
+                            yield Button(
+                                "Queue", id="feature-action-queue"
+                            )
+                            yield Button(
+                                "Un-queue",
+                                id="feature-action-unqueue",
+                            )
+                            # in_progress controls — escape hatches
+                            # for features stuck mid-implementation.
+                            # Mark Ready advances to ready_for_review
+                            # (skip M8 and go straight to operator
+                            # verify); Re-design aborts implementation
+                            # and sends back to designed (operator
+                            # wants to re-run design phase against new
+                            # directive).
+                            yield Button(
+                                "Mark Ready",
+                                id="feature-action-mark-ready",
+                                variant="primary",
+                            )
+                            yield Button(
+                                "Re-design",
+                                id="feature-action-redesign",
+                                variant="warning",
+                            )
+                            yield Button(
+                                "Verify",
+                                id="feature-action-verify",
+                                variant="success",
+                            )
+                            yield Button(
+                                "Reject",
+                                id="feature-action-reject",
+                                variant="error",
+                            )
+                            # Per-ticket queue controls — only
+                            # visible when a ticket node is
+                            # highlighted in the tree. The operator
+                            # uses these to re-queue a single ticket
+                            # after an iteration aborts on budget,
+                            # without re-running the whole feature.
+                            yield Button(
+                                "Queue ticket",
+                                id="ticket-action-queue",
+                                variant="primary",
+                            )
+                            yield Button(
+                                "Un-queue ticket",
+                                id="ticket-action-unqueue",
+                            )
 
             # Drill-downs — investigation surfaces. Take less screen
             # real estate than the Features section; operator opens
-            # them with 1/2/3/4 keybinds when investigating "why
-            # did the team make this decision?" types of questions.
+            # them with 1/2/3 keybinds when investigating "why did
+            # the team make this decision?" types of questions. Runs
+            # is no longer a tab — it has its own always-visible
+            # column above.
             yield Static(
-                "[dim]Drill-downs · 1=Runs  2=Artifacts  "
-                "3=Files  4=Metrics[/dim]",
+                "[dim]Drill-downs · 1=Artifacts  2=Files  "
+                "3=Metrics[/dim]",
                 id="dashboard-drilldown-label",
             )
             with TabbedContent(id="dashboard-tabs"):
-                with TabPane("Runs", id="tab-runs"):
-                    yield from self._compose_runs_tab()
                 with TabPane("Artifacts", id="tab-artifacts"):
                     yield from self._compose_artifacts_tab()
                 with TabPane("Files", id="tab-files"):
@@ -362,46 +464,86 @@ class ProjectDashboardScreen(Screen[None]):
         yield Footer()
 
     # ------------------------------------------------------------------ #
-    # Runs tab (T80)
+    # Runs column (T80; reshaped P14 — runs is its own always-visible
+    # column to the left of features rather than a drill-down tab,
+    # in preparation for background runs the operator can leave
+    # going across screen pushes/pops).
     # ------------------------------------------------------------------ #
 
-    def _compose_runs_tab(self) -> ComposeResult:
-        with Horizontal(id="runs-tab-row"):
-            with Vertical(id="runs-list-pane"):
-                yield Static("[b]Runs[/b]", id="runs-list-label")
-                yield DataTable(id="runs-table", cursor_type="row")
-            with Vertical(id="runs-detail-pane"):
-                yield Static("[b]Run detail[/b]", id="runs-detail-label")
-                with VerticalScroll(id="runs-detail-scroll"):
-                    yield Static(
-                        "[dim](no run selected)[/dim]",
-                        id="runs-detail",
-                    )
-
     def _populate_runs(self) -> None:
+        # Slim 3-column shape (Started / Cost / Outcome) tuned for
+        # the narrow runs column. The full per-run breakdown — calls,
+        # wall-clock, model, per-agent — lives in the detail pane
+        # below the table; the table itself is for fast scanning of
+        # recent activity. run_id is encoded in the Started timestamp
+        # (YYYYMMDDTHHMMSS format), so showing both would be redundant.
+        #
+        # If there's an active background run not yet on disk
+        # (telemetry only writes after meetings end), it gets a
+        # synthetic top row so the operator can reattach via Enter.
         table = self.query_one("#runs-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("Run", "Started", "Cost", "Calls", "Time", "Outcome")
+        table.add_columns("Started", "Cost", "Outcome")
         self._runs = list_project_runs(self.project)
-        if not self._runs:
+
+        # Slice B: active-run row. If the App is driving an in-flight
+        # run, render it with a [live] badge ahead of historical
+        # rows. Stored in self._active_row_present so on_data_table_
+        # row_selected can branch to the reattach path instead of
+        # constructing a HistoricalRunHandle.
+        active = getattr(self.app, "_active_run", None)
+        self._active_row_present = (
+            active is not None and not active.is_terminal
+        )
+        if self._active_row_present:
+            started_label = (
+                active.started_at.strftime("%m-%d %H:%M")
+                if active.started_at
+                else "—"
+            )
+            table.add_row(
+                started_label,
+                "[dim]—[/dim]",
+                "[bright_yellow]▶ live[/bright_yellow]",
+            )
+
+        if not self._runs and not self._active_row_present:
             self._render_runs_empty_state()
             return
         for record in self._runs:
             started = (
-                record.started_at.strftime("%Y-%m-%d %H:%M")
+                record.started_at.strftime("%m-%d %H:%M")
                 if record.started_at
                 else "—"
             )
             table.add_row(
-                record.run_id,
                 started,
                 _fmt_cost(record.total_cost),
-                str(record.total_calls),
-                _fmt_duration(record.elapsed_seconds),
                 _fmt_outcome(record.outcome, record.budget_exceeded),
             )
         table.cursor_coordinate = (0, 0)
-        self._render_run_detail(self._runs[0])
+        if self._active_row_present:
+            self._render_active_run_detail()
+        elif self._runs:
+            self._render_run_detail(self._runs[0])
+
+    def _render_active_run_detail(self) -> None:
+        """Detail-pane render for the synthetic active-run row.
+        Brief — the rich detail is on LiveRunScreen which the
+        operator opens via Enter."""
+        detail = self.query_one("#runs-detail", Static)
+        active = self.app._active_run  # type: ignore[attr-defined]
+        if active is None:
+            detail.update("[dim]No active run.[/dim]")
+            return
+        detail.update(
+            f"[b bright_yellow]▶ Live run {active.run_id}[/b bright_yellow]\n"
+            f"[dim]Started:[/dim] "
+            f"{active.started_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+            f"[dim]Status:[/dim] {active.status}\n"
+            f"[dim]Buffered events:[/dim] {len(active.buffer)}\n\n"
+            f"Press [b]Enter[/b] to attach to the live watch screen."
+        )
 
     def _render_runs_empty_state(self) -> None:
         detail = self.query_one("#runs-detail", Static)
@@ -498,14 +640,168 @@ class ProjectDashboardScreen(Screen[None]):
     ) -> None:
         if event.data_table.id == "runs-table":
             row = event.cursor_row
-            if row is None or row < 0 or row >= len(self._runs):
+            if row is None or row < 0:
                 return
-            self._render_run_detail(self._runs[row])
+            # Synthetic active-row at index 0 when present.
+            if self._active_row_present and row == 0:
+                self._render_active_run_detail()
+                return
+            historical_idx = (
+                row - 1 if self._active_row_present else row
+            )
+            if historical_idx >= len(self._runs):
+                return
+            self._render_run_detail(self._runs[historical_idx])
         elif event.data_table.id == "artifacts-table":
             row = event.cursor_row
             if row is None or row < 0 or row >= len(self._artifacts):
                 return
             self._render_artifact_content(self._artifacts[row])
+
+    def on_data_table_row_selected(
+        self, event: DataTable.RowSelected
+    ) -> None:
+        """Enter on the runs table:
+          - synthetic active-run row → reattach via LiveRunScreen
+            with run_id, subscribing to the App's in-flight task.
+          - historical row → open via HistoricalRunHandle
+            (post-mortem replay).
+
+        Both paths go through LiveRunScreen — same UI for the
+        operator regardless of whether the run is live or finished.
+        """
+        if event.data_table.id != "runs-table":
+            return
+        row = event.cursor_row
+        if row is None or row < 0:
+            return
+        if self._active_row_present and row == 0:
+            self._reattach_to_active_run()
+            return
+        historical_idx = row - 1 if self._active_row_present else row
+        if historical_idx >= len(self._runs):
+            return
+        record = self._runs[historical_idx]
+        self._open_run_in_live_screen(record)
+
+    def _discover_workflow_for_run(
+        self, record: RunRecord
+    ) -> str | None:
+        """Best-effort lookup of the workflow used for ``record``.
+
+        Sources, in priority order:
+          1. ``.wonderland/runs/<run_id>/status.json`` — the
+             background-run subprocess writes ``"workflow": "..."``
+             when launching, so this is authoritative for any run
+             produced by the detached path.
+          2. The project's ``last_workflow`` — set by
+             ``NewRunScreen._launch_run`` when the run kicks off.
+             Drifts when the operator launches another run after
+             the one being viewed, so it's only a fallback.
+
+        Returns None when neither source resolves — HistoricalRun-
+        Handle then falls through to the structural-extraction
+        path for thread_ids and uses a generic ``Meeting``
+        placeholder for unrecognised threads.
+        """
+        import json
+
+        run_dir = (
+            self.project.root_path
+            / ".wonderland"
+            / "runs"
+            / record.run_id
+        )
+        status_path = run_dir / "status.json"
+        if status_path.is_file():
+            try:
+                data = json.loads(
+                    status_path.read_text(encoding="utf-8")
+                )
+                if isinstance(data, dict):
+                    workflow = data.get("workflow")
+                    if isinstance(workflow, str) and workflow:
+                        return workflow
+            except (OSError, json.JSONDecodeError):
+                pass
+        return self.project.last_workflow
+
+    def _reattach_to_active_run(self) -> None:
+        """Push LiveRunScreen targeting the App's in-flight run.
+        The screen subscribes to the active run's event buffer
+        + tail; the consumer task lives on the App and survives
+        screen pops."""
+        from wonderland.tui.screens.live_run import LiveRunScreen
+
+        active = self.app._active_run  # type: ignore[attr-defined]
+        if active is None:
+            self.notify(
+                "No active run to attach to (it may have just "
+                "completed). Refresh and try again.",
+                severity="warning",
+            )
+            return
+        self.app.push_screen(LiveRunScreen(run_id=active.run_id))
+
+    def _open_run_in_live_screen(self, record: RunRecord) -> None:
+        """Push LiveRunScreen wrapping a HistoricalRunHandle scoped
+        to the selected run's run_id + time-window.
+
+        The project's ``.wonderland/`` is cumulative across runs —
+        Dodo's episodic memory stacks utterances from every run, the
+        artifact directories accumulate, etc. To make a finished-run
+        replay show only THAT run's events, we pass run_id +
+        (started_at, started_at + elapsed_seconds + slop) to
+        HistoricalRunHandle, which:
+
+          - reads ``telemetry/run-<run_id>.json`` (not the latest
+            file)
+          - filters utterances to the time window when iterating
+            Dodo's SQLite
+
+        Background-run reattach (P? roadmap) will use a different
+        RunHandle implementation (the live one) but flow through the
+        same ``LiveRunScreen(handle=...)`` path.
+        """
+        from datetime import timedelta
+
+        from wonderland.observer.historical import HistoricalRunHandle
+        from wonderland.tui.screens.live_run import LiveRunScreen
+
+        wonderland_dir = self.project.root_path
+        time_window: tuple[datetime, datetime] | None = None
+        if record.started_at is not None:
+            # End slop: utterances written near run completion can
+            # land a few seconds after the elapsed_seconds value
+            # (telemetry flush latency, the meeting-end MEETING_END
+            # marker). Add 30s to catch the trailing cluster.
+            elapsed = record.elapsed_seconds or 0.0
+            end = record.started_at + timedelta(seconds=elapsed + 30)
+            time_window = (record.started_at, end)
+        # Derive the workflow name from the run's status.json (the
+        # background-run subprocess writes it there) or fall back
+        # to the project's last_workflow. With this, HistoricalRun-
+        # Handle's meeting lookup gets populated from the static
+        # workflow definition — pipeline thread_ids then resolve
+        # to ``M<N> — <name>`` instead of the synthetic ``Meeting``
+        # placeholder.
+        workflow_name = self._discover_workflow_for_run(record)
+        try:
+            handle = HistoricalRunHandle(
+                wonderland_dir,
+                run_id=record.run_id,
+                time_window=time_window,
+                workflow_name=workflow_name,
+            )
+        except FileNotFoundError as exc:
+            self.notify(
+                f"Can't open run — no .wonderland/ at "
+                f"{wonderland_dir}: {exc}",
+                severity="warning",
+                timeout=6,
+            )
+            return
+        self.app.push_screen(LiveRunScreen(handle=handle))
 
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         """Tree cursor moved → update the detail pane to match the
@@ -525,10 +821,12 @@ class ProjectDashboardScreen(Screen[None]):
             self._render_ticket_detail(
                 data["record"], data["feature_row"]
             )
-            # Tickets don't have lifecycle state of their own; show
-            # the parent feature's button shape so the operator's
-            # next move is obvious.
-            self._refresh_per_feature_action_buttons(data["feature_row"])
+            # Tickets have their own lifecycle layer now — show
+            # the per-ticket queue controls instead of the
+            # feature's button shape.
+            self._refresh_per_ticket_action_buttons(
+                data["record"].slug
+            )
 
     def _refresh_per_feature_action_buttons(
         self, row: "_FeatureRow"
@@ -554,37 +852,101 @@ class ProjectDashboardScreen(Screen[None]):
         rather than disabled so the row stays uncluttered. The
         operator's next legal move is the only thing visible.
         """
-        try:
-            promote_btn = self.query_one(
-                "#feature-action-promote-designed", Button
-            )
-            queue_btn = self.query_one("#feature-action-queue", Button)
-            unqueue_btn = self.query_one(
-                "#feature-action-unqueue", Button
-            )
-            mark_ready_btn = self.query_one(
-                "#feature-action-mark-ready", Button
-            )
-            redesign_btn = self.query_one(
-                "#feature-action-redesign", Button
-            )
-            verify_btn = self.query_one(
-                "#feature-action-verify", Button
-            )
-            reject_btn = self.query_one(
-                "#feature-action-reject", Button
-            )
-        except Exception:  # noqa: BLE001 — pre-mount race
+        btns = self._action_buttons()
+        if btns is None:
             return
-
         state = row.state
-        promote_btn.display = state == FeatureState.IN_DESIGN
-        queue_btn.display = state == FeatureState.DESIGNED
-        unqueue_btn.display = state == FeatureState.QUEUED
-        mark_ready_btn.display = state == FeatureState.IN_PROGRESS
-        redesign_btn.display = state == FeatureState.IN_PROGRESS
-        verify_btn.display = state == FeatureState.READY_FOR_REVIEW
-        reject_btn.display = state == FeatureState.READY_FOR_REVIEW
+        btns["promote"].display = state == FeatureState.IN_DESIGN
+        btns["queue"].display = state == FeatureState.DESIGNED
+        btns["unqueue"].display = state == FeatureState.QUEUED
+        btns["mark_ready"].display = state == FeatureState.IN_PROGRESS
+        btns["redesign"].display = state == FeatureState.IN_PROGRESS
+        btns["verify"].display = state == FeatureState.READY_FOR_REVIEW
+        btns["reject"].display = state == FeatureState.READY_FOR_REVIEW
+        # Hide per-ticket buttons when a feature is highlighted.
+        btns["ticket_queue"].display = False
+        btns["ticket_unqueue"].display = False
+
+    def _action_buttons(self) -> dict[str, Button] | None:
+        """Resolve every action button once for an action-refresh
+        pass. Returns None on pre-mount races so callers can bail
+        cleanly."""
+        try:
+            return {
+                "promote": self.query_one(
+                    "#feature-action-promote-designed", Button
+                ),
+                "queue": self.query_one(
+                    "#feature-action-queue", Button
+                ),
+                "unqueue": self.query_one(
+                    "#feature-action-unqueue", Button
+                ),
+                "mark_ready": self.query_one(
+                    "#feature-action-mark-ready", Button
+                ),
+                "redesign": self.query_one(
+                    "#feature-action-redesign", Button
+                ),
+                "verify": self.query_one(
+                    "#feature-action-verify", Button
+                ),
+                "reject": self.query_one(
+                    "#feature-action-reject", Button
+                ),
+                "ticket_queue": self.query_one(
+                    "#ticket-action-queue", Button
+                ),
+                "ticket_unqueue": self.query_one(
+                    "#ticket-action-unqueue", Button
+                ),
+            }
+        except Exception:  # noqa: BLE001 — pre-mount race
+            return None
+
+    def _refresh_per_ticket_action_buttons(
+        self, ticket_slug: str
+    ) -> None:
+        """When a ticket node is highlighted, show the ticket-level
+        queue controls based on the ticket's current lifecycle
+        state. Hides every per-feature button so the action row
+        doesn't get confusing (one selection → one set of legal
+        moves).
+
+        State → visible buttons:
+          - pending / aborted / done → Queue ticket
+          - queued → Un-queue ticket
+          - in_progress → neither (substrate owns the transition)
+          - None (no record yet) → Queue ticket (back-fill on press)
+        """
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+        )
+
+        btns = self._action_buttons()
+        if btns is None:
+            return
+        for name in (
+            "promote",
+            "queue",
+            "unqueue",
+            "mark_ready",
+            "redesign",
+            "verify",
+            "reject",
+        ):
+            btns[name].display = False
+        state = get_ticket_state(self.project.root_path, ticket_slug)
+        can_queue = state in (
+            None,
+            TicketState.PENDING,
+            TicketState.ABORTED,
+            TicketState.DONE,
+        )
+        can_unqueue = state == TicketState.QUEUED
+        btns["ticket_queue"].display = can_queue
+        btns["ticket_unqueue"].display = can_unqueue
 
     # ------------------------------------------------------------------ #
     # Artifacts tab (T83)
@@ -1030,17 +1392,34 @@ class ProjectDashboardScreen(Screen[None]):
         except Exception:  # noqa: BLE001 — pre-mount race; refresh fires later
             return
 
-        n_queued = counts.get(FeatureState.QUEUED, 0)
+        # Implement button is gated on "anything ready for an imp
+        # run." That's queued features OR features with at least
+        # one explicitly-queued ticket — same override logic the
+        # substrate uses in _collect_per_item_items. Without this,
+        # a single queued ticket on an in_progress/done feature
+        # leaves the button greyed out even though the substrate
+        # is happy to iterate it.
+        n_queued_features = counts.get(FeatureState.QUEUED, 0)
+        n_features_with_queued_tickets = self._count_features_with_queued_tickets()
+        n_runnable = n_queued_features + n_features_with_queued_tickets
         n_ready = counts.get(FeatureState.READY_FOR_REVIEW, 0)
 
         # Update labels with current counts.
-        implement_btn.label = f"▶ Implement {n_queued} queued"
+        if n_features_with_queued_tickets > 0:
+            implement_btn.label = (
+                f"▶ Implement {n_queued_features} queued + "
+                f"{n_features_with_queued_tickets} w/ queued tickets"
+            )
+        else:
+            implement_btn.label = f"▶ Implement {n_queued_features} queued"
         verify_btn.label = f"▶ Verify {n_ready} ready"
 
         # Disable empty-target buttons. Textual's Button.disabled
         # greys out the button + blocks click events.
-        implement_btn.disabled = n_queued == 0
+        implement_btn.disabled = n_runnable == 0
         verify_btn.disabled = n_ready == 0
+        # Keep ``n_queued`` as the primary-variant tiebreaker.
+        n_queued = n_runnable
 
         # Primary variant assignment — exactly one button gets the
         # primary spotlight. Priority: verify > implement > design.
@@ -1074,6 +1453,49 @@ class ProjectDashboardScreen(Screen[None]):
             )
         )
 
+    def _count_features_with_queued_tickets(self) -> int:
+        """Count features that have at least one explicitly-queued
+        ticket. Mirrors the substrate-level override in
+        ``_collect_per_item_items`` so the dashboard's
+        "Implement" button is enabled in the same cases the
+        backend will actually run an iteration. Best-effort:
+        returns 0 on any error (pre-mount race, missing registry)."""
+        try:
+            from wonderland.ticket_lifecycle import (
+                TicketState,
+                get_state as get_ticket_state,
+            )
+            from wonderland.workflow import _ticket_to_feature_map
+        except Exception:  # noqa: BLE001
+            return 0
+        try:
+            ticket_to_feature = _ticket_to_feature_map(
+                self.project.root_path
+            )
+        except Exception:  # noqa: BLE001
+            return 0
+        queued_features: set[str] = set()
+        for ticket_slug, feature_slug in ticket_to_feature.items():
+            try:
+                state = get_ticket_state(
+                    self.project.root_path, ticket_slug
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if state in (
+                TicketState.QUEUED, TicketState.IN_PROGRESS
+            ):
+                # Only count this feature if its OWN state isn't
+                # already QUEUED — otherwise we'd double-count it
+                # against the queued-features tally.
+                row = next(
+                    (r for r in self._features if r.slug == feature_slug),
+                    None,
+                )
+                if row is None or row.state != FeatureState.QUEUED:
+                    queued_features.add(feature_slug)
+        return len(queued_features)
+
     def _action_run_implement(self) -> None:
         """Push NewRunScreen with project context + tdd-implement
         pre-selected + a boilerplate directive. Operator can edit
@@ -1086,11 +1508,20 @@ class ProjectDashboardScreen(Screen[None]):
         n_queued = sum(
             1 for f in self._features if f.state == FeatureState.QUEUED
         )
+        n_extra = self._count_features_with_queued_tickets()
+        if n_queued and n_extra:
+            scope = f"{n_queued} queued feature(s) and {n_extra} feature(s) with queued tickets"
+        elif n_queued:
+            scope = f"{n_queued} queued feature(s)"
+        elif n_extra:
+            scope = f"{n_extra} feature(s) with queued tickets"
+        else:
+            scope = "any queued work"
         directive = (
-            f"Implement the {n_queued} queued feature(s) per their "
-            f"existing tickets and contracts. The team works from "
-            f"seeded lifecycle artifacts; this directive is a "
-            f"placeholder — edit to add focus if useful."
+            f"Implement {scope} per their existing tickets and "
+            f"contracts. The team works from seeded lifecycle "
+            f"artifacts; this directive is a placeholder — edit "
+            f"to add focus if useful."
         )
         self.app.push_screen(
             NewRunScreen(
@@ -1195,18 +1626,26 @@ class ProjectDashboardScreen(Screen[None]):
                 ticket_title = ticket.title[:55] + (
                     "…" if len(ticket.title) > 55 else ""
                 )
-                # Marked tickets render with a red ✗ prefix +
-                # strikethrough so the operator can scan the tree
-                # and see what's queued for deletion before
-                # confirming. Unmarked uses the standard dim bullet.
+                # Lifecycle state badge in the prefix. Marked-for-
+                # deletion (the prune flow) wins over state since
+                # it's a stronger operator signal. Otherwise we
+                # show one of: ▶ queued / ⟳ in_progress / ✓ done /
+                # ⚠ aborted / · pending (the bare bullet for the
+                # default no-record-yet case).
+                ticket_state = _ticket_state_for(
+                    self.project.root_path, ticket.slug
+                )
                 if ticket.slug in self._marked_ticket_slugs:
                     ticket_label = (
                         f"[red]✗[/red] [strike]{ticket_title}[/strike]  "
                         f"[dim]{ticket.slug}[/dim]"
                     )
                 else:
+                    badge_prefix = _TICKET_STATE_BADGE.get(
+                        ticket_state, "[dim]·[/dim]"
+                    )
                     ticket_label = (
-                        f"[dim]·[/dim] {ticket_title}  "
+                        f"{badge_prefix} {ticket_title}  "
                         f"[dim]{ticket.slug}[/dim]"
                     )
                 node.add_leaf(
@@ -1393,6 +1832,96 @@ class ProjectDashboardScreen(Screen[None]):
             # and reject notify "T90 wires this" so the buttons exist
             # but the verify-with-notes flow ships in its own task.
             self._handle_feature_action(bid)
+        elif bid.startswith("ticket-action-"):
+            self._handle_ticket_action(bid)
+
+    def _handle_ticket_action(self, button_id: str) -> None:
+        """Per-ticket action dispatch. Queue / Un-queue transitions
+        the ticket through ``ticket_lifecycle`` so the workflow's
+        per_item filter (in ``_collect_per_item_items``) scopes
+        the next implementation run to the queued set."""
+        from wonderland.ticket_lifecycle import (
+            IllegalTransitionError as TicketIllegalTransition,
+            TicketState,
+            back_fill_state as ticket_back_fill,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+
+        record = self._currently_highlighted_ticket()
+        if record is None:
+            self.notify(
+                "No ticket selected.", severity="warning"
+            )
+            return
+        slug = record.slug
+        target = (
+            TicketState.QUEUED
+            if button_id == "ticket-action-queue"
+            else TicketState.PENDING
+        )
+        verb = (
+            "queued for next implementation run"
+            if target == TicketState.QUEUED
+            else "un-queued"
+        )
+
+        current = get_ticket_state(self.project.root_path, slug)
+        try:
+            if current is None:
+                # First time this ticket enters the lifecycle —
+                # back-fill its initial state before the transition.
+                # Skip back-fill if the operator's first action is
+                # to queue: back-fill to PENDING then transition,
+                # so the audit log captures both steps.
+                ticket_back_fill(
+                    self.project.root_path,
+                    slug,
+                    TicketState.PENDING,
+                    notes="initial state on first dashboard action",
+                )
+                current = TicketState.PENDING
+            if target == current:
+                self.notify(
+                    f"Ticket {slug!r} already in state "
+                    f"{current.value}.",
+                    timeout=3,
+                )
+                return
+            ticket_transition(
+                self.project.root_path,
+                slug,
+                target,
+                by="operator",
+            )
+            self.notify(
+                f"Ticket {slug!r} {verb}.", timeout=3
+            )
+            self._refresh_per_ticket_action_buttons(slug)
+            # Re-render the features tree so the new state badge
+            # appears on the ticket node.
+            self._populate_features()
+            self._restore_tree_cursor_to_ticket(slug)
+        except TicketIllegalTransition as exc:
+            self.notify(
+                f"Can't {verb.split(' ', 1)[0]} ticket: {exc}",
+                severity="warning",
+                timeout=6,
+            )
+
+    def _currently_highlighted_ticket(self):
+        """Return the ticket record under the tree cursor, or None
+        when the cursor is on a feature node / outside the tree."""
+        try:
+            tree = self.query_one("#features-tree", Tree)
+        except Exception:  # noqa: BLE001
+            return None
+        node = tree.cursor_node
+        if node is None or node.data is None:
+            return None
+        if node.data.get("kind") != "ticket":
+            return None
+        return node.data["record"]
 
     def _handle_feature_action(self, button_id: str) -> None:
         """Per-feature action button dispatch. Queue / Un-queue ship
@@ -1718,9 +2247,6 @@ class ProjectDashboardScreen(Screen[None]):
                 ):
                     tree.select_node(child)
                     return
-
-    def action_show_runs(self) -> None:
-        self.query_one("#dashboard-tabs", TabbedContent).active = "tab-runs"
 
     def action_show_artifacts(self) -> None:
         self.query_one("#dashboard-tabs", TabbedContent).active = (

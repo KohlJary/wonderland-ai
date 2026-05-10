@@ -414,6 +414,21 @@ class NewRunScreen(Screen[None]):
         preset, pre-flights the API key, then pushes the launch
         confirmation modal. Real Runner+LiveRunHandle construction
         happens after the user confirms (in _launch_run)."""
+        # Slice B: one-run cap. Until per-run artifact tagging
+        # lands (project_run_id_tagging memory), concurrent runs
+        # against the same project would interleave Dodo memory and
+        # clobber artifacts. Block + point the operator at the
+        # active run.
+        if self.app.has_active_run():  # type: ignore[attr-defined]
+            active = self.app._active_run  # type: ignore[attr-defined]
+            self.notify(
+                f"A run is already in flight ({active.run_id}). "
+                f"Wait for it to finish or abort it from the live "
+                f"watch screen.",
+                severity="warning",
+                timeout=8,
+            )
+            return
         directive = self.query_one("#directive-composer", TextArea).text.strip()
         description = self.query_one(
             "#description-composer", TextArea
@@ -674,15 +689,18 @@ class NewRunScreen(Screen[None]):
 
     @work(exclusive=True)
     async def _launch_run(self) -> None:
-        """Actually construct the Runner + LiveRunHandle and push
-        LiveRunScreen against it. Pops the NewRunScreen after the
-        push so escape from the live-watch returns to the snapshot
-        library, not back to the new-run composer.
+        """Spawn the run as a detached subprocess via
+        ``app.launch_background_run`` and push LiveRunScreen
+        targeting the subprocess's run_id.
+
+        Background mode (the only mode now): ``wonderland run-bg``
+        runs the workflow in its own process; the TUI tails the
+        events file via SubprocessRunHandle. Closing the TUI
+        leaves the subprocess running — the operator can re-launch
+        the TUI and the discovery path picks the run back up.
         """
-        # Lazy imports to avoid pulling Runner machinery into the
-        # new-run module's load path until launch time.
-        from wonderland.observer import LiveRunHandle
-        from wonderland.runner import Runner
+        from datetime import datetime, timezone
+
         from wonderland.tui.screens.live_run import LiveRunScreen
 
         params = self._pending_launch
@@ -694,26 +712,19 @@ class NewRunScreen(Screen[None]):
             )
             return
 
-        try:
-            runner = await Runner.make_full_cast(
-                project_root=params["project_path"],
-                budget_dollars=params["budget"],
-                model=workflow.defaults.model,
-            )
-        except Exception as exc:  # noqa: BLE001
-            self.notify(
-                f"Failed to construct runner: {exc}", severity="error"
-            )
-            return
+        # We generate the run_id here so the App can pre-create the
+        # run dir at a known path before the subprocess starts
+        # writing into it. The subprocess uses our id via --run-id
+        # so the dir paths align.
+        run_id = datetime.now(tz=timezone.utc).strftime(
+            "%Y%m%dT%H%M%S"
+        )
 
-        # P11 T78: when a project context is set, record run_id and
-        # the workflow used on the project so the library shows last-
-        # run summary AND so the next run on this project prefills
-        # with the same workflow (per-task workflow choice survives
-        # across runs as a usability hint, not a constraint).
+        # P11 T78: record run_id + workflow on the project so the
+        # library / dashboard show the latest run.
         if self.project is not None:
             try:
-                self.project.last_run_id = runner.run_id
+                self.project.last_run_id = run_id
                 self.project.last_workflow = params["workflow_name"]
                 save_project(self.project)
             except Exception as exc:  # noqa: BLE001 — non-fatal
@@ -722,17 +733,27 @@ class NewRunScreen(Screen[None]):
                     severity="warning",
                 )
 
-        handle = LiveRunHandle(
-            runner=runner,
-            workflow=workflow,
-            directive=params["directive"],
-        )
+        try:
+            self.app.launch_background_run(  # type: ignore[attr-defined]
+                directive=params["directive"],
+                workflow_name=str(params["workflow_name"]),
+                project_root=params["project_path"],
+                budget=params["budget"],
+                model=workflow.defaults.model,
+                run_id=run_id,
+            )
+        except RuntimeError as exc:
+            self.notify(
+                f"Couldn't launch — {exc}",
+                severity="error",
+            )
+            return
 
         # switch_screen swaps NewRunScreen for LiveRunScreen on the
         # stack — escape from the live-watch returns to the snapshot
-        # library directly without an intermediate stop on the
-        # composer the user already submitted.
-        self.app.switch_screen(LiveRunScreen(handle=handle))
+        # library directly. The screen attaches to the active run
+        # via SubprocessRunHandle which tails the events file.
+        self.app.switch_screen(LiveRunScreen(run_id=run_id))
 
     # ------------------------------------------------------------------ #
     # Linear-form advance — Enter steps through fields

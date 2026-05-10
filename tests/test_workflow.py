@@ -1270,6 +1270,384 @@ class TestResolveSeeds:
         )
         assert len(seeds) == 1
 
+    def test_collect_per_item_items_filters_by_ticket_state_when_queued(
+        self, tmp_path: Path
+    ) -> None:
+        """When the operator has explicitly queued at least one
+        ticket of the parent feature, the per_item iteration
+        scopes to that set instead of running every ticket of the
+        feature. Mirrors the operator workflow: ticket aborts on
+        budget, operator re-queues just that one, next imp run
+        iterates only it."""
+        from wonderland.ticket_lifecycle import TicketState
+        from wonderland.ticket_lifecycle import transition as ticket_transition
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-earn-xp.md").write_text(
+            "## Feature 001: earn-xp\n", encoding="utf-8"
+        )
+        for n, slug in (
+            (1, "alpha"),
+            (2, "beta"),
+            (3, "gamma"),
+        ):
+            (
+                wonderland / "tickets" / f"ticket-{n:03d}-{slug}.md"
+            ).write_text(
+                f"## Ticket {n:03d}: {slug}\n\n**Sources:** earn-xp\n",
+                encoding="utf-8",
+            )
+
+        # The operator queues only ticket-beta after a prior abort
+        # on it.
+        ticket_transition(
+            tmp_path, "beta", TicketState.QUEUED, by="operator"
+        )
+
+        # Synthesize the bus picture _collect_per_item_items reads.
+        # Bus slug must match the disk slug — in production both
+        # come from the same ticket emission.
+        cap = WorkflowCapture()
+        for slug in ("alpha", "beta", "gamma"):
+            cap.observe(
+                _utt(
+                    thread_id="decomposition",
+                    artifacts=[_art("ticket", slug=slug, title=slug)],
+                )
+            )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        items = _collect_per_item_items(
+            item_kind="ticket",
+            state_filter=None,  # not gating by feature state in this test
+            capture=cap,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            lane_outer_kind="feature",
+            lane_outer_slug="earn-xp",
+        )
+        slugs = [it["slug"] for it in items]
+        assert slugs == ["beta"], (
+            "expected only the explicitly-queued ticket; got " + str(slugs)
+        )
+
+    def test_queued_ticket_overrides_feature_state_filter(
+        self, tmp_path: Path
+    ) -> None:
+        """A feature whose state isn't in ``state_filter`` should
+        still pass through the filter when one of its tickets is
+        explicitly queued — otherwise queueing a ticket on an
+        in-progress / done feature has no effect because the lane
+        never spawns. Same override applied at both feature and
+        ticket levels of _collect_per_item_items."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-alpha.md").write_text(
+            "## Ticket 001: alpha\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+
+        # Feature has moved past queued/in_progress — say it
+        # ready_for_review-ed earlier. By default the implementation
+        # workflow would skip it.
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+            FeatureState.READY_FOR_REVIEW,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+
+        # Operator queues a specific ticket to retry.
+        ticket_transition(
+            tmp_path, "alpha", TicketState.QUEUED, by="operator"
+        )
+
+        cap = WorkflowCapture()
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[_art("feature", slug="xp", title="XP")],
+            )
+        )
+        cap.observe(
+            _utt(
+                thread_id="decomposition",
+                artifacts=[_art("ticket", slug="alpha", title="A")],
+            )
+        )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        # Outer level: features filtered by [queued, in_progress].
+        features = _collect_per_item_items(
+            item_kind="feature",
+            state_filter=["queued", "in_progress"],
+            capture=cap,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+        )
+        assert [f["slug"] for f in features] == ["xp"], (
+            "feature with explicitly-queued ticket should pass the "
+            "feature-state filter; got "
+            + str([f["slug"] for f in features])
+        )
+
+        # Inner level: tickets filtered by [queued, in_progress]
+        # using ticket-level override.
+        tickets = _collect_per_item_items(
+            item_kind="ticket",
+            state_filter=["queued", "in_progress"],
+            capture=cap,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            lane_outer_kind="feature",
+            lane_outer_slug="xp",
+        )
+        assert [t["slug"] for t in tickets] == ["alpha"]
+
+    def test_collect_per_item_items_no_ticket_state_iterates_all(
+        self, tmp_path: Path
+    ) -> None:
+        """When no ticket has an explicit lifecycle state, every
+        ticket of the lane's feature iterates — the legacy
+        behaviour that pre-dated the per-ticket queueing layer
+        stays the default."""
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-earn-xp.md").write_text(
+            "## Feature 001: earn-xp\n", encoding="utf-8"
+        )
+        for n, slug in (
+            (1, "alpha"),
+            (2, "beta"),
+            (3, "gamma"),
+        ):
+            (
+                wonderland / "tickets" / f"ticket-{n:03d}-{slug}.md"
+            ).write_text(
+                f"## Ticket {n:03d}: {slug}\n\n**Sources:** earn-xp\n",
+                encoding="utf-8",
+            )
+
+        cap = WorkflowCapture()
+        for slug in ("alpha", "beta", "gamma"):
+            cap.observe(
+                _utt(
+                    thread_id="decomposition",
+                    artifacts=[_art("ticket", slug=slug, title=slug)],
+                )
+            )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        items = _collect_per_item_items(
+            item_kind="ticket",
+            state_filter=None,
+            capture=cap,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            lane_outer_kind="feature",
+            lane_outer_slug="earn-xp",
+        )
+        assert sorted(it["slug"] for it in items) == ["alpha", "beta", "gamma"]
+
+    def test_ticket_to_feature_map_tolerates_sources_prefix_variants(
+        self, tmp_path: Path
+    ) -> None:
+        """``**Sources:**`` lines that Rabbit emits in the wild come
+        in three observed forms — bare slug, ``feature: <slug>``,
+        and ``feature-<slug>``. The parser now strips the kind
+        prefix instead of silently dropping the ticket, which is
+        what caused some implementation runs to iterate fewer
+        tickets than existed on disk."""
+        from wonderland.workflow import _ticket_to_feature_map
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-earn-xp.md").write_text(
+            "## Feature 001: earn-xp\n", encoding="utf-8"
+        )
+
+        # Three variants, three tickets — each must resolve to the
+        # same parent feature ``earn-xp``.
+        (wonderland / "tickets" / "ticket-001-bare.md").write_text(
+            "## Ticket 001: bare\n\n**Sources:** earn-xp\n",
+            encoding="utf-8",
+        )
+        (wonderland / "tickets" / "ticket-002-colon.md").write_text(
+            "## Ticket 002: colon\n\n**Sources:** feature: earn-xp\n",
+            encoding="utf-8",
+        )
+        (wonderland / "tickets" / "ticket-003-dash.md").write_text(
+            "## Ticket 003: dash\n\n**Sources:** feature-earn-xp\n",
+            encoding="utf-8",
+        )
+
+        m = _ticket_to_feature_map(tmp_path)
+        assert m == {
+            "bare": "earn-xp",
+            "colon": "earn-xp",
+            "dash": "earn-xp",
+        }
+
+    def test_ticket_iteration_scopes_feature_to_parent(
+        self, tmp_path: Path
+    ) -> None:
+        """When iterating tickets (M6 / M7 / M8 in tdd-implement),
+        the parent feature should be the only feature in seed
+        context. Without this, every iteration of the tea-party
+        was getting every feature loaded — the Hatter sprawl
+        complaint.
+
+        Setup: two features on disk (parent + sibling), two
+        tickets with the parent feature in their Sources. Run
+        resolve_seeds with current_item_kind=ticket, slug=the
+        ticket from feature-A. The returned seeds must include
+        feature-A and NOT feature-B.
+        """
+        # Build the project structure resolve_seeds reads to map
+        # tickets → features. Registry parsers expect strictly
+        # ``feature-NNN-slug.md`` / ``ticket-NNN-slug.md`` filenames.
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        for idx, slug in enumerate(("feature-a", "feature-b"), start=1):
+            (wonderland / "features" / f"feature-{idx:03d}-{slug}.md").write_text(
+                f"## Feature {idx:03d}: {slug}\n",
+                encoding="utf-8",
+            )
+        (wonderland / "tickets" / "ticket-001-x.md").write_text(
+            "## Ticket 001: x\n\n**Sources:** feature-a\n",
+            encoding="utf-8",
+        )
+
+        cap = WorkflowCapture()
+        # Two feature utterances, one per feature.
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[_art("feature", slug="feature-a", title="A")],
+            )
+        )
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[_art("feature", slug="feature-b", title="B")],
+            )
+        )
+
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "any", "kinds": ["feature"]})],
+            cap,
+            current_item_kind="ticket",
+            current_item_slug="x",
+            project_root=tmp_path,
+        )
+
+        slugs = {
+            a.payload.get("slug")
+            for u in seeds
+            for a in u.content.artifacts
+            if a.kind == "feature"
+        }
+        assert slugs == {"feature-a"}, (
+            f"expected only feature-a (parent of ticket-001-x), got "
+            f"{slugs}"
+        )
+
+    def test_ticket_iteration_scopes_contract_notes_by_thread_id(
+        self, tmp_path: Path
+    ) -> None:
+        """Contract notes whose source thread encodes the parent
+        feature (``contract-negotiation-<feature>``) stay in scope;
+        notes from sibling features drop out. Disk-fallback notes
+        (bare ``contract-negotiation`` thread) pass through as a
+        graceful degradation for cross-run replay where the source
+        thread isn't preserved."""
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir(parents=True)
+        # Two features on disk so the ticket→feature map's slug
+        # match succeeds (it only retains source slugs that appear
+        # in the FeatureRegistry).
+        for idx, slug in enumerate(("feature-a", "feature-b"), start=1):
+            (wonderland / "features" / f"feature-{idx:03d}-{slug}.md").write_text(
+                f"## Feature {idx:03d}: {slug}\n",
+                encoding="utf-8",
+            )
+        (wonderland / "tickets" / "ticket-001-x.md").write_text(
+            "## Ticket 001: x\n\n**Sources:** feature-a\n",
+            encoding="utf-8",
+        )
+
+        cap = WorkflowCapture()
+        # Feature-A's M5 thread → keep
+        cap.observe(
+            _utt(
+                thread_id="contract-negotiation-feature-a",
+                artifacts=[_art("contract_note", title="c1")],
+            )
+        )
+        # Feature-B's M5 thread → drop
+        cap.observe(
+            _utt(
+                thread_id="contract-negotiation-feature-b",
+                artifacts=[_art("contract_note", title="c2")],
+            )
+        )
+        # Disk-fallback (bare meeting id) → keep (graceful degradation)
+        cap.observe(
+            _utt(
+                thread_id="contract-negotiation",
+                artifacts=[_art("contract_note", title="c3-disk-fallback")],
+            )
+        )
+
+        seeds = resolve_seeds(
+            [
+                SeedBinding.model_validate(
+                    {"from": "any", "kinds": ["contract_note"]}
+                )
+            ],
+            cap,
+            current_item_kind="ticket",
+            current_item_slug="x",
+            project_root=tmp_path,
+        )
+        titles = {
+            a.payload.get("title")
+            for u in seeds
+            for a in u.content.artifacts
+            if a.kind == "contract_note"
+        }
+        assert "c1" in titles
+        assert "c2" not in titles
+        assert "c3-disk-fallback" in titles
+
 
 # ---------------------------------------------------------------------------
 # run_workflow against a fake Runner

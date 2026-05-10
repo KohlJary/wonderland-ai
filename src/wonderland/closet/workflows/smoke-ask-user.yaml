@@ -1,0 +1,39 @@
+name: smoke-ask-user
+description: |
+  Modal-validation smoke workflow. Alice is asked to immediately
+  emit a ``question_to_operator`` decision with four longish
+  suggested answers, then quiesce. The point is to render the
+  AskUserModal in a controlled way so the operator can validate the
+  modal's layout — sized correctly, options stacked vertically,
+  long option text wraps cleanly instead of truncating at the
+  modal border.
+
+  Not a substrate test — a UI test. Run this when you've touched
+  ``ask_user_modal.py`` (CSS, layout, button styling, options
+  rendering) and want a fast loop to eyeball the result against
+  realistic option lengths.
+
+  Typical cost: ~$0.05 / ~30 seconds (one Alice turn, Haiku-priced).
+
+version: 1
+
+defaults:
+  budget_dollars: 0.30
+  timeout_seconds: 180.0
+  quiescence_seconds: 30.0
+
+meetings:
+  - id: ask-user-smoke
+    label: M1
+    name: A Question for the Operator
+    goal: surface a single operator question with longish suggested answers, then quiesce
+    roster: [alice]
+    meeting_budget: 0.20
+    # Entry meeting: convenor_directive omitted so the runtime
+    # passes the user's directive verbatim. Pair this workflow with
+    # the ``smoke-ask-user`` directive preset, whose body asks
+    # Alice to fire question_to_operator with four longish options.
+    seeds: []
+    phases:
+      - name: discussion
+        max_rotations: 2

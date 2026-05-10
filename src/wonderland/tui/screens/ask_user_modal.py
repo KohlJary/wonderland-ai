@@ -44,8 +44,10 @@ class AskUserModal(ModalScreen[str | None]):
         align: center middle;
     }
     AskUserModal > #ask-user-container {
-        width: 80;
+        width: 80%;
+        max-width: 110;
         height: auto;
+        max-height: 90%;
         background: $surface;
         border: round $accent;
         padding: 1 2;
@@ -57,7 +59,7 @@ class AskUserModal(ModalScreen[str | None]):
     }
     AskUserModal #ask-user-question-scroll {
         height: auto;
-        max-height: 12;
+        max-height: 24;
         margin: 0 0 1 0;
         border: round $panel;
         padding: 0 1;
@@ -86,12 +88,21 @@ class AskUserModal(ModalScreen[str | None]):
         margin-bottom: 0;
         color: $text;
     }
+    /* Suggested-answer buttons are stacked vertically (one per row)
+     * and full-width so long option text wraps cleanly instead of
+     * truncating at the modal border. ``height: auto`` lets each
+     * button grow to fit multi-line labels. */
     AskUserModal #ask-user-options {
         height: auto;
+        max-height: 30;
         margin-bottom: 1;
     }
     AskUserModal #ask-user-options Button {
-        margin: 0 1 0 0;
+        margin: 0 0 1 0;
+        width: 1fr;
+        height: auto;
+        min-height: 3;
+        text-align: left;
     }
     """
 
@@ -142,16 +153,13 @@ class AskUserModal(ModalScreen[str | None]):
                     "custom answer below)[/dim]",
                     id="ask-user-options-label",
                 )
-                with Horizontal(id="ask-user-options"):
+                # Vertical stack so each suggested answer gets its
+                # own full-width row. Multi-line option text wraps
+                # naturally instead of truncating at the modal width.
+                with Vertical(id="ask-user-options"):
                     for idx, option in enumerate(self._options):
-                        # Truncate display text but preserve full
-                        # value via the data field — long options
-                        # still submit correctly.
-                        label = option[:40] + (
-                            "…" if len(option) > 40 else ""
-                        )
                         yield Button(
-                            label,
+                            option,
                             id=f"ask-user-option-{idx}",
                             classes="ask-user-option",
                         )

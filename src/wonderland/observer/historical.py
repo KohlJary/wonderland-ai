@@ -118,7 +118,36 @@ class HistoricalRunHandle(RunHandle):
     the constructor does cheap shape validation only.
     """
 
-    def __init__(self, snapshot_dir: str | Path) -> None:
+    def __init__(
+        self,
+        snapshot_dir: str | Path,
+        *,
+        run_id: str | None = None,
+        time_window: tuple[datetime, datetime] | None = None,
+        workflow_name: str | None = None,
+    ) -> None:
+        """Construct a read-only handle over a snapshot.
+
+        ``run_id`` (TUI-driven, project-scoped .wonderland/ only):
+        scope the handle to a single run within a project that has
+        accumulated artifacts across many runs. When set:
+          - ``_load_telemetry`` reads ``telemetry/run-<run_id>.json``
+            instead of the latest file.
+          - ``utterances()``, ``stream_events()``, etc. filter to
+            timestamps within ``time_window`` (which the caller
+            should derive from the run's started_at + elapsed).
+        Without ``run_id`` the handle behaves project-scoped — the
+        original semantics for analyses/data snapshots, which are
+        already one-snapshot-per-run by construction.
+
+        ``time_window`` is the (start, end) UTC datetime range used
+        to filter Dodo's cumulative episodic memory down to
+        utterances that belong to the named run. Required when
+        ``run_id`` is set; ignored otherwise. Caller should derive
+        from ``RunRecord.started_at`` + ``elapsed_seconds`` (with
+        a small slop on the end to catch the final RunEnded
+        artifact).
+        """
         self._dir = Path(snapshot_dir)
         # Two snapshot layouts are accepted:
         #   1. Script-driven (analyses/data/...) — contains
@@ -146,6 +175,20 @@ class HistoricalRunHandle(RunHandle):
         # directive/workflow header, meetings()) gracefully degrade
         # when it's absent.
         self._log_path = self._dir / "run.log"
+
+        # Run-scoping fields (None = project-scoped behavior).
+        self._run_id = run_id
+        self._time_window = time_window
+
+        # Optional workflow name → used at stream_events time to load
+        # the static workflow definition and build the meeting label
+        # lookup from ``workflow.meetings``. Without this, TUI runs
+        # (which don't write run.log) end up with an empty meeting
+        # lookup and the synthetic-label fallback dumps thread_ids
+        # into the meetings pane. With it, we resolve every thread to
+        # the proper ``M<N> — <name>``.
+        self._workflow_name = workflow_name
+        self._workflow_meetings_cache: list[Any] | None = None
 
         self._summary_cache: RunSummary | None = None
         self._meetings_cache: list[RunMeeting] | None = None
@@ -294,6 +337,14 @@ class HistoricalRunHandle(RunHandle):
         *,
         thread_id: str | None = None,
     ) -> Iterator[Utterance]:
+        """Iterate utterances in chronological order.
+
+        When the handle was constructed with ``time_window``, results
+        are filtered to utterances whose ``timestamp`` falls inside
+        the window — this is how project-scoped Dodo memory gets
+        sliced down to a single run for the TUI's "open finished
+        run" path.
+        """
         dodo_db = self._wonderland_dir / "memory" / "dodo" / "episodic.sqlite"
         if not dodo_db.is_file():
             return
@@ -301,12 +352,24 @@ class HistoricalRunHandle(RunHandle):
         conn = sqlite3.connect(str(dodo_db))
         try:
             query = "SELECT payload FROM utterances"
-            params: tuple[Any, ...] = ()
+            clauses: list[str] = []
+            params: list[Any] = []
             if thread_id is not None:
-                query += " WHERE thread_id = ?"
-                params = (thread_id,)
+                clauses.append("thread_id = ?")
+                params.append(thread_id)
+            if self._time_window is not None:
+                start, end = self._time_window
+                # Stored timestamps are ISO-format strings; lex-order
+                # matches chronological order for ISO-8601 with the
+                # same offset, which is how Dodo writes them.
+                clauses.append("timestamp >= ?")
+                clauses.append("timestamp <= ?")
+                params.append(start.isoformat())
+                params.append(end.isoformat())
+            if clauses:
+                query += " WHERE " + " AND ".join(clauses)
             query += " ORDER BY timestamp"
-            for (payload,) in conn.execute(query, params):
+            for (payload,) in conn.execute(query, tuple(params)):
                 yield Utterance.model_validate_json(payload)
         finally:
             conn.close()
@@ -413,28 +476,29 @@ class HistoricalRunHandle(RunHandle):
         yield RunStarted(timestamp=run_start_ts, summary=summary)
 
         # Build a thread_id → RunMeeting map for label/name lookup.
-        # The current meetings() parser dedups by label, so per_item
-        # iterations all map to the same RunMeeting; that's a known
-        # limitation tracked separately. The fallback for a thread_id
-        # not present in the map is a synthetic RunMeeting derived
-        # from the thread_id alone.
+        # Two sources, in priority order:
+        #
+        #  1. ``self.meetings()`` — parsed from run.log when present
+        #     (script-driven runs). Empty for TUI runs that don't
+        #     write run.log, which is why the synthetic fallback
+        #     used to bite for every thread.
+        #  2. The static workflow definition, when ``workflow_name``
+        #     was passed to the constructor. Loads the workflow,
+        #     reads ``workflow.meetings`` for label + name. This is
+        #     what the dashboard now uses for finished-run replay
+        #     to ensure pipeline thread_ids resolve to a clean
+        #     ``M<N> — <name>``.
         meeting_lookup: dict[str, RunMeeting] = {m.id: m for m in self.meetings()}
+        if not meeting_lookup and self._workflow_name:
+            try:
+                from wonderland.workflow import load_workflow
 
-        # For per_item iterations whose thread_id has the form
-        # ``{base_id}-{slug}``, fall back to looking up by the base id
-        # so we still get the M4 / M5 label/name even if iteration
-        # metadata is None.
-        def _meeting_for(thread_id: str) -> RunMeeting:
-            if thread_id in meeting_lookup:
-                return meeting_lookup[thread_id]
-            for base_id, m in meeting_lookup.items():
-                if thread_id.startswith(f"{base_id}-"):
-                    # Synthesize a RunMeeting carrying the base
-                    # meeting's label/name but the iteration's id.
-                    return RunMeeting(
-                        id=thread_id,
-                        label=m.label,
-                        name=m.name,
+                workflow = load_workflow(self._workflow_name)
+                for wm in workflow.meetings:
+                    meeting_lookup[wm.id] = RunMeeting(
+                        id=wm.id,
+                        label=wm.label,
+                        name=wm.name,
                         started_at=None,
                         ended_at=None,
                         outcome=None,
@@ -442,11 +506,32 @@ class HistoricalRunHandle(RunHandle):
                         calls=0,
                         cost=0.0,
                     )
-            # Unknown thread_id — emit a minimal synthetic meeting.
+            except Exception:  # noqa: BLE001
+                # Workflow load failure is recoverable — falls
+                # through to the structural-extraction path below.
+                pass
+
+        def _strip_pipeline_prefix(thread_id: str) -> str:
+            """Pipeline workflows namespace threads with
+            ``pipe.<outer_slug>.`` (see ``workflow._make_lane``).
+            Strip that prefix so the remainder lines up with the
+            base meeting ids in the lookup. No-op for non-pipeline
+            threads."""
+            if thread_id.startswith("pipe."):
+                rest = thread_id[len("pipe."):]
+                # ``rest`` is ``<outer_slug>.<inner>`` — the inner
+                # part is what we want. Split on the first dot.
+                _outer, _, inner = rest.partition(".")
+                return inner if inner else thread_id
+            return thread_id
+
+        def _build_synthetic(
+            thread_id: str, label: str, name: str | None
+        ) -> RunMeeting:
             return RunMeeting(
                 id=thread_id,
-                label=thread_id,
-                name=None,
+                label=label,
+                name=name,
                 started_at=None,
                 ended_at=None,
                 outcome=None,
@@ -454,6 +539,91 @@ class HistoricalRunHandle(RunHandle):
                 calls=0,
                 cost=0.0,
             )
+
+        def _iteration_label_from_thread_id(thread_id: str) -> str | None:
+            """Recover an iteration discriminator from a pipeline
+            thread_id. Two pipeline shapes the substrate emits:
+
+              ``pipe.<feature>.<meeting_id>``
+                  Single-level (e.g. design runs) — the feature
+                  is the iteration. Returns the humanised feature
+                  slug.
+
+              ``pipe.<feature>.<meeting_id>-<sub_slug>``
+                  Two-level (implementation runs with per-ticket
+                  iterations inside per-feature lanes). Returns
+                  ``<feature> / <sub_slug>`` so each row in the
+                  meetings pane is distinct per-ticket — matches
+                  the live path's iteration_label shape (line ~1354
+                  in workflow.py: ``f"{outer_label} / {sub_label}"``).
+
+            Returns None for non-pipeline threads. We rely on
+            ``meeting_lookup`` to find the meeting_id boundary
+            within the inner segment — without it (no workflow
+            passed + no run.log), the sub_slug can't be reliably
+            extracted, so we fall back to feature-only.
+            """
+            if not thread_id.startswith("pipe."):
+                return None
+            rest = thread_id[len("pipe."):]
+            outer, dot, inner = rest.partition(".")
+            if not dot or not outer:
+                return None
+            outer_h = (
+                outer.replace("-", " ").strip().capitalize() or outer
+            )
+            # Identify the meeting_id boundary in ``inner``. Longest
+            # match against the lookup to avoid mis-truncating when
+            # one meeting id is a prefix of another.
+            best_base = None
+            for base_id in meeting_lookup:
+                if inner == base_id:
+                    return outer_h  # Pure base meeting, no sub-slug.
+                if inner.startswith(f"{base_id}-"):
+                    if best_base is None or len(base_id) > len(best_base):
+                        best_base = base_id
+            if best_base is not None:
+                sub_slug = inner[len(best_base) + 1:]
+                sub_h = (
+                    sub_slug.replace("-", " ").strip().capitalize()
+                    or sub_slug
+                )
+                return f"{outer_h} / {sub_h}"
+            # Unknown meeting_id — return the feature alone.
+            return outer_h
+
+        def _meeting_for(thread_id: str) -> RunMeeting:
+            # Direct hit on the full thread_id (script-driven runs
+            # where the meeting id IS the thread_id).
+            if thread_id in meeting_lookup:
+                return meeting_lookup[thread_id]
+            # Strip the pipeline prefix — for ``pipe.<outer>.<inner>``
+            # we match against ``<inner>``.
+            inner = _strip_pipeline_prefix(thread_id)
+            if inner in meeting_lookup:
+                m = meeting_lookup[inner]
+                return _build_synthetic(thread_id, m.label, m.name)
+            # Per-iteration thread: ``<base>-<slug>`` shape on either
+            # the original or the post-pipeline-strip form. Iterate
+            # the lookup to find the longest matching base id —
+            # longest-match disambiguates cases where one meeting id
+            # is a prefix of another (none today, but cheap to
+            # protect against).
+            best: tuple[int, str, RunMeeting] | None = None
+            for base_id, m in meeting_lookup.items():
+                for candidate in (thread_id, inner):
+                    if candidate.startswith(f"{base_id}-"):
+                        if best is None or len(base_id) > best[0]:
+                            best = (len(base_id), base_id, m)
+            if best is not None:
+                _, _, m = best
+                return _build_synthetic(thread_id, m.label, m.name)
+            # No match. Don't dump the raw thread_id into the label
+            # field — the meetings pane would render it verbatim.
+            # Use a placeholder ``Meeting`` label and stash the
+            # thread_id-derived id in the ``id`` field for anyone
+            # who wants to inspect it.
+            return _build_synthetic(thread_id, "Meeting", None)
 
         # Index disk artifacts by basename for resolving bus-attached
         # artifacts to their on-disk RunArtifact equivalent. Matches
@@ -525,6 +695,9 @@ class HistoricalRunHandle(RunHandle):
                     timestamp=u.timestamp,
                     meeting=new_meeting,
                     thread_id=u.thread_id,
+                    iteration_label=_iteration_label_from_thread_id(
+                        u.thread_id
+                    ),
                 )
                 current_thread_id = u.thread_id
                 meeting_open_ts = u.timestamp
@@ -623,14 +796,37 @@ class HistoricalRunHandle(RunHandle):
         if not telemetry_dir.is_dir():
             self._telemetry_cache = {}
             return self._telemetry_cache
+        # Run-scoped: prefer the named run's telemetry file. Falls
+        # through to "latest" if the named file is missing — robust
+        # against the case where a caller passes an old run_id whose
+        # telemetry file got cleaned up or moved.
+        if self._run_id is not None:
+            target = telemetry_dir / f"run-{self._run_id}.json"
+            if target.is_file():
+                with target.open(encoding="utf-8") as f:
+                    data: dict[str, Any] = json.load(f)
+                self._telemetry_cache = data
+                return data
         files = sorted(telemetry_dir.glob("run-*.json"))
         if not files:
             self._telemetry_cache = {}
             return self._telemetry_cache
         with files[-1].open(encoding="utf-8") as f:
-            data: dict[str, Any] = json.load(f)
+            data = json.load(f)
         self._telemetry_cache = data
         return data
+
+    def _window_clause(self) -> tuple[str, list[Any]]:
+        """SQL fragment + params for the optional time-window filter.
+        Returns ('', []) when the handle is project-scoped.
+        """
+        if self._time_window is None:
+            return "", []
+        start, end = self._time_window
+        return (
+            " WHERE timestamp >= ? AND timestamp <= ?",
+            [start.isoformat(), end.isoformat()],
+        )
 
     def _first_last_utterance_timestamps(
         self,
@@ -638,10 +834,13 @@ class HistoricalRunHandle(RunHandle):
         dodo_db = self._wonderland_dir / "memory" / "dodo" / "episodic.sqlite"
         if not dodo_db.is_file():
             return (None, None)
+        where, params = self._window_clause()
         conn = sqlite3.connect(str(dodo_db))
         try:
             row = conn.execute(
                 "SELECT MIN(timestamp), MAX(timestamp) FROM utterances"
+                + where,
+                tuple(params),
             ).fetchone()
         finally:
             conn.close()
@@ -655,12 +854,16 @@ class HistoricalRunHandle(RunHandle):
         dodo_db = self._wonderland_dir / "memory" / "dodo" / "episodic.sqlite"
         if not dodo_db.is_file():
             return {}
+        where, params = self._window_clause()
         conn = sqlite3.connect(str(dodo_db))
         out: dict[str, tuple[datetime | None, datetime | None]] = {}
         try:
             rows = conn.execute(
                 "SELECT thread_id, MIN(timestamp), MAX(timestamp) "
-                "FROM utterances GROUP BY thread_id"
+                "FROM utterances"
+                + where
+                + " GROUP BY thread_id",
+                tuple(params),
             ).fetchall()
         finally:
             conn.close()

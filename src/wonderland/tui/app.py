@@ -1,14 +1,22 @@
 """Top-level Textual app. Owns global state (snapshot search root,
-current handle) and pushes/pops screens."""
+current handle) and pushes/pops screens.
+
+Slice A note: the App also owns the in-flight run registry
+(``_active_run``) so runs can survive ``LiveRunScreen`` mount/unmount
+cycles. The screen is just a subscriber; the consumer task lives
+here. See ``active_run.py`` for the data structure.
+"""
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from textual.app import App
 from textual.binding import Binding
 from textual.widgets import DataTable
 
+from wonderland.tui.active_run import ActiveRun
 from wonderland.tui.screens.project_library import ProjectLibraryScreen
 from wonderland.tui.themes import (
     DEFAULT_THEME_NAME,
@@ -78,6 +86,13 @@ class WonderlandApp(App):
         super().__init__()
         self.snapshot_root = snapshot_root or _DEFAULT_SNAPSHOT_ROOT
         self._show_welcome_override = show_welcome
+        # Slice A: in-flight run registry. Single slot for now —
+        # the new-run gate enforces one-at-a-time until per-run
+        # artifact tagging lands (see project_run_id_tagging memory).
+        # When that work ships we'll grow this to a dict keyed by
+        # run_id; the screens already think in run_id terms so the
+        # widening is local.
+        self._active_run: ActiveRun | None = None
 
     def on_mount(self) -> None:
         # Register the Wonderland-flavored themes and set the project
@@ -86,6 +101,20 @@ class WonderlandApp(App):
         for theme in WONDERLAND_THEMES:
             self.register_theme(theme)
         self.theme = DEFAULT_THEME_NAME
+
+        # Discover any background runs left over from a previous TUI
+        # session. The detached subprocesses survive TUI exit, so on
+        # startup we scan registered projects for status.json files
+        # that say "running" + have a live pid. First match wins
+        # (one-at-a-time cap).
+        try:
+            self._discover_background_runs()
+        except Exception as exc:  # noqa: BLE001 — never block startup
+            self.notify(
+                f"Background-run discovery failed: {exc}",
+                severity="warning",
+                timeout=4,
+            )
 
         # Push the project library underneath, then maybe push the
         # welcome modal on top. Welcome dismisses back to the library;
@@ -96,6 +125,58 @@ class WonderlandApp(App):
             from wonderland.tui.screens.welcome_modal import WelcomeModal
 
             self.push_screen(WelcomeModal())
+
+    def _discover_background_runs(self) -> None:
+        """Scan registered projects for live ``wonderland run-bg``
+        subprocesses and re-register the first one we find as the
+        active run. Detached subprocesses persist across TUI
+        restarts; this is what makes them visible again after a
+        relaunch.
+
+        Looks for status.json with status=running + pid alive in
+        each project's ``.wonderland/runs/<run_id>/``. First live
+        match wins. Stale runs (status=running but pid dead) are
+        flagged but not re-registered — operator can clean them up
+        from the dashboard once that lands. Crashed-run cleanup
+        is filed for follow-up.
+        """
+        from wonderland.observer.subprocess import SubprocessRunHandle
+        from wonderland.project import list_projects
+
+        try:
+            projects = list_projects()
+        except Exception:  # noqa: BLE001
+            return
+        for project in projects:
+            runs_dir = project.root_path / ".wonderland" / "runs"
+            if not runs_dir.is_dir():
+                continue
+            for run_dir in sorted(runs_dir.iterdir()):
+                if not run_dir.is_dir():
+                    continue
+                handle = SubprocessRunHandle(run_dir)
+                status = handle.status()
+                if status.get("status") != "running":
+                    continue
+                if not handle.is_alive():
+                    # Crashed — leave it for now; future cleanup
+                    # path will mark status=error. Out of scope
+                    # for the discovery slice.
+                    continue
+                # Live background run: re-register.
+                run_id = run_dir.name
+                active = ActiveRun(run_id=run_id, handle=handle)
+                active.task = asyncio.create_task(
+                    self._drive_active_run(active),
+                    name=f"recovered-run-{run_id}",
+                )
+                self._active_run = active
+                self.notify(
+                    f"Recovered background run {run_id} "
+                    f"(project {project.name})",
+                    timeout=4,
+                )
+                return  # First live match wins (one-at-a-time cap)
 
     def _should_show_welcome(self) -> bool:
         """Decide whether to push the welcome modal on startup.
@@ -169,6 +250,263 @@ class WonderlandApp(App):
                 self.exit()
 
         self.push_screen(QuitConfirmModal(), _on_dismiss)
+
+    # ---------------------------------------------------------------- #
+    # Active-run registry (Slice A — runs survive screen pop)
+    # ---------------------------------------------------------------- #
+
+    def launch_run(self, handle: object, run_id: str) -> ActiveRun:
+        """In-process run path. Used by tests + by callers passing a
+        pre-built LiveRunHandle (the legacy entry that the
+        background-run subprocess path is replacing).
+
+        Wires the App's user-question handler onto the handle and
+        spawns the consumer task. The run survives screen pops but
+        dies with the App's event loop (TUI exit kills it).
+
+        For runs that should survive TUI exit, use
+        ``launch_background_run`` — it spawns ``wonderland run-bg``
+        as a detached subprocess.
+
+        Raises RuntimeError if an active run is already in flight.
+        """
+        if self._active_run is not None and not self._active_run.is_terminal:
+            raise RuntimeError(
+                f"a run is already in flight: {self._active_run.run_id}"
+            )
+        # Wire the global question handler before the consumer task
+        # starts — LiveRunHandle.stream_events sets the runner's
+        # handler once at stream entry, so we have to bind the
+        # callable up-front. Mock-turtle / historical handles don't
+        # have a runner to call so the hasattr guard short-circuits.
+        if hasattr(handle, "set_user_question_handler"):
+            handle.set_user_question_handler(  # type: ignore[attr-defined]
+                self._handle_user_question
+            )
+        active = ActiveRun(run_id=run_id, handle=handle)
+        active.task = asyncio.create_task(
+            self._drive_active_run(active),
+            name=f"active-run-{run_id}",
+        )
+        self._active_run = active
+        return active
+
+    def launch_background_run(
+        self,
+        *,
+        directive: str,
+        workflow_name: str,
+        project_root: Path,
+        budget: float,
+        model: str | None = None,
+        run_id: str | None = None,
+    ) -> ActiveRun:
+        """Spawn ``wonderland run-bg`` as a detached subprocess and
+        register a SubprocessRunHandle as the active run.
+
+        The subprocess lives in its own process group (``start_new_
+        session=True``) so it survives this app's exit. The handle
+        tails the run's events.jsonl + status.json on disk; the
+        consumer task pulls from that handle and fans out to
+        screen subscribers.
+
+        Returns the ActiveRun. Raises RuntimeError on the
+        one-at-a-time cap.
+
+        ``run_id`` is optional — when omitted, we generate a
+        timestamp-style id matching the runner's own format so the
+        subprocess and TUI agree on the run dir path. The
+        subprocess will use whatever id the Runner generates for
+        itself; that wins as the canonical id (we read it back from
+        status.json after the subprocess writes it).
+        """
+        import subprocess
+        import sys
+        from datetime import datetime, timezone
+
+        from wonderland.observer.subprocess import SubprocessRunHandle
+
+        if self._active_run is not None and not self._active_run.is_terminal:
+            raise RuntimeError(
+                f"a run is already in flight: {self._active_run.run_id}"
+            )
+
+        # Generate the run id ourselves so we know the run dir path
+        # before the subprocess writes anything to it. The Runner
+        # will use whatever timestamp it computes inside the
+        # subprocess; if our generated id and the Runner's diverge
+        # by a second, the discovery path scans for the actual dir
+        # by status.json contents.
+        if run_id is None:
+            run_id = datetime.now(tz=timezone.utc).strftime(
+                "%Y%m%dT%H%M%S"
+            )
+
+        run_dir = (
+            project_root / ".wonderland" / "runs" / run_id
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        log_path = run_dir / "log"
+        log_handle = log_path.open("ab")
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "wonderland.cli",
+            "run-bg",
+            directive,
+            "--workflow",
+            workflow_name,
+            "--project-root",
+            str(project_root),
+            "--budget",
+            str(budget),
+            "--run-id",
+            run_id,
+        ]
+        if model is not None:
+            cmd.extend(["--model", model])
+
+        proc = subprocess.Popen(  # noqa: S603 — args list is built locally, no shell
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=log_handle,
+            stderr=log_handle,
+            start_new_session=True,
+            cwd=str(project_root),
+        )
+        # Close our copy of the log fd; the subprocess inherits its
+        # own. Without this, killing the subprocess wouldn't free
+        # the file handle until the App exits.
+        log_handle.close()
+
+        # The subprocess uses --run-id to write into our
+        # pre-created run_dir, so the SubprocessRunHandle tails
+        # the right files from the start.
+        handle = SubprocessRunHandle(run_dir)
+        active = ActiveRun(run_id=run_id, handle=handle)
+        active.subprocess_pid = proc.pid  # type: ignore[attr-defined]
+        active.task = asyncio.create_task(
+            self._drive_active_run(active),
+            name=f"active-run-{run_id}",
+        )
+        self._active_run = active
+        return active
+
+    async def _handle_user_question(self, question_utterance) -> str | None:
+        """Global QUESTION-to-operator handler. Pushes AskUserModal
+        regardless of which screen is currently mounted, so a question
+        from a background run surfaces even when the operator left
+        the live-watch screen.
+
+        Returns the operator's reply text, or None on skip — the
+        runner's user-question watcher publishes a sentinel
+        observation on None so the team can proceed without the
+        operator's input.
+        """
+        import asyncio
+
+        from wonderland.tui.screens.ask_user_modal import AskUserModal
+
+        future: asyncio.Future[str | None] = asyncio.Future()
+
+        def _on_dismissed(answer: str | None) -> None:
+            if not future.done():
+                future.set_result(answer)
+
+        # Pull suggested options off the question utterance's
+        # artifacts (kind="operator_question_options"). Same shape
+        # the screen-level handler reads.
+        options: list[str] = []
+        for artifact in question_utterance.content.artifacts:
+            if artifact.kind == "operator_question_options":
+                raw = artifact.payload.get("options", [])
+                if isinstance(raw, list):
+                    options = [str(o) for o in raw if o]
+                break
+
+        self.push_screen(
+            AskUserModal(
+                asking_agent=question_utterance.speaker.name,
+                question=question_utterance.content.body,
+                options=options,
+            ),
+            _on_dismissed,
+        )
+        return await future
+
+    async def _drive_active_run(self, active: ActiveRun) -> None:
+        """Consume the active run's stream into its buffer + fan out
+        to subscribers. Sets ``status`` based on stream completion vs.
+        cancellation vs. exception.
+
+        Cancellation safety: if the task is cancelled (e.g., app
+        shutdown), the handle's stream_events finally block still
+        runs — runner teardown happens once, regardless of who
+        cancelled it.
+        """
+        try:
+            async for event in active.handle.stream_events():
+                active._ingest(event)
+            active.mark_ended("complete")
+        except asyncio.CancelledError:
+            active.mark_ended("aborted")
+            raise
+        except Exception:  # noqa: BLE001
+            active.mark_ended("error")
+            # Re-raise so the task surface in stderr still flags the
+            # exception; the buffer + status tell the UI what
+            # happened without depending on this raise.
+            raise
+
+    def get_active_run(self, run_id: str) -> ActiveRun | None:
+        """Look up an active run by run_id. Returns None when no run
+        is in flight or when the run_id doesn't match. Used by
+        LiveRunScreen on mount to decide attach-vs-fallback."""
+        if self._active_run is None:
+            return None
+        if self._active_run.run_id != run_id:
+            return None
+        return self._active_run
+
+    def has_active_run(self) -> bool:
+        """True when there's an in-flight run. Used by NewRunScreen
+        to gate the one-at-a-time cap and by QuitConfirmModal to
+        warn before exit."""
+        return (
+            self._active_run is not None
+            and not self._active_run.is_terminal
+        )
+
+    def abort_active_run(self, *, reason: str | None = None) -> bool:
+        """Abort the active run via the appropriate channel:
+          - SubprocessRunHandle → SIGTERM the subprocess pid.
+          - LiveRunHandle (in-process) → call runner.abort.
+
+        Returns True on success, False if no active run or the
+        abort itself failed."""
+        if self._active_run is None or self._active_run.is_terminal:
+            return False
+        handle = self._active_run.handle
+        if hasattr(handle, "abort"):
+            return bool(handle.abort(reason=reason))  # type: ignore[attr-defined]
+        runner = getattr(handle, "_runner", None)
+        if runner is not None and hasattr(runner, "abort"):
+            try:
+                runner.abort(reason=reason or "operator abort")
+                return True
+            except Exception:  # noqa: BLE001
+                return False
+        return False
+
+    def clear_terminal_run(self) -> None:
+        """Drop the registry slot when the active run has ended.
+        Called by the operator's "go again" path so a finished run
+        doesn't keep blocking new launches. Safe to call if no run
+        exists; safe to call mid-run (no-ops, doesn't kill it)."""
+        if self._active_run is not None and self._active_run.is_terminal:
+            self._active_run = None
 
     def action_cycle_theme(self) -> None:
         """htop-style theme cycling: advance to the next Wonderland

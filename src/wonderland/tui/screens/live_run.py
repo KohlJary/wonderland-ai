@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from textual import work
 from textual.app import ComposeResult
@@ -147,31 +148,39 @@ class LiveRunScreen(Screen[None]):
         snapshot_dir: Path | None = None,
         *,
         handle: RunHandle | None = None,
+        run_id: str | None = None,
         speed: float = 5.0,
         max_dwell_seconds: float = 2.0,
     ) -> None:
-        """Three input paths:
+        """Four input paths, in priority order:
 
-          - ``snapshot_dir`` set, ``handle=None`` → wrap a
-            MockTurtleHandle around the snapshot at the given speed
-            + dwell. The replay path; default for the
-            ``w`` (watch) entry from the snapshot library.
-          - ``handle`` set explicitly → use it directly. Used by
-            P8.5's NewRunScreen → LiveRunHandle handoff for live
-            runs, and by anything else that wants to plug a
-            different RunHandle in (e.g., a future AbortableHandle).
-          - Both None → fall back to the T45 dummy data so the
-            screen has something to show. Useful for layout testing
-            in isolation.
+          - ``run_id`` set → attach to the App's active run with that
+            run_id. The consumer task is owned by the App; this
+            screen just subscribes, replays the buffer, and tails
+            new events. Slice A's "runs survive screen pop" path.
+          - ``handle`` set → consume the handle's stream directly,
+            single-shot. Used by HistoricalRunHandle replay (open
+            finished run from dashboard) and by tests that want to
+            plug in a custom handle without touching the App's
+            registry.
+          - ``snapshot_dir`` set → wrap MockTurtleHandle around the
+            snapshot at the given speed + dwell. The original replay
+            path; entry from the snapshot library's ``w`` keybind.
+          - All None → T45 dummy data fallback for layout testing.
 
-        ``handle`` takes precedence over ``snapshot_dir`` when both
-        are provided.
+        ``run_id`` takes precedence over the rest when more than one
+        is supplied.
         """
         super().__init__()
         self.snapshot_dir = snapshot_dir
         self.handle = handle
+        self.run_id = run_id
         self.speed = speed
         self.max_dwell_seconds = max_dwell_seconds
+        # When attached via run_id, this is the unsubscribe callable
+        # returned by ActiveRun.subscribe — invoked on screen unmount
+        # so the run keeps going without leaking subscribers.
+        self._unsubscribe: Callable[[], None] | None = None
         # Auto-sentinel state (T69 follow-up): operator can toggle
         # mid-run with the `T` keybind to cycle through wait
         # durations. ``None`` = wait indefinitely (default);
@@ -369,12 +378,14 @@ class LiveRunScreen(Screen[None]):
         # (since indicator could differ on a fresh tool-call wave).
         self._file_render_cache: dict[tuple[str, str], object] = {}
 
-        if self.handle is None and self.snapshot_dir is None:
-            # No source bound — fall back to the T45 dummy data so
-            # the screen has something to show. Useful for testing
-            # the layout in isolation.
-            self._render_static_dummy()
-        else:
+        # Source resolution priority (mirrors the constructor docstring):
+        #   1. run_id  → attach to the App's active run (Slice A)
+        #   2. handle  → consume directly (HistoricalRunHandle, tests)
+        #   3. snapshot_dir → wrap MockTurtleHandle (snapshot library)
+        #   4. dummy fallback for layout tests
+        if self.run_id is not None:
+            self._attach_to_active_run()
+        elif self.handle is not None or self.snapshot_dir is not None:
             # Wire the user-question handler on the LiveRunHandle
             # so agent QUESTION-to-operator utterances surface as
             # the AskUserModal (T69). Mock-turtle replay paths
@@ -392,6 +403,11 @@ class LiveRunScreen(Screen[None]):
             # responsive — keystrokes, scroll, and meeting drill-down
             # all keep working while the stream drains.
             self._consume_stream()
+        else:
+            # No source bound — fall back to the T45 dummy data so
+            # the screen has something to show. Useful for testing
+            # the layout in isolation.
+            self._render_static_dummy()
 
         # Refresh the status bar every 500ms so the elapsed counter
         # ticks even when no events are arriving (during quiet
@@ -406,6 +422,54 @@ class LiveRunScreen(Screen[None]):
         self.set_interval(1.5, self._refresh_files_tab)
 
         table.focus()
+
+    def _attach_to_active_run(self) -> None:
+        """Slice A: subscribe to the App's active run instead of
+        consuming the handle directly. Past events replay through
+        the buffer; new events tail in via the subscriber callback.
+
+        The run continues in the App's consumer task even after this
+        screen unmounts — the unmount handler unsubscribes but
+        leaves the task running.
+        """
+        active = self.app.get_active_run(self.run_id)  # type: ignore[union-attr,arg-type]
+        if active is None:
+            self.query_one("#live-header", Static).update(
+                f"[yellow]No active run found for "
+                f"run_id={self.run_id!r}.[/yellow] "
+                f"[dim](Run already ended? Try opening it from "
+                f"the dashboard's runs column.)[/dim]"
+            )
+            return
+        # Cache base_meeting_ids for per_item iteration discrimination
+        # (same trick the single-shot consumer uses). LiveRunHandle's
+        # meetings() returns [] before any events flow, so this is
+        # cheap on a fresh run.
+        base_meeting_ids = [m.id for m in active.handle.meetings()]
+        # Bind the handle so existing pause/abort/refresh paths that
+        # peek at self.handle keep working unchanged.
+        self.handle = active.handle
+        # User-question handler is owned by the App in Slice B —
+        # we don't override here because the runner's handler was
+        # already wired at stream entry (see observer/live.py
+        # stream_events) and the App's handler pushes the modal on
+        # top of whatever screen happens to be mounted. Side effect
+        # for reattach: the screen-level auto-sentinel toggle (the
+        # ``T`` keybind) doesn't bind to a global question. Moving
+        # auto-sentinel to App level is follow-up work.
+        self._unsubscribe = active.subscribe(
+            lambda event: self._dispatch_event(event, base_meeting_ids)
+        )
+
+    def on_unmount(self) -> None:
+        """Detach from the active run when the screen pops. The run
+        keeps going in the App's consumer task; only the screen-
+        level subscriber goes away. Single-shot (handle / snapshot)
+        paths leave _unsubscribe as None so this is a no-op for them.
+        """
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+            self._unsubscribe = None
 
     @work(exclusive=True)
     async def _consume_stream(self) -> None:
@@ -536,7 +600,7 @@ class LiveRunScreen(Screen[None]):
         }
         # Track the most-recently-started thread for artifact attribution.
         self._last_open_thread_id = thread_id
-        self._render_meetings_ribbon()
+        self._render_meetings_pane()
 
     def _handle_utterance_emitted(self, event: "UtteranceEmitted") -> None:
         u = event.utterance
@@ -619,7 +683,7 @@ class LiveRunScreen(Screen[None]):
             # Only use the rolling meeting-cost total before any
             # AgentTelemetryDelta has fired.
             self._total_cost = self._meeting_cost_total
-        self._render_meetings_ribbon()
+        self._render_meetings_pane()
 
     def action_cycle_auto_sentinel(self) -> None:
         """Cycle through the auto-sentinel timeouts. Press T
@@ -787,39 +851,39 @@ class LiveRunScreen(Screen[None]):
         event: "MeetingStarted",
         base_meeting_ids: list[str],
     ) -> str:
-        """Build the display label for a meeting cell. Combines the
-        meeting label, name, and per_item iteration discriminator
-        when applicable."""
+        """Build the display label for a meeting cell.
+
+        Format: ``M<N> — <name> (<idx>/<total>: <iteration_label>)``,
+        with the iteration suffix dropped piece-by-piece when the
+        underlying data isn't available:
+
+          - all three present (live runs via the subprocess) →
+            ``M6 — A Mad Tea Party (2/5: Earn XP through workouts)``
+          - only iteration_label present (e.g. replay deriving the
+            feature slug from a pipeline thread_id) →
+            ``M6 — A Mad Tea Party (Earn XP through workouts)``
+          - none present (single-meeting runs, root-level threads) →
+            ``M6 — A Mad Tea Party``
+
+        The static label + name part is always populated when
+        upstream sets them — see HistoricalRunHandle._meeting_for
+        and observer/live.py for the two sources. ``base_meeting_ids``
+        is kept in the signature for caller back-compat but unused.
+        """
+        del base_meeting_ids
         m = event.meeting
-        # Find the base meeting id this thread belongs to.
-        base_id = None
-        for b in base_meeting_ids:
-            if event.thread_id == b:
-                # Not a per_item iteration — base label only.
-                if m.name:
-                    return f"{m.label} — {m.name}"
-                return m.label
-            if event.thread_id.startswith(f"{b}-"):
-                base_id = b
-                break
+        base = f"{m.label} — {m.name}" if m.name else m.label
 
-        # Per_item iteration. Prefer the explicit iteration_label
-        # from the event; fall back to slug-derived discriminator.
-        if event.iteration_label:
-            disc = event.iteration_label
-        elif base_id is not None:
-            slug = event.thread_id[len(base_id) + 1:]
-            disc = slug.replace("-", " ").title()
-        else:
-            disc = event.thread_id
-
-        # Optional iteration count badge: "(2/3)"
+        parts: list[str] = []
         if event.iteration_index and event.iteration_total:
-            disc = f"({event.iteration_index}/{event.iteration_total}) {disc}"
-
-        if m.name:
-            return f"{m.label} — {m.name}: {disc}"
-        return f"{m.label}: {disc}"
+            parts.append(
+                f"{event.iteration_index}/{event.iteration_total}"
+            )
+        if event.iteration_label:
+            parts.append(event.iteration_label)
+        if parts:
+            return f"{base} ({': '.join(parts)})"
+        return base
 
     # ------------------------------------------------------------------ #
     # T45: dummy-data rendering
@@ -846,13 +910,13 @@ class LiveRunScreen(Screen[None]):
                 "cost": cost,
             }
             self._meeting_order.append(thread_id)
-        self._render_meetings_ribbon()
+        self._render_meetings_pane()
 
         self._current_speaker = "white_rabbit"
         self._total_cost = 0.0926
         self._render_status_bar()
 
-    def _render_meetings_ribbon(self) -> None:
+    def _render_meetings_pane(self) -> None:
         table = self.query_one("#live-meetings-table", DataTable)
         # Preserve the user's cursor position across re-renders, so
         # streaming events don't jump them off their selection.
@@ -1064,28 +1128,38 @@ class LiveRunScreen(Screen[None]):
         """Operator-driven abort. Confirms via modal because abort
         is destructive (the run is over; resuming requires a fresh
         launch). Telemetry is preserved by the safety-net flush in
-        observer/live's finally block."""
-        runner = getattr(self.handle, "_runner", None) if self.handle else None
-        if runner is None or not hasattr(runner, "abort"):
-            self.notify(
-                "Abort not supported on this run handle "
-                "(replay or fixture data).",
-                severity="warning",
-                timeout=3,
-            )
-            return
+        observer/live's finally block.
+
+        Dispatches via ``app.abort_active_run`` which knows how to
+        signal both flavors of handle: SubprocessRunHandle sends
+        SIGTERM to the detached subprocess; LiveRunHandle calls
+        runner.abort directly. Replay/fixture handles report a
+        useful warning instead of silently no-opping.
+        """
+        # Confirm via modal — abort is destructive.
         from wonderland.tui.screens.abort_confirm_modal import (
             AbortConfirmModal,
         )
 
         def _on_dismiss(confirmed: bool | None) -> None:
-            if confirmed:
-                runner.abort(reason="operator pressed Abort")
+            if not confirmed:
+                return
+            ok = self.app.abort_active_run(  # type: ignore[attr-defined]
+                reason="operator pressed Abort"
+            )
+            if ok:
                 self.notify(
                     "⏹ Abort signaled. Telemetry will flush "
                     "automatically.",
                     severity="warning",
                     timeout=4,
+                )
+            else:
+                self.notify(
+                    "Abort not supported on this run handle "
+                    "(replay or fixture data, or no active run).",
+                    severity="warning",
+                    timeout=3,
                 )
 
         self.app.push_screen(AbortConfirmModal(), _on_dismiss)
@@ -1607,9 +1681,20 @@ class LiveRunScreen(Screen[None]):
             self._render_phase_event_detail(row)
 
     def _render_artifact_detail(self, artifact) -> None:
-        """Render the highlighted artifact's metadata + body in the
-        right-detail pane. Falls back to ``str(artifact)`` if the
-        ArtifactBrowser-shape attributes aren't present."""
+        """Render the highlighted artifact's metadata + full body in
+        the right-detail pane. The pane is already wrapped in a
+        VerticalScroll (``#right-detail-scroll``), so long bodies
+        scroll natively — no need to truncate aggressively.
+
+        Body resolution order:
+          1. ``artifact.body`` directly (snapshot-library's
+             ArtifactBrowserShape exposes the file body as an
+             attribute).
+          2. ``artifact.path`` (RunArtifact from streaming
+             ArtifactShipped events — only carries the on-disk
+             path). Read the file from disk.
+          3. Empty placeholder when neither is available.
+        """
         try:
             detail = self.query_one("#right-detail", Static)
         except Exception:  # noqa: BLE001
@@ -1618,11 +1703,33 @@ class LiveRunScreen(Screen[None]):
         kind = getattr(artifact, "kind", "?")
         body = getattr(artifact, "body", "") or ""
         path = getattr(artifact, "path", "")
-        max_chars = 4000
+        if not body and path:
+            # RunArtifact / streaming-event shape: only the path
+            # ships in the event, so the body has to come from
+            # disk. Best-effort read; missing files surface as an
+            # empty body rather than crashing the pane.
+            try:
+                body = Path(str(path)).read_text(
+                    encoding="utf-8", errors="replace"
+                )
+            except OSError as exc:
+                body = (
+                    f"[dim red]Failed to read artifact at "
+                    f"{path}: {exc}[/dim red]"
+                )
+        # Generous cap — the scrolling pane is meant for full
+        # inspection. 50K chars covers the biggest artifacts we
+        # actually emit (long escalations, multi-page ADRs);
+        # anything bigger gets a truncation note.
+        max_chars = 50_000
         if len(body) > max_chars:
-            body = body[:max_chars] + f"\n\n[dim]... ({len(body) - max_chars} more chars; press Enter to open full)[/dim]"
+            body = (
+                body[:max_chars]
+                + f"\n\n[dim]…(truncated; {len(body) - max_chars} "
+                f"more chars on disk)[/dim]"
+            )
         path_line = (
-            f"\n[dim]Path: {path}[/dim]\n" if path else "\n"
+            f"\n[dim]{path}[/dim]\n" if path else "\n"
         )
         detail.update(
             f"[b]{kind}[/b]: {title}{path_line}\n{body}"

@@ -865,6 +865,98 @@ def resolve_seeds(
                     )
             kinded = sliced
 
+        # Parent-feature scoping: when iterating tickets (the
+        # tea-party / implementation / review meetings), don't dump
+        # every feature + every contract_note into seed context.
+        # Filter to the parent feature of this iteration's ticket.
+        # This is what made Hatter sprawl — every M6 iteration was
+        # getting the whole feature corpus.
+        #
+        # Feature artifacts: keep only those whose slug matches the
+        # parent feature.
+        # Contract_note utterances: keep only those whose thread_id
+        # encodes the parent feature (M5 is per_item: feature so the
+        # source thread_id is ``contract-negotiation-<feature>`` or
+        # the pipeline equivalent). Disk-fallback notes don't carry
+        # a feature in their synthesized thread_id; they pass through
+        # — graceful degradation rather than silently filtering out
+        # the cross-run case.
+        if (
+            current_item_kind == "ticket"
+            and current_item_slug is not None
+            and project_root is not None
+            and ("feature" in binding.kinds or "contract_note" in binding.kinds)
+        ):
+            try:
+                ticket_to_feature = _ticket_to_feature_map(project_root)
+            except Exception:  # noqa: BLE001
+                ticket_to_feature = {}
+            parent_feature_slug = ticket_to_feature.get(current_item_slug)
+            if parent_feature_slug:
+                feature_scoped: list[Utterance] = []
+                for u in kinded:
+                    artifacts = u.content.artifacts
+                    has_feature = any(
+                        a.kind == "feature" for a in artifacts
+                    )
+                    has_contract = any(
+                        a.kind == "contract_note" for a in artifacts
+                    )
+                    keep = True
+                    new_artifacts = list(artifacts)
+                    if has_feature:
+                        # Drop feature artifacts whose slug isn't the
+                        # parent. If after the drop no feature
+                        # artifact remains AND the utterance carried
+                        # no other relevant kind, skip the utterance.
+                        new_artifacts = [
+                            a for a in new_artifacts
+                            if a.kind != "feature"
+                            or a.payload.get("slug") == parent_feature_slug
+                        ]
+                        remaining_features = [
+                            a for a in new_artifacts if a.kind == "feature"
+                        ]
+                        if not remaining_features and has_feature and not (
+                            has_contract
+                            or any(
+                                a.kind in binding.kinds and a.kind != "feature"
+                                for a in artifacts
+                            )
+                        ):
+                            keep = False
+                    if has_contract and keep:
+                        # Filter by thread_id: contract_negotiation
+                        # threads encode the feature slug. Disk-
+                        # fallback notes (thread_id == bare meeting
+                        # id without the feature suffix) pass through.
+                        tid = u.thread_id
+                        is_feature_specific = (
+                            "contract-negotiation-" in tid
+                        )
+                        if is_feature_specific:
+                            # Pattern matches both sequential
+                            # (``contract-negotiation-<feature>``) and
+                            # pipeline (``pipe.<…>.contract-negotiation-<feature>``).
+                            keep = (
+                                f"contract-negotiation-{parent_feature_slug}"
+                                in tid
+                            )
+                    if keep:
+                        if new_artifacts == list(artifacts):
+                            feature_scoped.append(u)
+                        else:
+                            feature_scoped.append(
+                                u.model_copy(
+                                    update={
+                                        "content": u.content.model_copy(
+                                            update={"artifacts": new_artifacts}
+                                        )
+                                    }
+                                )
+                            )
+                kinded = feature_scoped
+
         if binding.where:
             filtered = [
                 u
@@ -998,12 +1090,73 @@ def _collect_per_item_items(
         filtered: list[dict[str, Any]] = []
 
         if item_kind == "ticket":
+            # Explicit per-ticket queue marks override the feature-
+            # state gate. The operator's intent in queueing a
+            # specific ticket is "iterate this one even if the
+            # parent feature isn't otherwise in scope" — typical
+            # case: feature in_progress, one ticket aborted on
+            # budget, operator re-queues that ticket. We need the
+            # iteration to proceed even though in_progress may not
+            # be the only allowed state.
+            try:
+                from wonderland.ticket_lifecycle import (
+                    TicketState,
+                    get_state as get_ticket_state,
+                )
+            except Exception:  # noqa: BLE001
+                get_ticket_state = None
+                TicketState = None  # type: ignore[assignment]
+
             ticket_to_feature = _ticket_to_feature_map(project_root)
             for item in items:
+                # Explicit ticket-level queue override: skip the
+                # feature-state gate entirely.
+                if get_ticket_state is not None and TicketState is not None:
+                    tstate = get_ticket_state(project_root, item["slug"])
+                    if tstate in (
+                        TicketState.QUEUED,
+                        TicketState.IN_PROGRESS,
+                    ):
+                        filtered.append(item)
+                        continue
                 feature_slug = ticket_to_feature.get(item["slug"])
                 if feature_slug is None:
                     continue
                 state = get_state(project_root, feature_slug)
+                if state is not None and state in allowed:
+                    filtered.append(item)
+        elif item_kind == "feature":
+            # Mirror the per-ticket override one level up: when the
+            # outer pipeline iterates features and a sub-meeting
+            # iterates tickets, a feature with explicitly-queued
+            # tickets should be included even if the feature's own
+            # state isn't in ``allowed``. Otherwise queueing a
+            # ticket on an in-progress / done feature has no effect
+            # because the lane never spawns.
+            try:
+                from wonderland.ticket_lifecycle import (
+                    TicketState,
+                    get_state as get_ticket_state,
+                )
+            except Exception:  # noqa: BLE001
+                get_ticket_state = None
+                TicketState = None  # type: ignore[assignment]
+            features_with_queued_tickets: set[str] = set()
+            if get_ticket_state is not None and TicketState is not None:
+                ticket_to_feature = _ticket_to_feature_map(project_root)
+                for ticket_slug, feature_slug in ticket_to_feature.items():
+                    tstate = get_ticket_state(project_root, ticket_slug)
+                    if tstate in (
+                        TicketState.QUEUED,
+                        TicketState.IN_PROGRESS,
+                    ):
+                        features_with_queued_tickets.add(feature_slug)
+            for item in items:
+                slug = item["slug"]
+                if slug in features_with_queued_tickets:
+                    filtered.append(item)
+                    continue
+                state = get_state(project_root, slug)
                 if state is not None and state in allowed:
                     filtered.append(item)
         else:
@@ -1029,6 +1182,36 @@ def _collect_per_item_items(
             it for it in items
             if ticket_to_feature.get(it["slug"]) == lane_outer_slug
         ]
+        # Ticket-state filter (per-ticket queueing). When the
+        # operator has explicitly queued at least one ticket
+        # belonging to THIS lane's feature, scope the iteration to
+        # just the queued + in_progress set. The
+        # in_progress allowance covers a mid-run state where the
+        # substrate has flipped the ticket to in_progress for the
+        # first iteration; subsequent meetings in the same lane
+        # should still see it. When no ticket is explicitly
+        # queued, we fall through — every ticket of the feature
+        # iterates, preserving the legacy behavior.
+        try:
+            from wonderland.ticket_lifecycle import (
+                TicketState,
+                get_state as get_ticket_state,
+            )
+        except Exception:  # noqa: BLE001
+            get_ticket_state = None
+            TicketState = None  # type: ignore[assignment]
+        if get_ticket_state is not None and TicketState is not None:
+            ticket_states: dict[str, Any] = {
+                it["slug"]: get_ticket_state(project_root, it["slug"])
+                for it in items
+            }
+            explicitly_queued = [
+                slug for slug, state in ticket_states.items()
+                if state in (TicketState.QUEUED, TicketState.IN_PROGRESS)
+            ]
+            if explicitly_queued:
+                queued_set = set(explicitly_queued)
+                items = [it for it in items if it["slug"] in queued_set]
     elif (
         lane_outer_slug is not None
         and lane_outer_kind is not None
@@ -1935,12 +2118,38 @@ def _ticket_to_feature_map(project_root: Path) -> dict[str, str]:
             if sources_line in ("", "—", "-"):
                 continue
             for source in (s.strip() for s in sources_line.split(",")):
-                if source and source in feature_slugs:
-                    # First feature-shaped source wins. M3 directive
-                    # requires the parent feature to be the first
-                    # entry; this matches that contract.
+                if not source:
+                    continue
+                # Normalise three observed Sources formats:
+                #   bare slug:           ``earn-xp-and-level-up-...``
+                #   kind-colon prefix:   ``feature: earn-xp-and-level-up-...``
+                #   kind-dash prefix:    ``feature-earn-xp-and-level-up-...``
+                # Rabbit's directive asks for bare slugs, but the
+                # other two leak through in practice. Without this
+                # normalisation, ~half the tickets get silently
+                # dropped from the parent map — they never reach
+                # the per-item iteration and the operator wonders
+                # why the imp run skipped them.
+                if source in feature_slugs:
                     out[ticket_record.slug] = source
                     break
+                # ``<kind>: <slug>`` — strip the colon-prefix.
+                if ":" in source:
+                    _, _, rest = source.partition(":")
+                    rest = rest.strip()
+                    if rest in feature_slugs:
+                        out[ticket_record.slug] = rest
+                        break
+                # ``feature-<slug>`` — strip the dash-prefix when
+                # the result matches a registered feature. Guard:
+                # don't strip if the bare slug happens to also
+                # start with ``feature-`` for legitimate reasons
+                # (we already checked that case above).
+                if source.startswith("feature-"):
+                    alt = source[len("feature-"):]
+                    if alt in feature_slugs:
+                        out[ticket_record.slug] = alt
+                        break
     except Exception:  # noqa: BLE001 — best-effort
         return {}
     return out

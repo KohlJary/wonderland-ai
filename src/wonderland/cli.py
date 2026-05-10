@@ -571,6 +571,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.set_defaults(func=cmd_run)
 
+    # `wonderland run-bg` — detached background-run command. The TUI
+    # spawns this as a subprocess (start_new_session=True) so runs
+    # survive parent exit. Defined in cli_run_bg.py to keep the
+    # foreground/background paths legible.
+    from wonderland.cli_run_bg import add_run_bg_subparser
+
+    add_run_bg_subparser(subparsers)
+
     # `wonderland project` — registry management for the P11 Project
     # abstraction. The TUI reads this same registry; CLI subcommands
     # let scripts / shell users register projects without launching

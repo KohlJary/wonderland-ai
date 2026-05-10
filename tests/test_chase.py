@@ -186,27 +186,10 @@ def test_chase_strip_keeps_moving_through_idle(
 
 
 # --- Integration with LiveRunScreen ---
-
-
-async def test_live_run_screen_mounts_chase_strip(tmp_path) -> None:
-    """LiveRunScreen has a ChaseStrip widget mounted under the
-    Meetings label."""
-    from wonderland.tui import WonderlandApp
-    from wonderland.tui.widgets.chase import ChaseStrip
-
-    # Build a minimal handle for LiveRunScreen — using a tmp_path
-    # snapshot dir so it doesn't error trying to read real run state.
-    (tmp_path / ".wonderland").mkdir()
-    from wonderland.tui.screens.live_run import LiveRunScreen
-
-    app = WonderlandApp()
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        app.push_screen(LiveRunScreen(tmp_path))
-        await pilot.pause()
-        screen = app.screen
-        assert isinstance(screen, LiveRunScreen)
-        chase = screen.query_one("#meetings-chase", ChaseStrip)
-        assert chase is not None
-        await pilot.press("escape")
-        await pilot.press("q")
+#
+# ``test_live_run_screen_mounts_chase_strip`` lived here until the
+# P13 live-watch rework removed the ChaseStrip integration in
+# favour of the live-call-feed table. The widget itself stays
+# (other surfaces may pick it up), so the unit tests above remain
+# load-bearing — but the LiveRunScreen integration assertion no
+# longer applies.

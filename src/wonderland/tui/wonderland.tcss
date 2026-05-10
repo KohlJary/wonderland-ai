@@ -747,13 +747,30 @@ CastBrowserScreen #cast-constitution-pane {
     min-width: 18;
 }
 
-/* Features primary surface — dominant content area on the dashboard
- * (per the P12 reshape: features are the operator's main attention
- * point, not a tab among equals). */
+/* Content row: Runs column (left, always visible) + Features section
+ * (right). The runs column tees up background runs the operator can
+ * leave going while navigating other views; features stay the
+ * dominant surface within the row. */
 
-#features-row {
+#content-row {
     height: 2fr;
     padding: 0 2;
+}
+
+#runs-column {
+    width: 3fr;
+    height: 1fr;
+    margin: 0 1 1 0;
+}
+
+/* Features primary surface — dominant content area within the
+ * content row (per the P12 reshape: features are the operator's
+ * main attention point). Features-row sits to the right of the
+ * runs column and contains the list + detail panes. */
+
+#features-row {
+    width: 7fr;
+    height: 1fr;
 }
 
 #features-list-pane {
@@ -839,27 +856,53 @@ CastBrowserScreen #cast-constitution-pane {
     margin: 0 0 0 0;
 }
 
-#runs-tab-row,
+/* Runs column children — list (top) + detail (below), stacked
+ * vertically. Both halves get equal height so background runs
+ * stay visible while the operator drills into the highlighted
+ * one. */
+
+#runs-list-label,
+#runs-detail-label {
+    padding: 0 1;
+    color: $primary;
+    height: auto;
+}
+
+#runs-table {
+    height: 1fr;
+    border: round $panel;
+    margin: 0 0 1 0;
+}
+
+#runs-detail-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1;
+}
+
+#runs-detail {
+    color: $foreground;
+}
+
+/* Artifacts drill-down tab: still uses the list-left / detail-right
+ * tabbed shape. */
+
 #artifacts-tab-row {
     height: 1fr;
 }
 
-#runs-list-pane,
 #artifacts-list-pane {
     width: 2fr;
     height: 1fr;
     margin: 0 1 1 0;
 }
 
-#runs-detail-pane,
 #artifacts-detail-pane {
     width: 3fr;
     height: 1fr;
     margin: 0 0 1 1;
 }
 
-#runs-list-label,
-#runs-detail-label,
 #artifacts-list-label,
 #artifacts-detail-label {
     padding: 0 1;
@@ -867,20 +910,17 @@ CastBrowserScreen #cast-constitution-pane {
     height: auto;
 }
 
-#runs-table,
 #artifacts-table {
     height: 1fr;
     border: round $panel;
 }
 
-#runs-detail-scroll,
 #artifacts-detail-scroll {
     height: 1fr;
     border: round $panel;
     padding: 1;
 }
 
-#runs-detail,
 #artifacts-detail {
     color: $foreground;
 }

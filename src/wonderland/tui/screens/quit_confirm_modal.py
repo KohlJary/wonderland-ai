@@ -44,14 +44,30 @@ class QuitConfirmModal(ModalScreen[bool | None]):
                 "[b yellow]Quit Wonderland?[/b yellow]",
                 id="quit-modal-header",
             )
-            yield Static(
-                "[dim]Any in-flight runs will continue in the "
-                "background until you abort them. Live-watch state "
-                "and unsaved dashboard cursor positions will be "
-                "lost. Re-launch with [b]wonderland-tui[/b] to "
-                "resume.[/dim]",
-                id="quit-modal-body",
-            )
+            # Slice B: surface in-flight runs. Quitting kills them
+            # — until detached background processes land, the
+            # consumer task lives on the App's event loop and dies
+            # with the app. The operator should know what they're
+            # tearing down before they confirm.
+            active = getattr(self.app, "_active_run", None)
+            if active is not None and not active.is_terminal:
+                body_text = (
+                    f"[b red]A run is in flight: "
+                    f"{active.run_id}[/b red]\n"
+                    f"[dim]Quitting will abort it — the consumer "
+                    f"task lives in this app's event loop. "
+                    f"Telemetry written so far is preserved on "
+                    f"disk; mid-meeting state is lost. Press Cancel "
+                    f"and abort it explicitly from the live-watch "
+                    f"screen if you'd rather a clean shutdown.[/dim]"
+                )
+            else:
+                body_text = (
+                    "[dim]Live-watch state and unsaved dashboard "
+                    "cursor positions will be lost. Re-launch with "
+                    "[b]wonderland-tui[/b] to resume browsing.[/dim]"
+                )
+            yield Static(body_text, id="quit-modal-body")
             with Horizontal(id="quit-modal-actions"):
                 yield Button(
                     "Quit",

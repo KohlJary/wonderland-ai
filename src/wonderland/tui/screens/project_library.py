@@ -137,6 +137,12 @@ class ProjectLibraryScreen(Screen[None]):
             "substrate, the directives, and the agents.",
         ),
         (
+            "open_release_notes",
+            "📋 Release notes",
+            "What shipped in each version. Newest first; "
+            "markdown-rendered inline.",
+        ),
+        (
             "open_cast",
             "👤 The Cast",
             "Browse the ten Wonderland agents. Each card shows the "
@@ -558,6 +564,13 @@ class ProjectLibraryScreen(Screen[None]):
         from wonderland.tui.screens.analyses import AnalysesScreen
 
         self.app.push_screen(AnalysesScreen())
+
+    def action_open_release_notes(self) -> None:
+        from wonderland.tui.screens.release_notes import (
+            ReleaseNotesScreen,
+        )
+
+        self.app.push_screen(ReleaseNotesScreen())
 
     def action_open_cast(self) -> None:
         from wonderland.tui.screens.cast import CastBrowserScreen

@@ -79,6 +79,188 @@ def test_accepts_dot_wonderland_layout(tmp_path: Path) -> None:
     assert summary.project_root == tmp_path
 
 
+def test_meeting_for_pipeline_thread_id_resolves_via_workflow(
+    tmp_path: Path,
+) -> None:
+    """Regression: pipeline thread ids (``pipe.<feature>.<base>-<slug>``)
+    used to fall through to the ``label=thread_id`` synthetic and
+    dump the raw path into the meetings pane. Now the inner segment
+    is matched against the workflow's static meeting ids."""
+    import json
+    import sqlite3
+    from datetime import timezone
+    from wonderland.utterance import (
+        AgentIdentity,
+        SpeechAct,
+        Utterance,
+        UtteranceContent,
+    )
+
+    wd = tmp_path / ".wonderland"
+    dodo_dir = wd / "memory" / "dodo"
+    dodo_dir.mkdir(parents=True)
+    db = dodo_dir / "episodic.sqlite"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE utterances (timestamp TEXT, thread_id TEXT, "
+        "payload TEXT)"
+    )
+    alice = AgentIdentity(name="alice", constitution_version="v1")
+    pipeline_thread = (
+        "pipe.earn-xp-feature.tea-party-backend-accumulate-xp"
+    )
+    ts = datetime(2026, 5, 10, 14, 0, 0, tzinfo=timezone.utc)
+    utt = Utterance(
+        speaker=alice,
+        speech_act=SpeechAct.OBSERVATION,
+        timestamp=ts,
+        content=UtteranceContent(body="hi"),
+        thread_id=pipeline_thread,
+        addressed_to="caucus",
+    )
+    conn.execute(
+        "INSERT INTO utterances VALUES (?, ?, ?)",
+        (ts.isoformat(), pipeline_thread, utt.model_dump_json()),
+    )
+    conn.commit()
+    conn.close()
+
+    # Telemetry so summary() works.
+    telemetry = wd / "telemetry"
+    telemetry.mkdir()
+    (telemetry / "run-x.json").write_text(json.dumps({
+        "run_id": "x",
+        "total_cost": 0.0,
+        "total_calls": 0,
+    }))
+
+    handle = HistoricalRunHandle(
+        tmp_path, workflow_name="tdd-implement"
+    )
+
+    # Drain the stream and find the MeetingStarted event.
+    import asyncio
+
+    async def _drain():
+        events = []
+        async for event in handle.stream_events():
+            events.append(event)
+        return events
+
+    events = asyncio.run(_drain())
+    meeting_starts = [
+        e for e in events if type(e).__name__ == "MeetingStarted"
+    ]
+    assert meeting_starts, "expected at least one MeetingStarted"
+    rm = meeting_starts[0].meeting
+    # The label must be the static workflow label, not the
+    # pipeline thread_id. tdd-implement's tea-party meeting is
+    # M6 with name "The Mad Tea Party".
+    assert rm.label == "M6"
+    assert rm.name and "Tea Party" in rm.name
+    assert "pipe." not in rm.label
+    # Iteration label must include both feature and ticket
+    # discriminators (``<feature> / <sub_slug>``) so each per-
+    # ticket row in the meetings pane is distinct.
+    iteration_label = meeting_starts[0].iteration_label
+    assert iteration_label is not None
+    assert "Earn xp feature" in iteration_label
+    assert "/" in iteration_label
+    # The ticket slug after the meeting id is "backend-accumulate-xp"
+    # → "Backend accumulate xp" after humanisation.
+    assert "Backend accumulate xp" in iteration_label
+
+
+def test_run_id_kwarg_picks_named_telemetry_file(tmp_path: Path) -> None:
+    """When run_id is passed, _load_telemetry reads
+    telemetry/run-<run_id>.json instead of the latest file. This is
+    the dashboard's "open finished run" path: the project's
+    .wonderland/ accumulates one telemetry file per run, but the
+    operator picked one specific run to view."""
+    import json
+
+    wd = tmp_path / ".wonderland"
+    telemetry = wd / "telemetry"
+    telemetry.mkdir(parents=True)
+    # Two runs persisted; older + newer
+    (telemetry / "run-20260509T100000.json").write_text(json.dumps({
+        "run_id": "20260509T100000",
+        "total_cost": 0.10,
+        "total_calls": 5,
+        "outcome": "complete",
+    }))
+    (telemetry / "run-20260510T140000.json").write_text(json.dumps({
+        "run_id": "20260510T140000",
+        "total_cost": 0.50,
+        "total_calls": 20,
+        "outcome": "aborted",
+    }))
+    # Pinning to the OLDER run should pull its data, not the latest.
+    handle = HistoricalRunHandle(tmp_path, run_id="20260509T100000")
+    summary = handle.summary()
+    assert summary.run_id == "20260509T100000"
+    assert summary.total_cost == 0.10
+    assert summary.outcome == "complete"
+
+
+def test_time_window_filters_utterances(tmp_path: Path) -> None:
+    """When time_window is passed, ``utterances()`` yields only those
+    within the window — the way project-scoped Dodo memory gets
+    sliced down to a single run for the dashboard's
+    finished-run-replay path."""
+    import sqlite3
+    from datetime import timedelta, timezone
+    from wonderland.utterance import (
+        AgentIdentity,
+        SpeechAct,
+        Utterance,
+        UtteranceContent,
+    )
+
+    wd = tmp_path / ".wonderland"
+    dodo_dir = wd / "memory" / "dodo"
+    dodo_dir.mkdir(parents=True)
+    db = dodo_dir / "episodic.sqlite"
+
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE utterances (timestamp TEXT, thread_id TEXT, "
+        "payload TEXT)"
+    )
+    alice = AgentIdentity(name="alice", constitution_version="v1")
+    base = datetime(2026, 5, 10, 14, 0, 0, tzinfo=timezone.utc)
+    for offset in (-3600, -60, 60, 3600):
+        # -3600 + -60 = before window; 60 = inside; 3600 = after
+        ts = base + timedelta(seconds=offset)
+        utt = Utterance(
+            speaker=alice,
+            speech_act=SpeechAct.OBSERVATION,
+            timestamp=ts,
+            content=UtteranceContent(body=f"t={offset}"),
+            thread_id="m1",
+            addressed_to="caucus",
+        )
+        conn.execute(
+            "INSERT INTO utterances VALUES (?, ?, ?)",
+            (ts.isoformat(), "m1", utt.model_dump_json()),
+        )
+    conn.commit()
+    conn.close()
+
+    # Window covers ±5 minutes around base — picks up only the
+    # ±60s rows.
+    window = (
+        base - timedelta(minutes=5),
+        base + timedelta(minutes=5),
+    )
+    handle = HistoricalRunHandle(tmp_path, time_window=window)
+    bodies = [u.content.body for u in handle.utterances()]
+    assert "t=-60" in bodies
+    assert "t=60" in bodies
+    assert "t=-3600" not in bodies
+    assert "t=3600" not in bodies
+
+
 def test_constructs_against_v6_banner() -> None:
     _require_snapshot(_V6_BANNER)
     handle = HistoricalRunHandle(_V6_BANNER)
