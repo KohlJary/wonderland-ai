@@ -297,6 +297,16 @@ class ProjectDashboardScreen(Screen[None]):
                             id="features-detail",
                         )
                     with Horizontal(id="feature-actions-row"):
+                        # Promote → Designed shows when the selected
+                        # feature is in_design (M5 didn't fully fire,
+                        # or operator un-promoted earlier). Replaces
+                        # queue/un-queue in that view since those
+                        # transitions aren't legal from in_design.
+                        yield Button(
+                            "Promote to Designed",
+                            id="feature-action-promote-designed",
+                            variant="primary",
+                        )
                         yield Button(
                             "Queue", id="feature-action-queue"
                         )
@@ -491,11 +501,64 @@ class ProjectDashboardScreen(Screen[None]):
         if data is None:
             return
         if data.get("kind") == "feature":
-            self._render_feature_detail(data["row"])
+            row = data["row"]
+            self._render_feature_detail(row)
+            self._refresh_per_feature_action_buttons(row)
         elif data.get("kind") == "ticket":
             self._render_ticket_detail(
                 data["record"], data["feature_row"]
             )
+            # Tickets don't have lifecycle state of their own; show
+            # the parent feature's button shape so the operator's
+            # next move is obvious.
+            self._refresh_per_feature_action_buttons(data["feature_row"])
+
+    def _refresh_per_feature_action_buttons(
+        self, row: "_FeatureRow"
+    ) -> None:
+        """Show/hide the per-feature action buttons based on the
+        selected feature's lifecycle state.
+
+        State → visible buttons:
+          - in_design → Promote to Designed
+          - designed → Queue
+          - queued → Un-queue
+          - in_progress → none (work mid-flight; nothing to act on)
+          - ready_for_review → Verify, Reject
+          - proposed / verified / rejected → none
+
+        Promote-to-Designed is restricted to in_design because
+        ``in_design → designed`` is the only direct path to
+        designed in LEGAL_TRANSITIONS. (proposed → designed isn't
+        legal; proposed must first go through in_design.)
+
+        Buttons that don't apply are hidden via ``display = False``
+        rather than disabled so the row stays uncluttered. The
+        operator's next legal move is the only thing visible.
+        """
+        try:
+            promote_btn = self.query_one(
+                "#feature-action-promote-designed", Button
+            )
+            queue_btn = self.query_one("#feature-action-queue", Button)
+            unqueue_btn = self.query_one(
+                "#feature-action-unqueue", Button
+            )
+            verify_btn = self.query_one(
+                "#feature-action-verify", Button
+            )
+            reject_btn = self.query_one(
+                "#feature-action-reject", Button
+            )
+        except Exception:  # noqa: BLE001 — pre-mount race
+            return
+
+        state = row.state
+        promote_btn.display = state == FeatureState.IN_DESIGN
+        queue_btn.display = state == FeatureState.DESIGNED
+        unqueue_btn.display = state == FeatureState.QUEUED
+        verify_btn.display = state == FeatureState.READY_FOR_REVIEW
+        reject_btn.display = state == FeatureState.READY_FOR_REVIEW
 
     # ------------------------------------------------------------------ #
     # Artifacts tab (T83)
@@ -1319,7 +1382,24 @@ class ProjectDashboardScreen(Screen[None]):
             self.notify("No feature selected.", severity="warning")
             return
 
-        if button_id == "feature-action-queue":
+        if button_id == "feature-action-promote-designed":
+            try:
+                transition(
+                    self.project.root_path,
+                    row.slug,
+                    FeatureState.DESIGNED,
+                    by="operator",
+                    notes="Promoted from in_design via dashboard",
+                )
+                self.notify(
+                    f"Promoted {row.slug} to designed — queue it next."
+                )
+                self.action_refresh()
+            except IllegalTransitionError as exc:
+                self.notify(
+                    f"Can't promote: {exc}", severity="warning"
+                )
+        elif button_id == "feature-action-queue":
             try:
                 transition(
                     self.project.root_path,
