@@ -243,6 +243,13 @@
         "title": "Distinguish replay from live runs in the live-watch UI",
         "status": "pending",
         "details": "From the prior obol session: when meetings showed 'complete \u00b7 $0' across the board, one diagnostic hypothesis was 'maybe the operator launched a replay (MockTurtle) instead of a live run.' That hypothesis turned out wrong (it was the API credit issue), but the underlying confusion is real: live-watch consumes both LiveRunHandle (real, costs money) and MockTurtleHandle (replay, $0) interchangeably. There's no visual signal distinguishing the two.\n\nAdd a [REPLAY] badge or color treatment to the live-watch screen header when consuming a MockTurtleHandle. Status bar showing 'replay \u00b7 5x speed \u00b7 src=run-20260510T085719' so the operator can tell at a glance which mode they're in.\n\nSmall but high-leverage UX: the diagnosis-confusion class (was that meeting really at $0, or am I watching a snapshot?) shows up enough that prevention is cheaper than re-asking each time."
+      },
+      {
+        "id": "T99",
+        "title": "Phased-path lifecycle dispatch fix",
+        "status": "done",
+        "details": "Phased dispatch branch in _run_one_meeting bypassed both transition_emitted_to (per-utterance) and transition_iteration_to (post-MeetingEnd), since both lived inside _convene_one. Symptom: M3 + M5 silently skipped despite upstream meetings shipping artifacts; features stuck at no-state or proposed depending on which transition was missing. Fix: hoisted transition_emitted_to to per-utterance and mirrored both hooks into the phased branch. Caught by live-debugging two obol2 design passes.",
+        "resolution": "Two-commit fix (1546581 + 2aa46b3) on top of 112b0a4. Per-utterance transition_emitted_to + post-MeetingEnd transition_iteration_to now both fire on the phased dispatch path. Regression tests added in tests/test_workflow_lifecycle.py::TestEmissionHookFiresInEventLoop covering convene + phased + iteration paths. Operator-visible: M3 stops skipping with '(no items)' on cross-run design passes; M5 picks up M3-decomposed features. Lesson: dispatch asymmetry between _convene_one and run_phased_meeting is a recurring failure shape \u2014 when adding behavior post-meeting, mirror into both branches. Released as 0.3.3 (transition_emitted_to portion); transition_iteration_to portion will ship in next patch."
       }
     ],
     "deferred": []
