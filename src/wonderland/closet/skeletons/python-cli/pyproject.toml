@@ -11,7 +11,11 @@ dependencies = [
     "click>=8.1",
 ]
 
-[project.optional-dependencies]
+# Dev deps live under [dependency-groups] (PEP 735) so ``uv sync``
+# installs them automatically into the project venv — keeps
+# ``uv run pytest`` from falling back to a tool-cache pytest that
+# can't see click.
+[dependency-groups]
 dev = [
     "pytest>=8.0",
 ]

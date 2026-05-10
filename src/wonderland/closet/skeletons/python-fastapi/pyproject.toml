@@ -12,7 +12,11 @@ dependencies = [
     "uvicorn[standard]>=0.32",
 ]
 
-[project.optional-dependencies]
+# Dev deps live under [dependency-groups] (PEP 735) so ``uv sync``
+# installs them automatically into the project venv — keeps
+# ``uv run pytest`` from falling back to a tool-cache pytest that
+# can't see fastapi/uvicorn.
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
