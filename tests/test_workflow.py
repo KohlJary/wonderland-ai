@@ -2447,3 +2447,122 @@ class TestResolveSeedsLaneScoping:
         ]
         # Both visible — no filter applied.
         assert sorted(slugs) == ["alpha-spec", "beta-spec"]
+
+
+class TestResolveSeedsConsumedBy:
+    """``SeedBinding.consumed_by`` drops source artifacts whose slugs
+    already appear in some downstream consumer's ``Sources:`` line.
+
+    Use case: M2 composition's binding ``from: scoping kinds:
+    [story], consumed_by: feature`` scopes M2 to *uncomposed*
+    stories on cross-run design passes. Once a story has a feature
+    sourcing it, M2 has no business renegotiating it."""
+
+    def test_filter_drops_stories_consumed_by_existing_features(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.feature import (
+            FeaturePayload,
+            FeatureRegistry,
+            StackSpan,
+        )
+        from wonderland.ticket import TicketTier
+
+        # Two stories on the bus
+        capture = WorkflowCapture()
+        capture.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="story-already-composed")],
+        ))
+        capture.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="story-still-uncomposed")],
+        ))
+
+        # An existing feature on disk that sources the FIRST story.
+        # This is the cross-run state — prior design pass shipped
+        # this feature; current pass should NOT re-compose its source.
+        FeatureRegistry(tmp_path).write(
+            FeaturePayload(
+                title="Already-composed feature",
+                description="from prior run",
+                stack_span=StackSpan.FULL_STACK,
+                tier=TicketTier.V1,
+                sources=["story-already-composed"],
+            )
+        )
+
+        bindings = [
+            SeedBinding(**{
+                "from": "scoping",
+                "kinds": ["story"],
+                "consumed_by": "feature",
+            })
+        ]
+        result = resolve_seeds(
+            bindings,
+            capture,
+            project_root=tmp_path,
+        )
+        slugs = [
+            a.payload["slug"]
+            for u in result
+            for a in u.content.artifacts
+            if a.kind == "story"
+        ]
+        # First story dropped (already consumed); second kept.
+        assert slugs == ["story-still-uncomposed"]
+
+    def test_no_filter_when_consumed_by_unset(self, tmp_path: Path) -> None:
+        """The consumed_by branch is opt-in — bindings without it
+        keep all matched artifacts (legacy behavior)."""
+        capture = WorkflowCapture()
+        capture.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="story-a")],
+        ))
+        capture.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="story-b")],
+        ))
+
+        bindings = [
+            SeedBinding(**{"from": "scoping", "kinds": ["story"]})
+        ]
+        result = resolve_seeds(bindings, capture, project_root=tmp_path)
+        slugs = sorted(
+            a.payload["slug"]
+            for u in result
+            for a in u.content.artifacts
+            if a.kind == "story"
+        )
+        assert slugs == ["story-a", "story-b"]
+
+    def test_filter_no_op_when_no_consumer_artifacts_exist(
+        self, tmp_path: Path
+    ) -> None:
+        """First-run case: no features on disk yet, so nothing has
+        been consumed. All stories pass through (filter is no-op)."""
+        capture = WorkflowCapture()
+        capture.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="story-a")],
+        ))
+
+        bindings = [
+            SeedBinding(**{
+                "from": "scoping",
+                "kinds": ["story"],
+                "consumed_by": "feature",
+            })
+        ]
+        result = resolve_seeds(
+            bindings, capture, project_root=tmp_path
+        )
+        slugs = [
+            a.payload["slug"]
+            for u in result
+            for a in u.content.artifacts
+            if a.kind == "story"
+        ]
+        assert slugs == ["story-a"]

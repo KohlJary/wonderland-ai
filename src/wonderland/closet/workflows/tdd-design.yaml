@@ -149,8 +149,18 @@ meetings:
     seeds:
       - from: any
         kinds: [project_context]
+      # consumed_by: feature scopes M2 to *uncomposed* stories. On
+      # cross-run design passes (operator iterating tdd-design 5–10×
+      # against the same project, the workflow's economic argument),
+      # stories from prior passes that already have features
+      # sourcing them are dropped. Without this, Rabbit re-
+      # composes the entire history into duplicate features —
+      # observed in the May 10 obol mock-data design pass: M2
+      # was renegotiating the prior run's stories instead of
+      # focusing on the new mock-data ones.
       - from: scoping
         kinds: [story]
+        consumed_by: feature
 
     transition_emitted_to: proposed
     phases:

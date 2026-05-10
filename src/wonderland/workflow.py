@@ -89,6 +89,19 @@ class SeedBinding(BaseModel):
             "None = empty seed set is fine."
         ),
     )
+    consumed_by: str | None = Field(
+        default=None,
+        description=(
+            "Drop matched utterances whose slug already appears in some "
+            "downstream artifact's ``sources:`` list. Used to scope "
+            "M2 composition to *uncomposed* stories on cross-run "
+            "design passes — once a story has a feature sourcing it, "
+            "M2 has no business renegotiating it. Generic over any "
+            "(consumed-kind, consumer-kind) pair: stories→features, "
+            "features→adrs, etc. None = no consumption filter "
+            "(default; legacy seed behavior)."
+        ),
+    )
 
 
 class PhaseSpec(BaseModel):
@@ -653,6 +666,28 @@ def resolve_seeds(
                 list(binding.kinds),
                 thread_id=binding.from_meeting,
             )
+
+        # Consumption filter (binding.consumed_by): drop utterances
+        # whose slug already appears in some downstream artifact's
+        # ``Sources:`` line. Used to scope M2 composition to
+        # *uncomposed* stories on cross-run design passes — once a
+        # story has a feature sourcing it, M2 has no business
+        # renegotiating it. Generic over (consumed-kind,
+        # consumer-kind) pairs.
+        if binding.consumed_by is not None:
+            consumed = _consumed_source_slugs(
+                project_root, binding.consumed_by
+            )
+            if consumed:
+                kinded = [
+                    u
+                    for u in kinded
+                    if not any(
+                        a.payload.get("slug") in consumed
+                        for a in u.content.artifacts
+                        if a.kind in binding.kinds
+                    )
+                ]
 
         # If we're inside a per_item iteration AND this binding pulls
         # the iteration kind, slice to the current item's payload slug.
@@ -1533,6 +1568,79 @@ def _ticket_to_feature_map(project_root: Path) -> dict[str, str]:
     except Exception:  # noqa: BLE001 — best-effort
         return {}
     return out
+
+
+def _consumed_source_slugs(
+    project_root: Path | None, consumer_kind: str
+) -> set[str]:
+    """Scan ``project_root/.wonderland/<consumer-dir>/`` for files of
+    ``consumer_kind`` and return every slug that appears in any of
+    their ``Sources:`` lines.
+
+    Used by ``SeedBinding.consumed_by`` to scope a seed binding to
+    only artifacts that haven't yet been consumed by a downstream
+    kind. Canonical case: M2 composition's ``from: scoping kinds:
+    [story], consumed_by: feature`` — drops stories that already
+    have a feature sourcing them, so cross-run design passes don't
+    renegotiate stories the prior pass already composed.
+
+    Best-effort: returns empty set on any error or when the
+    consumer-kind directory doesn't exist (no files = nothing
+    consumed yet, so all source artifacts pass through).
+
+    Generic over (consumer_kind, source-of-consumed). The Sources
+    line in markdown carries arbitrary slugs; this helper just
+    accumulates them.
+    """
+    import re
+
+    if project_root is None:
+        return set()
+
+    # Map consumer_kind → on-disk directory + filename pattern.
+    # Mirrors the structure used by registries elsewhere; if a kind
+    # we don't know about lands here, treat as no consumption.
+    kind_dirs = {
+        "feature": "features",
+        "ticket": "tickets",
+        "adr": "architecture",
+        "ruling": "rulings",
+        "contract_note": "contract-notes",
+        "test_scenario": "test-scenarios",
+        "implementation": "implementations",
+        "review": "reviews",
+        "story": "stories",
+        "observation": "observations",
+    }
+    dirname = kind_dirs.get(consumer_kind)
+    if dirname is None:
+        return set()
+
+    base = project_root / ".wonderland" / dirname
+    if not base.is_dir():
+        return set()
+
+    sources_re = re.compile(
+        r"^\s*\*\*Sources?:\*\*\s*(.+?)$",
+        re.MULTILINE,
+    )
+
+    consumed: set[str] = set()
+    for path in base.glob("*.md"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = sources_re.search(text)
+        if not match:
+            continue
+        sources_line = match.group(1).strip()
+        if sources_line in ("", "—", "-"):
+            continue
+        for source in (s.strip() for s in sources_line.split(",")):
+            if source:
+                consumed.add(source)
+    return consumed
 
 
 def _apply_post_meeting_transitions(
