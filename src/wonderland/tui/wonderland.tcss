@@ -142,6 +142,11 @@ LiveRunScreen #right-pane {
     height: 1fr;
 }
 
+LiveRunScreen #meetings-chase {
+    margin: 0 2 0 2;
+    height: 1;
+}
+
 LiveRunScreen #live-meetings-table {
     height: 1fr;
     margin: 0 0 1 2;
@@ -501,4 +506,323 @@ CastBrowserScreen #cast-constitution-pane {
     height: 1fr;
     border: round $panel;
     padding: 1;
+}
+
+/* ProjectLibraryScreen — TUI home (P11 T75). Three-column main row:
+ * project list (2fr), actions menu (auto-width), detail pane (3fr).
+ * Project-context buttons sit in their own bottom row, close to the
+ * project they act on. */
+
+#project-library-row {
+    height: 1fr;
+    padding: 0 2;
+}
+
+#project-list-pane {
+    width: 2fr;
+    height: 1fr;
+    margin: 0 1 1 0;
+}
+
+#action-menu-pane {
+    width: 24;
+    height: 1fr;
+    margin: 0 1 1 1;
+}
+
+#project-detail-pane {
+    width: 3fr;
+    height: 1fr;
+    margin: 0 0 1 1;
+}
+
+#project-list-label,
+#action-menu-label,
+#project-detail-label {
+    padding: 0 1;
+    color: $primary;
+    height: auto;
+}
+
+#project-table,
+#action-table {
+    height: 1fr;
+    border: round $panel;
+}
+
+#project-detail-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1;
+}
+
+#project-detail {
+    color: $foreground;
+}
+
+/* Project-context buttons sit inside #project-list-pane, directly
+ * under the project DataTable — visually grouping the affordance
+ * with the data it acts on. Full-width of the project column,
+ * stacked vertically for prominence. */
+
+#project-list-buttons {
+    height: auto;
+    margin: 1 0 0 0;
+}
+
+#project-list-buttons Button {
+    width: 100%;
+    height: 3;
+    margin: 0 0 1 0;
+}
+
+/* NewProjectScreen — registration form (P11 T76). */
+
+#new-project-root {
+    height: 1fr;
+    padding: 0 2;
+}
+
+#new-project-header {
+    padding: 1 2;
+    background: $surface;
+    color: $accent;
+    height: auto;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#new-project-form-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1 2;
+}
+
+#new-project-form Label {
+    padding: 1 0 0 0;
+    color: $primary;
+    height: auto;
+}
+
+#new-project-form Input {
+    margin: 0 0 0 0;
+}
+
+#new-project-form Static {
+    color: $foreground;
+    height: auto;
+    padding: 0 0 0 1;
+}
+
+#name-help,
+#path-status,
+#workflow-help,
+#skeleton-help,
+#budget-help {
+    height: auto;
+    padding: 0 0 1 1;
+}
+
+#skeleton-apply-row {
+    height: auto;
+    padding: 0;
+    margin: 0;
+}
+
+#new-project-action-row {
+    height: auto;
+    padding: 1 0;
+    margin: 1 0 0 0;
+    align: center middle;
+}
+
+#new-project-action-row Button {
+    margin: 0 1;
+    min-width: 18;
+}
+
+/* EditProjectScreen — registration form mirror (P11 T77). */
+
+#edit-project-root {
+    height: 1fr;
+    padding: 0 2;
+}
+
+#edit-project-header {
+    padding: 1 2;
+    background: $surface;
+    color: $accent;
+    height: auto;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#edit-project-form-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1 2;
+}
+
+#edit-project-form Label {
+    padding: 1 0 0 0;
+    color: $primary;
+    height: auto;
+}
+
+#edit-project-form Static {
+    color: $foreground;
+    height: auto;
+    padding: 0 0 0 1;
+}
+
+#edit-identity-block {
+    padding: 0 0 1 1;
+    color: $foreground;
+}
+
+#edit-identity-help,
+#edit-budget-help {
+    padding: 0 0 1 1;
+}
+
+#edit-project-action-row {
+    height: auto;
+    padding: 1 0;
+    margin: 1 0 0 0;
+    align: center middle;
+}
+
+#edit-project-action-row Button {
+    margin: 0 1;
+    min-width: 18;
+}
+
+/* ProjectDashboardScreen — per-project tabs (P11 T79+T80+T83). */
+
+#dashboard-root {
+    height: 1fr;
+    padding: 0 2;
+}
+
+#dashboard-header {
+    padding: 1 2;
+    background: $surface;
+    color: $accent;
+    height: auto;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#dashboard-actions {
+    height: 5;
+    padding: 1 2;
+    margin: 0 0 1 0;
+    align: left middle;
+}
+
+#dashboard-actions Button {
+    margin: 0 1 0 0;
+    min-width: 18;
+}
+
+#dashboard-tabs {
+    height: 1fr;
+}
+
+#runs-tab-row,
+#artifacts-tab-row {
+    height: 1fr;
+}
+
+#runs-list-pane,
+#artifacts-list-pane {
+    width: 2fr;
+    height: 1fr;
+    margin: 0 1 1 0;
+}
+
+#runs-detail-pane,
+#artifacts-detail-pane {
+    width: 3fr;
+    height: 1fr;
+    margin: 0 0 1 1;
+}
+
+#runs-list-label,
+#runs-detail-label,
+#artifacts-list-label,
+#artifacts-detail-label {
+    padding: 0 1;
+    color: $primary;
+    height: auto;
+}
+
+#runs-table,
+#artifacts-table {
+    height: 1fr;
+    border: round $panel;
+}
+
+#runs-detail-scroll,
+#artifacts-detail-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1;
+}
+
+#runs-detail,
+#artifacts-detail {
+    color: $foreground;
+}
+
+/* Files tab (T81): DirectoryTree left, content viewer right. */
+
+#files-tab-row {
+    height: 1fr;
+}
+
+#files-tree-pane {
+    width: 2fr;
+    height: 1fr;
+    margin: 0 1 1 0;
+}
+
+#files-detail-pane {
+    width: 3fr;
+    height: 1fr;
+    margin: 0 0 1 1;
+}
+
+#files-tree-label,
+#files-detail-label {
+    padding: 0 1;
+    color: $primary;
+    height: auto;
+}
+
+#files-tree {
+    height: 1fr;
+    border: round $panel;
+}
+
+#files-detail-scroll {
+    height: 1fr;
+    border: round $panel;
+    padding: 1;
+}
+
+#files-detail {
+    color: $foreground;
+}
+
+/* Metrics tab (T82): scrollable plotext-rendered chart stack. */
+
+#metrics-scroll {
+    height: 1fr;
+    margin: 0 0 1 0;
+    padding: 1 2;
+}
+
+#metrics-content {
+    color: $foreground;
 }

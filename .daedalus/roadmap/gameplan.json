@@ -110,7 +110,7 @@
     {
       "id": "p8.4-live-watch",
       "title": "Live-watch screen",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [],
       "notes": "New LiveRunScreen that consumes the streaming API \u2014 meeting cells fill in as events arrive, current speaker indicator, live cost ticker, drill-down into in-progress meetings shows partial transcripts. Iterated entirely against Mock Turtle replay so zero API spend during UX iteration. The screen that turns Wonderland from \"things happen and you read transcripts later\" into \"things happen and you watch them happen.\""
     },
@@ -124,14 +124,14 @@
     {
       "id": "p8.6-spinup",
       "title": "New-project spinup (the rabbit hole)",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [],
       "notes": "Three entry paths converging on a single project-context capture: greenfield (skeleton picker + scaffold), existing-Wonderland (already covered by P8.5's project picker), adopt-existing (wonderland init + stack-detection routine that pre-fills the context form from manifest files). Persists .wonderland/project-context.md in a forward-compatible shape so future workflow-context injection has one input format to read. The on-ramp that turns \"pip install\" into \"team's ready to start.\""
     },
     {
       "id": "p8.7-polish",
       "title": "First-use polish",
-      "status": "planned",
+      "status": "done",
       "roadmapItems": [],
       "notes": "Welcome/home screen (new run / browse snapshots / cast / configure), error states (missing API key, no project root, run failure), abort flow (clean shutdown of running threads), quiescence indicator (M5's long pauses need \"still working, just thinking\"), README + SHOWCASE updates with the TUI flow. The rough-edges sweep that closes the gap between \"works for the developer\" and \"works for someone who just installed it.\""
     },
@@ -175,41 +175,84 @@
         "0858a936"
       ],
       "notes": "Per analyses 032 + 035: Tweedles are 78.8% of total run cost, with ~13-15 calls per deliberation reflecting heavy write_file \u2192 run_tests \u2192 write_file tool loops. Two batched fixes: (1) surface tool calls on the bus event log so post-run analysis can quantify exactly which tool calls drive cost (currently inferred via per-agent telemetry); (2) diff-based write tool that lets agents send deltas instead of full file contents, with analysis 032 estimating ~3.5\u00d7 cost compression on iterative file authoring. Sequencing: surface first so we can measure baseline tool-call distribution; then diff tool with measurements to verify the predicted compression. After both ship, second pass to identify other easy cost/clock wins from whatever the surfaced data reveals."
+    },
+    {
+      "id": "p11-projects",
+      "title": "Projects: first-class project model + dashboard",
+      "status": "done",
+      "roadmapItems": [],
+      "notes": ""
+    },
+    {
+      "id": "p11.5-polish",
+      "title": "Polish: ambient liveness, first-use UX, small ergonomic improvements after P11",
+      "status": "in_progress",
+      "roadmapItems": [],
+      "notes": ""
+    },
+    {
+      "id": "p12-lifecycle",
+      "title": "Feature lifecycle + workflow composability: split design / implement / verify; operator batching",
+      "status": "planned",
+      "roadmapItems": [],
+      "notes": ""
     }
   ],
   "activePhase": {
-    "id": "p8.6-spinup",
-    "title": "New-project spinup (the rabbit hole)",
+    "id": "p11.5-polish",
+    "title": "Polish: ambient liveness, first-use UX, small ergonomic improvements after P11",
     "started": "2026-05-09",
-    "goal": "Restore the skeleton primitive that was silently lost when r33+ TUI runs started against bare project roots (analysis 037 F1+F7). NewRunScreen needs a skeleton picker / scaffold step so operators don't accidentally launch into a skeleton-less run. Bundle minimal skeletons (python-cli, react-spa, fullstack-fastapi-react) in closet/skeletons/ for the picker to consume. Skeleton restoration is the primary fix for r38's no-prod-code regression; the directive backfill in Guard A (analysis 036) is a workaround that buys time but skeleton-as-substrate is the durable solution. Acceptance: a fresh TUI run against an empty project root produces a clearly-structured tree (src/, tests/, conftest.py wired) before the workflow opens, and the M5 directive's 'MANDATORY first move: list_files' guidance references real structure.",
-    "sequencing": "Skeleton bundle first (T70) \u2014 minimal viable set in closet/skeletons/ with metadata: name, description, top-level layout, conftest if applicable. fullstack-fastapi-react reconstructed from the version 032 used. python-cli for simpler directives. react-spa for frontend-only. Then NewRunScreen UI (T71) \u2014 detect bare roots, present skeleton picker as a step in the new-run flow, lay down the chosen skeleton before workflow runs. Then a re-run to validate (T72) \u2014 same Pomodoro directive, with skeleton, against r39's directive-backfill baseline. Watch: does deliverability hold? Does per-feature cost drop now that the directive's structure-explanation overhead is unneeded?",
+    "goal": "P11 shipped projects as a first-class abstraction with full dashboard. Polish covers the ergonomic + ambient-liveness layer on top: things that don't add capability but make the substrate pleasant to live in. Subsumes the unrealized 'first-use polish' goal of p8.7 (which was queued before projects existed; with the project library as the new home, first-use UX is implicitly designed around 'create your first project'). Does not block P12 architecture work; can ship in pieces alongside other phases.",
+    "sequencing": "T84 (chase animation on Meetings pane) opens the phase as a small load-bearing UX win \u2014 doubles as a stuck-detector for live runs (frozen border = no utterances landing, complement to Dodo's nudge ladder). Subsequent tasks file as they surface; polish phase grows organically rather than being scoped up-front.",
     "tasks": [
       {
-        "id": "T70",
-        "title": "Bundle minimal skeletons in closet/skeletons/",
+        "id": "T84",
+        "title": "Chase animation on Meetings pane border (active-meeting indicator + stuck-detector)",
         "status": "done",
-        "details": "Per analysis 037 F7. Three starter skeletons: python-cli (tests/, src/__init__.py, conftest.py importing from src), react-spa (frontend/src/, frontend/tests/, package.json), fullstack-fastapi-react (recover the version that was used in 032 banner \u2014 src/backend/, frontend/src/, conftest.py wired across both). Each skeleton lives in closet/skeletons/<name>/ with a manifest.yaml describing entry-point file, language stack, and test-runner conventions. Reader API in src/wonderland/skeleton.py mirrors src/wonderland/directive.py shape (bundled + per-project loaders). Tests cover bundled-skeleton integrity (every skeleton parses, every skeleton has a runnable conftest if it claims pytest).",
-        "resolution": "Skeleton bundle + loader shipped. Five bundled skeletons in closet/skeletons/: fullstack-fastapi-react (existing, web+API), python-fastapi (backend-only, FastAPI + httpx TestClient), react-vite (frontend-only, React + Vite + TypeScript + Vitest), python-cli (Click + pytest), python-tui (Textual + pytest-asyncio). Each ships a minimal hello-world (counter / /health / greet) plus a working test that proves the framework + test runner wiring. Loader API in src/wonderland/skeleton.py mirrors directive.py / workflow.py shape: Skeleton dataclass, skeletons_dir, list_skeletons (description pulled from each skeleton's README first paragraph), load_skeleton, apply_skeleton (refuses to overwrite by default; overwrite=True for re-apply/test), is_bare_project_root (.git + .gitignore + README.md = bare; src/ or tests/ = not bare). 17 tests cover bundled inventory + apply path + bare-root detection. closet/skeletons/README.md updated with the inventory table and the analysis-037 substrate-primitive framing. Full suite: 1561 pass."
+        "details": "Animate small Unicode emotes around the perimeter of the active meeting's container in the live-watch view. Doubles as: (a) a passive 'which meeting is active' affordance distinct from cursor-selection, (b) a stuck-detector \u2014 when no utterances are landing, the chase pauses; operator can glance at the screen and see 'we're frozen' without waiting for Dodo's nudge ladder to fire.\n\nMechanics:\n- Reactive _chase_position: int on the active meeting widget; advances on each AgentActEvent landing (not on a wall-clock tick \u2014 pace ties to actual signal so idle = no movement)\n- set_interval at low rate (200-500ms) just to refresh()\n- Position math: n_steps = 2*(width + height) - 4; position % n_steps maps back to (x, y) on the perimeter\n- Implementation likely a small Static widget overlaid via dock + offset, or a custom render pass that swaps a single perimeter character for the emote\n\nCast pairings to wire (default + per-meeting variants):\n- Default / no specific pairing: Alice \ud83c\udf3b chasing the White Rabbit \ud83d\udc07\n- M2.5 (composition): just the Rabbit \ud83d\udc07 alone \u2014 emphasize the meeting that loves to fail (analysis 039)\n- M4 (test scenarios): Mad Hatter \ud83c\udfa9 dropping behind the Tweedles \ud83d\udc6f\n- M6 (review): Cheshire Cat \ud83d\ude3c fading in/out alongside Caterpillar \ud83d\udc1b\n- Stuck state (no movement past N seconds): emote dims / static color shift to signal 'frozen'\n\nPolish dimensions to settle while implementing:\n- Emoji rendering varies wildly across terminals; need an ASCII fallback (e.g. 'A' \u2192 'R' chase) for terminals that render emoji as boxes. Settings toggle: animation off / ASCII / emoji.\n- Tick rate vs. activity rate: too fast = distracting, too slow = doesn't feel alive. Calibrate against r40-style runs (~20 utterances/min average).\n- Color: should track theme tokens so theme switches don't break the visual.\n\nDiagnostic value framing: this is decoration that earns its keep by giving operators a passive ambient signal of liveness. Frozen border = the substrate's softest stuck-detector, complementary to (not replacing) Dodo's escalation ladder.",
+        "resolution": "src/wonderland/tui/widgets/chase.py \u2014 ChaseStrip widget mounted in LiveRunScreen between the Meetings label and the meetings DataTable. Alice ('a') chasing the White Rabbit ('R') along a 28-char track of '\u00b7' dots. Rabbit moves every tick; Alice every other tick (gap oscillates, chase never resolves \u2014 Alice never catches Rabbit). Tick fires on each UtteranceEmitted or AgentActed event flowing through LiveRunScreen, so motion ties to actual signal-of-life. _check_idle runs every 2s and adds .-idle class when no tick fired in IDLE_THRESHOLD_SECS (15s default); CSS dims the row when stale. Single-cell ASCII characters for terminal-width safety; emoji upgrade easy if needed. 11 tests: starting frame, render-track shape, tick-advance semantics for both characters, wrap-around, reset, idle dim/clear behavior, integration with LiveRunScreen mount."
       },
       {
-        "id": "T71",
-        "title": "NewRunScreen skeleton picker step",
-        "status": "done",
-        "details": "Per analysis 037 F7 (option 1 \u2014 skeleton picker in NewRunScreen). Detect bare project roots (empty or only .git/.gitignore); when bare, show a skeleton-picker step before launching the workflow. Picker is a multi-pane lazygit shape: list of bundled skeletons on the left (with descriptions), preview of the chosen skeleton's top-level tree on the right, 'apply skeleton' or 'continue without skeleton' buttons at the bottom. On apply: lay down the skeleton files into the project root, then proceed to the workflow launch. Test: smoke-test that a bare root + skeleton-apply leaves the project with the expected files; smoke-test that 'continue without skeleton' option still works (operator override).",
-        "resolution": "Skeleton picker integrated into NewRunScreen flow. SkeletonPickerScreen (new file: src/wonderland/tui/screens/skeleton_picker.py) uses lazygit-shape: skeleton list (DataTable) on the left, preview pane (top-level dirs + file count + apply target path) on the right, action row at the bottom (Apply / Continue without / Cancel). Bindings: enter=apply, s=skip, escape=cancel. Dismisses with skeleton name (str) on apply, '' (sentinel) on skip, None on cancel. NewRunScreen.action_go now uses is_bare_project_root() to decide whether to push the picker; if bare, action_go stashes the launch params in self._pending_post_skeleton, pushes SkeletonPickerScreen, and the dismiss callback (_on_skeleton_picked) interprets the result and either resumes via _continue_launch_after_skeleton or aborts. CSS for the picker added to wonderland.tcss matching the lazygit-shape pattern other multi-pane screens use. 4 new picker integration tests + 4 existing tests updated to either use non-bare project roots (when testing the post-bare-root flow) or expect the picker push (when testing bare-root behavior). Full suite: 1564 pass."
-      },
-      {
-        "id": "T72",
-        "title": "Re-run pomodoro on tdd-serial-phased + skeleton; A/B vs r39",
+        "id": "T85",
+        "title": "Feature lifecycle data layer + persistence",
         "status": "pending",
-        "details": "After T70 + T71 ship, re-run pomodoro through tdd-serial-phased with fullstack-fastapi-react skeleton applied. A/B against r39 (the directive-backfill baseline). Predicted outcomes: per-feature cost drops 10-15% (directive's structure-explanation overhead is unneeded with skeleton present); deliverability holds at >= r39's 602 LOC; possibly cleaner cross-feature consistency because the skeleton-imposed conftest.py + src/ layout gives Tweedles a shared starting point. Document outcome as analysis 038 \u2014 banner if predicted-outcome holds, post-mortem if not."
+        "details": "FeatureState enum (proposed, in_design, designed, queued, in_progress, ready_for_review, verified, rejected) + per-project state registry (.wonderland/feature-states.jsonl, append-only state-transition log). Each transition records: feature_slug, from_state, to_state, by (agent_name or 'operator'), at (timestamp), notes (optional). API: get_state(slug), list_features_in_state(state), transition(slug, to_state, by, notes). Synthesize state-transition utterances on the bus so cross-run continuity (analysis 039 fix) carries lifecycle state forward. Frozen artifact pattern preserved \u2014 feature payload itself stays immutable; state lives in the registry, not the artifact."
       },
       {
-        "id": "T73",
-        "title": "Skeleton manifest + post-apply instructions in picker",
-        "status": "done",
-        "details": "Per the multi-language-ready design call. Add manifest.yaml to each bundled skeleton declaring language + post_apply steps (description + command + cwd). Skeleton dataclass carries an optional SkeletonManifest. Loader reads manifest if present; defaults to empty for skeletons without one (preserving current behavior). Picker preview surfaces post_apply commands as a 'Setup commands (run after apply):' block so the operator can copy-paste into a shell. Lays groundwork for future auto-install (T74) without committing to subprocess management yet \u2014 the manifest is data, not behavior; auto-install reads it later.",
-        "resolution": "Skeleton manifest layer shipped. SkeletonManifest + PostApplyStep Pydantic models in src/wonderland/skeleton.py (language tag + ordered post_apply steps with description + command + cwd). Loader reads manifest.yaml from each skeleton directory; defaults to empty manifest for skeletons without one (backward compat). manifest.yaml itself is excluded from skeleton.files so apply_skeleton doesn't copy it into operator projects. Five bundled manifests added: python-cli/python-tui/python-fastapi (single pip-install step each), react-vite (npm install in cwd=.), fullstack-fastapi-react (multi-step: pip install in . + npm install in frontend). SkeletonPickerScreen preview now surfaces post_apply commands as a yellow-highlighted 'Setup commands (run after apply, before launch)' block with descriptions + cwd hints; operator copy-pastes into a shell. Future auto-runner (roadmap 3a22d99e, P3) executes the same manifest data as subprocesses; landing it requires no schema change. 6 new tests cover bundled manifests + multi-language post_apply + missing-manifest backward compat + manifest.yaml not leaking into apply targets. Full suite: 1570 pass."
+        "id": "T86",
+        "title": "Workflow input filter: seed only features in state X",
+        "status": "pending",
+        "details": "New workflow YAML field: meeting.input_filter (or workflow-level pre-meeting filter). When set, seed resolution drops features whose lifecycle state isn't in the filter's allowed set. Default: no filter (current behavior \u2014 all features visible). Used by tdd-implement to scope M5 iterations to features in 'queued' state. Composable with the existing per_item iteration: filter first, then iterate."
+      },
+      {
+        "id": "T87",
+        "title": "Workflow output transitions: features X\u2192Y on phase complete",
+        "status": "pending",
+        "details": "Workflow YAML gains meeting.on_complete_transition: {features_with_artifact: kind, from_state: X, to_state: Y}. After meeting completes successfully, features with the named artifact kind get auto-transitioned. E.g. tdd-design's M4 transitions features with test_scenario artifacts from in_design \u2192 designed. Implementation workflow's M6 transitions features with approved review from in_progress \u2192 ready_for_review. Layered fail-loud: if expected artifact didn't ship, transition is skipped + warning logged."
+      },
+      {
+        "id": "T88",
+        "title": "Split tdd-serial-phased into tdd-design + tdd-implement workflows",
+        "status": "pending",
+        "details": "Author two new workflows in closet/workflows/:\\n- tdd-design.yaml: M1 (scoping) + M2 (decomposition) + M2.5 (composition) + M3 (contract-negotiation) + M4 (test-scenarios). Output: features in 'designed' state. No M5, no M6.\\n- tdd-implement.yaml: M5 (implementation, per_item over queued features) + M6 (review, per_item). Input filter: features must be in 'queued' state. Output transition: in_progress \u2192 ready_for_review.\\nKeep tdd-serial-phased as the all-in-one for operators who want a single end-to-end run; tdd-design + tdd-implement are the composable atoms. Tests cover: design workflow produces designed-state features; implement workflow scoped to queued features only; combined design\u2192implement\u2192review flow ships verified features."
+      },
+      {
+        "id": "T89",
+        "title": "Features tab in project dashboard with state badges + batch-select",
+        "status": "pending",
+        "details": "5th tab in ProjectDashboardScreen (Runs / Artifacts / Files / Metrics / Features). Two-pane: features list left (one row per feature with state badge \u2014 color-coded: gray=proposed, blue=in_design, cyan=designed, yellow=queued, magenta=in_progress, green=ready_for_review, bright_green=verified, red=rejected), feature dossier right (story refs, ticket refs, contracts, scenarios, implementation notes if present, review verdict if present). Multi-select via space (lazygit pattern); 'q' (or another key) batch-queues selected features for the next implement run; 'v'/'r' marks verified/rejected when state is ready_for_review."
+      },
+      {
+        "id": "T90",
+        "title": "Operator verify/reject UI with notes",
+        "status": "pending",
+        "details": "Modal on Features tab: 'v' on a feature in ready_for_review state opens a verification dialog. Shows feature dossier + 'Verified / Rejected / Cancel'. Rejection prompts for notes (required). Notes get stored in the state-transition log AND emitted as state_change utterance with the rejection text \u2014 flows into next run's seed via T85's bus integration. Verified state also accepts optional notes (positive feedback for the team). Notes feed Alice and Caterpillar on the next iteration."
+      },
+      {
+        "id": "T91",
+        "title": "Auto-transition rules (proposed\u2192in_progress, in_progress\u2192ready_for_review)",
+        "status": "pending",
+        "details": "Background watcher that auto-transitions features based on artifact presence:\\n- proposed \u2192 in_progress: first implementation artifact lands referencing the feature_slug\\n- in_progress \u2192 ready_for_review: ALL of (every ticket in feature has implementation, run_tests passes for feature's test files, M6 verdict for feature is 'approve')\\nNo auto-transition past ready_for_review \u2014 that requires operator. Implementation: a runtime hook that fires on each implementation/review utterance and re-evaluates the feature's transition eligibility. Layers on top of T87's explicit workflow-level transitions (T87 = end-of-phase, T91 = real-time per-utterance)."
       }
     ],
     "deferred": []

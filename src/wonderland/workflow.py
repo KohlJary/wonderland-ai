@@ -429,6 +429,7 @@ def resolve_seeds(
     per_item_meetings: dict[str, str] | None = None,
     current_item_kind: str | None = None,
     current_item_slug: str | None = None,
+    project_root: Path | None = None,
 ) -> list[Utterance]:
     """Apply seed-binding rules to produce the seed utterance list for
     a meeting. Mirrors the hand-rolled filtering in T38 scripts.
@@ -491,6 +492,26 @@ def resolve_seeds(
             for u in candidates
             if any(a.kind in binding.kinds for a in u.content.artifacts)
         ]
+
+        # Cross-run continuity (analysis 039): when the bus has nothing
+        # for this binding's kind filter but the project has the
+        # artifacts on disk from a prior run, fall back to disk. This
+        # closes the gap that bit r41-obol's M2.5 — Alice + Rabbit
+        # didn't re-emit existing stories/tickets, so the bus was
+        # empty for them, so M2.5 saw zero seeds, so White Rabbit
+        # had nothing to compose features from.
+        #
+        # Bus content always wins when present (current run's
+        # emissions are authoritative). Disk fallback only fires when
+        # the bus query for this binding came back empty.
+        if not kinded and project_root is not None:
+            from wonderland.seeds_fallback import disk_seeds_for_kinds
+
+            kinded = disk_seeds_for_kinds(
+                project_root,
+                list(binding.kinds),
+                thread_id=binding.from_meeting,
+            )
 
         # If we're inside a per_item iteration AND this binding pulls
         # the iteration kind, slice to the current item's payload slug.
@@ -856,6 +877,10 @@ async def _convene_one(
         per_item_meetings=per_item_meetings,
         current_item_kind=current_item_kind,
         current_item_slug=current_item_slug,
+        # FakeRunner test fixtures don't always expose project_root —
+        # back-compat for the existing test surface, which doesn't
+        # need disk fallback.
+        project_root=getattr(runner, "project_root", None),
     )
 
     convenor_directive = directive if directive is not None else meeting.convenor_directive

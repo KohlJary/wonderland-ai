@@ -522,3 +522,122 @@ async def test_run_async_smoke_hits_timeout_path(
     # Telemetry record written
     records = list((tmp_path / ".wonderland" / "telemetry").glob("run-*.json"))
     assert len(records) == 1
+
+
+# ---------- `wonderland project` CLI (P11 T75) ----------
+
+
+def test_project_add_creates_registry_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`wonderland project add NAME PATH` registers a project."""
+    from wonderland.cli import main
+    from wonderland.project import list_projects
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    rc = main([
+        "project", "add", "alpha", str(tmp_path / "alpha-root"),
+        "--workflow", "smoke",
+        "--budget", "3.50",
+    ])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Registered" in out
+    assert "alpha" in out
+
+    projects = list_projects()
+    assert len(projects) == 1
+    assert projects[0].name == "alpha"
+    assert projects[0].last_workflow == "smoke"
+    assert projects[0].default_budget == 3.50
+
+
+def test_project_add_rejects_duplicate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from wonderland.cli import main
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    rc1 = main(["project", "add", "alpha", str(tmp_path)])
+    assert rc1 == 0
+    rc2 = main(["project", "add", "alpha", str(tmp_path)])
+    assert rc2 == 1
+    err = capsys.readouterr().err
+    assert "already registered" in err
+
+
+def test_project_list_empty_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from wonderland.cli import main
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    rc = main(["project", "list"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "(no projects registered)" in out
+    assert "wonderland project add" in out
+
+
+def test_project_list_shows_registered(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from wonderland.cli import main
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    main(["project", "add", "alpha", str(tmp_path / "a"), "--budget", "1.00"])
+    main(["project", "add", "bravo", str(tmp_path / "b"), "--budget", "2.50"])
+    capsys.readouterr()  # discard prior output
+
+    rc = main(["project", "list"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "alpha" in out
+    assert "bravo" in out
+    assert "$1.00" in out
+    assert "$2.50" in out
+
+
+def test_project_edit_updates_workflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from wonderland.cli import main
+    from wonderland.project import load_project
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    main(["project", "add", "alpha", str(tmp_path / "a")])
+    capsys.readouterr()
+
+    rc = main(["project", "edit", "alpha", "--workflow", "tdd-serial-phased"])
+    assert rc == 0
+    p = load_project("alpha")
+    assert p.last_workflow == "tdd-serial-phased"
+
+
+def test_project_archive_and_unarchive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from wonderland.cli import main
+    from wonderland.project import load_project
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    main(["project", "add", "alpha", str(tmp_path / "a")])
+    capsys.readouterr()
+
+    main(["project", "archive", "alpha"])
+    assert load_project("alpha").archived is True
+
+    main(["project", "unarchive", "alpha"])
+    assert load_project("alpha").archived is False

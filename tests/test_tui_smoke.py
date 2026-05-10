@@ -35,6 +35,7 @@ from wonderland.tui.screens.meeting_detail import (
     UtteranceModalScreen,
 )
 from wonderland.tui.screens.run_summary import RunSummaryScreen
+from wonderland.tui.screens.project_library import ProjectLibraryScreen
 from wonderland.tui.screens.snapshot_library import (
     SnapshotLibraryScreen,
     _discover_snapshots,
@@ -81,12 +82,13 @@ def test_discover_snapshots_skips_invalid_directories(tmp_path: Path) -> None:
 
 
 async def test_app_launches_with_default_root() -> None:
-    """The app should start, push the SnapshotLibraryScreen, and not
-    crash. Doesn't validate rendering — just exit-cleanly-on-quit."""
+    """The app should start, push the ProjectLibraryScreen (P11), and
+    not crash. Doesn't validate rendering — just exit-cleanly-on-quit."""
     app = WonderlandApp()
     async with app.run_test() as pilot:
-        # The library screen should be active.
-        assert isinstance(app.screen, SnapshotLibraryScreen)
+        # The project library is the new home (was SnapshotLibrary
+        # pre-P11; reachable via 'L' from the new home).
+        assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("q")
 
 
@@ -94,15 +96,17 @@ async def test_app_launches_with_custom_root(tmp_path: Path) -> None:
     """A run with a snapshot-less root should still launch (just empty)."""
     app = WonderlandApp(snapshot_root=tmp_path)
     async with app.run_test() as pilot:
-        assert isinstance(app.screen, SnapshotLibraryScreen)
+        assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("q")
 
 
-async def test_home_view_has_analyses_button() -> None:
-    """The home view exposes a visible Analyses button alongside
-    New run / Cast / Settings. Pressing it opens the AnalysesScreen
-    which lazygit-shapes the field-notes corpus."""
-    from textual.widgets import Button, DataTable
+async def test_home_view_action_menu_has_analyses_entry() -> None:
+    """The home view's action menu surfaces an 'Analyses' row.
+    Selecting it (Enter) opens the AnalysesScreen which lazygit-
+    shapes the field-notes corpus. Post-T75 redesign: the buttons
+    moved into a vertical action menu (middle pane) with descriptions
+    rendered in the right pane on highlight."""
+    from textual.widgets import DataTable
 
     from wonderland.tui.screens.analyses import AnalysesScreen
 
@@ -110,12 +114,19 @@ async def test_home_view_has_analyses_button() -> None:
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
-        assert isinstance(screen, SnapshotLibraryScreen)
+        assert isinstance(screen, ProjectLibraryScreen)
 
-        analyses_btn = screen.query_one("#analyses-button", Button)
-        assert "Analyses" in str(analyses_btn.label)
-
-        screen.post_message(Button.Pressed(analyses_btn))
+        action_table = screen.query_one("#action-table", DataTable)
+        # Find the Analyses row.
+        analyses_idx = next(
+            i for i, row in enumerate(screen._ACTION_ROWS)
+            if row[0] == "open_analyses"
+        )
+        action_table.cursor_coordinate = (analyses_idx, 0)
+        action_table.focus()
+        await pilot.pause()
+        # Trigger the row-selected dispatch.
+        action_table.action_select_cursor()
         await pilot.pause()
         assert isinstance(app.screen, AnalysesScreen)
 
@@ -126,7 +137,7 @@ async def test_home_view_has_analyses_button() -> None:
         # Press 'escape' to pop back
         await pilot.press("escape")
         await pilot.pause()
-        assert isinstance(app.screen, SnapshotLibraryScreen)
+        assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("q")
 
 
@@ -146,12 +157,12 @@ async def test_analyses_screen_a_keybind_opens_it() -> None:
         await pilot.press("q")
 
 
-async def test_home_view_has_settings_button(
+async def test_home_view_action_menu_has_settings_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The home view exposes a visible Settings button alongside
-    New run / The Cast. Clicking it opens the settings screen."""
-    from textual.widgets import Button
+    """The home view's action menu surfaces a 'Settings' row.
+    Selecting it opens the settings screen."""
+    from textual.widgets import DataTable
 
     from wonderland.tui.screens.settings import SettingsScreen
 
@@ -166,18 +177,23 @@ async def test_home_view_has_settings_button(
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
-        assert isinstance(screen, SnapshotLibraryScreen)
+        assert isinstance(screen, ProjectLibraryScreen)
 
-        settings_btn = screen.query_one("#settings-button", Button)
-        assert "Settings" in str(settings_btn.label)
-
-        screen.post_message(Button.Pressed(settings_btn))
+        action_table = screen.query_one("#action-table", DataTable)
+        settings_idx = next(
+            i for i, row in enumerate(screen._ACTION_ROWS)
+            if row[0] == "open_settings"
+        )
+        action_table.cursor_coordinate = (settings_idx, 0)
+        action_table.focus()
+        await pilot.pause()
+        action_table.action_select_cursor()
         await pilot.pause()
         assert isinstance(app.screen, SettingsScreen)
 
         await pilot.press("escape")
         await pilot.pause()
-        assert isinstance(app.screen, SnapshotLibraryScreen)
+        assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("q")
 
 
@@ -269,36 +285,48 @@ async def test_new_run_screen_pushes_settings_when_key_missing(
         await pilot.press("q")
 
 
-async def test_home_view_has_prominent_new_run_and_cast_buttons() -> None:
-    """The home view (SnapshotLibraryScreen) shows visible primary
-    buttons for the load-bearing actions — New run + Cast — rather
-    than burying them in keybind hints. Pressing the buttons routes
-    to the same screens as the n/c bindings."""
-    from textual.widgets import Button
+async def test_home_view_action_menu_routes_new_run_and_cast() -> None:
+    """The home view's action menu (post-T75 redesign — replaces the
+    button row) surfaces 'New run' (no project context) and 'Cast'
+    rows. Selecting each opens the corresponding screen, parallel to
+    the n/c keybindings."""
+    from textual.widgets import DataTable
+
+    from wonderland.tui.screens.cast import CastBrowserScreen
 
     app = WonderlandApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         screen = app.screen
-        assert isinstance(screen, SnapshotLibraryScreen)
+        assert isinstance(screen, ProjectLibraryScreen)
 
-        # Both buttons present + visible
-        new_run_btn = screen.query_one("#new-run-button", Button)
-        cast_btn = screen.query_one("#cast-button", Button)
-        assert "New run" in str(new_run_btn.label)
-        assert "Cast" in str(cast_btn.label)
+        action_table = screen.query_one("#action-table", DataTable)
 
-        # Click New run → opens NewRunScreen (same as 'n' binding)
-        screen.post_message(Button.Pressed(new_run_btn))
+        # 'New run' (no project context) action
+        new_run_idx = next(
+            i for i, row in enumerate(screen._ACTION_ROWS)
+            if row[0] == "run_without_project"
+        )
+        action_table.cursor_coordinate = (new_run_idx, 0)
+        action_table.focus()
+        await pilot.pause()
+        action_table.action_select_cursor()
         await pilot.pause()
         assert isinstance(app.screen, NewRunScreen)
         await pilot.press("escape")
         await pilot.pause()
+        assert isinstance(app.screen, ProjectLibraryScreen)
 
-        # Click The Cast → opens CastBrowserScreen (same as 'c' binding)
-        from wonderland.tui.screens.cast import CastBrowserScreen
-
-        screen.post_message(Button.Pressed(cast_btn))
+        # 'Cast' action
+        action_table = app.screen.query_one("#action-table", DataTable)
+        cast_idx = next(
+            i for i, row in enumerate(app.screen._ACTION_ROWS)
+            if row[0] == "open_cast"
+        )
+        action_table.cursor_coordinate = (cast_idx, 0)
+        action_table.focus()
+        await pilot.pause()
+        action_table.action_select_cursor()
         await pilot.pause()
         assert isinstance(app.screen, CastBrowserScreen)
 
@@ -311,7 +339,7 @@ async def test_app_back_action_is_noop_at_root() -> None:
     async with app.run_test() as pilot:
         await pilot.press("escape")
         # Still on library screen — back is no-op when nothing is pushed
-        assert isinstance(app.screen, SnapshotLibraryScreen)
+        assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("q")
 
 
@@ -320,7 +348,8 @@ async def test_app_back_action_is_noop_at_root() -> None:
 
 async def test_vim_keys_navigate_snapshot_library() -> None:
     """j/k should move the cursor in the snapshot library, same as
-    arrow keys."""
+    arrow keys. P11: snapshot library is reached from the project
+    library via 'L'."""
     if not ANALYSES_DATA.is_dir():
         pytest.skip("analyses/data/ not present")
     snapshots = _discover_snapshots(ANALYSES_DATA)
@@ -328,6 +357,9 @@ async def test_vim_keys_navigate_snapshot_library() -> None:
         pytest.skip("need at least 2 snapshots to test movement")
     app = WonderlandApp()
     async with app.run_test() as pilot:
+        await pilot.pause()
+        # Navigate from project library → snapshot library.
+        await pilot.press("h")
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, SnapshotLibraryScreen)
@@ -354,7 +386,8 @@ async def test_vim_keys_navigate_snapshot_library() -> None:
 
 async def test_opening_a_snapshot_pushes_run_summary() -> None:
     """Clicking through to a real snapshot should land on the run
-    summary screen without crashing."""
+    summary screen without crashing. P11: navigate to snapshot
+    library via 'L' first (was the home pre-P11)."""
     if not ANALYSES_DATA.is_dir():
         pytest.skip("analyses/data/ not present")
     snapshots = _discover_snapshots(ANALYSES_DATA)
@@ -362,13 +395,15 @@ async def test_opening_a_snapshot_pushes_run_summary() -> None:
         pytest.skip("no snapshots available to drill into")
     app = WonderlandApp()
     async with app.run_test() as pilot:
-        # Wait for table population.
+        await pilot.pause()
+        # Navigate from project library → snapshot library.
+        await pilot.press("h")
         await pilot.pause()
         # Press Enter on the first row.
         await pilot.press("enter")
         await pilot.pause()
         assert isinstance(app.screen, RunSummaryScreen)
-        # Pop back to the library.
+        # Pop back to the snapshot library.
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, SnapshotLibraryScreen)
@@ -2293,17 +2328,18 @@ async def test_streaming_consumer_does_not_starve_textual_event_loop() -> None:
 
 
 async def test_pressing_c_opens_cast_browser() -> None:
-    """`c` from the snapshot library pushes the Cast browser."""
+    """`c` from the project library (TUI home post-P11) pushes the
+    Cast browser."""
     app = WonderlandApp()
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert isinstance(app.screen, SnapshotLibraryScreen)
+        assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("c")
         await pilot.pause()
         assert isinstance(app.screen, CastBrowserScreen)
         await pilot.press("escape")
         await pilot.pause()
-        assert isinstance(app.screen, SnapshotLibraryScreen)
+        assert isinstance(app.screen, ProjectLibraryScreen)
         await pilot.press("q")
 
 
@@ -2514,4 +2550,1000 @@ async def test_modal_artifact_link_opens_artifact_detail() -> None:
         await pilot.press("escape")
         await pilot.pause()
         assert isinstance(app.screen, UtteranceModalScreen)
+        await pilot.press("q")
+
+
+# ---------- ProjectLibraryScreen (P11 T75) ----------
+
+
+async def test_project_library_is_home_screen(monkeypatch, tmp_path) -> None:
+    """The TUI's home screen is now ProjectLibraryScreen, not
+    SnapshotLibrary. Snapshot library is reachable via 'h' (history)."""
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert isinstance(app.screen, ProjectLibraryScreen)
+        await pilot.press("q")
+
+
+async def test_project_library_empty_state_guides_first_time_user(
+    monkeypatch, tmp_path
+) -> None:
+    """First-time launch (no projects registered): detail pane shows
+    explicit guidance for creating the first project."""
+    from textual.widgets import Static
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectLibraryScreen)
+        detail = screen.query_one("#project-detail", Static)
+        rendered = str(detail.render())
+        assert "No projects" in rendered
+        assert "wonderland project add" in rendered
+        await pilot.press("q")
+
+
+async def test_project_library_lists_registered_projects(
+    monkeypatch, tmp_path
+) -> None:
+    """Registered projects appear in the table; selecting a row shows
+    the project's metadata in the detail pane."""
+    from textual.widgets import DataTable, Static
+
+    from wonderland.project import Project, register_project
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+        last_workflow="tdd-serial-phased",
+        default_budget=7.50,
+    ))
+    register_project(Project(
+        name="bravo",
+        root_path=tmp_path / "bravo",
+    ))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectLibraryScreen)
+        table = screen.query_one("#project-table", DataTable)
+        assert table.row_count == 2
+
+        # First row (alpha — alphabetical) is selected by default;
+        # detail pane should show alpha's defaults.
+        detail = screen.query_one("#project-detail", Static)
+        rendered = str(detail.render())
+        assert "alpha" in rendered
+        assert "tdd-serial-phased" in rendered
+        assert "$7.50" in rendered
+
+        await pilot.press("q")
+
+
+async def test_project_library_n_opens_new_run_without_project_context(
+    monkeypatch, tmp_path
+) -> None:
+    """'n' on the project library opens NewRunScreen with no project
+    context (back-compat path). Preserves muscle memory from
+    SnapshotLibraryScreen."""
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, NewRunScreen)
+        # No project context — the legacy path.
+        assert app.screen.project is None
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_project_library_enter_opens_dashboard(
+    monkeypatch, tmp_path
+) -> None:
+    """Focus the project table, press Enter on the highlighted
+    project: opens ProjectDashboardScreen. The library is for
+    *picking* a project; the dashboard is for *acting on* one
+    (new runs, edits, etc. happen from the dashboard's actions pane)."""
+    from textual.widgets import DataTable
+
+    from wonderland.project import Project, register_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+        last_workflow="smoke",
+        default_budget=2.00,
+    ))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectLibraryScreen)
+        # Default focus is the actions menu — move to project table.
+        screen.query_one("#project-table", DataTable).focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        dashboard = app.screen
+        assert isinstance(dashboard, ProjectDashboardScreen)
+        assert dashboard.project.name == "alpha"
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_actions_pane_has_new_run_button(
+    monkeypatch, tmp_path
+) -> None:
+    """The dashboard's actions pane (always visible, above tabs)
+    surfaces a 'New Run' button. Clicking it pushes NewRunScreen
+    with the project context attached."""
+    from textual.widgets import Button
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+        last_workflow="smoke",
+        default_budget=3.00,
+    ))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+
+        new_run_btn = screen.query_one(
+            "#dashboard-new-run-button", Button
+        )
+        assert "New Run" in str(new_run_btn.label)
+
+        screen.post_message(Button.Pressed(new_run_btn))
+        await pilot.pause()
+        # Pushed NewRunScreen with the project context.
+        assert isinstance(app.screen, NewRunScreen)
+        assert app.screen.project is not None
+        assert app.screen.project.name == "alpha"
+        await pilot.press("escape")
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_n_keybind_pushes_new_run(
+    monkeypatch, tmp_path
+) -> None:
+    """'n' on the dashboard pushes NewRunScreen with the project
+    context — keyboard parallel to the New Run button."""
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+    ))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, NewRunScreen)
+        assert app.screen.project is not None
+        assert app.screen.project.name == "alpha"
+        await pilot.press("escape")
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_new_run_screen_with_project_prefills_budget(
+    monkeypatch, tmp_path
+) -> None:
+    """NewRunScreen instantiated with a Project context prefills the
+    budget input from project.default_budget. T78."""
+    from textual.widgets import Input
+
+    from wonderland.project import Project
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project = Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+        default_budget=12.34,
+    )
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project=project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+        budget_input = screen.query_one("#budget-input", Input)
+        assert budget_input.value == "12.34"
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_new_run_screen_without_project_uses_legacy_default(
+    monkeypatch, tmp_path
+) -> None:
+    """NewRunScreen with no project context uses the historical $5.00
+    default budget (back-compat preserved)."""
+    from textual.widgets import Input
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+        budget_input = screen.query_one("#budget-input", Input)
+        assert budget_input.value == "5.00"
+        assert screen.project is None
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+# ---------- NewProjectScreen (P11 T76) ----------
+
+
+async def test_new_project_screen_form_registers_project(
+    monkeypatch, tmp_path
+) -> None:
+    """Filling the NewProjectScreen form + submit registers a Project
+    in the registry."""
+    from textual.widgets import Input
+
+    from wonderland.project import list_projects
+    from wonderland.tui.screens.new_project import NewProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewProjectScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewProjectScreen)
+
+        screen.query_one("#name-input", Input).value = "alpha"
+        screen.query_one("#path-input", Input).value = str(tmp_path / "alpha-root")
+        screen.query_one("#budget-input", Input).value = "3.50"
+        await pilot.pause()
+
+        screen.action_submit()
+        await pilot.pause()
+
+        projects = list_projects()
+        assert len(projects) == 1
+        assert projects[0].name == "alpha"
+        assert projects[0].default_budget == 3.50
+
+
+async def test_new_project_screen_rejects_duplicate_name(
+    monkeypatch, tmp_path
+) -> None:
+    """Submitting a duplicate name shows a warning and doesn't
+    register a second entry."""
+    from textual.widgets import Input
+
+    from wonderland.project import Project, list_projects, register_project
+    from wonderland.tui.screens.new_project import NewProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "a"))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewProjectScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewProjectScreen)
+
+        screen.query_one("#name-input", Input).value = "alpha"
+        screen.query_one("#path-input", Input).value = str(tmp_path / "b")
+        await pilot.pause()
+        screen.action_submit()
+        await pilot.pause()
+
+        # Still only one project — duplicate rejected.
+        assert len(list_projects()) == 1
+
+
+async def test_new_project_screen_rejects_invalid_budget(
+    monkeypatch, tmp_path
+) -> None:
+    from textual.widgets import Input
+
+    from wonderland.project import list_projects
+    from wonderland.tui.screens.new_project import NewProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewProjectScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewProjectScreen)
+
+        screen.query_one("#name-input", Input).value = "alpha"
+        screen.query_one("#path-input", Input).value = str(tmp_path / "a")
+        screen.query_one("#budget-input", Input).value = "-5"
+        await pilot.pause()
+        screen.action_submit()
+        await pilot.pause()
+
+        # Submission rejected; no registration.
+        assert list_projects() == []
+
+
+async def test_new_project_screen_skeleton_apply_writes_files(
+    monkeypatch, tmp_path
+) -> None:
+    """When apply_now is checked AND path is bare AND a skeleton is
+    selected, the skeleton's files land in the project root."""
+    from textual.widgets import Checkbox, Input, Select
+
+    from wonderland.tui.screens.new_project import NewProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    target = tmp_path / "fresh-project"
+    # target doesn't exist yet — apply_skeleton creates it.
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewProjectScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewProjectScreen)
+
+        screen.query_one("#name-input", Input).value = "alpha"
+        screen.query_one("#path-input", Input).value = str(target)
+        screen.query_one("#skeleton-select", Select).value = "python-cli"
+        screen.query_one("#apply-skeleton-checkbox", Checkbox).value = True
+        await pilot.pause()
+
+        screen.action_submit()
+        await pilot.pause()
+
+        # Skeleton files should now exist.
+        assert (target / "pyproject.toml").is_file()
+        assert (target / "src" / "cli.py").is_file()
+
+
+async def test_pressing_N_on_project_library_opens_form(
+    monkeypatch, tmp_path
+) -> None:
+    """'N' (uppercase) on ProjectLibraryScreen pushes NewProjectScreen
+    instead of the placeholder notify."""
+    from wonderland.tui.screens.new_project import NewProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("N")
+        await pilot.pause()
+        assert isinstance(app.screen, NewProjectScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ProjectLibraryScreen)
+        await pilot.press("q")
+
+
+# ---------- EditProjectScreen + cwd-default (P11 T77) ----------
+
+
+async def test_edit_project_screen_persists_changes(
+    monkeypatch, tmp_path
+) -> None:
+    """Changing fields + ctrl+s persists the new values via
+    save_project."""
+    from textual.widgets import Input, Select
+
+    from wonderland.project import (
+        Project,
+        load_project,
+        register_project,
+    )
+    from wonderland.tui.screens.edit_project import EditProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+        default_budget=5.00,
+    ))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(EditProjectScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EditProjectScreen)
+
+        # Mutate budget + workflow
+        screen.query_one("#edit-budget-input", Input).value = "12.34"
+        screen.query_one("#edit-workflow-select", Select).value = "smoke"
+        await pilot.pause()
+        screen.action_submit()
+        await pilot.pause()
+
+        reloaded = load_project("alpha")
+        assert reloaded.default_budget == 12.34
+        assert reloaded.last_workflow == "smoke"
+
+
+async def test_edit_project_screen_invalid_budget_rejected(
+    monkeypatch, tmp_path
+) -> None:
+    """Submitting an invalid budget surfaces an error and doesn't
+    save."""
+    from textual.widgets import Input
+
+    from wonderland.project import Project, load_project, register_project
+    from wonderland.tui.screens.edit_project import EditProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+        default_budget=5.00,
+    ))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(EditProjectScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, EditProjectScreen)
+
+        screen.query_one("#edit-budget-input", Input).value = "-1"
+        await pilot.pause()
+        screen.action_submit()
+        await pilot.pause()
+
+        reloaded = load_project("alpha")
+        assert reloaded.default_budget == 5.00  # unchanged
+
+
+async def test_pressing_e_on_project_library_opens_edit_form(
+    monkeypatch, tmp_path
+) -> None:
+    """'e' (lowercase) on ProjectLibraryScreen pushes EditProjectScreen
+    for the selected project."""
+    from wonderland.project import Project, register_project
+    from wonderland.tui.screens.edit_project import EditProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(
+        name="alpha",
+        root_path=tmp_path / "alpha",
+    ))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        assert isinstance(app.screen, EditProjectScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ProjectLibraryScreen)
+        await pilot.press("q")
+
+
+async def test_new_project_form_prefills_path_with_cwd(
+    monkeypatch, tmp_path
+) -> None:
+    """When cwd isn't already a registered project root, the path
+    field prefills with cwd. Captures the common 'I'm in the directory
+    I want to register' case."""
+    import os
+    from textual.widgets import Input
+
+    from wonderland.tui.screens.new_project import NewProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    # Simulate operator launching from inside `tmp_path / project-dir`.
+    workdir = tmp_path / "project-dir"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewProjectScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewProjectScreen)
+
+        path_input = screen.query_one("#path-input", Input)
+        # cwd should be prefilled (resolved → absolute)
+        assert path_input.value == str(workdir.resolve())
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_new_project_form_skips_cwd_prefill_when_already_registered(
+    monkeypatch, tmp_path
+) -> None:
+    """If cwd is already a registered project root, leave the path
+    field empty rather than prefill (would be a duplicate)."""
+    from textual.widgets import Input
+
+    from wonderland.project import Project, register_project
+    from wonderland.tui.screens.new_project import NewProjectScreen
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    workdir = tmp_path / "existing-project"
+    workdir.mkdir()
+    register_project(Project(name="existing", root_path=workdir))
+    monkeypatch.chdir(workdir)
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewProjectScreen())
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewProjectScreen)
+
+        path_input = screen.query_one("#path-input", Input)
+        # cwd is already taken — don't prefill.
+        assert path_input.value == ""
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_project_library_actions_menu_is_default_focus(
+    monkeypatch, tmp_path
+) -> None:
+    """The actions menu in the middle column is the default focused
+    widget on home — operator's eyes land on what's available before
+    drilling into a specific project."""
+    from textual.widgets import DataTable
+
+    from wonderland.project import Project, register_project
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    # Register a project — proving focus lands on action-table even
+    # when there's a project to highlight in the project-table.
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectLibraryScreen)
+        action_table = screen.query_one("#action-table", DataTable)
+        assert action_table.has_focus
+        await pilot.press("q")
+
+
+async def test_project_library_buttons_are_under_project_list(
+    monkeypatch, tmp_path
+) -> None:
+    """The 'New run on selected' + 'New project' buttons live inside
+    the project-list-pane (under the project DataTable), not in a
+    separate full-width row at the bottom of the screen. Visually
+    groups the affordance with the data it acts on."""
+    from textual.widgets import Button
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectLibraryScreen)
+        # Both buttons should query inside #project-list-pane.
+        list_pane = screen.query_one("#project-list-pane")
+        open_button = list_pane.query_one("#open-button", Button)
+        new_project_button = list_pane.query_one("#new-project-button", Button)
+        # Label updated post-dashboard-pivot: the primary affordance is
+        # 'open dashboard'; runs launch from inside the dashboard.
+        assert "dashboard" in str(open_button.label).lower()
+        assert "New project" in str(new_project_button.label)
+        await pilot.press("q")
+
+
+# ---------- ProjectDashboardScreen (P11 T79+T80+T83) ----------
+
+
+async def test_project_dashboard_mounts_with_tabs(
+    monkeypatch, tmp_path
+) -> None:
+    """ProjectDashboardScreen mounts with all four tabs (Runs,
+    Artifacts, Files, Metrics) and shows the project name in the
+    header."""
+    from textual.widgets import TabbedContent
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+        tabs = screen.query_one("#dashboard-tabs", TabbedContent)
+        # Initial tab is Runs.
+        assert tabs.active == "tab-runs"
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_project_dashboard_runs_tab_shows_runs(
+    monkeypatch, tmp_path
+) -> None:
+    """When the project has telemetry files, the Runs tab table
+    populates with the corresponding RunRecord rows."""
+    import json
+    from textual.widgets import DataTable
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    root = tmp_path / "alpha"
+    root.mkdir()
+    register_project(Project(name="alpha", root_path=root))
+    project = load_project("alpha")
+
+    telemetry_dir = root / ".wonderland" / "telemetry"
+    telemetry_dir.mkdir(parents=True)
+    (telemetry_dir / "run-20260509T120000.json").write_text(json.dumps({
+        "run_id": "20260509T120000",
+        "total_cost": 2.50,
+        "total_calls": 50,
+        "elapsed_seconds": 180.0,
+        "outcome": "complete",
+        "model": "claude-haiku-4-5-20251001",
+        "budget_dollars": 5.00,
+        "budget_exceeded": False,
+        "per_agent": {
+            "tweedledum": {"calls": 30, "cost": 1.50},
+            "tweedledee": {"calls": 20, "cost": 1.00},
+        },
+    }))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+        runs_table = screen.query_one("#runs-table", DataTable)
+        assert runs_table.row_count == 1
+        # Detail pane populated from the highlighted (only) run.
+        from textual.widgets import Static
+        detail = screen.query_one("#runs-detail", Static)
+        rendered = str(detail.render())
+        assert "20260509T120000" in rendered
+        assert "tweedledum" in rendered
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_project_dashboard_runs_empty_state(
+    monkeypatch, tmp_path
+) -> None:
+    """When no telemetry files exist, the Runs tab shows the
+    empty-state message guiding the operator to launch a run."""
+    from textual.widgets import Static
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+        detail = screen.query_one("#runs-detail", Static)
+        rendered = str(detail.render())
+        assert "No runs yet" in rendered
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_project_dashboard_artifacts_tab_lists_files(
+    monkeypatch, tmp_path
+) -> None:
+    """Artifacts tab walks .wonderland/{features,contract-notes,...}
+    and lists every markdown/text file."""
+    from textual.widgets import DataTable
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    root = tmp_path / "alpha"
+    root.mkdir()
+    register_project(Project(name="alpha", root_path=root))
+    project = load_project("alpha")
+
+    # Drop a feature + a contract note in the right places.
+    features_dir = root / ".wonderland" / "features"
+    features_dir.mkdir(parents=True)
+    (features_dir / "feature-001-pomodoro.md").write_text(
+        "# Feature 001\n\nA pomodoro timer."
+    )
+    contracts_dir = root / ".wonderland" / "contract-notes"
+    contracts_dir.mkdir(parents=True)
+    (contracts_dir / "contract-note-001-state.md").write_text(
+        "# Contract\n\nSession state shape."
+    )
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, ProjectDashboardScreen)
+        artifacts_table = screen.query_one("#artifacts-table", DataTable)
+        assert artifacts_table.row_count == 2
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_project_library_d_opens_dashboard(
+    monkeypatch, tmp_path
+) -> None:
+    """'d' on the project library pushes ProjectDashboardScreen for
+    the highlighted project."""
+    from textual.widgets import DataTable
+
+    from wonderland.project import Project, register_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # Move focus to the project table so 'd' acts on a selected
+        # project (action menu is default focus).
+        app.screen.query_one("#project-table", DataTable).focus()
+        await pilot.pause()
+        await pilot.press("d")
+        await pilot.pause()
+        assert isinstance(app.screen, ProjectDashboardScreen)
+        assert app.screen.project.name == "alpha"
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+# ---------- Files + Metrics tabs (P11 T81 + T82) ----------
+
+
+async def test_dashboard_files_tab_mounts_with_directory_tree(
+    monkeypatch, tmp_path
+) -> None:
+    """Files tab populates a DirectoryTree rooted at the project's
+    root_path. T81 wiring."""
+    from textual.widgets import DirectoryTree, TabbedContent
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    root = tmp_path / "alpha"
+    root.mkdir()
+    (root / "src").mkdir()
+    (root / "src" / "main.py").write_text("print('hi')\n")
+    register_project(Project(name="alpha", root_path=root))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        screen.query_one("#dashboard-tabs", TabbedContent).active = "tab-files"
+        await pilot.pause()
+        tree = screen.query_one("#files-tree", DirectoryTree)
+        # Tree mounted with the project root.
+        assert tree.path == root
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_files_tab_filters_system_dirs(
+    monkeypatch, tmp_path
+) -> None:
+    """The filtered DirectoryTree subclass hides .git/, .wonderland/,
+    __pycache__/, node_modules/, .venv/, etc. Operators see their own
+    code, not framework / build state."""
+    from wonderland.tui.screens.project_dashboard import (
+        _FilteredDirectoryTree,
+        _FILES_TAB_SKIP_DIRS,
+    )
+
+    root = tmp_path / "alpha"
+    root.mkdir()
+    (root / ".git").mkdir()
+    (root / "node_modules").mkdir()
+    (root / "src").mkdir()
+    (root / "tests").mkdir()
+
+    tree = _FilteredDirectoryTree(str(root))
+    paths = list(root.iterdir())
+    filtered = tree.filter_paths(paths)
+    names = {p.name for p in filtered}
+    assert "src" in names
+    assert "tests" in names
+    assert ".git" not in names
+    assert "node_modules" not in names
+    # Sanity-check the skip set is what we expect.
+    assert ".wonderland" in _FILES_TAB_SKIP_DIRS
+    assert "__pycache__" in _FILES_TAB_SKIP_DIRS
+
+
+async def test_dashboard_metrics_tab_empty_state(
+    monkeypatch, tmp_path
+) -> None:
+    """Metrics tab shows an empty-state message when the project has
+    no runs yet."""
+    from textual.widgets import Static, TabbedContent
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    register_project(Project(name="alpha", root_path=tmp_path / "alpha"))
+    project = load_project("alpha")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        screen.query_one("#dashboard-tabs", TabbedContent).active = "tab-metrics"
+        await pilot.pause()
+        content = screen.query_one("#metrics-content", Static)
+        rendered = str(content.render())
+        assert "No runs yet" in rendered
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
+async def test_dashboard_metrics_tab_renders_charts(
+    monkeypatch, tmp_path
+) -> None:
+    """Metrics tab renders plotext-built charts when at least one
+    run exists. ANSI codes from plotext are stripped — the rendered
+    Static text contains plain bar/line chart shapes, no escape codes."""
+    import json
+    from textual.widgets import Static, TabbedContent
+
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    root = tmp_path / "alpha"
+    root.mkdir()
+    register_project(Project(name="alpha", root_path=root))
+    project = load_project("alpha")
+
+    telemetry_dir = root / ".wonderland" / "telemetry"
+    telemetry_dir.mkdir(parents=True)
+    (telemetry_dir / "run-20260509T120000.json").write_text(json.dumps({
+        "run_id": "20260509T120000",
+        "total_cost": 2.50,
+        "total_calls": 50,
+        "elapsed_seconds": 180.0,
+        "outcome": "complete",
+        "model": "claude-haiku-4-5-20251001",
+        "budget_dollars": 5.00,
+        "budget_exceeded": False,
+        "per_agent": {
+            "tweedledum": {"calls": 30, "cost": 1.50},
+        },
+    }))
+    (telemetry_dir / "run-20260510T120000.json").write_text(json.dumps({
+        "run_id": "20260510T120000",
+        "total_cost": 4.00,
+        "total_calls": 80,
+        "elapsed_seconds": 300.0,
+        "outcome": "complete",
+        "model": "claude-haiku-4-5-20251001",
+        "budget_dollars": 5.00,
+        "budget_exceeded": False,
+        "per_agent": {
+            "tweedledum": {"calls": 50, "cost": 2.50},
+        },
+    }))
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        screen.query_one("#dashboard-tabs", TabbedContent).active = "tab-metrics"
+        await pilot.pause()
+        content = screen.query_one("#metrics-content", Static)
+        rendered = str(content.render())
+        # Charts rendered, not the empty state.
+        assert "No runs yet" not in rendered
+        # Headline metrics present.
+        assert "Project totals" in rendered
+        assert "Cost per run" in rendered
+        assert "Wall-clock" in rendered
+        assert "Per-agent cost" in rendered
+        # Run ids appear in the legend.
+        assert "20260509T120000" in rendered
+        # No raw ANSI escape sequences leaked through.
+        assert "\x1b[" not in rendered
+        await pilot.press("escape")
         await pilot.press("q")

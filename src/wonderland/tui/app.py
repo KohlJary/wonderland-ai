@@ -9,7 +9,7 @@ from textual.app import App
 from textual.binding import Binding
 from textual.widgets import DataTable
 
-from wonderland.tui.screens.snapshot_library import SnapshotLibraryScreen
+from wonderland.tui.screens.project_library import ProjectLibraryScreen
 from wonderland.tui.themes import (
     DEFAULT_THEME_NAME,
     WONDERLAND_THEMES,
@@ -31,9 +31,10 @@ _DEFAULT_SNAPSHOT_ROOT = Path(__file__).resolve().parents[3]
 class WonderlandApp(App):
     """Wonderland TUI root.
 
-    First cut (P8.2): launches into the SnapshotLibraryScreen. Future
-    cuts will add a Welcome screen, Cast browser, Run Watcher with
-    replay, etc.
+    P11: launches into ProjectLibraryScreen as the new home. The
+    SnapshotLibraryScreen remains reachable from there via the 'L'
+    key for cross-project run browsing. Runs without a project still
+    work via the 'r' key on ProjectLibraryScreen (back-compat).
     """
 
     CSS_PATH = "wonderland.tcss"
@@ -72,7 +73,7 @@ class WonderlandApp(App):
         for theme in WONDERLAND_THEMES:
             self.register_theme(theme)
         self.theme = DEFAULT_THEME_NAME
-        self.push_screen(SnapshotLibraryScreen(self.snapshot_root))
+        self.push_screen(ProjectLibraryScreen())
 
     # ---------------------------------------------------------------- #
     # App-wide vim navigation. Each action finds the currently focused

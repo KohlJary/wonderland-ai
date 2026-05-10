@@ -431,18 +431,28 @@ class WonderlandAgent:
         any agent whose engagement rules accept its own speech_act.
         """
         async for utterance in self._bus_iterator:
-            if utterance.speaker.name == self.identity.name:
-                continue
-            # Seeds (Runner.convene re-publishing prior-thread artifacts)
-            # are context, not engagement triggers. Record them so they
-            # appear in compose_context's thread history — otherwise the
-            # LLM sees a meeting with no prior context and protests "I
-            # can't see the locked stories/ADRs you're referring to."
-            # Engagement still short-circuits via is_seed in
-            # EngagementRules.categorize, so seeds don't queue for
-            # deliberate(); they just become readable history.
+            # Seeds first, before the self-speaker filter. Seeds need
+            # to land in this agent's memory regardless of who emitted
+            # them — including the case where the seed is attributed
+            # to *this* agent (cross-run continuity via the disk
+            # fallback in seeds_fallback.py: a synthetic ticket
+            # attributed to white_rabbit becomes context for the
+            # composition meeting where white_rabbit needs to read
+            # her own prior tickets to compose features).
+            #
+            # Without this ordering, white_rabbit would skip her own
+            # seeded tickets and protest "I can't see the tickets" —
+            # the bug r42-obol surfaced. Engagement still short-
+            # circuits via is_seed in EngagementRules.categorize, so
+            # seeds don't queue for deliberate(); they just become
+            # readable history.
             if utterance.is_seed:
                 await self.memory.record(utterance)
+                continue
+            # Own non-seed utterances: already recorded via speak(),
+            # skip to avoid double-recording + treating self-speech as
+            # a fresh engagement trigger (which would loop forever).
+            if utterance.speaker.name == self.identity.name:
                 continue
             if self._orchestrator_owned:
                 # Phased meetings (P9): the phase orchestrator drives

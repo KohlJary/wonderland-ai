@@ -979,6 +979,36 @@
       "status": "backlog",
       "created_at": "2026-05-10T00:25:44.558897",
       "created_by": "daedalus"
+    },
+    {
+      "id": "62b906c2-221e-45e3-9bb2-b2824388b270",
+      "title": "Tighten primer for operator questions; add M2.5 mandatory checkpoint",
+      "description": "Per r39, r40, r41-obol: third confirmed instance of agents NOT using the operator-question affordance even when warranted. Cat's r41-obol ADR literally names a question ('does the user expect this to run on a single machine, or be networked/multi-access?') and then declines to ask, leaving it as a tradeoff. Zero QUESTION utterances in the bus across all three runs. Affordance works in code (T69); agents just aren't using it.\n\nRoot cause: constitutional hint at primer.py:130-143 over-corrects. Reads as 'use sparingly, prefer M3 contract negotiation, prefer M2.5 composition, the operator is not a fallback...' which agents interpret as 'asking the operator is borderline forbidden.' They always defer to the team, even on questions only the operator can answer (external service auth, single-vs-multi-user assumption, scope-defining UX preferences).\n\nTwo-part fix:\n\n(1) Reframe primer.py:130-143 from 'use sparingly' to 'ask whenever a decision affects deliverable shape and the team lacks information the operator has.' Concrete trigger examples: external service authentication patterns (sandbox vs live tokens), single-vs-multi-user / single-machine-vs-networked assumptions, scope-defining UX preferences (anomaly thresholds, what 'recent' means, density vs hierarchy in TUI). Counter-examples: don't ask about implementation details that contracts can express; don't ask when team-internal deliberation can resolve.\n\n(2) Add an explicit M2.5 checkpoint to Caterpillar's directive in tdd-serial-phased.yaml (and other phased workflows): 'If you finish this phase without naming at least one question for the operator, justify why none exist.' Forces the affordance into the deliberative loop. M2.5 is the right phase because composition is when ambiguities surface as 'this claim about scope doesn't hold yet' \u2014 exactly the shape that should escalate.\n\nValidation: a run on a directive with genuinely-ambiguous external surface (Plaid integration, payment flow, content moderation rules) should produce at least one QUESTION-to-operator utterance. r42-obol-redux or a synthetic re-run of the obol directive after this ships is the natural test.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-10T02:33:39.199076",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "f630e40b-8a62-4ea8-ad8f-73d2001813ed",
+      "title": "Skeleton hello-worlds shouldn't ship domain-named example code (skeleton parasitism)",
+      "description": "Per analysis 039 (r41-obol failure): when a skeleton ships executable example code with named domain artifacts (e.g. python-tui's CounterScreen + counter-label widget + 'Count: N' UI text + tests asserting on the counter), the team can't tell where 'skeleton hello-world' ends and 'operator's actual project' begins. The example code becomes the project. r41-obol shipped 0 LOC of personal-finance code; instead Tweedles + Caterpillar spent M5/M6 fixing the python-tui skeleton's broken counter-app tests.\n\nAnalysis 037 reframed skeleton-as-substrate as load-bearing for production-code shape (good). r41 reveals the failure mode at the OTHER end of the curve: too much skeleton scaffolding, with domain semantics, parasitizes the team's attention.\n\nTwo-part fix:\n\n(1) Audit existing skeletons (python-cli, python-fastapi, python-tui, react-vite, fullstack-fastapi-react) \u2014 replace domain-named example code with unmistakably-placeholder shapes. Examples:\n  - python-tui: drop CounterScreen entirely; ship a one-screen 'Hello' stub with a class named _SkeletonPlaceholderScreen and a comment explicitly saying 'replace this in your first feature'\n  - python-cli: drop any worked Click command; ship a single empty  group with one  subcommand\n  - python-fastapi: keep the /health endpoint (system-level, not domain) but drop any /hello or /counter/items style example\n  - fullstack: same logic both halves\n\n(2) README guidance: every skeleton README should have a 'What's intentionally left to your project' section listing what isn't there yet (e.g. 'No screen \u2014 pick yours; the placeholder demonstrates the wiring but should be deleted in your first feature'). Set the expectation that the placeholder gets DELETED, not extended.\n\nValidation: a re-run of the obol directive on python-tui should produce a personal-finance app, not a counter app.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-10T02:47:34.793862",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "4912508a-447c-4cd2-ae27-de7070c81004",
+      "title": "M2.5 needs structural exit condition: must produce >=1 feature or escalate",
+      "description": "Per analysis 039 (r41-obol): M2.5 (composition) is phase-free per the tdd-serial-phased workflow, which means in engagement-policy mode the meeting can close even if White Rabbit emits zero features. r41-obol's M2.5 thread had 5 utterances total: alice|story (seed), white_rabbit|ticket (seed), dodo|directive, dodo|nudge, dodo|acknowledgment. Rabbit was silent. The team proceeded through M3-M6 working off ticket seeds via 'from: any' fallback, which produced contracts but no features-shaped deliverable.\n\nThe workflow's M2.5 directive is extremely clear about stakes: 'Without features, M3 has nothing to negotiate' (line 187). But the workflow lacks a structural enforcement mechanism. The directive can be ignored without consequence in the current run.\n\nTwo implementation options:\n\n(a) Phased-mode M2.5 with exit_condition_artifact: feature. The phased orchestrator already supports exit conditions (T57 / PhaseSpec.exit_condition_artifact). Setting this on M2.5's single phase forces the meeting to keep convening windows until at least one feature lands or rotation cap is exhausted. Existing infrastructure; minimal code change.\n\n(b) Workflow-level post-meeting validator: after M2.5's MeetingEndedEvent, count feature utterances on the composition thread. If zero, abort the run with a clear escalation (operator sees: 'M2.5 produced no features. The team needs guidance on what to ship \u2014 review tickets and re-run with a tighter directive, or escalate to operator'). Fails loud and gives the operator a useful next step instead of letting the run silently produce wrong-shaped output.\n\nRecommendation: ship (a) first because it reuses existing phased-orchestrator machinery. (b) is the more general 'post-meeting invariant' surface and worth filing separately if it's needed for other meetings (e.g. M2 must produce >=1 ticket; M3 must produce >=1 contract per feature).\n\nValidation: a re-run of the obol directive should either (i) produce features in M2.5, or (ii) cleanly escalate with a 'no features produced' outcome rather than letting the run drift into phantom-seed downstream work.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-10T02:47:34.885511",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

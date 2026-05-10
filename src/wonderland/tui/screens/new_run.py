@@ -49,6 +49,7 @@ from wonderland.directive import (
     load_project_directive,
     save_directive,
 )
+from wonderland.project import Project, save_project
 from wonderland.skeleton import is_bare_project_root
 from wonderland.tui.screens.launch_confirmation import LaunchConfirmationScreen
 from wonderland.tui.screens.settings import SettingsScreen
@@ -94,12 +95,26 @@ class NewRunScreen(Screen[None]):
         "go-button",
     )
 
-    def __init__(self, project_root: Path | None = None) -> None:
+    def __init__(
+        self,
+        project_root: Path | None = None,
+        *,
+        project: Project | None = None,
+    ) -> None:
         super().__init__()
-        # Default project root is cwd — convenient for users running
-        # wonderland-tui from inside the project they want to operate
-        # on. Always overridable in the config row.
-        self.project_root = project_root or Path.cwd()
+        # P11: when a Project is supplied, prefill defaults from it
+        # (workflow, budget, project_root). The operator can still
+        # override per-run; their edits don't mutate the project's
+        # stored defaults. When project is None, fall back to legacy
+        # behavior (project_root=cwd or supplied path).
+        self.project: Project | None = project
+        if project is not None:
+            self.project_root = project.root_path
+        else:
+            # Legacy path — project_root only, no project context.
+            # Default is cwd for users running wonderland-tui from
+            # inside the project they want to operate on.
+            self.project_root = project_root or Path.cwd()
         # Cache of (display_name, preset) tuples in display order so
         # row index → preset is a constant-time lookup.
         self._presets: list[tuple[str, DirectivePreset]] = []
@@ -107,10 +122,18 @@ class NewRunScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Vertical():
-            yield Static(
-                "[b]New run[/b] · pick a preset or write fresh",
-                id="new-run-header",
-            )
+            if self.project is not None:
+                yield Static(
+                    f"[b]New run[/b] · project [accent]{self.project.name}[/accent] "
+                    "· pick a preset or write fresh",
+                    id="new-run-header",
+                )
+            else:
+                yield Static(
+                    "[b]New run[/b] · pick a preset or write fresh "
+                    "[dim](no project context)[/dim]",
+                    id="new-run-header",
+                )
             with Horizontal(id="new-run-main"):
                 with Vertical(id="preset-pane"):
                     yield Static("[b]Presets[/b]", id="preset-label")
@@ -137,6 +160,12 @@ class NewRunScreen(Screen[None]):
             yield Static("[b]Configuration[/b]", id="config-label")
             with Horizontal(id="config-row"):
                 yield Label("Workflow:", id="workflow-label")
+                # Prefill workflow from project default when the
+                # project is set AND the workflow exists in the
+                # bundled list. The Select widget is set after mount
+                # via on_mount so we don't have to fight Select's
+                # value= constructor (which rejects None / sentinels
+                # depending on Textual version).
                 yield Select(
                     [(w, w) for w in list_workflows()],
                     id="workflow-select",
@@ -144,8 +173,15 @@ class NewRunScreen(Screen[None]):
                     prompt="(pick a workflow)",
                 )
                 yield Label("Budget (soft cap):", id="budget-label")
+                # Prefill budget from project default; legacy path
+                # uses the historical $5.00 default.
+                budget_value = (
+                    f"{self.project.default_budget:.2f}"
+                    if self.project is not None
+                    else "5.00"
+                )
                 yield Input(
-                    value="5.00",
+                    value=budget_value,
                     placeholder="$ — runs can exceed by 10-20%",
                     id="budget-input",
                 )
@@ -182,6 +218,18 @@ class NewRunScreen(Screen[None]):
     def on_mount(self) -> None:
         # Populate the preset table.
         self._populate_presets()
+        # P11 T78: when a project context is set, prefill the workflow
+        # Select from the project's default. We do this post-compose
+        # to avoid Select-constructor sentinel issues across Textual
+        # versions; setting .value on a mounted Select is reliable.
+        if (
+            self.project is not None
+            and self.project.last_workflow
+            and self.project.last_workflow in list_workflows()
+        ):
+            self.query_one(
+                "#workflow-select", Select
+            ).value = self.project.last_workflow
         # Focus the preset table by default — j/k navigates presets,
         # Enter selects, Tab moves to the composer.
         self.query_one("#preset-table", DataTable).focus()
@@ -586,6 +634,22 @@ class NewRunScreen(Screen[None]):
                 f"Failed to construct runner: {exc}", severity="error"
             )
             return
+
+        # P11 T78: when a project context is set, record run_id and
+        # the workflow used on the project so the library shows last-
+        # run summary AND so the next run on this project prefills
+        # with the same workflow (per-task workflow choice survives
+        # across runs as a usability hint, not a constraint).
+        if self.project is not None:
+            try:
+                self.project.last_run_id = runner.run_id
+                self.project.last_workflow = params["workflow_name"]
+                save_project(self.project)
+            except Exception as exc:  # noqa: BLE001 — non-fatal
+                self.notify(
+                    f"Couldn't update project run history: {exc}",
+                    severity="warning",
+                )
 
         handle = LiveRunHandle(
             runner=runner,

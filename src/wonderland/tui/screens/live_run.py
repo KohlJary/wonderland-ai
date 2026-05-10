@@ -51,6 +51,7 @@ from wonderland.observer import (
     UtteranceEmitted,
 )
 from wonderland.tui.screens.artifact_browser import ArtifactDetailScreen
+from wonderland.tui.widgets import ChaseStrip
 from wonderland.utterance import Utterance
 
 
@@ -227,6 +228,13 @@ class LiveRunScreen(Screen[None]):
                 # Left pane — meetings list (focusable).
                 with Vertical(id="left-pane"):
                     yield Static("[b]Meetings[/b]", id="meetings-label")
+                    # Ambient liveness strip — Alice chases the White
+                    # Rabbit. Ticks on each AgentActed event; idles
+                    # (dims) when no acts are landing. Cosmetic by
+                    # intent, diagnostic in effect: a frozen chase is
+                    # the cheapest "we're stuck" signal we have, much
+                    # earlier than Dodo's nudge ladder.
+                    yield ChaseStrip(id="meetings-chase")
                     yield DataTable(
                         id="live-meetings-table",
                         cursor_type="row",
@@ -408,6 +416,17 @@ class LiveRunScreen(Screen[None]):
             ),
         ):
             self._handle_phase_event(event)
+
+        # Tick the chase strip on signal-of-life events. UtteranceEmitted
+        # is the broader "the run is moving" signal that catches
+        # legacy engagement-policy meetings (M1/M2/M2.5 in
+        # tdd-serial-phased) too — phase events only fire for phased
+        # meetings, but utterances land in every meeting.
+        if isinstance(event, (UtteranceEmitted, AgentActed)):
+            try:
+                self.query_one("#meetings-chase", ChaseStrip).tick()
+            except Exception:  # noqa: BLE001 — chase widget is purely cosmetic
+                pass
 
         # Status bar updates after every event so the elapsed timer
         # stays current.

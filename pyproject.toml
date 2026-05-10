@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wonderland-ai"
-version = "0.2.1"
+version = "0.3.0"
 description = "An identity-native multi-agent development system."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -36,6 +36,7 @@ dependencies = [
     # is what most users will interact with. Promoted from the
     # [tui] extra to a core dep in 0.1.0. Theme API requires v8+.
     "textual>=8.0",
+    "plotext>=5.3.2",
 ]
 
 [project.urls]

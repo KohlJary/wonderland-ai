@@ -374,6 +374,112 @@ async def _handle_escalation(event, runner, args) -> None:
     await runner.respond_to_escalation(prompt_id, response)
 
 
+# --------------------------------------------------------------------- #
+# `wonderland project` — registry management (P11 T75)
+# --------------------------------------------------------------------- #
+
+
+def cmd_project_add(args: argparse.Namespace) -> int:
+    """Register a new project."""
+    from wonderland.project import Project, register_project
+
+    try:
+        project = Project(
+            name=args.name,
+            root_path=args.path,
+            last_workflow=args.workflow,
+            default_skeleton=args.skeleton,
+            default_budget=args.budget,
+        )
+        register_project(project)
+    except (ValueError, Exception) as exc:  # noqa: BLE001
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Registered project {args.name!r} at {project.root_path}")
+    return 0
+
+
+def cmd_project_list(args: argparse.Namespace) -> int:
+    """List registered projects."""
+    from wonderland.project import list_projects
+
+    projects = list_projects(include_archived=args.all)
+    if not projects:
+        print("(no projects registered)")
+        print(
+            "\nRegister one with:\n  "
+            "wonderland project add <name> <path> [--workflow ...] "
+            "[--budget ...]"
+        )
+        return 0
+    print(f"{'NAME':<25} {'LAST_WORKFLOW':<25} {'BUDGET':<10} {'STATUS':<10} PATH")
+    print("-" * 100)
+    for p in projects:
+        status = "archived" if p.archived else "active"
+        print(
+            f"{p.name:<25} "
+            f"{(p.last_workflow or '—'):<25} "
+            f"${p.default_budget:<9.2f} "
+            f"{status:<10} "
+            f"{p.root_path}"
+        )
+    return 0
+
+
+def cmd_project_edit(args: argparse.Namespace) -> int:
+    """Update an existing project's defaults."""
+    from wonderland.project import load_project, save_project
+
+    try:
+        project = load_project(args.name)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    changed = []
+    if args.workflow is not None:
+        project.last_workflow = args.workflow
+        changed.append(f"last_workflow={args.workflow}")
+    if args.skeleton is not None:
+        project.default_skeleton = args.skeleton
+        changed.append(f"default_skeleton={args.skeleton}")
+    if args.budget is not None:
+        if args.budget <= 0:
+            print("error: budget must be positive", file=sys.stderr)
+            return 1
+        project.default_budget = args.budget
+        changed.append(f"default_budget=${args.budget:.2f}")
+    if not changed:
+        print("(no changes specified — pass --workflow, --skeleton, or --budget)")
+        return 0
+    save_project(project)
+    print(f"Updated {args.name}: {', '.join(changed)}")
+    return 0
+
+
+def cmd_project_archive(args: argparse.Namespace) -> int:
+    from wonderland.project import archive_project
+
+    try:
+        archive_project(args.name)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Archived: {args.name}")
+    return 0
+
+
+def cmd_project_unarchive(args: argparse.Namespace) -> int:
+    from wonderland.project import unarchive_project
+
+    try:
+        unarchive_project(args.name)
+    except KeyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Unarchived: {args.name}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wonderland",
@@ -464,6 +570,104 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run_parser.set_defaults(func=cmd_run)
+
+    # `wonderland project` — registry management for the P11 Project
+    # abstraction. The TUI reads this same registry; CLI subcommands
+    # let scripts / shell users register projects without launching
+    # the TUI.
+    project_parser = subparsers.add_parser(
+        "project",
+        help="Manage the Wonderland project registry (~/.wonderland/projects.json).",
+        description=(
+            "Register, list, edit, and archive projects. Projects are the "
+            "first-class abstraction for an operator's working venue: a "
+            "name + path + per-project defaults (workflow, skeleton, "
+            "budget). The TUI launches into a project library that reads "
+            "this same registry."
+        ),
+    )
+    project_subparsers = project_parser.add_subparsers(
+        dest="project_command", required=True, metavar="<subcommand>"
+    )
+
+    proj_add = project_subparsers.add_parser(
+        "add", help="Register a new project."
+    )
+    proj_add.add_argument("name", help="Project name (unique in the registry).")
+    proj_add.add_argument(
+        "path",
+        type=Path,
+        help="Project root path (will be expanded + resolved to absolute).",
+    )
+    proj_add.add_argument(
+        "--workflow",
+        type=str,
+        default=None,
+        help=(
+            "Initial workflow hint for runs on this project (e.g. "
+            "tdd-serial-phased). Auto-updates to the last workflow "
+            "actually launched. Per-run override always allowed."
+        ),
+    )
+    proj_add.add_argument(
+        "--skeleton",
+        type=str,
+        default=None,
+        help="Skeleton applied at project creation (informational; e.g. python-cli).",
+    )
+    proj_add.add_argument(
+        "--budget",
+        type=float,
+        default=5.00,
+        help="Default per-run budget in dollars (default: $5.00).",
+    )
+    proj_add.set_defaults(func=cmd_project_add)
+
+    proj_list = project_subparsers.add_parser(
+        "list", help="List registered projects."
+    )
+    proj_list.add_argument(
+        "--all",
+        action="store_true",
+        help="Include archived projects in the listing.",
+    )
+    proj_list.set_defaults(func=cmd_project_list)
+
+    proj_edit = project_subparsers.add_parser(
+        "edit", help="Update an existing project's defaults."
+    )
+    proj_edit.add_argument("name", help="Project name to edit.")
+    proj_edit.add_argument(
+        "--workflow",
+        type=str,
+        default=None,
+        help="New default workflow.",
+    )
+    proj_edit.add_argument(
+        "--skeleton",
+        type=str,
+        default=None,
+        help="New default skeleton.",
+    )
+    proj_edit.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="New default budget in dollars.",
+    )
+    proj_edit.set_defaults(func=cmd_project_edit)
+
+    proj_archive = project_subparsers.add_parser(
+        "archive", help="Archive a project (soft-delete)."
+    )
+    proj_archive.add_argument("name", help="Project name to archive.")
+    proj_archive.set_defaults(func=cmd_project_archive)
+
+    proj_unarchive = project_subparsers.add_parser(
+        "unarchive", help="Restore an archived project."
+    )
+    proj_unarchive.add_argument("name", help="Project name to unarchive.")
+    proj_unarchive.set_defaults(func=cmd_project_unarchive)
 
     return parser
 
