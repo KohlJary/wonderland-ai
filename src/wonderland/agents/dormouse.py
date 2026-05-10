@@ -154,6 +154,18 @@ class DormouseResponse(BaseModel):
 
     decision: DormouseDecision
     body: str = ""
+    options: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional suggested answers when ``decision == "
+            "'question_to_operator'``. Each entry becomes a "
+            "click-to-submit button in the operator's modal. "
+            "Use 2–4 short option strings for binary or n-way "
+            "questions where the answer space is bounded; "
+            "operator can still type a custom answer. Ignored "
+            "when decision is anything else."
+        ),
+    )
     observations: list[ObservationPayload] = Field(default_factory=list)
 
     @field_validator("body", mode="before")
@@ -324,6 +336,13 @@ class Dormouse(WonderlandAgent):
         if response.decision == "question_to_operator":
             addressed_to: str | list = [operator_identity()]
             speech_act = SpeechAct.QUESTION
+            if response.options:
+                artifacts.append(
+                    Artifact(
+                        kind="operator_question_options",
+                        payload={"options": list(response.options)},
+                    )
+                )
         else:
             addressed_to = "caucus"
             speech_act = SpeechAct(response.decision)

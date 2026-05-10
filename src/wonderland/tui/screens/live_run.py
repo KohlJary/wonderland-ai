@@ -618,10 +618,22 @@ class LiveRunScreen(Screen[None]):
             if not future.done():
                 future.set_result(answer)
 
+        # Suggested options ride on the utterance as an artifact
+        # (kind="operator_question_options", payload={"options": [...]}).
+        # Empty / missing → free-text-only experience as before.
+        options: list[str] = []
+        for artifact in question_utterance.content.artifacts:
+            if artifact.kind == "operator_question_options":
+                raw = artifact.payload.get("options", [])
+                if isinstance(raw, list):
+                    options = [str(o) for o in raw if o]
+                break
+
         self.app.push_screen(
             AskUserModal(
                 asking_agent=question_utterance.speaker.name,
                 question=question_utterance.content.body,
+                options=options,
                 auto_dismiss_after=timeout,
             ),
             _on_dismissed,

@@ -28,7 +28,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from wonderland.adr import ADRPayload, ADRRegistry
 from wonderland.agent import Context, WonderlandAgent, format_utterance
@@ -148,6 +148,18 @@ class CatResponse(BaseModel):
     decision: CatDecision
     body: str = ""
     adr: ADRPayload | None = None
+    options: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional suggested answers when ``decision == "
+            "'question_to_operator'``. Each entry becomes a "
+            "click-to-submit button in the operator's modal. "
+            "Use 2–4 short options for the common cases of a "
+            "binary or n-way question; the operator can still "
+            "type a custom answer if none fit. Ignored when "
+            "decision is anything else."
+        ),
+    )
 
     @field_validator("body", mode="before")
     @classmethod
@@ -186,6 +198,9 @@ The JSON must conform to this schema:
   "decision": "proposal" | "question" | "question_to_operator" | "reframe" |
               "concern" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
+  "options": ["SQLite", "Postgres", "Either is fine"],
+                                      // OPTIONAL: include with question_to_operator
+                                      // to surface 2–4 click-to-submit answers
   "adr": {                            // include only when decision is "proposal"
                                       // AND there is a real architectural decision
                                       // worth recording
@@ -210,6 +225,19 @@ so the operator can answer in one or two sentences. Reserve for
 details I should work out from context." If the directive or the
 project_context already answers the question, ask the directive,
 not the operator. If `question` (in-team) suffices, prefer that.
+
+**Supply ``options`` with your question whenever the answer space
+is bounded.** Most operator-questions are binary ("X or Y?") or
+n-way with obvious candidates ("SQLite, Postgres, or filesystem?",
+"v1, fast-follow, or post-launch?"). When that's the case, list
+2–4 short option strings so the operator can click to submit
+verbatim instead of typing. Each option should be a complete
+answer ("Use SQLite", not "SQLite") so it reads cleanly when
+re-published as the operator's reply. Include an "either is
+fine" / "no strong preference" entry only when that's a real
+option the team can act on. Skip ``options`` entirely when the
+answer space is genuinely open-ended (operator should think
+freely).
 
 Silence is a valid and often correct decision. If the trigger does not
 implicate architecture — or if architecture has already been settled
@@ -382,6 +410,16 @@ class CheshireCat(WonderlandAgent):
         if response.decision == "question_to_operator":
             addressed_to: str | list = [operator_identity()]
             speech_act = SpeechAct.QUESTION
+            # Suggested options ride as an artifact so the operator's
+            # modal can render click-to-submit buttons (the runner +
+            # AskUserModal know how to read this kind).
+            if response.options:
+                artifacts.append(
+                    Artifact(
+                        kind="operator_question_options",
+                        payload={"options": list(response.options)},
+                    )
+                )
         else:
             addressed_to = "caucus"
             speech_act = SpeechAct(response.decision)

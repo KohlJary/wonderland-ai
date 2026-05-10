@@ -302,6 +302,18 @@ class TweedleResponse(BaseModel):
 
     decision: TweedleDecision
     body: str = ""
+    options: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Optional suggested answers when ``decision == "
+            "'question_to_operator'``. Each entry becomes a "
+            "click-to-submit button in the operator's modal. "
+            "Use 2–4 short option strings for binary or n-way "
+            "questions where the answer space is bounded; "
+            "operator can still type a custom answer. Ignored "
+            "when decision is anything else."
+        ),
+    )
     implementations: list[ImplementationPayload] = Field(default_factory=list)
     contract_notes: list[TweedleContractNoteAction] = Field(default_factory=list)
     invitees: list[str] = Field(default_factory=list)
@@ -800,6 +812,13 @@ class _TweedleBase(WonderlandAgent):
             from wonderland.utterance import operator_identity
 
             addressed_to = [operator_identity()]
+            if response.options:
+                artifacts.append(
+                    Artifact(
+                        kind="operator_question_options",
+                        payload={"options": list(response.options)},
+                    )
+                )
         else:
             addressed_to = "caucus"
 

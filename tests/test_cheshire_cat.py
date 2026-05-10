@@ -415,6 +415,70 @@ async def test_deliberate_question_to_operator_routes_to_operator_with_question_
     # only kicks in when decision != question_to_operator.
 
 
+async def test_deliberate_question_to_operator_attaches_options_artifact(
+    tmp_path: Path,
+) -> None:
+    """When Cat supplies ``options`` alongside a question_to_operator
+    decision, the emission attaches an
+    ``operator_question_options`` artifact carrying the option list.
+    The TUI's AskUserModal reads this artifact and renders click-to-
+    submit buttons so binary or n-way questions don't require the
+    operator to type the answer they meant to pick."""
+    payload = {
+        "decision": "question_to_operator",
+        "body": "Should the storage layer be SQLite, Postgres, or filesystem?",
+        "options": ["SQLite", "Postgres", "Filesystem (JSON files)"],
+    }
+    llm = _mock_llm(f"```json\n{json.dumps(payload)}\n```")
+    cat = await _cat(tmp_path, llm=llm)
+    trigger = _u(thread_id="architecture", body="storage decision")
+    ctx = Context(constitution=cat.identity.constitution_text, triggers=(trigger,))
+
+    utterance = await cat.deliberate(ctx)
+
+    assert utterance is not None
+    options_artifact = next(
+        (
+            a
+            for a in utterance.content.artifacts
+            if a.kind == "operator_question_options"
+        ),
+        None,
+    )
+    assert options_artifact is not None, (
+        "expected an operator_question_options artifact when "
+        "Cat ships question_to_operator with options"
+    )
+    assert options_artifact.payload["options"] == [
+        "SQLite",
+        "Postgres",
+        "Filesystem (JSON files)",
+    ]
+
+
+async def test_deliberate_question_to_operator_without_options_attaches_no_artifact(
+    tmp_path: Path,
+) -> None:
+    """No options → no artifact attached. The modal falls back to
+    the free-text-only experience (the original behavior)."""
+    payload = {
+        "decision": "question_to_operator",
+        "body": "What's the right scope for v1?",
+    }
+    llm = _mock_llm(f"```json\n{json.dumps(payload)}\n```")
+    cat = await _cat(tmp_path, llm=llm)
+    trigger = _u(thread_id="architecture", body="scope question")
+    ctx = Context(constitution=cat.identity.constitution_text, triggers=(trigger,))
+
+    utterance = await cat.deliberate(ctx)
+
+    assert utterance is not None
+    assert not any(
+        a.kind == "operator_question_options"
+        for a in utterance.content.artifacts
+    )
+
+
 async def test_deliberate_skips_adr_when_no_registry(tmp_path: Path) -> None:
     """If no ADR registry was supplied, the proposal still ships — without artifact."""
     payload = {

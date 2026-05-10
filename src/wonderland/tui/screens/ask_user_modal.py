@@ -82,6 +82,17 @@ class AskUserModal(ModalScreen[str | None]):
         margin: 0 1;
         min-width: 14;
     }
+    AskUserModal #ask-user-options-label {
+        margin-bottom: 0;
+        color: $text;
+    }
+    AskUserModal #ask-user-options {
+        height: auto;
+        margin-bottom: 1;
+    }
+    AskUserModal #ask-user-options Button {
+        margin: 0 1 0 0;
+    }
     """
 
     def __init__(
@@ -89,9 +100,17 @@ class AskUserModal(ModalScreen[str | None]):
         *,
         asking_agent: str,
         question: str,
+        options: list[str] | None = None,
         auto_dismiss_after: float | None = None,
     ) -> None:
         """Construct the modal.
+
+        ``options`` (operator-question follow-up): when the asking
+        agent supplies suggested answers, render each one as a
+        clickable button above the free-text input. Click submits
+        that option verbatim as the operator's reply; the operator
+        can still type a custom answer if none of the options fit.
+        Empty/None list = original free-text-only experience.
 
         ``auto_dismiss_after`` (T69 follow-up): if set to a positive
         number of seconds, the modal self-dismisses with None
@@ -103,6 +122,7 @@ class AskUserModal(ModalScreen[str | None]):
         super().__init__()
         self._asking_agent = asking_agent
         self._question = question
+        self._options = list(options or [])
         self._auto_dismiss_after = auto_dismiss_after
 
     def compose(self) -> ComposeResult:
@@ -113,6 +133,28 @@ class AskUserModal(ModalScreen[str | None]):
             )
             with VerticalScroll(id="ask-user-question-scroll"):
                 yield Static(self._question, id="ask-user-question")
+            if self._options:
+                # Suggested-answer buttons row. Click submits that
+                # option verbatim as the operator's reply.
+                yield Static(
+                    "[b]Suggested answers[/b] "
+                    "[dim](click to submit verbatim, or type a "
+                    "custom answer below)[/dim]",
+                    id="ask-user-options-label",
+                )
+                with Horizontal(id="ask-user-options"):
+                    for idx, option in enumerate(self._options):
+                        # Truncate display text but preserve full
+                        # value via the data field — long options
+                        # still submit correctly.
+                        label = option[:40] + (
+                            "…" if len(option) > 40 else ""
+                        )
+                        yield Button(
+                            label,
+                            id=f"ask-user-option-{idx}",
+                            classes="ask-user-option",
+                        )
             yield Static(
                 "[b]Your answer[/b] "
                 "[dim](free text — the team will see it as "
@@ -157,6 +199,14 @@ class AskUserModal(ModalScreen[str | None]):
             self.action_submit()
         elif event.button.id == "ask-user-skip":
             self.action_skip()
+        elif event.button.id and event.button.id.startswith("ask-user-option-"):
+            # A suggested-answer button: submit that option verbatim.
+            try:
+                idx = int(event.button.id.split("-")[-1])
+            except ValueError:
+                return
+            if 0 <= idx < len(self._options):
+                self.dismiss(self._options[idx])
 
     def on_input_submitted(self, _event: Input.Submitted) -> None:
         # Pressing Enter in the input also submits.
