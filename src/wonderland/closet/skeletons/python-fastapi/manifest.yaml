@@ -1,0 +1,6 @@
+language: python
+
+post_apply:
+  - description: Install Python dependencies (FastAPI + uvicorn + pytest)
+    command: pip install -e .[dev]
+    cwd: .

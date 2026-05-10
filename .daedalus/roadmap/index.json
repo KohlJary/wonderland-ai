@@ -889,6 +889,56 @@
       "status": "backlog",
       "created_at": "2026-05-09T19:04:04.890759",
       "created_by": "daedalus"
+    },
+    {
+      "id": "3a22d99e-708c-4177-b81e-5a154fbe3f7f",
+      "title": "Skeleton auto-install runner: execute manifest.post_apply commands",
+      "description": "Per T73's manifest layer. Add an apply-then-install path that runs the skeleton's post_apply commands as subprocesses with progress reporting in the SkeletonPickerScreen. Considerations: long-running installs (pip 1-5min, npm 5-15min) need a non-blocking UI; failures need clear surfacing; venv creation may need to be a separate step. Defer until a operator wants unattended-capable runs against fresh project roots without touching a shell. The manifest from T73 makes this tractable when we want it.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T22:56:11.818631",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "6287eff9-7c9f-4d94-8dd5-1865a3010995",
+      "title": "Run-follow hook: active-run pointer + daedalus run follow CLI",
+      "description": "Lets Claude/Daedalus observe live runs without operator interruption to paste paths. Two pieces: (1) NewRunScreen / LiveRunHandle writes ~/.wonderland/current_run.txt on launch with the snapshot path, clears it on RunEnded. (2) daedalus run follow CLI tails phase-events.jsonl + tool-calls.jsonl + the latest telemetry/run-*.json, prints meaningful summaries (PhaseStarted -> 'M4.clarify started, 4 cast'; AgentActed -> 'tweedledum acted in window 3'; cost-tick when total_cost crosses /bin/bash.50 boundaries; write_file -> 'src/api.py +200 LOC'). Reads from current_run.txt if no explicit path. Future: server-side hook for richer integrations (slack notifications on milestones, webhook on completion); for now, polling-via-Bash from the agent side covers the use case.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T23:05:15.944807",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "3c73994b-3ef6-4d99-b9ff-0ea9aab43f5c",
+      "title": "Claude Code skill: wonderland run follow",
+      "description": "Wraps the daedalus run follow CLI (roadmap 6287eff9) as a Claude Code skill so any Claude session can invoke /wonderland-follow (or similar) to observe an active run without bash-polling boilerplate. Skill discovers current_run.txt, tails the JSONL files, returns formatted progress summaries to the agent. Supports per-call snapshot path override for inspecting historical runs. Lives in .claude/skills/ or .claude/commands/ depending on how the project surfaces user-invocable skills. Composable with the existing daedalus and memory subagents.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T23:06:05.028318",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "fd5748e5-ed48-4a16-92a2-3650aac17df7",
+      "title": "Parallelize M4 (test_scenarios) per_item iterations",
+      "description": "Per the analysis-037 wall-clock investigation: M4 iterations are structurally independent \u2014 each iter sees one feature's spec + contracts touching it, and produces test_scenarios + test files written to feature-slug-named paths (tests/test_<slug>_*.py). No shared state, no cross-iter file conflicts. Easy parallelization: in run_workflow, when meeting.per_item is set AND meeting opts in (new field: parallel_iterations: bool = false), replace the serial for-loop over items with asyncio.gather of _run_one_meeting calls. Each iteration gets its own thread_id (already established as {meeting.id}-{slug}). For 5-feature pomodoro, M4 wall-clock drops ~5x (from ~30 min serial to ~6 min parallel). Supersedes the generic 0b785ab0; M5 parallelization is filed separately (more complex).",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T23:15:43.880840",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "c2751f9c-b796-48f3-99cd-665919534155",
+      "title": "Parallelize M5 (implementation) per_item iterations",
+      "description": "Per the analysis-037 wall-clock investigation. M5 parallelization is non-trivial because iterations share infrastructure: src/store.py, src/api.py route registration, src/models.py schema. Two iterations writing to the same file race; run_tests called concurrently can hit pytest collection races, port collisions for FastAPI servers, fixture state clobbering. Path forward (in order): (1) detect file-conflict via a shared-files declaration on contracts; serialize iters that touch the same files. (2) Sandbox run_tests per-iteration with per-iter pytest fixtures + port pools. (3) Allow per-meeting parallelism opt-in via parallel_iterations field with a max_concurrent cap. Or simpler: ship M5 sequentially even when M4 parallelizes (M4 is the bigger wall-clock chunk anyway), and leave M5 as future work. Lower priority than M4 because the wins are smaller and the implementation is harder. Supersedes the M5 portion of generic 0b785ab0.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-09T23:15:43.964213",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

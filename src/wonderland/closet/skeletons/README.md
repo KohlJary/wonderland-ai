@@ -70,13 +70,25 @@ Caterpillar reviews diffs against the initial commit.
   could have made; if the template makes too many, it's
   pre-deciding the architecture rather than the boilerplate.
 
-## Current templates
+## Current skeletons
 
-| Template | Status | Used by |
+| Skeleton | Stack | Use for |
 |---|---|---|
-| `fullstack-fastapi-react/` | initial | T38 (planned) |
+| `fullstack-fastapi-react/` | FastAPI backend + React/Vite frontend + pytest | full web apps |
+| `python-fastapi/` | FastAPI + pytest | API-only services |
+| `react-vite/` | React + Vite + TypeScript + Vitest | frontend-only / static SPAs |
+| `python-cli/` | Click + pytest | command-line tools |
+| `python-tui/` | Textual + pytest-asyncio | terminal UI apps |
 
-Future templates (filed as needed, not speculatively):
-- `python-fastapi-sqlite/` — backend-only
-- `react-vite-typescript/` — frontend-only
-- `python-cli/` — click + pytest
+Each ships a working hello-world (counter / `/health` / `greet`)
+plus tests proving the framework + test runner are wired. The
+team's job is to extend; the skeleton's job is to remove the
+"argue about what stack to use" tax from the first iteration.
+
+Per analysis 037 F1+F7: the skeleton is a **substrate primitive**.
+It's not just starter code — it's how the meeting structure
+communicates "production code goes in `src/`, tests go in `tests/`"
+without having to re-explain the convention every M5 iteration.
+TUI runs since r33 had been against bare project roots; the
+deliverability regression analysis 037 named was downstream of
+that. Skeletons restore the structural intent.

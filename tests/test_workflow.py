@@ -431,6 +431,64 @@ class TestLoader:
         assert "canonical" in names
 
 
+class TestWorkflowDefaultsModel:
+    """The ``defaults.model`` field lets a workflow YAML pin its
+    agents to a specific Anthropic model id (cost-recovery work,
+    P10 / analysis 038)."""
+
+    def test_default_model_is_none(self):
+        """A bare WorkflowDefaults() carries no model override —
+        the runner falls back to its DEFAULT_MODEL."""
+        defaults = WorkflowDefaults()
+        assert defaults.model is None
+
+    def test_explicit_model_id_round_trips(self):
+        defaults = WorkflowDefaults(model="claude-haiku-3-5-20241022")
+        assert defaults.model == "claude-haiku-3-5-20241022"
+
+    def test_canonical_workflow_has_no_model_override(self):
+        """The bundled canonical workflow doesn't pin a model — it
+        runs against whatever the runner defaults to."""
+        wf = load_workflow("canonical")
+        assert wf.defaults.model is None
+
+    def test_dev_variant_pins_haiku_3_5(self):
+        """The tdd-serial-phased-dev variant pins Haiku 3.5 to make
+        development runs ~20% cheaper than the parent's Haiku 4.5."""
+        wf = load_workflow("tdd-serial-phased-dev")
+        assert wf.defaults.model == "claude-haiku-3-5-20241022"
+
+
+class TestWorkflowExtends:
+    """The ``extends:`` mechanism lets a child workflow inherit
+    meetings + defaults from a parent and override only what it
+    needs to change."""
+
+    def test_dev_variant_inherits_parent_meetings(self):
+        """tdd-serial-phased-dev must surface the parent's full
+        meeting list — proves the loader walked extends correctly."""
+        parent = load_workflow("tdd-serial-phased")
+        child = load_workflow("tdd-serial-phased-dev")
+        assert [m.id for m in child.meetings] == [
+            m.id for m in parent.meetings
+        ]
+
+    def test_dev_variant_overrides_only_model(self):
+        """Defaults shallow-merge: parent's quiescence + budget carry
+        through; child's model wins over parent's None."""
+        parent = load_workflow("tdd-serial-phased")
+        child = load_workflow("tdd-serial-phased-dev")
+        # Child overrides:
+        assert child.defaults.model == "claude-haiku-3-5-20241022"
+        # Parent fields the child doesn't redeclare flow through:
+        assert child.defaults.quiescence_seconds == parent.defaults.quiescence_seconds
+
+    def test_dev_variant_has_distinct_name(self):
+        """Child sets its own name even though it extends a parent."""
+        wf = load_workflow("tdd-serial-phased-dev")
+        assert wf.name == "tdd-serial-phased-dev"
+
+
 # ---------------------------------------------------------------------------
 # Canonical workflow integrity
 # ---------------------------------------------------------------------------

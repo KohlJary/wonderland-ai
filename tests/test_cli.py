@@ -515,6 +515,7 @@ async def test_run_async_smoke_hits_timeout_path(
         timeout=0.5,
         on_escalation="abort",
         auto_respond=None,
+        model=None,
     )
     rc = await _run_async(args)
     assert rc == 1  # timeout

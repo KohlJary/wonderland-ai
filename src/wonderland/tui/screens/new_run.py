@@ -49,8 +49,10 @@ from wonderland.directive import (
     load_project_directive,
     save_directive,
 )
+from wonderland.skeleton import is_bare_project_root
 from wonderland.tui.screens.launch_confirmation import LaunchConfirmationScreen
 from wonderland.tui.screens.settings import SettingsScreen
+from wonderland.tui.screens.skeleton_picker import SkeletonPickerScreen
 from wonderland.workflow import list_workflows, load_workflow
 
 
@@ -342,20 +344,30 @@ class NewRunScreen(Screen[None]):
 
         project_path = Path(project_str).expanduser()
 
-        # Project root must already exist with a skeleton + .wonderland/.
-        # Auto-creating an empty dir would just produce a confusing
-        # downstream failure (agents have nothing to read; the team
-        # ships into the void). New-project creation lives in P8.6
-        # spinup; until that lands, the user must seed the project
-        # themselves (via wonderland init or by copying a skeleton).
-        if not project_path.is_dir():
-            self.notify(
-                f"Project root doesn't exist: {project_path}\n"
-                f"Wonderland needs an existing project tree to run "
-                f"against. Create the directory + seed a skeleton "
-                f"first (or wait for P8.6 spinup).",
-                severity="error",
-                timeout=8,
+        # Bare-root path: project doesn't exist yet, OR exists but
+        # has no production structure (empty / .git only / .gitignore
+        # only). Push the skeleton picker (T71) so the operator can
+        # apply a skeleton before launch — analysis 037 names the
+        # skeleton as load-bearing for deliverable shape. The picker
+        # dismisses with: a skeleton name (applied), "" (continue
+        # without — operator override), or None (cancel).
+        #
+        # If the project root already has structure (src/, tests/,
+        # etc.), skip the picker and proceed — operator has set
+        # things up themselves.
+        if is_bare_project_root(project_path):
+            self._pending_post_skeleton = {
+                "directive": directive,
+                "workflow_name": workflow_name,
+                "description": description,
+                "save_checked": save_checked,
+                "save_name": save_name,
+                "budget": budget,
+                "project_path": project_path,
+            }
+            self.app.push_screen(
+                SkeletonPickerScreen(project_path),
+                self._on_skeleton_picked,
             )
             return
 
@@ -442,6 +454,97 @@ class NewRunScreen(Screen[None]):
             return None
         return cfg.anthropic.api_key
 
+    def _on_skeleton_picked(self, choice: str | None) -> None:
+        """Callback fired when SkeletonPickerScreen dismisses.
+
+        Dismiss values:
+          - skeleton name (str): skeleton was applied; resume the
+            launch flow against the now-populated project root.
+          - "" (empty string): operator declined the skeleton;
+            resume launch against the bare root anyway.
+          - None: operator cancelled; abort the launch and return
+            to the new-run composer.
+        """
+        if choice is None:
+            # Cancelled — drop pending state and let operator edit
+            # the project path or back out.
+            self._pending_post_skeleton = None
+            return
+        params = getattr(self, "_pending_post_skeleton", None)
+        if params is None:
+            return  # defensive — shouldn't happen
+        # Project root is now populated (or operator chose to
+        # proceed bare). Re-enter action_go's post-skeleton flow
+        # by directly inlining the rest of the launch path.
+        self._pending_post_skeleton = None
+        self._continue_launch_after_skeleton(params)
+
+    def _continue_launch_after_skeleton(self, params: dict) -> None:
+        """Resume the launch flow after the skeleton picker
+        resolved. Mirrors the post-bare-root tail of action_go —
+        save preset (if requested), then push the launch
+        confirmation modal."""
+        directive = params["directive"]
+        workflow_name = params["workflow_name"]
+        description = params["description"]
+        save_checked = params["save_checked"]
+        save_name = params["save_name"]
+        budget = params["budget"]
+        project_path = params["project_path"]
+
+        # API-key pre-flight, same as action_go.
+        api_key = self._resolve_api_key()
+        if not api_key:
+            self.notify(
+                "No Anthropic API key found — opening Settings. Set "
+                "the key, save, then press Go again to launch.",
+                severity="warning",
+                timeout=6,
+            )
+            self.app.push_screen(SettingsScreen())
+            return
+
+        if save_checked:
+            if not save_name:
+                self.notify(
+                    "Save-as-preset is checked but no name given.",
+                    severity="warning",
+                )
+                return
+            preset = DirectivePreset(
+                name=save_name,
+                title=description.split("\n", 1)[0][:80] or save_name,
+                description=description,
+                body=directive,
+                suggested_workflow=str(workflow_name),
+            )
+            try:
+                path = save_directive(preset, project_path)
+            except Exception as exc:  # noqa: BLE001
+                self.notify(
+                    f"Failed to save preset: {exc}",
+                    severity="error",
+                )
+                return
+            self.notify(f"Saved preset → {path}", timeout=3)
+            self._populate_presets()
+
+        self._pending_launch = {
+            "directive": directive,
+            "workflow_name": str(workflow_name),
+            "project_path": project_path,
+            "budget": budget,
+        }
+        self.app.push_screen(
+            LaunchConfirmationScreen(
+                directive=directive,
+                workflow_name=str(workflow_name),
+                project_root=str(project_path),
+                budget=budget,
+            ),
+            self._on_launch_confirmed,
+        )
+
     def _on_launch_confirmed(self, confirmed: bool | None) -> None:
         """Callback fired when the LaunchConfirmationScreen pops.
         Confirmed → kick off the launch worker; declined → no-op."""
@@ -476,6 +579,7 @@ class NewRunScreen(Screen[None]):
             runner = await Runner.make_full_cast(
                 project_root=params["project_path"],
                 budget_dollars=params["budget"],
+                model=workflow.defaults.model,
             )
         except Exception as exc:  # noqa: BLE001
             self.notify(

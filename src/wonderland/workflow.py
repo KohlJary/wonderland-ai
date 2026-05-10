@@ -295,6 +295,13 @@ class WorkflowDefaults(BaseModel):
     budget_dollars: float | None = None
     timeout_seconds: float | None = None
     quiescence_seconds: float | None = None
+    # Override for the LLM model id used by every agent in this
+    # workflow. None → Runner's DEFAULT_MODEL applies. Lets a "-dev"
+    # variant of a workflow swap to a cheaper model without touching
+    # any code (analysis 038, P10 cost work). String is passed
+    # straight through to the Anthropic API so any valid model id
+    # works (e.g. ``claude-haiku-3-5-20241022``).
+    model: str | None = None
 
 
 class Workflow(BaseModel):
@@ -337,6 +344,12 @@ def load_workflow(name_or_path: str | Path) -> Workflow:
     - ``load_workflow(Path("/abs/path/to/my.yaml"))`` — loads from
       an absolute path. Useful for tests + project-local workflow
       overrides.
+
+    Supports a top-level ``extends:`` field that names a parent
+    workflow (bundled name or path). The child inherits the parent's
+    meetings + defaults; any field the child sets overrides the
+    parent. Used by ``-dev`` variants that swap only ``defaults.model``
+    while keeping the parent's meeting shape verbatim.
     """
     if isinstance(name_or_path, Path):
         path = name_or_path
@@ -352,6 +365,22 @@ def load_workflow(name_or_path: str | Path) -> Workflow:
         )
     with path.open() as f:
         data = yaml.safe_load(f)
+
+    extends = data.pop("extends", None) if isinstance(data, dict) else None
+    if extends is not None:
+        parent = load_workflow(extends)
+        parent_data = parent.model_dump()
+        # Shallow defaults merge: parent keys + child keys, child wins.
+        # Anything else (meetings, name, description, version) is a
+        # straight top-level override — child wins if present, else
+        # parent's value carries through.
+        child_defaults = data.get("defaults") or {}
+        parent_defaults = parent_data.get("defaults") or {}
+        merged_defaults = {**parent_defaults, **child_defaults}
+        merged = {**parent_data, **data}
+        merged["defaults"] = merged_defaults
+        data = merged
+
     return Workflow.model_validate(data)
 
 

@@ -554,6 +554,29 @@ meetings:
       for this feature's tests, you're done. Cross-feature
       regressions are M6's job to surface.
 
+      **Production code lives in non-test directories. Test fixtures
+      are NOT production code.** Per analysis 036's no-production-
+      code regression: tests that pass against an in-test-fixture
+      implementation are not a green meeting. The closure criterion
+      is "tests green AND the production code that satisfies them
+      lives in src/ (or the project skeleton's equivalent — frontend/
+      src/, src/backend/, etc.) where someone running the app can
+      import it." If your tests pass because you inlined the logic
+      in `tests/conftest.py` or another test fixture, you have not
+      shipped a feature; you have shipped a sophisticated test
+      double. The `implementation` artifact you emit must name
+      `files_touched` paths in non-test locations; if every
+      `files_touched` entry is under `tests/`, you are not done
+      and should keep iterating until production code materializes.
+
+      **The skeleton-or-equivalent rule, even when no skeleton was
+      imposed.** When the project root is bare (no pre-laid skeleton),
+      the convention is: production Python under `src/`,
+      production frontend under `frontend/src/` or `web/`, with
+      `tests/` reserved for test files only. Pick a location and
+      ship the production module there; don't write production
+      logic in conftest.py for "convenience."
+
       **Contract drift escape valve:** if implementing this feature
       reveals that an M3 contract needs adjustment (e.g., a state-
       machine boundary that didn't show up until implementation),
@@ -602,6 +625,24 @@ meetings:
       `git_status` to see what shipped across all features, then
       `git_diff` to read the changes. Surface findings on the
       production code itself, citing files and lines.
+
+      **First check before any code-level review: did production
+      code actually ship to a non-test location?** Per analysis 036:
+      a previous run shipped 0 LOC of production code while test
+      suites passed against in-fixture implementations. Run
+      `list_files src/` (or the project skeleton's equivalent
+      production directory) before reading any single file. If the
+      production directory is empty or contains only stubs while
+      `tests/conftest.py` (or similar) holds substantial
+      implementation logic, that's the load-bearing finding to
+      surface — an `implementation` artifact that names where the
+      production code SHOULD have been, with a `concern`
+      severity that escalates above the per-feature claim-
+      integrity reviews. Do not soften this finding with "but the
+      tests pass" — passing tests against fixture-resident logic
+      is process discipline at the expense of the deliverable.
+      Tests-pass-fixture is *not* a green run; it is a sophisticated
+      red run.
 
       **Two layers of review land naturally on you in this serial
       workflow:**

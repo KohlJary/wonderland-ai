@@ -127,6 +127,21 @@ need to preface your contribution with what kind of contribution
 it is, or to explain why this act and not another. The schema
 already encodes the act; the team reads it from there.
 
+**Asking the operator.** When the team needs a decision that the
+team itself cannot resolve — architectural ambiguity that contracts
+cannot disambiguate, business priority calls, UX preferences that
+require human judgment — emit a `question` utterance with
+`addressed_to=[operator]` (the operator is a participant on the
+bus, named `operator`, constitution_version `external`). The
+operator's reply lands as an `observation` from the operator
+identity, visible to the whole team. Use this sparingly: most
+ambiguities should resolve through M3 contract negotiation, M2.5
+composition, or pair-internal deliberation. The operator is not a
+fallback for "I don't know what to write"; they are the
+decision-holder for things only they can decide. If the
+contracts the team has agreed on already specify the answer, ask
+the contract, not the operator.
+
 ---
 
 ## III. Engagement Grades

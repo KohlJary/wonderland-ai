@@ -84,7 +84,7 @@ from wonderland.thread_monitor import ThreadMonitor, ThreadState, ThreadStateCha
 from wonderland.feature import FeatureRegistry
 from wonderland.ticket import TicketRegistry
 from wonderland.tools import Tools
-from wonderland.utterance import Utterance
+from wonderland.utterance import SpeechAct, Utterance
 
 # --------------------------------------------------------------------- #
 # Event protocol
@@ -305,7 +305,27 @@ class Runner:
         self._consensus_task: asyncio.Task[None] | None = None
         self._budget_task: asyncio.Task[None] | None = None
         self._timeout_task: asyncio.Task[None] | None = None
+        self._user_question_task: asyncio.Task[None] | None = None
         self._agent_tasks: list[asyncio.Task[None]] = []
+
+        # User-question affordance (T69 / P10 / roadmap 9aae11bc).
+        # Agents emit QUESTION-to-operator utterances when they need
+        # a decision the team can't resolve internally. The watcher
+        # task observes the bus, calls the registered handler, and
+        # publishes the operator's answer as a normal OBSERVATION.
+        # ``_user_question_handler`` is async (str -> str). When None,
+        # questions are answered with a "no operator available"
+        # sentinel so headless runs degrade gracefully.
+        self._user_question_handler: (
+            Callable[[Utterance], Any] | None
+        ) = None
+        # Registry tracking question_id → answer (cached) and
+        # question_id → Future (pending) so callers can await an
+        # answer without racing the watcher's publish.
+        self._answered_questions: dict[str, Utterance] = {}
+        self._pending_question_futures: dict[
+            str, asyncio.Future[Utterance]
+        ] = {}
 
     # ------------------------------------------------------------------ #
     # Factory: full-cast scenario
@@ -322,6 +342,7 @@ class Runner:
         timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS,
         telemetry: Telemetry | None = None,
         run_id: str | None = None,
+        model: str | None = None,
     ) -> Runner:
         """Construct a Runner with all 10 agents wired against shared registries.
 
@@ -329,6 +350,11 @@ class Runner:
         LLM constructor; the default builds a real LLMClient with
         telemetry's ``record_for(name)`` callback. Tests override with
         a mock factory.
+
+        ``model`` overrides the LLM model id every agent uses. Only
+        applies when ``llm_factory`` is None (the default factory path);
+        callers passing a custom factory are responsible for selecting
+        the model themselves. None → ``DEFAULT_MODEL`` from llm.py.
 
         The bus is wired with a fresh ``ThreadRoster``. By default no
         threads are registered, so the bus behaves as before (every
@@ -343,7 +369,12 @@ class Runner:
         if llm_factory is None:
 
             def _default_factory(name: str, tel: Telemetry) -> LLMClient:
-                return LLMClient(on_token_usage=tel.record_for(name))
+                kwargs: dict[str, Any] = {
+                    "on_token_usage": tel.record_for(name),
+                }
+                if model is not None:
+                    kwargs["model"] = model
+                return LLMClient(**kwargs)
 
             llm_factory = _default_factory
 
@@ -372,8 +403,16 @@ class Runner:
         # architecture, Caterpillar to actually look at code under
         # review, Hatter to write real test files alongside scenarios).
         # All four share the same Tools instance — same sandbox, no
-        # duplicate path-resolution state.
-        shared_tools = Tools(project_root)
+        # duplicate path-resolution state. The on_tool_call writer
+        # captures every invocation as a JSONL event for post-run
+        # cost attribution (P10 / T66). Goes to the same .wonderland/
+        # directory as phase events.
+        from wonderland.tools import jsonl_tool_call_writer
+
+        tool_call_writer = jsonl_tool_call_writer(
+            project_root / ".wonderland" / "tool-calls.jsonl"
+        )
+        shared_tools = Tools(project_root, on_tool_call=tool_call_writer)
         # Initialize project_root as a git repo with an empty initial
         # commit so the working tree IS the implementation artifact:
         # Tweedles ship code; Caterpillar reviews via git_diff against
@@ -530,6 +569,15 @@ class Runner:
             self._timeout_task = asyncio.create_task(
                 self._enforce_timeout(), name="runner-timeout"
             )
+        # User-question watcher (T69) — observes the bus for
+        # QUESTION-to-operator utterances and routes them through
+        # the registered handler. Always started; if no handler
+        # is registered, questions get the "no operator available"
+        # sentinel answer.
+        self._user_question_task = asyncio.create_task(
+            self._watch_user_questions(),
+            name="runner-user-question-watcher",
+        )
         for name, agent in self.agents.items():
             self._agent_tasks.append(asyncio.create_task(agent.run(), name=f"{name}-run"))
 
@@ -846,6 +894,112 @@ class Runner:
                     payload={"utterance": u},
                 )
             )
+
+    # ------------------------------------------------------------------ #
+    # User-question affordance (T69)
+    # ------------------------------------------------------------------ #
+
+    def set_user_question_handler(
+        self,
+        handler: Callable[[Utterance], Any] | None,
+    ) -> None:
+        """Register an async handler for user questions. The handler
+        receives the QUESTION-to-operator utterance and returns the
+        user's reply text (str) or returns/raises something that the
+        watcher will treat as 'no answer' (sentinel reply published).
+
+        For TUI runs, the handler shows a modal and awaits user
+        input. For headless runs, leave None — the watcher publishes
+        a 'no operator available' sentinel so the team proceeds with
+        their best judgment.
+        """
+        self._user_question_handler = handler
+
+    async def _watch_user_questions(self) -> None:
+        """Background task: subscribe to bus, detect QUESTION-to-
+        operator, invoke handler, publish OBSERVATION-from-operator.
+
+        Runs for the lifetime of the runner. Each detected question
+        is processed sequentially — multiple questions queue rather
+        than fan out, so the operator sees them one at a time.
+        """
+        from wonderland.utterance import (
+            UtteranceContent,
+            is_question_to_operator,
+            operator_identity,
+        )
+
+        sub = self.bus.subscribe(
+            agent_name="user-question-watcher", bypass_roster=True
+        )
+        async for u in sub:
+            if not is_question_to_operator(u):
+                continue
+            # Suspend quiescence detection on this thread while
+            # we wait for the operator. Without this, the asker's
+            # post-publish IDLE transition would trigger turn-
+            # based quiescence (or the 300s wall-clock fallback
+            # would fire while the operator reads the question).
+            self._monitor.pause_for_external_input(u.thread_id)
+            try:
+                if self._user_question_handler is None:
+                    answer_text = (
+                        "(no operator available; proceed with your "
+                        "best judgment based on existing context)"
+                    )
+                else:
+                    answer_text = await self._user_question_handler(u)
+                    if not isinstance(answer_text, str) or not answer_text:
+                        answer_text = (
+                            "(operator skipped; proceed with your "
+                            "best judgment)"
+                        )
+            except Exception as exc:  # noqa: BLE001
+                # Handler failure should not deadlock the meeting.
+                # Publish a sentinel and log; agents can still
+                # proceed.
+                answer_text = (
+                    f"(operator handler error: {type(exc).__name__}; "
+                    "proceed with your best judgment)"
+                )
+            finally:
+                # Always resume quiescence — even on handler error
+                # — so the meeting doesn't get stuck paused.
+                self._monitor.resume_for_external_input(u.thread_id)
+
+            answer_utt = Utterance(
+                thread_id=u.thread_id,
+                speaker=operator_identity(),
+                addressed_to=[u.speaker],
+                speech_act=SpeechAct.OBSERVATION,
+                content=UtteranceContent(body=answer_text),
+                parent_id=u.id,
+            )
+            await self.bus.publish(answer_utt)
+            self._answered_questions[u.id] = answer_utt
+            future = self._pending_question_futures.pop(u.id, None)
+            if future is not None and not future.done():
+                future.set_result(answer_utt)
+
+    async def wait_for_question_answer(
+        self,
+        question_id: str,
+        timeout: float = 600.0,
+    ) -> Utterance:
+        """Block until the operator's OBSERVATION reply for a given
+        QUESTION-to-operator utterance lands on the bus. Returns
+        immediately if the answer has already been published.
+
+        Phased meetings call this after an agent's window resolved
+        with a question utterance — guarantees the next agent's
+        compose_context sees the operator's reply rather than
+        racing the watcher's publish."""
+        if question_id in self._answered_questions:
+            return self._answered_questions[question_id]
+        future = self._pending_question_futures.setdefault(
+            question_id, asyncio.Future()
+        )
+        return await asyncio.wait_for(future, timeout=timeout)
 
     async def _consume_states(self) -> None:
         async for change in self._monitor.transitions():

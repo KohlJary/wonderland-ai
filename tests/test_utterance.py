@@ -324,3 +324,69 @@ def test_utterance_recipients_round_trip_json() -> None:
     )
     rehydrated = Utterance.model_validate(json.loads(original.model_dump_json()))
     assert rehydrated.recipients == frozenset({"hatter", "tweedledum"})
+
+
+# --- Operator identity (T69 / P10) ---
+
+
+def test_operator_identity_has_stable_name_and_version() -> None:
+    """Tweedles addressing the operator need a stable identity to
+    reference; the runner's watcher matches on name=='operator'."""
+    from wonderland.utterance import (
+        OPERATOR_NAME,
+        operator_identity,
+    )
+
+    op = operator_identity()
+    assert op.name == OPERATOR_NAME == "operator"
+    assert op.constitution_version == "external"
+
+
+def test_is_question_to_operator_matches_addressed_to_operator() -> None:
+    from wonderland.utterance import (
+        is_question_to_operator,
+        operator_identity,
+    )
+
+    asking = AgentIdentity(name="tweedledee", constitution_version="0.1")
+    u = Utterance(
+        thread_id="m3",
+        speaker=asking,
+        addressed_to=[operator_identity()],
+        speech_act=SpeechAct.QUESTION,
+        content=UtteranceContent(body="client-only or client+server?"),
+    )
+    assert is_question_to_operator(u)
+
+
+def test_is_question_to_operator_rejects_caucus_question() -> None:
+    """Bus-internal questions (addressed_to='caucus') are NOT
+    operator questions — they're for other agents to answer."""
+    from wonderland.utterance import is_question_to_operator
+
+    u = Utterance(
+        thread_id="m3",
+        speaker=_cat(),
+        addressed_to="caucus",
+        speech_act=SpeechAct.QUESTION,
+        content=UtteranceContent(body="what about CORS?"),
+    )
+    assert not is_question_to_operator(u)
+
+
+def test_is_question_to_operator_rejects_non_question_acts() -> None:
+    """An OBSERVATION or PROPOSAL addressed to operator isn't a
+    question — only QUESTION acts trigger the user prompt."""
+    from wonderland.utterance import (
+        is_question_to_operator,
+        operator_identity,
+    )
+
+    u = Utterance(
+        thread_id="m3",
+        speaker=_cat(),
+        addressed_to=[operator_identity()],
+        speech_act=SpeechAct.OBSERVATION,
+        content=UtteranceContent(body="just letting you know"),
+    )
+    assert not is_question_to_operator(u)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -237,12 +238,16 @@ def test_tool_definitions_returns_full_set() -> None:
     """Working-tree-as-artifact: git_status + git_diff joined the
     set so reviewers can read what shipped without consulting parallel
     metadata. See analysis 016 followup. run_tests added in analysis
-    028 followup so M5 Tweedles can iterate red→green properly."""
+    028 followup so M5 Tweedles can iterate red→green properly.
+    str_replace + insert added in T67 (P10) for token-cheap iterative
+    file authoring."""
     defs = Tools.tool_definitions()
     names = {d["name"] for d in defs}
     assert names == {
         "read_file",
         "write_file",
+        "str_replace",
+        "insert",
         "list_files",
         "grep",
         "git_status",
@@ -449,3 +454,327 @@ def test_run_tests_with_timeout_passthrough(tmp_path: Path) -> None:
         {"paths": ["tests/test_pass.py"], "timeout_seconds": 30.0},
     )
     assert "passed" in result
+
+
+# ---------------------------------------------------------------------
+# Tool-call observability (T66 / P10)
+# ---------------------------------------------------------------------
+
+
+def test_on_tool_call_callback_fires_per_dispatch(tmp_path: Path) -> None:
+    """When ``on_tool_call`` is set, each successful execute()
+    invocation produces a ToolCallEvent with timing + sizes."""
+    from wonderland.tools import ToolCallEvent
+
+    captured: list[ToolCallEvent] = []
+    tools = Tools(tmp_path, on_tool_call=captured.append)
+
+    (tmp_path / "hello.txt").write_text("hi there\n")
+    out = tools.execute("read_file", {"path": "hello.txt"}, agent_id="alice")
+    assert "hi there" in out
+
+    assert len(captured) == 1
+    event = captured[0]
+    assert event.tool_name == "read_file"
+    assert event.agent_id == "alice"
+    assert event.error is None
+    assert event.elapsed_ms >= 0.0
+    assert event.result_bytes > 0
+    # path is small enough to round-trip verbatim
+    assert event.args_summary["path"] == "hello.txt"
+
+
+def test_on_tool_call_summarizes_large_write_content(tmp_path: Path) -> None:
+    """write_file's content arg can be many KB; the summary
+    replaces it with a byte-count entry rather than echoing the
+    whole blob into the JSONL log."""
+    from wonderland.tools import ToolCallEvent
+
+    captured: list[ToolCallEvent] = []
+    tools = Tools(tmp_path, on_tool_call=captured.append)
+
+    big_content = "x" * 8192
+    tools.execute(
+        "write_file",
+        {"path": "big.txt", "content": big_content},
+        agent_id="tweedledum",
+    )
+
+    event = captured[0]
+    assert event.tool_name == "write_file"
+    assert event.agent_id == "tweedledum"
+    # content should be summarized, not echoed
+    assert "content" not in event.args_summary
+    assert event.args_summary["content_bytes"] == 8192
+    # input_bytes captures the cost of resending the whole file
+    assert event.input_bytes >= 8192
+
+
+def test_on_tool_call_captures_errors(tmp_path: Path) -> None:
+    """Tool errors propagate normally but the observer still
+    records the attempt (with error message captured)."""
+    from wonderland.tools import ToolCallEvent
+
+    captured: list[ToolCallEvent] = []
+    tools = Tools(tmp_path, on_tool_call=captured.append)
+
+    with pytest.raises(ToolError):
+        tools.execute("read_file", {"path": "missing.txt"}, agent_id="hatter")
+
+    assert len(captured) == 1
+    event = captured[0]
+    assert event.tool_name == "read_file"
+    assert event.error is not None
+    assert "missing.txt" in event.error
+    assert event.result_bytes == 0
+
+
+def test_on_tool_call_writer_failure_does_not_break_dispatch(tmp_path: Path) -> None:
+    """If the observer callback raises, the underlying tool result
+    must still be returned to the caller — observability is
+    best-effort and never masks the real work."""
+
+    def broken_writer(_event):
+        raise RuntimeError("observer is broken")
+
+    tools = Tools(tmp_path, on_tool_call=broken_writer)
+    (tmp_path / "x.txt").write_text("hello\n")
+    # Read should succeed despite the writer raising
+    result = tools.execute("read_file", {"path": "x.txt"})
+    assert "hello" in result
+
+
+def test_jsonl_tool_call_writer_round_trip(tmp_path: Path) -> None:
+    """Writer + reader round-trip every event field."""
+    from wonderland.tools import (
+        ToolCallEvent,
+        jsonl_tool_call_writer,
+        read_tool_calls,
+    )
+
+    path = tmp_path / "tool-calls.jsonl"
+    write = jsonl_tool_call_writer(path)
+    now = datetime.now(tz=timezone.utc)
+
+    events = [
+        ToolCallEvent(
+            timestamp=now,
+            tool_name="write_file",
+            agent_id="tweedledum",
+            args_summary={"path": "src/api.py", "content_bytes": 4096},
+            input_bytes=4128,
+            elapsed_ms=12.5,
+            result_bytes=42,
+            error=None,
+        ),
+        ToolCallEvent(
+            timestamp=now,
+            tool_name="run_tests",
+            agent_id="tweedledee",
+            args_summary={"paths": ["tests/test_api.py"]},
+            input_bytes=20,
+            elapsed_ms=850.2,
+            result_bytes=1024,
+            error=None,
+        ),
+    ]
+    for ev in events:
+        write(ev)
+
+    read_back = read_tool_calls(path)
+    assert read_back == events
+
+
+def test_read_tool_calls_missing_file_returns_empty(tmp_path: Path) -> None:
+    from wonderland.tools import read_tool_calls
+
+    assert read_tool_calls(tmp_path / "nonexistent.jsonl") == []
+
+
+# ---------------------------------------------------------------------
+# Diff-based write tools (T67 / P10)
+# ---------------------------------------------------------------------
+
+
+def test_str_replace_unique_match_applies_patch(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("def foo():\n    return False\n")
+    result = tools.str_replace("x.py", "return False", "return True")
+    assert "str_replace applied" in result
+    assert p.read_text() == "def foo():\n    return True\n"
+
+
+def test_str_replace_zero_matches_raises(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("def foo():\n    return True\n")
+    with pytest.raises(ToolError, match="not found"):
+        tools.str_replace("x.py", "return False", "return True")
+
+
+def test_str_replace_multiple_matches_raises(tmp_path: Path) -> None:
+    """Ambiguous matches must be rejected; the LLM has to include
+    more context for the match to be unique."""
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("a = 1\nb = 1\nc = 1\n")
+    with pytest.raises(ToolError, match="matches 3 times"):
+        tools.str_replace("x.py", "= 1", "= 2")
+
+
+def test_str_replace_empty_old_rejected(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("hello\n")
+    with pytest.raises(ToolError, match="cannot be empty"):
+        tools.str_replace("x.py", "", "world")
+
+
+def test_str_replace_with_empty_new_deletes(tmp_path: Path) -> None:
+    """Deletion via str_replace(old, '') — the deletion primitive."""
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("def foo():\n    print('debug')\n    return 42\n")
+    tools.str_replace("x.py", "    print('debug')\n", "")
+    assert p.read_text() == "def foo():\n    return 42\n"
+
+
+def test_str_replace_missing_file_raises(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    with pytest.raises(ToolError, match="not found"):
+        tools.str_replace("nope.py", "old", "new")
+
+
+def test_str_replace_via_execute_dispatch(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("a = 1\n")
+    result = tools.execute(
+        "str_replace",
+        {"path": "x.py", "old": "a = 1", "new": "a = 42"},
+    )
+    assert "applied" in result
+    assert p.read_text() == "a = 42\n"
+
+
+def test_insert_after_line_n(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("import os\nimport sys\n")
+    tools.insert("x.py", 2, "import json")
+    assert p.read_text() == "import os\nimport sys\nimport json\n"
+
+
+def test_insert_prepend_with_zero(tmp_path: Path) -> None:
+    """line_number=0 prepends at the top of the file."""
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("def foo():\n    pass\n")
+    tools.insert("x.py", 0, "#!/usr/bin/env python")
+    assert p.read_text() == "#!/usr/bin/env python\ndef foo():\n    pass\n"
+
+
+def test_insert_adds_trailing_newline_if_missing(tmp_path: Path) -> None:
+    """If the inserted content lacks a trailing newline, one is
+    added so the next line stays on its own line."""
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("a = 1\nb = 2\n")
+    tools.insert("x.py", 1, "x = 99")  # no trailing \n
+    assert p.read_text() == "a = 1\nx = 99\nb = 2\n"
+
+
+def test_insert_out_of_bounds_raises(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("a = 1\nb = 2\n")
+    with pytest.raises(ToolError, match="out of bounds"):
+        tools.insert("x.py", 99, "c = 3")
+    with pytest.raises(ToolError, match="out of bounds"):
+        tools.insert("x.py", -1, "c = 3")
+
+
+def test_insert_via_execute_dispatch(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    p = tmp_path / "x.py"
+    p.write_text("first\nlast\n")
+    result = tools.execute(
+        "insert",
+        {"path": "x.py", "line_number": 1, "content": "middle"},
+    )
+    assert "applied" in result
+    assert p.read_text() == "first\nmiddle\nlast\n"
+
+
+def test_str_replace_event_carries_file_size_after_for_savings_analysis(
+    tmp_path: Path,
+) -> None:
+    """The on_tool_call event for str_replace records
+    file_size_after_bytes — the cost a hypothetical full write_file
+    would have paid. Comparing against input_bytes gives the bytes
+    saved by using the diff primitive (T67's headline metric)."""
+    from wonderland.tools import ToolCallEvent
+
+    captured: list[ToolCallEvent] = []
+    tools = Tools(tmp_path, on_tool_call=captured.append)
+    p = tmp_path / "x.py"
+    # Big file so the savings show clearly
+    p.write_text("\n".join(f"line_{i}" for i in range(200)) + "\n")
+    tools.execute(
+        "str_replace",
+        {"path": "x.py", "old": "line_42", "new": "line_FORTY_TWO"},
+        agent_id="tweedledum",
+    )
+    event = captured[0]
+    assert event.tool_name == "str_replace"
+    assert event.file_size_after_bytes is not None
+    # Sanity: post-patch file is much bigger than the diff input
+    assert event.file_size_after_bytes > event.input_bytes * 5, (
+        "expected big savings vs full-write — diff payload is small "
+        f"({event.input_bytes} bytes) vs the patched file "
+        f"({event.file_size_after_bytes} bytes)"
+    )
+
+
+def test_insert_event_carries_file_size_after(tmp_path: Path) -> None:
+    """Same observability for insert as for str_replace."""
+    from wonderland.tools import ToolCallEvent
+
+    captured: list[ToolCallEvent] = []
+    tools = Tools(tmp_path, on_tool_call=captured.append)
+    p = tmp_path / "x.py"
+    p.write_text("a = 1\n")
+    tools.execute(
+        "insert",
+        {"path": "x.py", "line_number": 1, "content": "b = 2"},
+    )
+    event = captured[0]
+    assert event.tool_name == "insert"
+    assert event.file_size_after_bytes == len(p.read_text().encode("utf-8"))
+
+
+def test_write_file_event_has_no_file_size_after(tmp_path: Path) -> None:
+    """write_file's input_bytes already captures the full file size,
+    so file_size_after_bytes stays None — only diff ops (str_replace,
+    insert) populate it."""
+    from wonderland.tools import ToolCallEvent
+
+    captured: list[ToolCallEvent] = []
+    tools = Tools(tmp_path, on_tool_call=captured.append)
+    tools.execute(
+        "write_file",
+        {"path": "x.py", "content": "hello\n"},
+    )
+    event = captured[0]
+    assert event.tool_name == "write_file"
+    assert event.file_size_after_bytes is None
+
+
+def test_diff_tools_appear_in_tool_definitions() -> None:
+    """The Anthropic tool-use schema must include str_replace + insert
+    so the LLM can call them."""
+    defs = Tools.tool_definitions()
+    names = {d["name"] for d in defs}
+    assert "str_replace" in names
+    assert "insert" in names

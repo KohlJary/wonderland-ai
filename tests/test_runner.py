@@ -125,6 +125,42 @@ async def test_late_publish_handler_passes_through_active_thread(
     assert runner.lost_utterances() == []
 
 
+async def test_make_full_cast_threads_model_to_default_factory(
+    tmp_path: Path,
+) -> None:
+    """When the caller passes ``model=...`` (and no custom
+    llm_factory), the default factory's LLMClients should report
+    that model. This is the cost-recovery hook for workflows that
+    pin Haiku 3.5 instead of 4.5 (P10 / analysis 038)."""
+    runner = await Runner.make_full_cast(
+        tmp_path,
+        budget_dollars=10.0,
+        timeout_seconds=2.0,
+        model="claude-haiku-3-5-20241022",
+    )
+    # All ten cast members should have been built with the override.
+    for name, agent in runner.agents.items():
+        assert agent.llm.model == "claude-haiku-3-5-20241022", (
+            f"agent {name!r}: model {agent.llm.model!r} doesn't match "
+            f"the override"
+        )
+
+
+async def test_make_full_cast_default_model_when_unspecified(
+    tmp_path: Path,
+) -> None:
+    """No model override → DEFAULT_MODEL applies (current Haiku 4.5)."""
+    from wonderland.llm import DEFAULT_MODEL
+
+    runner = await Runner.make_full_cast(
+        tmp_path,
+        budget_dollars=10.0,
+        timeout_seconds=2.0,
+    )
+    for agent in runner.agents.values():
+        assert agent.llm.model == DEFAULT_MODEL
+
+
 async def test_runner_setup_and_teardown_clean(tmp_path: Path) -> None:
     """Setup spins up the consumer tasks; teardown cancels them all and
     writes the run record."""

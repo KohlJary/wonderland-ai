@@ -213,6 +213,7 @@ async def _run_async(args: argparse.Namespace) -> int:
         budget_dollars=args.budget,
         quiescence_seconds=args.quiescence_seconds,
         timeout_seconds=args.timeout,
+        model=args.model,
     )
 
     print("=" * 72)
@@ -451,6 +452,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Text to use as the escalation response when --on-escalation=auto.",
+    )
+    run_parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help=(
+            "Override the LLM model id every agent uses (e.g. "
+            "'claude-haiku-3-5-20241022' for cheaper development "
+            "runs). None → Runner's DEFAULT_MODEL applies."
+        ),
     )
     run_parser.set_defaults(func=cmd_run)
 

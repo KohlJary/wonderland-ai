@@ -236,6 +236,10 @@ async def test_new_run_screen_pushes_settings_when_key_missing(
         lambda: type("X", (), {"anthropic": type("Y", (), {"api_key": None})()})(),
     )
 
+    # Make the project root non-bare so we skip the skeleton
+    # picker (T71) and exercise the API-key check directly.
+    (tmp_path / "src").mkdir()
+
     app = WonderlandApp()
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -926,6 +930,105 @@ async def test_live_run_screen_phase_events_pane_populates_via_stream() -> None:
             )
 
             await pilot.press("q")
+
+
+async def test_live_run_screen_auto_sentinel_cycle_advances_through_states() -> None:
+    """The T keybind cycles through: off → 15m → 5m → 1m → instant
+    → off. Status bar shows the current state when on."""
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = LiveRunScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        # Default: off (None)
+        assert screen._auto_sentinel_seconds is None
+
+        # Cycle: off → 15m
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 900.0
+
+        # 15m → 5m
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 300.0
+
+        # 5m → 1m
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 60.0
+
+        # 1m → instant (0)
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds == 0.0
+
+        # instant → off (wraps around)
+        screen.action_cycle_auto_sentinel()
+        assert screen._auto_sentinel_seconds is None
+
+        await pilot.press("q")
+
+
+async def test_live_run_screen_auto_sentinel_instant_skips_modal() -> None:
+    """With auto_sentinel set to 0, _handle_user_question returns
+    None immediately without showing the modal — the watcher then
+    publishes the sentinel reply."""
+    from wonderland import AgentIdentity, SpeechAct, Utterance, UtteranceContent
+    from wonderland.utterance import operator_identity
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = LiveRunScreen()
+        app.push_screen(screen)
+        await pilot.pause()
+
+        screen._auto_sentinel_seconds = 0.0
+
+        question = Utterance(
+            thread_id="m",
+            speaker=AgentIdentity(name="tweedledee", constitution_version="0.1"),
+            addressed_to=[operator_identity()],
+            speech_act=SpeechAct.QUESTION,
+            content=UtteranceContent(body="client-only or with backend?"),
+        )
+
+        # Should resolve immediately with None (sentinel) — no
+        # modal pushed.
+        answer = await screen._handle_user_question(question)
+        assert answer is None
+
+        await pilot.press("q")
+
+
+async def test_ask_user_modal_auto_dismiss_after_timeout() -> None:
+    """When auto_dismiss_after is set and the operator doesn't
+    answer in time, the modal self-dismisses with None."""
+    import asyncio
+
+    from wonderland.tui.screens.ask_user_modal import AskUserModal
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        results: list[str | None] = []
+
+        def _on_dismissed(answer: str | None) -> None:
+            results.append(answer)
+
+        # Use a tight timeout so the test runs fast.
+        modal = AskUserModal(
+            asking_agent="tweedledee",
+            question="A or B?",
+            auto_dismiss_after=0.05,
+        )
+        app.push_screen(modal, _on_dismissed)
+        await pilot.pause()
+        # Wait past the timeout
+        await asyncio.sleep(0.15)
+        await pilot.pause()
+
+        assert results == [None]
 
 
 async def test_live_run_screen_phase_events_pane_populates() -> None:
@@ -1705,14 +1808,18 @@ async def test_new_run_screen_action_go_pushes_confirmation_modal(
         await pilot.press("q")
 
 
-async def test_new_run_screen_action_go_blocks_without_existing_project(
+async def test_new_run_screen_action_go_pushes_skeleton_picker_for_bare_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """T53 polish: action_go refuses to launch when the project
-    root doesn't exist, surfacing a clear message instead of letting
-    Runner.make_full_cast fail with a confusing downstream error."""
+    """T71 (P8.6): action_go on a bare/missing project root now
+    pushes the SkeletonPickerScreen so the operator can lay down a
+    skeleton before launch (per analysis 037 — skeleton was load-
+    bearing all along; bare roots were the deliverability-collapse
+    cause)."""
     from textual.widgets import Checkbox, Input, Select, TextArea
+
+    from wonderland.tui.screens.skeleton_picker import SkeletonPickerScreen
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
 
@@ -1727,7 +1834,6 @@ async def test_new_run_screen_action_go_blocks_without_existing_project(
         screen = app.screen
         assert isinstance(screen, NewRunScreen)
 
-        # Fill form pointing at a path that doesn't exist
         screen.query_one("#directive-composer", TextArea).text = (
             "Build a /hello endpoint."
         )
@@ -1740,11 +1846,12 @@ async def test_new_run_screen_action_go_blocks_without_existing_project(
         screen.action_go()
         await pilot.pause()
 
-        # Should still be on NewRunScreen — no modal pushed
-        assert isinstance(app.screen, NewRunScreen)
-        # And the path was NOT silently created
-        assert not nonexistent.exists()
+        # Skeleton picker pushed; the launch modal does NOT open
+        # until the picker resolves.
+        assert isinstance(app.screen, SkeletonPickerScreen)
 
+        await pilot.press("escape")  # cancel picker
+        await pilot.pause()
         await pilot.press("q")
 
 
@@ -1764,6 +1871,10 @@ async def test_new_run_screen_action_go_blocks_without_api_key(
         "wonderland.tui.screens.new_run.load_config",
         lambda: type("X", (), {"anthropic": type("Y", (), {"api_key": None})()})(),
     )
+
+    # Make the project root non-bare so we skip the skeleton
+    # picker (T71) and exercise the API-key check directly.
+    (tmp_path / "src").mkdir()
 
     app = WonderlandApp()
     async with app.run_test() as pilot:
@@ -1805,6 +1916,10 @@ async def test_new_run_screen_save_as_preset_persists_and_relists(
     preset table re-populates with the new entry."""
     from textual.widgets import Checkbox, DataTable, Input, Select, TextArea
 
+    # Make the project root non-bare so we skip the skeleton picker
+    # (T71) and exercise the save-as-preset path directly.
+    (tmp_path / "src").mkdir()
+
     app = WonderlandApp()
     async with app.run_test() as pilot:
         await pilot.pause()
@@ -1834,6 +1949,172 @@ async def test_new_run_screen_save_as_preset_persists_and_relists(
         # Preset list should now include the new project-local preset.
         names = [name for (name, p) in screen._presets if p is not None]
         assert "custom-thing-test" in names
+
+        await pilot.press("q")
+
+
+async def test_skeleton_picker_apply_lays_down_files_and_resumes_launch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """T71: applying a skeleton from the picker writes files into
+    the project root and resumes the launch flow (which then hits
+    the LaunchConfirmationScreen since API key is configured)."""
+    from textual.widgets import Checkbox, DataTable, Input, Select, TextArea
+
+    from wonderland.tui.screens.launch_confirmation import (
+        LaunchConfirmationScreen,
+    )
+    from wonderland.tui.screens.skeleton_picker import SkeletonPickerScreen
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
+
+    project = tmp_path / "fresh-project"
+    assert not project.exists()
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        screen.query_one("#directive-composer", TextArea).text = (
+            "Build a thing."
+        )
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = str(project)
+        screen.query_one("#save-checkbox", Checkbox).value = False
+        await pilot.pause()
+
+        screen.action_go()
+        await pilot.pause()
+
+        assert isinstance(app.screen, SkeletonPickerScreen)
+
+        # Pick the first skeleton and apply it
+        picker = app.screen
+        table = picker.query_one("#skeleton-list-table", DataTable)
+        table.cursor_coordinate = (0, 0)
+        await pilot.pause()
+        picker.action_apply_selected()
+        await pilot.pause()
+
+        # The skeleton's files should now exist on disk
+        assert project.is_dir()
+        py_files = list(project.rglob("*.py"))
+        assert len(py_files) > 0, "skeleton apply should have laid down .py files"
+
+        # Picker dismissed; launch flow resumes — we expect the
+        # LaunchConfirmationScreen now (API key was set, no save
+        # preset, project_path now populated).
+        await pilot.pause()
+        assert isinstance(app.screen, LaunchConfirmationScreen)
+
+        await pilot.press("escape")  # dismiss confirm
+        await pilot.pause()
+        await pilot.press("q")
+
+
+async def test_skeleton_picker_skip_continues_launch_with_bare_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """T71: 's' (skip) on the picker dismisses with the empty-string
+    sentinel; NewRunScreen interprets that as 'continue without a
+    skeleton' and pushes LaunchConfirmation against the bare root."""
+    from textual.widgets import Checkbox, Input, Select, TextArea
+
+    from wonderland.tui.screens.launch_confirmation import (
+        LaunchConfirmationScreen,
+    )
+    from wonderland.tui.screens.skeleton_picker import SkeletonPickerScreen
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
+
+    project = tmp_path / "bare-project"
+    project.mkdir()
+    (project / ".gitignore").write_text("__pycache__\n")
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        screen.query_one("#directive-composer", TextArea).text = "Build."
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = str(project)
+        screen.query_one("#save-checkbox", Checkbox).value = False
+        await pilot.pause()
+
+        screen.action_go()
+        await pilot.pause()
+        assert isinstance(app.screen, SkeletonPickerScreen)
+
+        # Skip via the action method
+        app.screen.action_skip()
+        await pilot.pause()
+
+        # No skeleton files should have been laid down — the
+        # project should still be just bare/gitignore.
+        files = [p for p in project.iterdir() if p.is_file()]
+        assert len(files) == 1  # just .gitignore
+
+        # Launch flow continues to confirmation modal
+        assert isinstance(app.screen, LaunchConfirmationScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("q")
+
+
+async def test_skeleton_picker_cancel_aborts_launch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """T71: Escape (cancel) on the picker aborts the launch — no
+    confirmation modal pushed, operator returns to the new-run
+    composer."""
+    from textual.widgets import Checkbox, Input, Select, TextArea
+
+    from wonderland.tui.screens.skeleton_picker import SkeletonPickerScreen
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
+
+    project = tmp_path / "fresh-project"
+
+    app = WonderlandApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(NewRunScreen(project_root=tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, NewRunScreen)
+
+        screen.query_one("#directive-composer", TextArea).text = "Build."
+        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen.query_one("#budget-input", Input).value = "0.50"
+        screen.query_one("#project-input", Input).value = str(project)
+        screen.query_one("#save-checkbox", Checkbox).value = False
+        await pilot.pause()
+
+        screen.action_go()
+        await pilot.pause()
+        assert isinstance(app.screen, SkeletonPickerScreen)
+
+        app.screen.action_cancel()
+        await pilot.pause()
+
+        # No skeleton applied
+        assert not project.exists()
+        # Back at NewRunScreen — no launch confirmation pushed
+        assert isinstance(app.screen, NewRunScreen)
 
         await pilot.press("q")
 

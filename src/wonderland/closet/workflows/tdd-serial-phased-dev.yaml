@@ -1,0 +1,33 @@
+name: tdd-serial-phased-dev
+description: |
+  Cheap-development variant of tdd-serial-phased. Identical meeting
+  shape, but pinned to Claude Haiku 3.5 instead of Haiku 4.5 — about
+  20% cheaper per token across input, output, and cache (analysis 038
+  / pricing memo, 2026-05-08).
+
+  Use this for substrate-development runs where you're testing the
+  engine itself (phase orchestration, observability, diff tool wiring,
+  scheduler changes) rather than validating output quality. Haiku 3.5
+  is meaningfully weaker than 4.5 on instruction-following and
+  multi-step reasoning, so the constitutional framing's coherence and
+  the team's iteration efficiency may both regress — net cost savings
+  are likely smaller than the 20% per-token suggests.
+
+  For banner runs, demo runs, or anything you're going to publish or
+  reference in an analysis, use the standard tdd-serial-phased.
+
+extends: tdd-serial-phased
+version: 1
+
+defaults:
+  # Match the standard variant's budget — if Haiku 3.5 needs more
+  # iterations to converge, we want the same dollar cap so we
+  # observe the slowdown rather than letting it run away.
+  budget_dollars: 5.00
+  quiescence_seconds: 300.0
+  model: claude-haiku-3-5-20241022
+
+# Meetings inherited verbatim from tdd-serial-phased via the loader's
+# `extends:` mechanism (workflow.load_workflow). Defaults shallow-merge
+# (parent + child, child wins), so this file only needs to declare the
+# fields it changes (model, plus a budget reaffirmation).
