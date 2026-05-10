@@ -126,12 +126,21 @@ meetings:
         kinds: [feature, ticket, adr, ruling, contract_note]
 
     transition_iteration_to: in_progress
+    # exit_condition on BOTH phases so the meeting ends as soon as
+    # Hatter ships a test_scenario, not after rotating through red
+    # AND commit. Pre-this-fix: red rotates to max even when scenario
+    # ships, then commit needs ANOTHER scenario emission to exit
+    # (which Hatter usually doesn't produce — he ships one scenario
+    # per ticket). Result: meeting runs to budget cap on every iter.
+    # Post-fix: scenario lands → meeting exits regardless of which
+    # phase produced it. Saves ~30-50% per ticket on fast convergence.
     phases:
       - name: red
-        max_rotations: 3
-        team_groupings: [[mad_hatter, tweedledee, tweedledum]]
-      - name: commit
         max_rotations: 2
+        team_groupings: [[mad_hatter, tweedledee, tweedledum]]
+        exit_condition_artifact: test_scenario
+      - name: commit
+        max_rotations: 1
         team_groupings: [[mad_hatter, tweedledee, tweedledum]]
         exit_condition_artifact: test_scenario
 
@@ -191,12 +200,20 @@ meetings:
       - from: tea-party
         kinds: [test_scenario]
 
+    # Same exit_condition shape as M6: implementation lands → meeting
+    # exits regardless of phase. max_rotations tightened from 4→2 on
+    # implement and 2→1 on validate; with Hatter dropped from M7
+    # (commit 428775e) and the early exit, the Tweedles converge
+    # faster and don't need 4 rotations of pair-protocol back-and-
+    # forth. If a ticket genuinely needs more iteration, the budget
+    # cap is the failsafe.
     phases:
       - name: implement
-        max_rotations: 4
-        team_groupings: [[tweedledee, tweedledum]]
-      - name: validate
         max_rotations: 2
+        team_groupings: [[tweedledee, tweedledum]]
+        exit_condition_artifact: implementation
+      - name: validate
+        max_rotations: 1
         team_groupings: [[tweedledee, tweedledum]]
         exit_condition_artifact: implementation
 
@@ -290,10 +307,20 @@ meetings:
         kinds: [implementation]
 
     transition_iteration_to: ready_for_review
+    # M8 had no exit_condition before this fix — Caterpillar shipped
+    # her review verdict, then the meeting rotated to budget cap with
+    # no exit signal. Result: M8 averaged $0.90/feature against $0.40
+    # budget, almost entirely post-verdict slop. Adding
+    # exit_condition_artifact: review to both phases ends the meeting
+    # as soon as the verdict lands. Tweedle defense (if needed) shows
+    # up as concerns during the review phase before Caterpillar ships
+    # the verdict; no separate "defend" stage required.
     phases:
       - name: review
-        max_rotations: 3
-        team_groupings: [[caterpillar, tweedledee, tweedledum]]
-      - name: defend
         max_rotations: 2
         team_groupings: [[caterpillar, tweedledee, tweedledum]]
+        exit_condition_artifact: review
+      - name: defend
+        max_rotations: 1
+        team_groupings: [[caterpillar, tweedledee, tweedledum]]
+        exit_condition_artifact: review
