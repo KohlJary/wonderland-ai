@@ -417,14 +417,15 @@ class LiveRunScreen(Screen[None]):
         ):
             self._handle_phase_event(event)
 
-        # Tick the chase strip on signal-of-life events. UtteranceEmitted
-        # is the broader "the run is moving" signal that catches
-        # legacy engagement-policy meetings (M1/M2/M2.5 in
-        # tdd-serial-phased) too — phase events only fire for phased
-        # meetings, but utterances land in every meeting.
+        # Mark the chase strip alive on signal-of-life events. The
+        # chase moves on a wall-clock timer (so motion continues
+        # during long deliberation calls); mark_alive only controls
+        # the dim/idle color state. UtteranceEmitted is the broader
+        # signal — catches legacy engagement-policy meetings (M1/M2/
+        # M2.5) where phase events don't fire.
         if isinstance(event, (UtteranceEmitted, AgentActed)):
             try:
-                self.query_one("#meetings-chase", ChaseStrip).tick()
+                self.query_one("#meetings-chase", ChaseStrip).mark_alive()
             except Exception:  # noqa: BLE001 — chase widget is purely cosmetic
                 pass
 

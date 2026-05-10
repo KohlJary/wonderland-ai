@@ -41,19 +41,19 @@ def test_chase_strip_renders_track_with_both_characters() -> None:
     assert len(rendered) == strip.TRACK_WIDTH
 
 
-def test_chase_strip_tick_advances_rabbit_every_step() -> None:
-    """Rabbit moves on every tick — he's always going."""
+def test_chase_strip_wall_tick_advances_rabbit_every_step() -> None:
+    """Rabbit moves on every wall-clock tick — he's always going."""
     from wonderland.tui.widgets.chase import ChaseStrip
 
     strip = ChaseStrip()
     initial = strip._rabbit_position
-    strip.tick()
+    strip._wall_tick()
     assert strip._rabbit_position == (initial + 1) % strip.TRACK_WIDTH
-    strip.tick()
+    strip._wall_tick()
     assert strip._rabbit_position == (initial + 2) % strip.TRACK_WIDTH
 
 
-def test_chase_strip_tick_advances_alice_every_other_step() -> None:
+def test_chase_strip_wall_tick_advances_alice_every_other_step() -> None:
     """Alice moves on every other tick — gap with rabbit oscillates,
     Alice never catches up. The chase has visual variance without
     ever resolving."""
@@ -61,20 +61,20 @@ def test_chase_strip_tick_advances_alice_every_other_step() -> None:
 
     strip = ChaseStrip()
     initial = strip._alice_position
-    strip.tick()  # tick_count=1, Alice does NOT move (odd tick)
+    strip._wall_tick()  # tick_count=1, Alice does NOT move (odd tick)
     assert strip._alice_position == initial
-    strip.tick()  # tick_count=2, Alice moves
+    strip._wall_tick()  # tick_count=2, Alice moves
     assert strip._alice_position == (initial + 1) % strip.TRACK_WIDTH
 
 
-def test_chase_strip_tick_wraps_around() -> None:
+def test_chase_strip_wall_tick_wraps_around() -> None:
     """Both positions wrap modulo TRACK_WIDTH — neither falls off
     the right edge."""
     from wonderland.tui.widgets.chase import ChaseStrip
 
     strip = ChaseStrip()
     strip._rabbit_position = strip.TRACK_WIDTH - 1
-    strip.tick()
+    strip._wall_tick()
     assert strip._rabbit_position == 0
 
 
@@ -83,11 +83,22 @@ def test_chase_strip_reset_returns_to_starting_frame() -> None:
 
     strip = ChaseStrip()
     for _ in range(10):
-        strip.tick()
+        strip._wall_tick()
     strip.reset()
     assert strip._alice_position == 0
     assert strip._rabbit_position == 4
     assert strip._tick_count == 0
+
+
+def test_chase_strip_tick_alias_still_works() -> None:
+    """tick() is kept as an alias for _wall_tick so any external
+    code calling .tick() directly continues to function."""
+    from wonderland.tui.widgets.chase import ChaseStrip
+
+    strip = ChaseStrip()
+    initial = strip._rabbit_position
+    strip.tick()
+    assert strip._rabbit_position == (initial + 1) % strip.TRACK_WIDTH
 
 
 # --- Idle detection ---
@@ -100,48 +111,78 @@ def test_chase_strip_starts_not_idle() -> None:
     assert "-idle" not in strip.classes
 
 
-def test_chase_strip_check_idle_does_not_dim_when_recent(
+def test_chase_strip_does_not_dim_when_alive_recent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If the last tick was within the threshold, _check_idle is
-    a no-op."""
+    """If a mark_alive() landed within the threshold, _wall_tick
+    keeps the strip in normal (non-idle) state."""
     from wonderland.tui.widgets.chase import ChaseStrip
 
     strip = ChaseStrip()
     fake_now = time.monotonic()
     monkeypatch.setattr(time, "monotonic", lambda: fake_now)
-    strip._last_tick = fake_now  # synced via the monkeypatch
+    strip._last_alive = fake_now
 
-    strip._check_idle()
+    strip._wall_tick()
     assert "-idle" not in strip.classes
 
 
-def test_chase_strip_check_idle_dims_when_stale(
+def test_chase_strip_dims_when_alive_stale(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When the last tick was longer ago than IDLE_THRESHOLD_SECS,
-    _check_idle adds the .-idle class so CSS dims the row."""
+    """When the last mark_alive() was longer ago than
+    IDLE_THRESHOLD_SECS, _wall_tick adds the .-idle class so CSS
+    dims the row. (Motion still happens; only color changes.)"""
     from wonderland.tui.widgets.chase import ChaseStrip
 
     strip = ChaseStrip()
-    # Simulate a tick at t=0, then jump time forward past the threshold.
-    strip._last_tick = 0.0
+    # Simulate a long deliberation: last_alive at t=0, time jumped
+    # past the threshold.
+    strip._last_alive = 0.0
     monkeypatch.setattr(
         time, "monotonic", lambda: strip.IDLE_THRESHOLD_SECS + 1.0
     )
-    strip._check_idle()
+    strip._wall_tick()
     assert "-idle" in strip.classes
 
 
-def test_chase_strip_tick_clears_idle_class() -> None:
-    """A tick after a long idle should re-enliven the strip — clears
-    the .-idle class so the operator sees the chase resume."""
+def test_chase_strip_mark_alive_clears_idle_class() -> None:
+    """A signal-of-life event re-enlivens the strip — clears
+    the .-idle class so the operator sees normal-color chase resume.
+    The strip continues moving even while idle, so this is purely
+    a color/dim signal."""
     from wonderland.tui.widgets.chase import ChaseStrip
 
     strip = ChaseStrip()
     strip.add_class("-idle")
-    strip.tick()
+    strip.mark_alive()
     assert "-idle" not in strip.classes
+
+
+def test_chase_strip_keeps_moving_through_idle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Motion continues even when the strip is idle. This is the
+    load-bearing change vs the original design: a deliberation call
+    that lasts 30s should still show the chase moving (so the
+    operator knows the TUI is alive); only the color shifts to
+    signal 'no actual run progress.'"""
+    from wonderland.tui.widgets.chase import ChaseStrip
+
+    strip = ChaseStrip()
+    # Force idle state by jumping time forward without any
+    # mark_alive() call.
+    strip._last_alive = 0.0
+    monkeypatch.setattr(
+        time, "monotonic", lambda: strip.IDLE_THRESHOLD_SECS + 5.0
+    )
+
+    initial = strip._rabbit_position
+    strip._wall_tick()
+    # Motion happened.
+    assert strip._rabbit_position != initial
+    # Color signal flipped to idle.
+    assert "-idle" in strip.classes
 
 
 # --- Integration with LiveRunScreen ---
