@@ -161,6 +161,18 @@ meetings:
       personas; one story can split into multiple features when
       the persona's need spans distinct user-visible surfaces.
 
+      **Cross-run note on the story pool you see.** The stories
+      seeded into this meeting are only those *without* an existing
+      feature sourcing them — the substrate filters out already-
+      composed stories so M2 stays focused on uncomposed material.
+      You may see existing features (in your project context or via
+      cross-run grounding) whose ``Sources:`` reference story slugs
+      that aren't in your seed pool. That's not a missing story; it's
+      a story the substrate considers already-handled by its
+      existing feature. Don't try to re-source those stories — the
+      feature already realizes them. Focus your composition on the
+      stories that ARE visible.
+
       **Silence is wrong here — your job is to produce features.**
       Without features, M3 has no input.
 
