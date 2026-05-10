@@ -94,6 +94,56 @@ def test_payload_optional_fields_default_empty() -> None:
     assert payload.sources == []
 
 
+def test_payload_kind_defaults_to_capability() -> None:
+    """Pre-kind features didn't carry the field; default keeps old
+    payloads valid and assigns the right semantic meaning (user-
+    facing). Foundations have to be opted into explicitly."""
+    payload = FeaturePayload(
+        title="t",
+        description="x",
+        stack_span=StackSpan.FRONTEND,
+        tier=TicketTier.V1,
+    )
+    from wonderland.feature import FeatureKind
+
+    assert payload.kind == FeatureKind.CAPABILITY
+
+
+def test_payload_accepts_foundation_kind() -> None:
+    """Caterpillar's plumbing stories compose into foundation
+    features — same lifecycle, different framing. Validates the
+    payload accepts the foundation discriminator and renders it
+    in the markdown."""
+    from wonderland.feature import FeatureKind
+
+    payload = FeaturePayload(
+        title="Mock financial data for development",
+        description="Developers seed mock account + transaction data on app startup so the dashboard renders without hitting Plaid.",
+        kind=FeatureKind.FOUNDATION,
+        personas=["Maya the developer"],
+        stack_span=StackSpan.BACKEND,
+        tier=TicketTier.V1,
+        sources=["mock-financial-data-for-dashboard-development"],
+    )
+    out = render_feature(1, payload)
+    assert "**Kind:** foundation" in out
+    assert payload.kind == FeatureKind.FOUNDATION
+
+
+def test_render_feature_includes_kind_for_capability() -> None:
+    """Capability is the default; render still emits the Kind line
+    so the dashboard's parser doesn't have to special-case its
+    absence."""
+    payload = FeaturePayload(
+        title="t",
+        description="x",
+        stack_span=StackSpan.FRONTEND,
+        tier=TicketTier.V1,
+    )
+    out = render_feature(1, payload)
+    assert "**Kind:** capability" in out
+
+
 # ---------- render_feature ----------
 
 

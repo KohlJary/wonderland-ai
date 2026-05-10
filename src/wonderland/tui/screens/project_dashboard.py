@@ -133,17 +133,24 @@ class _FilteredDirectoryTree(DirectoryTree):
 
 class _FeatureRow:
     """Lightweight container for a feature row in the dashboard list.
-    Holds slug, title, current lifecycle state, and the path to the
-    feature's markdown file so the detail pane can render the dossier."""
+    Holds slug, title, current lifecycle state, kind (capability vs
+    foundation), and the path to the feature's markdown file so the
+    detail pane can render the dossier."""
 
-    __slots__ = ("slug", "title", "state", "path")
+    __slots__ = ("slug", "title", "state", "kind", "path")
 
     def __init__(
-        self, slug: str, title: str, state: FeatureState | None, path: Path
+        self,
+        slug: str,
+        title: str,
+        state: FeatureState | None,
+        path: Path,
+        kind: str = "capability",
     ) -> None:
         self.slug = slug
         self.title = title
         self.state = state
+        self.kind = kind
         self.path = path
 
 
@@ -871,12 +878,26 @@ class ProjectDashboardScreen(Screen[None]):
                     # as None and let the operator deal with it; the
                     # dashboard renders ?-badge for None.
                     pass
+            # Parse `**Kind:** <kind>` from the markdown. Best-effort:
+            # missing field → default to capability (matches the
+            # FeaturePayload default + back-compat with pre-kind
+            # features on disk).
+            kind = "capability"
+            try:
+                body = rec.path.read_text(encoding="utf-8")
+                for line in body.splitlines():
+                    if line.startswith("**Kind:**"):
+                        kind = line.split("**Kind:**", 1)[1].strip()
+                        break
+            except OSError:
+                pass
             out.append(
                 _FeatureRow(
                     slug=rec.slug,
                     title=rec.title,
                     state=state,
                     path=rec.path,
+                    kind=kind,
                 )
             )
         # Sort: active states first (designed/queued/in_progress/
@@ -1064,7 +1085,18 @@ class ProjectDashboardScreen(Screen[None]):
         for row in visible:
             badge = _STATE_BADGE.get(row.state, "[dim]?[/dim]")
             title = row.title[:60] + ("…" if len(row.title) > 60 else "")
-            label = f"{badge}  [b]{title}[/b]  [dim]{row.slug}[/dim]"
+            # Foundation features get a small inline tag so plumbing
+            # work is visually distinct from user-facing capabilities
+            # in the same Features tab. Capabilities render unadorned.
+            kind_tag = (
+                "  [magenta]\\[fdn][/magenta]"
+                if row.kind == "foundation"
+                else ""
+            )
+            label = (
+                f"{badge}  [b]{title}[/b]{kind_tag}  "
+                f"[dim]{row.slug}[/dim]"
+            )
             node = tree.root.add(
                 label,
                 data={"kind": "feature", "row": row},

@@ -130,14 +130,28 @@ meetings:
     meeting_budget: 0.40
     convenor_directive: |
       **Rabbit, ship features.** Read the stories in your context and
-      compose them into features — capabilities a user can describe
-      in one sentence. Features are the user-meaningful units of
-      value; tickets (next meeting) decompose them into work atoms.
+      compose them into features — units a stakeholder can describe
+      in one sentence. Features come in two kinds; pick the right
+      one per feature:
+
+        - ``kind: capability`` (default) — a user-facing capability
+          from Alice's persona-driven stories. Maps to "user can
+          do X" framing.
+        - ``kind: foundation`` — developer-experience plumbing from
+          Caterpillar's developer-as-user stories: mock data,
+          observability, environment config, build tooling, dev
+          dashboards. Maps to "the project gains the ability to X"
+          framing — same lifecycle, same tickets, just not a thing
+          a non-developer persona would describe. **Don't waste
+          budget arguing whether plumbing 'counts as a feature' —
+          ship it as ``kind: foundation``.**
 
       For each feature, name:
+        - ``kind`` — capability or foundation (per above)
         - ``stack_span`` (frontend / backend / full-stack)
-        - ``personas`` — at least one persona name from M1; if you
-          can't name a persona, the grouping isn't a feature
+        - ``personas`` — at least one persona name from M1; for
+          foundation features the persona is typically a developer
+          (Maya, etc.) from a Caterpillar plumbing story
         - ``tickets`` — leave as an empty list; M3 will populate
         - ``tier`` (v1 / fast-follow / post-launch)
         - ``sources`` — story slugs this feature realizes

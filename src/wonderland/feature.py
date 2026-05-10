@@ -51,6 +51,29 @@ class StackSpan(StrEnum):
     FULL_STACK = "full-stack"
 
 
+class FeatureKind(StrEnum):
+    """Whether the feature is a user-facing capability or foundational
+    plumbing.
+
+    Capabilities are user-meaningful — Alice's persona-driven stories
+    compose into them. Foundations are developer-meaningful —
+    Caterpillar's plumbing stories (mock data, observability,
+    environment config, build tooling) compose into them. Same
+    lifecycle, same decomposition into tickets, same dashboard view —
+    the discriminator just tells agents what kind of work this is so
+    M2 doesn't get hung up on "is mock-data setup really a feature?"
+    semantic debates.
+
+    Default is CAPABILITY for back-compat: features shipped before
+    this field existed are user-facing capabilities by definition,
+    and the default keeps existing payloads valid without a kind:
+    field.
+    """
+
+    CAPABILITY = "capability"
+    FOUNDATION = "foundation"
+
+
 class FeaturePayload(BaseModel):
     """Structured payload Rabbit attaches to a feature-issuing utterance."""
 
@@ -58,6 +81,17 @@ class FeaturePayload(BaseModel):
     description: str = Field(
         min_length=1,
         description="What user-facing thing this feature delivers, in plain language.",
+    )
+    kind: FeatureKind = Field(
+        default=FeatureKind.CAPABILITY,
+        description=(
+            "capability (default) for user-facing features; "
+            "foundation for plumbing/developer-experience work like "
+            "mock data, observability, env config, build tooling. "
+            "Functionally identical lifecycle; the kind drives "
+            "context-appropriate framing so M2 doesn't argue "
+            "semantics for stories whose persona is a developer."
+        ),
     )
     tickets: list[str] = Field(
         default_factory=list,
@@ -103,6 +137,7 @@ def render_feature(number: int, payload: FeaturePayload) -> str:
     lines: list[str] = [
         f"## Feature {number:03d}: {payload.title}",
         "",
+        f"**Kind:** {payload.kind.value}",
         f"**Sources:** {_join_or_dash(payload.sources)}",
         f"**Personas:** {_join_or_dash(payload.personas)}",
         f"**Stack span:** {payload.stack_span.value}",

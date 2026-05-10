@@ -225,8 +225,9 @@ The JSON must conform to this schema:
   ],
   "features": [                       // include ONLY when decision is "feature"
     {
-      "title": "user-facing capability name (e.g. 'sign up and claim a homepage URL')",
-      "description": "what user-facing thing this feature delivers, in plain language",
+      "title": "feature name (e.g. 'sign up and claim a homepage URL', or 'mock financial data for development')",
+      "description": "what this feature delivers, in plain language",
+      "kind": "capability" | "foundation",
       "tickets": ["ticket slugs aggregated into this feature"],
       "personas": ["persona names from M1 stories that this feature serves"],
       "stack_span": "frontend" | "backend" | "full-stack",
@@ -236,6 +237,14 @@ The JSON must conform to this schema:
   ]
 }
 ```
+
+`kind` discriminates user-facing capability work from developer-
+experience plumbing. Default to `capability`. Use `foundation` when
+the feature's stories come from a developer-as-user persona (mock
+data, observability, env config, build tooling, dev dashboards) —
+same lifecycle, same tickets, just framed for the team so M2
+doesn't waste budget arguing whether plumbing "counts" as a
+feature.
 
 Two decision modes are decomposition-shaped:
 
