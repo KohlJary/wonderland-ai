@@ -108,7 +108,7 @@ def caterpillar_rules() -> EngagementRules:
         # (review the shape) or a story of its own (cover the
         # plumbing surfaces Alice's "inhabit users" frame doesn't
         # reach — testing infra, observability, deployment, etc.).
-        always(SpeechAct.STORY, condition=speaker_is("alice")),
+        always(SpeechAct.STORY),
         # SELECTIVELY — speaker matches; deliberate() decides whether to act
         selectively(SpeechAct.PROPOSAL, condition=speaker_is("cheshire_cat")),
         selectively(SpeechAct.TICKET, condition=speaker_is("white_rabbit")),

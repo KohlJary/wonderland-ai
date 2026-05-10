@@ -115,7 +115,7 @@ def cheshire_cat_rules() -> EngagementRules:
         # un-synthesized when stories accumulated. Engagement state
         # already shows team artifact counts; the protocol guides Cat
         # to synthesize when stories pile up without an ADR.
-        selectively(SpeechAct.STORY, condition=speaker_is("alice")),
+        selectively(SpeechAct.STORY),
         selectively(SpeechAct.IMPLEMENTATION),
         selectively(SpeechAct.TEST_SCENARIO),
         selectively(SpeechAct.REVIEW),

@@ -105,19 +105,21 @@ def test_rules_always_engages_with_directive() -> None:
     assert rules.categorize(_u(act=SpeechAct.DIRECTIVE)) is Engagement.ALWAYS
 
 
-def test_rules_story_from_alice_is_always() -> None:
+def test_rules_story_engages_regardless_of_author() -> None:
+    """Caterpillar joined Alice as a story author at M1 (plumbing
+    stories — commit 61172d3); Hatter's story engagement no longer
+    hardcodes speaker_is('alice'). The §IV "does not issue stories"
+    discipline is preserved by the listen-loop's self-skip
+    (agents don't engage with their own emissions); the engagement
+    rule just decides whose stories he reads to derive scenarios
+    from, and that's anyone shipping stories."""
     rules = mad_hatter_rules()
     assert rules.categorize(_u(act=SpeechAct.STORY, speaker="alice", body="x")) is Engagement.ALWAYS
-
-
-def test_rules_story_from_other_is_almost_never() -> None:
-    rules = mad_hatter_rules()
-    # Per §IV the Hatter does not issue stories; engaging on stories from
-    # non-Alice would just be domain-leak noise.
     assert (
-        rules.categorize(_u(act=SpeechAct.STORY, speaker="dodo", body="x"))
-        is Engagement.ALMOST_NEVER
+        rules.categorize(_u(act=SpeechAct.STORY, speaker="caterpillar", body="x"))
+        is Engagement.ALWAYS
     )
+    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="dodo", body="x")) is Engagement.ALWAYS
 
 
 def test_rules_proposal_from_cat_is_always() -> None:

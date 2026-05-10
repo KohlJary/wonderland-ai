@@ -158,7 +158,7 @@ def queen_of_hearts_rules() -> EngagementRules:
         always(SpeechAct.QUESTION, condition=addressed_to(QUEEN_NAME)),
         # SELECTIVELY — the LLM filter inside deliberate() does the §III
         # "selective" refinement
-        selectively(SpeechAct.STORY, condition=speaker_is("alice")),
+        selectively(SpeechAct.STORY),
         selectively(SpeechAct.REVIEW, condition=speaker_is("caterpillar")),
         selectively(SpeechAct.DIRECTIVE, condition=compliance_or_jurisdiction_words),
         # RARELY — deference between others isn't hers to act on

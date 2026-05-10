@@ -132,7 +132,7 @@ def _tweedle_rules(*, self_name: str, sibling_name: str) -> EngagementRules:
         # ALWAYS — work assignment + the contract-negotiation surface
         always(SpeechAct.TICKET, condition=speaker_is("white_rabbit")),
         always(SpeechAct.PROPOSAL, condition=speaker_is("cheshire_cat")),
-        always(SpeechAct.STORY, condition=speaker_is("alice")),
+        always(SpeechAct.STORY),
         always(SpeechAct.CONCERN, condition=speaker_is(sibling_name)),
         # Sibling questions count as a contract-negotiation surface even
         # when addressed to caucus — per Pair Protocol §IV's contract

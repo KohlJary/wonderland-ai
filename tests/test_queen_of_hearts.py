@@ -184,9 +184,21 @@ def test_rules_question_only_when_addressed_to_queen() -> None:
     )
 
 
-def test_rules_story_from_alice_is_selective() -> None:
+def test_rules_story_engages_selectively_regardless_of_author() -> None:
+    """Caterpillar joined Alice as a story author at M1 (plumbing
+    stories — commit 61172d3). Queen's story engagement is
+    selective regardless of who shipped — security review against
+    plumbing stories is just as useful as against user stories
+    (auth + secrets handling often surfaces in dev infra)."""
     rules = queen_of_hearts_rules()
-    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="alice")) is Engagement.SELECTIVELY
+    assert (
+        rules.categorize(_u(act=SpeechAct.STORY, speaker="alice"))
+        is Engagement.SELECTIVELY
+    )
+    assert (
+        rules.categorize(_u(act=SpeechAct.STORY, speaker="caterpillar"))
+        is Engagement.SELECTIVELY
+    )
 
 
 def test_rules_review_from_caterpillar_is_selective() -> None:

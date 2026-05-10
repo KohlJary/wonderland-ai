@@ -100,10 +100,20 @@ def test_rules_always_engages_with_directive() -> None:
     assert rules.categorize(_u(act=SpeechAct.DIRECTIVE)) is Engagement.ALWAYS
 
 
-def test_rules_story_only_from_alice() -> None:
+def test_rules_story_engages_regardless_of_author() -> None:
+    """Caterpillar joined Alice as a story author at M1 (plumbing
+    stories — commit 61172d3); Rabbit's story engagement no longer
+    hardcodes speaker_is('alice'). Stories trigger Rabbit
+    composition regardless of who wrote them. Self-loops are
+    prevented at the listen-loop level (agents skip their own
+    emissions), so widening this rule is safe."""
     rules = white_rabbit_rules()
     assert rules.categorize(_u(act=SpeechAct.STORY, speaker="alice")) is Engagement.ALWAYS
-    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="dodo")) is Engagement.ALMOST_NEVER
+    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="caterpillar")) is Engagement.ALWAYS
+    # Even from a non-canonical story author (e.g., disk-fallback
+    # synthetic that defaulted to dodo), Rabbit engages — the
+    # binding is about story shape, not author.
+    assert rules.categorize(_u(act=SpeechAct.STORY, speaker="dodo")) is Engagement.ALWAYS
 
 
 def test_rules_proposal_from_cat_is_always() -> None:

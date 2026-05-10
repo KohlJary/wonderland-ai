@@ -126,12 +126,17 @@ def test_cat_rules_concern_engages_when_architectural_keyword_present() -> None:
     assert rules.categorize(not_architectural) is Engagement.ALMOST_NEVER
 
 
-def test_cat_rules_story_engages_on_every_alice_story() -> None:
-    """Cat wakes on every Alice story regardless of body keywords; the
-    deliberate() step decides whether the cumulative picture warrants
-    synthesizing an ADR. The previous keyword filter (real-time,
-    multi-tenant, etc.) made Cat structurally deaf to user-shaped
-    stories, leaving the architectural picture un-synthesized."""
+def test_cat_rules_story_engages_on_every_story() -> None:
+    """Cat wakes on every story regardless of body keywords or
+    author. Caterpillar joined Alice as a story author at M1
+    (plumbing stories, commit 61172d3); Cat's selective engagement
+    no longer hardcodes speaker_is('alice') — plumbing stories
+    inform architecture too (deployment shape, observability,
+    persistence layer). The deliberate() step decides whether the
+    cumulative picture warrants synthesizing an ADR. The previous
+    keyword filter (real-time, multi-tenant, etc.) made Cat
+    structurally deaf to user-shaped stories; this test guards
+    against re-introducing that filter."""
     rules = cheshire_cat_rules()
     plain_alice = _u(
         act=SpeechAct.STORY,
@@ -143,14 +148,14 @@ def test_cat_rules_story_engages_on_every_alice_story() -> None:
         speaker="alice",
         body="Users need real-time updates.",
     )
-    not_alice = _u(
+    plumbing_caterpillar = _u(
         act=SpeechAct.STORY,
-        speaker="white_rabbit",
-        body="Users need real-time updates.",
+        speaker="caterpillar",
+        body="As a developer, I want OBOL_MOCK=1 to populate fake data.",
     )
     assert rules.categorize(plain_alice) is Engagement.SELECTIVELY
     assert rules.categorize(arch_alice) is Engagement.SELECTIVELY
-    assert rules.categorize(not_alice) is Engagement.ALMOST_NEVER
+    assert rules.categorize(plumbing_caterpillar) is Engagement.SELECTIVELY
 
 
 def test_cat_rules_implementation_engages_selectively() -> None:

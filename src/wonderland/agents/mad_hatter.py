@@ -75,7 +75,7 @@ def mad_hatter_rules() -> EngagementRules:
         always(SpeechAct.INVITE, condition=addressed_to(HATTER_NAME)),
         # ALWAYS
         always(SpeechAct.DIRECTIVE),
-        always(SpeechAct.STORY, condition=speaker_is("alice")),
+        always(SpeechAct.STORY),
         always(SpeechAct.PROPOSAL, condition=speaker_is("cheshire_cat")),
         always(SpeechAct.IMPLEMENTATION, condition=is_tweedle),
         always(SpeechAct.CONCERN),

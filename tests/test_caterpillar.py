@@ -235,15 +235,25 @@ def test_rules_alice_stories_engage_always() -> None:
     )
 
 
-def test_rules_non_alice_stories_remain_default() -> None:
-    """Stories from speakers other than Alice (e.g., disk-fallback
-    re-publishes from prior runs, or another agent that shouldn't
-    be writing stories) don't fire the ALWAYS rule — caterpillar
-    stays at the default (ALMOST_NEVER)."""
+def test_rules_stories_engage_regardless_of_author() -> None:
+    """Updated from the legacy speaker_is('alice') restriction:
+    stories trigger Caterpillar review regardless of author. He
+    reviews story shape (confusion-flag present, persona specific,
+    etc.) and may also ship a plumbing story of his own when the
+    set is incomplete. Self-loops are prevented by the listen-loop's
+    self-skip (Caterpillar doesn't engage with his own stories)."""
     rules = caterpillar_rules()
     assert (
         rules.categorize(_u(act=SpeechAct.STORY, speaker="white_rabbit"))
-        is Engagement.ALMOST_NEVER
+        is Engagement.ALWAYS
+    )
+    # Self-engagement is still prevented at the listen-loop layer
+    # (agent.py skips own-speaker utterances), so this rule
+    # firing on caterpillar-as-speaker doesn't cause infinite
+    # review of his own stories.
+    assert (
+        rules.categorize(_u(act=SpeechAct.STORY, speaker="caterpillar"))
+        is Engagement.ALWAYS
     )
 
 

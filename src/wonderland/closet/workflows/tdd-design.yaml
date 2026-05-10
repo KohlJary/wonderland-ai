@@ -164,8 +164,17 @@ meetings:
 
     transition_emitted_to: proposed
     phases:
+      # Discussion phase has the same exit condition as commit — if
+      # Rabbit has enough context to ship after one rotation of
+      # alignment, he ships and discussion ends early. Without this,
+      # discussion exhausts all 3 rotations before commit can fire,
+      # and the meeting_budget runs out in concern/nudge ping-pong
+      # before commit ever ships a feature artifact (observed in
+      # the obol mock-data design pass: 19 calls of concerns + 0
+      # features).
       - name: discussion
         max_rotations: 3
+        exit_condition_artifact: feature
       - name: commit
         max_rotations: 2
         exit_condition_artifact: feature
@@ -181,6 +190,14 @@ meetings:
     goal: decompose each feature into v1 tickets the Tweedles can pick up
     roster: [alice, white_rabbit]
     per_item: feature
+    # Only decompose features that haven't been decomposed yet.
+    # M2 emits feature → state proposed; M3 transitions →
+    # in_design (after this iteration). On cross-run design
+    # passes, features from prior runs are at designed (or
+    # later); filter [proposed] correctly skips them. Without
+    # this, M3 iterates over already-decomposed features and
+    # ships duplicate tickets.
+    iterate_only_in_states: [proposed]
     parallel: true  # T93: feature-level decomposition is structurally
                     # independent — feature A's tickets and feature B's
                     # never reference each other's payloads.
@@ -321,6 +338,14 @@ meetings:
     goal: negotiate per-feature contracts informed by the ADR
     roster: [tweedledee, tweedledum, alice]
     per_item: feature
+    # Only contract features that have been decomposed but not
+    # yet contracted. M3 transitions feature → in_design; M5
+    # transitions → designed. On cross-run design passes,
+    # features from prior runs are at designed (or later);
+    # filter [in_design] correctly skips them. Without this,
+    # M5 re-negotiates contracts that already exist and ships
+    # duplicate contract notes.
+    iterate_only_in_states: [in_design]
     parallel: true  # T93: contracts negotiate per-feature seams
                     # independently. Feature A's API shape and
                     # feature B's UI envelope are separate concerns.

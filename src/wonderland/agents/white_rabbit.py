@@ -104,7 +104,7 @@ def white_rabbit_rules() -> EngagementRules:
         always(SpeechAct.INVITE, condition=addressed_to(RABBIT_NAME)),
         # ALWAYS
         always(SpeechAct.DIRECTIVE),
-        always(SpeechAct.STORY, condition=speaker_is("alice")),
+        always(SpeechAct.STORY),
         always(SpeechAct.PROPOSAL, condition=speaker_is("cheshire_cat")),
         always(SpeechAct.CONCERN, condition=scope_or_schedule_words),
         always(SpeechAct.IMPLEMENTATION, condition=is_tweedle),
