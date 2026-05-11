@@ -442,6 +442,11 @@ class ProjectDashboardScreen(Screen[None]):
                                 "Un-queue ticket",
                                 id="ticket-action-unqueue",
                             )
+                            yield Button(
+                                "Mark done",
+                                id="ticket-action-mark-done",
+                                variant="success",
+                            )
 
             # Drill-downs — investigation surfaces. Take less screen
             # real estate than the Features section; operator opens
@@ -900,6 +905,9 @@ class ProjectDashboardScreen(Screen[None]):
                 "ticket_unqueue": self.query_one(
                     "#ticket-action-unqueue", Button
                 ),
+                "ticket_mark_done": self.query_one(
+                    "#ticket-action-mark-done", Button
+                ),
             }
         except Exception:  # noqa: BLE001 — pre-mount race
             return None
@@ -916,7 +924,10 @@ class ProjectDashboardScreen(Screen[None]):
         State → visible buttons:
           - pending / aborted / done → Queue ticket
           - queued → Un-queue ticket
-          - in_progress → neither (substrate owns the transition)
+          - in_progress → Mark done (operator override when M8's
+            accept-routing didn't fire — e.g. the run was killed
+            mid-meeting or the operator manually wants to close
+            the ticket without another review pass)
           - None (no record yet) → Queue ticket (back-fill on press)
         """
         from wonderland.ticket_lifecycle import (
@@ -945,8 +956,10 @@ class ProjectDashboardScreen(Screen[None]):
             TicketState.DONE,
         )
         can_unqueue = state == TicketState.QUEUED
+        can_mark_done = state == TicketState.IN_PROGRESS
         btns["ticket_queue"].display = can_queue
         btns["ticket_unqueue"].display = can_unqueue
+        btns["ticket_mark_done"].display = can_mark_done
 
     # ------------------------------------------------------------------ #
     # Artifacts tab (T83)
@@ -1768,10 +1781,14 @@ class ProjectDashboardScreen(Screen[None]):
             self._handle_ticket_action(bid)
 
     def _handle_ticket_action(self, button_id: str) -> None:
-        """Per-ticket action dispatch. Queue / Un-queue transitions
-        the ticket through ``ticket_lifecycle`` so the workflow's
-        per_item filter (in ``_collect_per_item_items``) scopes
-        the next implementation run to the queued set."""
+        """Per-ticket action dispatch. Queue / Un-queue / Mark-done
+        transitions the ticket through ``ticket_lifecycle`` so the
+        workflow's per_item filter scopes correctly and the
+        feature-state rollup picks up the change. Mark-done is the
+        operator override for an in-progress ticket that didn't
+        get auto-completed by an M8 accept verdict (e.g. the run
+        died mid-meeting, or the operator wants to close out a
+        ticket without another review pass)."""
         from wonderland.ticket_lifecycle import (
             IllegalTransitionError as TicketIllegalTransition,
             TicketState,
@@ -1787,16 +1804,15 @@ class ProjectDashboardScreen(Screen[None]):
             )
             return
         slug = record.slug
-        target = (
-            TicketState.QUEUED
-            if button_id == "ticket-action-queue"
-            else TicketState.PENDING
-        )
-        verb = (
-            "queued for next implementation run"
-            if target == TicketState.QUEUED
-            else "un-queued"
-        )
+        if button_id == "ticket-action-queue":
+            target = TicketState.QUEUED
+            verb = "queued for next implementation run"
+        elif button_id == "ticket-action-mark-done":
+            target = TicketState.DONE
+            verb = "marked done"
+        else:
+            target = TicketState.PENDING
+            verb = "un-queued"
 
         current = get_ticket_state(self.project.root_path, slug)
         try:

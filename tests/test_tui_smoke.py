@@ -4102,6 +4102,94 @@ async def test_dashboard_queue_ticket_button_transitions_ticket(
         await pilot.press("q")
 
 
+async def test_dashboard_mark_done_button_transitions_in_progress_ticket(
+    monkeypatch, tmp_path
+) -> None:
+    """``Mark done`` on an in_progress ticket transitions it
+    DONE — the operator override when M8's accept-routing didn't
+    fire (e.g. run died mid-meeting, or operator wants to close
+    a ticket without another review pass)."""
+    from textual.widgets import Button, Tree
+
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        transition as feature_transition,
+    )
+    from wonderland.project import Project, register_project, load_project
+    from wonderland.ticket import TicketPayload, TicketRegistry, TicketTier
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        get_state as get_ticket_state,
+        transition as ticket_transition,
+    )
+    from wonderland.tui.screens.project_dashboard import (
+        ProjectDashboardScreen,
+    )
+
+    monkeypatch.setenv("WONDERLAND_HOME", str(tmp_path / ".wonderland"))
+    project_root = tmp_path / "alpha"
+    project_root.mkdir()
+    register_project(Project(name="alpha", root_path=project_root))
+    project = load_project("alpha")
+
+    FeatureRegistry(project_root).write(FeaturePayload(
+        title="XP",
+        description="d",
+        tickets=["accumulate"],
+        stack_span="full-stack",
+        tier="v1",
+        sources=["s"],
+    ))
+    for st in (
+        FeatureState.PROPOSED,
+        FeatureState.IN_DESIGN,
+        FeatureState.DESIGNED,
+    ):
+        feature_transition(project_root, "xp", st, by="test")
+    TicketRegistry(project_root).write(TicketPayload(
+        title="accumulate",
+        description="d",
+        sources=["xp"],
+        stack_span="backend",
+        acceptance=["t"],
+        owner="tweedledum",
+        tier=TicketTier.V1,
+        estimate="s",
+    ))
+    # Drive the ticket to IN_PROGRESS so the Mark-done button
+    # becomes visible.
+    ticket_transition(
+        project_root, "accumulate", TicketState.QUEUED, by="operator"
+    )
+    ticket_transition(
+        project_root, "accumulate", TicketState.IN_PROGRESS, by="system"
+    )
+
+    app = WonderlandApp(show_welcome=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(ProjectDashboardScreen(project))
+        await pilot.pause()
+        screen = app.screen
+        ft = screen.query_one("#features-tree", Tree)
+        ft.cursor_line = 0
+        await pilot.pause()
+        ft.cursor_line = 1  # ticket child node
+        await pilot.pause()
+        btn = screen.query_one("#ticket-action-mark-done", Button)
+        # Button should be visible for an in_progress ticket.
+        assert btn.display is True
+        screen.post_message(Button.Pressed(btn))
+        await pilot.pause()
+        assert (
+            get_ticket_state(project_root, "accumulate")
+            == TicketState.DONE
+        )
+        await pilot.press("escape")
+        await pilot.press("q")
+
+
 # ---------- VerifyRejectModal (P12 T90) ----------
 
 
