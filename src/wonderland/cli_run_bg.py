@@ -181,6 +181,23 @@ async def _run_bg_async(args: argparse.Namespace) -> int:
         workflow=workflow,
         directive=args.directive,
     )
+    # Wire the disk-mediated operator-question handler. The TUI's
+    # background-run poller (in App._poll_questions_for_run) picks
+    # up pending_question.json and pushes the AskUserModal; the
+    # handler here writes the question, blocks reading
+    # pending_answer.json, returns the operator's reply (or sentinel
+    # on timeout when no TUI is attached / operator left).
+    question_path = run_dir / "pending_question.json"
+    answer_path = run_dir / "pending_answer.json"
+
+    async def _ask_operator(question_utterance) -> str | None:
+        return await _disk_mediated_question(
+            question_utterance,
+            question_path=question_path,
+            answer_path=answer_path,
+        )
+
+    handle.set_user_question_handler(_ask_operator)
 
     state = _BackgroundState(
         run_id=runner.run_id,
@@ -264,6 +281,106 @@ async def _run_bg_async(args: argparse.Namespace) -> int:
             _write_status(status_path, state, status=final_status)
 
     return exit_code
+
+
+# Default operator-question wait window (10 minutes). After this
+# the subprocess gives up waiting and returns the sentinel reply
+# so the run can continue. Generous enough to cover an operator
+# stepping away briefly; short enough that a run doesn't strand
+# indefinitely when nobody's at the keyboard.
+_DEFAULT_QUESTION_TIMEOUT_SECONDS = 600.0
+# Poll interval for the answer file. 0.5s is fast enough that the
+# operator's modal-dismiss → answer-file-write → subprocess-pickup
+# round-trip feels responsive (~1s total), while keeping CPU
+# usage trivial.
+_QUESTION_POLL_SECONDS = 0.5
+
+
+async def _disk_mediated_question(
+    question_utterance,
+    *,
+    question_path: Path,
+    answer_path: Path,
+    timeout_seconds: float = _DEFAULT_QUESTION_TIMEOUT_SECONDS,
+) -> str | None:
+    """Background-run operator-question handler. Writes
+    ``pending_question.json`` and blocks waiting for the App-side
+    poller to write ``pending_answer.json``. Returns the operator's
+    reply text, or None on skip / timeout (the runner's watcher
+    publishes a sentinel observation on None).
+
+    Each call gets a fresh ``question_id`` (uuid4) so the
+    subprocess can disambiguate its own answer from any stale
+    answer file left over from a prior question. Both files are
+    cleaned up on the way out — answer file is deleted (it's
+    consumed) and question file is deleted (the question is
+    resolved).
+
+    On timeout the subprocess writes its own sentinel-equivalent
+    (None) so the run continues. Operator who shows up after the
+    timeout sees the run already moved on; they can re-queue if
+    they think the team made the wrong call.
+    """
+    import uuid
+
+    question_id = uuid.uuid4().hex
+    options: list[str] = []
+    for artifact in question_utterance.content.artifacts:
+        if artifact.kind == "operator_question_options":
+            raw = artifact.payload.get("options", [])
+            if isinstance(raw, list):
+                options = [str(o) for o in raw if o]
+            break
+
+    question_data = {
+        "question_id": question_id,
+        "asking_agent": question_utterance.speaker.name,
+        "question": question_utterance.content.body,
+        "options": options,
+    }
+    try:
+        question_path.write_text(
+            json.dumps(question_data), encoding="utf-8"
+        )
+    except OSError as exc:
+        print(
+            f"warn: failed to write pending_question.json: {exc}",
+            file=sys.stderr,
+        )
+        return None
+
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    answer: str | None = None
+    try:
+        while asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(_QUESTION_POLL_SECONDS)
+            if not answer_path.is_file():
+                continue
+            try:
+                data = json.loads(
+                    answer_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                continue
+            if data.get("question_id") != question_id:
+                # Stale answer file from a prior question. Clean
+                # it up so it doesn't trip the next iteration.
+                try:
+                    answer_path.unlink()
+                except OSError:
+                    pass
+                continue
+            raw_answer = data.get("answer")
+            if isinstance(raw_answer, str):
+                answer = raw_answer
+            break
+    finally:
+        for path in (question_path, answer_path):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+    return answer
 
 
 class _BackgroundState:

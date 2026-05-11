@@ -53,6 +53,12 @@ class ActiveRun:
     )
     ended_at: datetime | None = None
     task: asyncio.Task | None = None
+    # Background runs use a disk-mediated operator-question bridge:
+    # the subprocess writes pending_question.json, the App polls
+    # for it via this task and surfaces the question through
+    # AskUserModal. None for in-process runs (the LiveRunHandle's
+    # direct handler covers them) or before the poller starts.
+    question_poller_task: asyncio.Task | None = None
 
     def subscribe(self, callback: EventCallback) -> Callable[[], None]:
         """Register ``callback`` to receive every event — past

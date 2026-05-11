@@ -211,6 +211,7 @@ The JSON must conform to this schema:
       "title": "short, action-oriented",
       "owner": "<agent name — usually tweedledee or tweedledum>",
       "tier": "v1" | "fast-follow" | "post-launch",
+      "stack_span": "frontend" | "backend" | "full-stack",
       "estimate": "duration with confidence — e.g., '0.5-1.5 days, 70% confident'",
       "description": "what needs to be done; specific enough to start, generic enough that the owner retains design authority over implementation",
       "sources": ["story or proposal IDs that produced this ticket"],

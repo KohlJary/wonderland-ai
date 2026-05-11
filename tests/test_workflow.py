@@ -1624,6 +1624,76 @@ class TestResolveSeeds:
             == FeatureState.READY_FOR_REVIEW
         )
 
+    def test_roster_filter_narrows_per_iteration(self) -> None:
+        """Meeting.apply_roster_filter narrows roster and
+        team_groupings based on an item's payload field. Used by
+        M7 to skip a Tweedle on stack_span-scoped tickets."""
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            RosterFilter,
+        )
+
+        m7 = MeetingCls.model_validate({
+            "id": "implementation",
+            "label": "M7",
+            "goal": "ship code",
+            "roster": ["tweedledee", "tweedledum"],
+            "per_item": "ticket",
+            "phases": [{
+                "name": "implement",
+                "max_rotations": 2,
+                "team_groupings": [["tweedledee", "tweedledum"]],
+            }],
+            "per_item_roster_filter": {
+                "field": "stack_span",
+                "map": {
+                    "frontend": ["tweedledee"],
+                    "backend": ["tweedledum"],
+                },
+            },
+            "seeds": [],
+        })
+
+        # Frontend ticket → only tweedledee.
+        fe = m7.apply_roster_filter({"slug": "x", "stack_span": "frontend"})
+        assert fe.roster == ["tweedledee"]
+        assert fe.phases[0].team_groupings == (("tweedledee",),)
+
+        # Backend ticket → only tweedledum.
+        be = m7.apply_roster_filter({"slug": "y", "stack_span": "backend"})
+        assert be.roster == ["tweedledum"]
+        assert be.phases[0].team_groupings == (("tweedledum",),)
+
+        # Full-stack ticket → falls through (full roster).
+        fs = m7.apply_roster_filter({"slug": "z", "stack_span": "full-stack"})
+        assert fs.roster == ["tweedledee", "tweedledum"]
+
+        # Unknown / missing field → falls through.
+        none = m7.apply_roster_filter({"slug": "q"})
+        assert none.roster == ["tweedledee", "tweedledum"]
+
+    def test_roster_filter_rejects_non_subset_agents(self) -> None:
+        """The validator catches typo'd / cross-meeting agent
+        references in the filter map before they cause silent
+        substrate failures."""
+        from pydantic import ValidationError
+
+        from wonderland.workflow import Meeting as MeetingCls
+
+        with pytest.raises(ValidationError, match="that aren't in"):
+            MeetingCls.model_validate({
+                "id": "implementation",
+                "label": "M7",
+                "goal": "ship code",
+                "roster": ["tweedledee", "tweedledum"],
+                "per_item": "ticket",
+                "per_item_roster_filter": {
+                    "field": "stack_span",
+                    "map": {"frontend": ["alice"]},
+                },
+                "seeds": [],
+            })
+
     def test_per_ticket_meeting_transitions_ticket_not_feature(
         self, tmp_path: Path
     ) -> None:

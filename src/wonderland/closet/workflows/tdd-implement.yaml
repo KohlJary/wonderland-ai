@@ -197,6 +197,20 @@ meetings:
     per_item: ticket
     iterate_only_in_states: [queued]
     meeting_budget: 0.70
+    # Per-ticket roster narrowing based on the ticket's stack_span
+    # (set by Rabbit during M3.5 consolidation, possibly refined by
+    # Tweedles during M5 contract negotiation). Frontend-only
+    # tickets only need Tweedledee; backend-only only need
+    # Tweedledum. Full-stack tickets fall through to the full
+    # roster. The non-roster Tweedle can still buzz in via their
+    # constitution's §III selective-engagement when a contract
+    # question surfaces — narrowing only affects who gets priority
+    # windows, not who can emit.
+    per_item_roster_filter:
+      field: stack_span
+      map:
+        frontend: [tweedledee]
+        backend: [tweedledum]
     # Gate on dependencies: a ticket whose code depends on another
     # ticket's implementation waits for that upstream ticket's M7
     # to finish before starting its own M7. M6 (Tea Party) still

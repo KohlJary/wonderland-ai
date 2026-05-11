@@ -35,7 +35,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from wonderland.turns import PhaseDefinition
 
@@ -197,6 +203,56 @@ class PhaseSpec(BaseModel):
         )
 
 
+class RosterFilter(BaseModel):
+    """Per-iteration roster narrowing for per_item meetings.
+
+    When a meeting iterates over items (tickets, features, etc.)
+    and the items carry a discriminating payload field (e.g.
+    ``stack_span`` on tickets: ``frontend`` / ``backend`` /
+    ``full-stack``), this lets the YAML declare a value → roster
+    override. Iterations whose item payload's ``field`` value
+    matches an entry in ``map`` use that narrowed roster; values
+    not in the map fall through to the meeting's full roster.
+
+    Buzz-in still works: agents not in the narrowed roster don't
+    get priority windows but can still emit utterances when their
+    constitution's §III engagement rules fire (e.g. Tweedledum
+    speaks on a contract question even when only Tweedledee is in
+    the M7 roster for a frontend ticket).
+
+    Used by tdd-implement's M7 to skip a Tweedle for split-stack
+    tickets — half the call volume for the dominant majority case
+    where a ticket only touches one side of the seam.
+    """
+
+    field: str = Field(
+        min_length=1,
+        description=(
+            "Item-payload field to read for the discriminator value "
+            "(e.g. ``stack_span``)."
+        ),
+    )
+    map: dict[str, list[str]] = Field(
+        description=(
+            "Field-value → narrowed roster mapping. Roster entries "
+            "must be a subset of the meeting's full roster — the "
+            "validator enforces this so a typo in the YAML doesn't "
+            "silently swap in unrelated agents."
+        ),
+    )
+
+    @field_validator("map")
+    @classmethod
+    def _map_not_empty(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
+        if not v:
+            raise ValueError(
+                "RosterFilter.map cannot be empty — declare at least "
+                "one value → roster entry, or omit per_item_roster_filter "
+                "entirely."
+            )
+        return v
+
+
 class Meeting(BaseModel):
     """One meeting in a workflow."""
 
@@ -334,6 +390,16 @@ class Meeting(BaseModel):
             "same feature can race on src/ files."
         ),
     )
+    per_item_roster_filter: RosterFilter | None = Field(
+        default=None,
+        description=(
+            "Narrow the roster per iteration based on an item-payload "
+            "field. See ``RosterFilter``. Most useful for skipping "
+            "irrelevant cast members on items that touch only part of "
+            "the system — e.g. M7 (implementation) running just "
+            "Tweedledee for a ``stack_span: frontend`` ticket."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_phase_names_unique(self) -> "Meeting":
@@ -346,6 +412,79 @@ class Meeting(BaseModel):
                 f"meeting {self.id!r} has duplicate phase names: {dupes}"
             )
         return self
+
+    @model_validator(mode="after")
+    def _validate_roster_filter_subset(self) -> "Meeting":
+        """Every agent named in a roster-filter mapping must be a
+        member of the meeting's full roster. Catches typo'd or
+        cross-meeting references before they cause a silent
+        substrate failure at iteration time."""
+        if self.per_item_roster_filter is None:
+            return self
+        if self.per_item is None:
+            raise ValueError(
+                f"meeting {self.id!r} declares per_item_roster_filter "
+                f"but is not a per_item meeting"
+            )
+        roster_set = set(self.roster)
+        for value, narrowed in self.per_item_roster_filter.map.items():
+            extras = [a for a in narrowed if a not in roster_set]
+            if extras:
+                raise ValueError(
+                    f"meeting {self.id!r}: per_item_roster_filter "
+                    f"value {value!r} names agent(s) {extras} "
+                    f"that aren't in the meeting's roster "
+                    f"{sorted(roster_set)}"
+                )
+        return self
+
+    def apply_roster_filter(
+        self, item_payload: dict[str, Any]
+    ) -> "Meeting":
+        """Return a copy of this meeting with the roster (and any
+        phase team_groupings that reference roster members) narrowed
+        to whatever ``per_item_roster_filter`` resolves to for the
+        given item. Returns self unchanged when:
+
+          - ``per_item_roster_filter`` isn't set
+          - the item's field value isn't in the filter's map
+          - the narrowed roster matches the existing roster
+            (no-op savings)
+
+        Roster order is preserved (the original roster's relative
+        order survives the filter; new orderings aren't introduced).
+        ``team_groupings`` get the same filter applied — agents not
+        in the narrowed roster are dropped; empty teams are dropped
+        entirely.
+        """
+        rf = self.per_item_roster_filter
+        if rf is None:
+            return self
+        field_value = item_payload.get(rf.field)
+        if field_value is None or field_value not in rf.map:
+            return self
+        narrowed = set(rf.map[field_value])
+        if narrowed == set(self.roster):
+            return self
+        new_roster = [a for a in self.roster if a in narrowed]
+        # Filter team_groupings in every phase: drop non-roster
+        # agents; drop empty teams.
+        new_phases: list[PhaseSpec] = []
+        for phase in self.phases:
+            if not phase.team_groupings:
+                new_phases.append(phase)
+                continue
+            new_teams = tuple(
+                tuple(a for a in team if a in narrowed)
+                for team in phase.team_groupings
+            )
+            new_teams = tuple(team for team in new_teams if team)
+            new_phases.append(
+                phase.model_copy(update={"team_groupings": new_teams})
+            )
+        return self.model_copy(
+            update={"roster": new_roster, "phases": new_phases}
+        )
 
     @model_validator(mode="after")
     def _validate_team_groupings_cover_roster(self) -> "Meeting":
@@ -1247,10 +1386,19 @@ def _collect_per_item_items(
     # re-reading disk per lane.
     if item_kind == "ticket" and project_root is not None and items:
         blocked_by = _ticket_blocked_by_map(project_root)
+        # Lazy import to avoid a workflow ↔ ticket cycle at module-
+        # load. read_ticket_stack_span reads each ticket's markdown
+        # once to surface the field — used by Meeting.apply_roster_
+        # filter at convene time.
+        from wonderland.ticket import read_ticket_stack_span
+
         for item in items:
             slug = item.get("slug")
             if slug:
                 item["blocked_by"] = blocked_by.get(slug, [])
+                item["stack_span"] = read_ticket_stack_span(
+                    project_root, slug
+                ).value
 
     return items
 
@@ -1334,6 +1482,7 @@ async def _run_pipelined_workflow(
                 lane_total=len(outer_items),
                 lane_thread_prefix=lane_thread_prefix,
                 inner_levels=pipeline.levels[1:],
+                outer_item=outer_item,
                 # Only the very first lane's first meeting is the
                 # "entry" — receives the operator's directive. Other
                 # lanes pick up the directive from the bus / disk.
@@ -1382,6 +1531,7 @@ async def _run_lane(
     lane_thread_prefix: str,
     directive: str | None,
     inner_levels: list[PipelineLevel] | None = None,
+    outer_item: dict[str, Any] | None = None,
 ) -> AsyncIterator[Any]:
     """One lane of a pipelined workflow — runs meetings in declaration
     order, scoped to a single outer item.
@@ -1438,6 +1588,7 @@ async def _run_lane(
                 iteration_total=lane_total,
                 iteration_label=iteration_label,
                 lane_thread_prefix=lane_thread_prefix,
+                item_payload=outer_item,
             ):
                 if isinstance(event, _OutcomeSentinel):
                     outcome = event.outcome
@@ -1556,6 +1707,7 @@ async def _run_lane(
                 iteration_total=len(sub_items),
                 iteration_label=f"{outer_label} / {sub_label}",
                 lane_thread_prefix=lane_thread_prefix,
+                item_payload=sub_item,
             ):
                 if isinstance(event, _OutcomeSentinel):
                     outcome = event.outcome
@@ -1709,6 +1861,7 @@ async def _run_inner_block(
                         iteration_total=len(sub_items),
                         iteration_label=f"{outer_label} / {sub_label}",
                         lane_thread_prefix=lane_thread_prefix,
+                        item_payload=sub_item,
                     ):
                         if isinstance(event, _OutcomeSentinel):
                             outcome = event.outcome
@@ -1973,6 +2126,7 @@ async def run_workflow(
                         iteration_index=idx + 1,
                         iteration_total=len(items),
                         iteration_label=label,
+                        item_payload=item,
                     ):
                         yield event
 
@@ -2007,6 +2161,7 @@ async def run_workflow(
                     iteration_index=idx + 1,
                     iteration_total=len(items),
                     iteration_label=label,
+                    item_payload=item,
                 ):
                     if isinstance(event, _OutcomeSentinel):
                         outcome = event.outcome
@@ -2718,6 +2873,7 @@ async def _run_one_meeting(
     iteration_total: int | None,
     iteration_label: str | None,
     lane_thread_prefix: str | None = None,
+    item_payload: dict[str, Any] | None = None,
 ) -> AsyncIterator[Any]:
     """Dispatch a single meeting (or per_item iteration) onto either
     the legacy engagement-policy path (``_convene_one``) or the
@@ -2727,7 +2883,17 @@ async def _run_one_meeting(
     Phase semantics are strictly opt-in (analysis 033 / P9 T57):
     workflows without a ``phases:`` declaration retain the original
     parallel-multicast behavior unchanged.
+
+    ``item_payload`` carries the per_item iteration's full payload
+    dict (slug, title, stack_span, blocked_by, etc.) so this
+    function can apply ``meeting.per_item_roster_filter`` before
+    dispatching. Callers without a per_item context pass None.
     """
+    # Apply the per-iteration roster filter, if any. Narrows the
+    # roster + team_groupings for this iteration only; original
+    # ``meeting`` object remains unchanged.
+    if item_payload is not None:
+        meeting = meeting.apply_roster_filter(item_payload)
     if meeting.phases:
         # Local import to avoid the meeting ↔ workflow circular at
         # module-load time (meeting.py imports MeetingStartEvent /

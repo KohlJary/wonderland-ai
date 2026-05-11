@@ -255,6 +255,32 @@ meetings:
           tweedledum for backend bias, or "either" for full-stack)
         - ``tier`` (v1 / fast-follow / post-launch — usually
           inherits from feature tier)
+        - ``stack_span`` — **REQUIRED**: one of ``frontend``,
+          ``backend``, or ``full-stack``. The substrate uses this
+          to scope M7 (implementation) to just the Tweedle whose
+          side the ticket touches — frontend tickets only load
+          Tweedledee, backend tickets only load Tweedledum,
+          full-stack tickets load both. Don't default everything
+          to ``full-stack`` to be safe; that defeats the whole
+          point of the field. **Be explicit and stingy**:
+            - ``frontend`` when the ticket's deliverable is a UI
+              component, route, page, store action, frontend
+              schema, client-side validation, etc. — code that
+              lives under the frontend tree only.
+            - ``backend`` when the deliverable is a model, API
+              endpoint, migration, scheduled job, server-side
+              validation, integration, etc. — code under the
+              backend tree only.
+            - ``full-stack`` ONLY when the ticket genuinely
+              requires both sides to ship together as one unit
+              (e.g. a new feature that needs a backend endpoint
+              AND the frontend that calls it, where shipping
+              one without the other leaves a broken half).
+          If a frontend ticket needs a backend change to land
+          first, that's a ``Blocked by:`` dependency on a
+          SEPARATE backend ticket, not a reason to mark this one
+          ``full-stack``. Splitting reduces M7 cost and clock time
+          materially; merging defeats the optimization.
         - ``estimate`` (your honest read; the Tweedles will adjust)
         - ``description`` — what shipping this ticket means
         - ``sources`` — **REQUIRED**: the parent feature's slug must

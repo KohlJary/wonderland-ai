@@ -182,6 +182,112 @@ async def test_live_run_screen_attaches_via_run_id_and_replays_buffer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_background_question_bridge_round_trip(
+    monkeypatch, tmp_path
+) -> None:
+    """End-to-end: subprocess-side ``_disk_mediated_question``
+    writes pending_question.json, App's poller picks it up and
+    pushes AskUserModal, modal dismissal writes pending_answer.json,
+    subprocess receives the operator's answer. Runs both halves in
+    the same process for the test — verifies the file protocol +
+    question_id round-trip."""
+    import json
+    from pathlib import Path
+
+    from wonderland.cli_run_bg import _disk_mediated_question
+    from wonderland.observer.subprocess import SubprocessRunHandle
+    from wonderland.tui import WonderlandApp
+    from wonderland.tui.active_run import ActiveRun
+    from wonderland.utterance import (
+        AgentIdentity,
+        SpeechAct,
+        Utterance,
+        UtteranceContent,
+    )
+
+    # Stand up a fake run dir + the question + answer paths.
+    run_dir = tmp_path / "alpha" / ".wonderland" / "runs" / "run-x"
+    run_dir.mkdir(parents=True)
+    (run_dir / "pid").write_text("1\n")
+    (run_dir / "status.json").write_text(json.dumps({
+        "status": "running", "run_id": "run-x",
+        "started_at": "2026-05-10T22:00:00+00:00",
+        "ended_at": None, "meetings_completed": 0,
+        "total_cost": 0.0, "pid": 1,
+        "workflow": "smoke", "directive": "test",
+    }))
+    question_path = run_dir / "pending_question.json"
+    answer_path = run_dir / "pending_answer.json"
+
+    # Synthetic question utterance.
+    question_utt = Utterance(
+        speaker=AgentIdentity(name="alice", constitution_version="v1"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.QUESTION,
+        content=UtteranceContent(body="should we ship A or B?"),
+        thread_id="m1",
+    )
+
+    app = WonderlandApp(show_welcome=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # Plant the active run (App-side poller will pick it up).
+        handle = SubprocessRunHandle(run_dir)
+        active = ActiveRun(run_id="run-x", handle=handle)
+        active.question_poller_task = asyncio.create_task(
+            app._poll_questions_for_background_run(active)
+        )
+        app._active_run = active
+
+        # Subprocess side fires the question (in a task — it blocks).
+        subprocess_task = asyncio.create_task(
+            _disk_mediated_question(
+                question_utt,
+                question_path=question_path,
+                answer_path=answer_path,
+                timeout_seconds=10.0,
+            )
+        )
+
+        # Wait for the modal to push.
+        for _ in range(50):
+            await pilot.pause()
+            from wonderland.tui.screens.ask_user_modal import (
+                AskUserModal,
+            )
+
+            if isinstance(app.screen, AskUserModal):
+                break
+        else:
+            subprocess_task.cancel()
+            active.question_poller_task.cancel()
+            active.mark_ended("aborted")
+            raise AssertionError(
+                "AskUserModal didn't push within 50 ticks"
+            )
+
+        # Operator answers.
+        app.screen.dismiss("ship A")
+        for _ in range(50):
+            await pilot.pause()
+            if subprocess_task.done():
+                break
+        active.mark_ended("complete")
+        active.question_poller_task.cancel()
+        with pytest.raises(
+            (asyncio.CancelledError, BaseException)
+        ):
+            await active.question_poller_task
+        # Subprocess received the operator's answer.
+        assert subprocess_task.done()
+        assert subprocess_task.result() == "ship A"
+        # Both files cleaned up.
+        assert not question_path.exists()
+        assert not answer_path.exists()
+        await pilot.press("q")
+
+
+@pytest.mark.asyncio
 async def test_app_launch_run_rejects_concurrent_launches() -> None:
     """The one-at-a-time cap: launching a second run while the first
     is still in flight raises RuntimeError. NewRunScreen surfaces

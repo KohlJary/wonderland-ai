@@ -33,6 +33,21 @@ TICKETS_DIRNAME = "tickets"
 _FILENAME_PATTERN = re.compile(r"^ticket-(\d+)-([a-z0-9-]+)\.md$")
 
 
+class TicketStackSpan(StrEnum):
+    """Which side of the stack the ticket's work touches.
+
+    Mirrors ``feature.StackSpan`` — kept as a separate enum here
+    so the ticket module doesn't take on a hard dep on the feature
+    module and so the two can drift independently if needed (we
+    don't expect them to). Used by the M7 roster filter to decide
+    which Tweedles to invite for the iteration.
+    """
+
+    FRONTEND = "frontend"
+    BACKEND = "backend"
+    FULL_STACK = "full-stack"
+
+
 class TicketTier(StrEnum):
     V1 = "v1"
     FAST_FOLLOW = "fast-follow"
@@ -68,6 +83,19 @@ class TicketPayload(BaseModel):
     acceptance: list[str] = Field(default_factory=list)
     risk: str = ""
     status: TicketStatus = TicketStatus.OPEN
+    # Which side of the stack the ticket touches. Same enum values
+    # as ``feature.StackSpan``; aliased here so the ticket schema
+    # is self-contained (and to avoid an import cycle). Used by
+    # the M7 roster filter to skip the Tweedle whose layer this
+    # ticket doesn't touch — frontend tickets only need
+    # Tweedledee in the M7 roster, backend tickets only need
+    # Tweedledum, full-stack tickets need both. Default is
+    # ``full-stack`` so older tickets (and any tickets where
+    # M3.5 / M5 didn't make a determination) keep the original
+    # full-roster behavior.
+    stack_span: "TicketStackSpan" = Field(
+        default_factory=lambda: TicketStackSpan.FULL_STACK,
+    )
 
 
 @dataclass(frozen=True)
@@ -94,6 +122,7 @@ def render_ticket(number: int, payload: TicketPayload) -> str:
         f"**Sources:** {_join_or_dash(payload.sources)}",
         f"**Owner:** {payload.owner}",
         f"**Tier:** {payload.tier.value}",
+        f"**Stack span:** {payload.stack_span.value}",
         f"**Estimate:** {payload.estimate}",
         f"**Status:** {payload.status.value}",
         "",
@@ -123,6 +152,43 @@ def render_ticket(number: int, payload: TicketPayload) -> str:
 
 def _join_or_dash(items: list[str]) -> str:
     return ", ".join(items) if items else "—"
+
+
+def read_ticket_stack_span(
+    project_root: Path, slug: str
+) -> TicketStackSpan:
+    """Read the ``**Stack span:**`` line from a ticket's on-disk
+    markdown. Returns ``FULL_STACK`` for tickets where the line is
+    missing or unrecognised — safe default that preserves the
+    full-roster behaviour for older tickets that predate the
+    schema field.
+
+    Cheap (single file read + regex); called once per ticket
+    iteration in ``_collect_per_item_items`` so the substrate
+    can attach the value to the item payload before the roster
+    filter kicks in.
+    """
+    record = TicketRegistry(project_root).find_by_slug(slug)
+    if record is None:
+        return TicketStackSpan.FULL_STACK
+    try:
+        text = record.path.read_text(encoding="utf-8")
+    except OSError:
+        return TicketStackSpan.FULL_STACK
+    match = _STACK_SPAN_RE.search(text)
+    if match is None:
+        return TicketStackSpan.FULL_STACK
+    raw = match.group(1).strip().lower()
+    try:
+        return TicketStackSpan(raw)
+    except ValueError:
+        return TicketStackSpan.FULL_STACK
+
+
+_STACK_SPAN_RE = re.compile(
+    r"^\s*\*\*Stack span:\*\*\s*(\S+)\s*$",
+    re.MULTILINE,
+)
 
 
 class TicketRegistry:

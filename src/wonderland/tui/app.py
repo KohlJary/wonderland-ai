@@ -170,6 +170,13 @@ class WonderlandApp(App):
                     self._drive_active_run(active),
                     name=f"recovered-run-{run_id}",
                 )
+                # Also restart the question-poller — a recovered
+                # subprocess may have a pending_question.json on
+                # disk that the operator hasn't answered yet.
+                active.question_poller_task = asyncio.create_task(
+                    self._poll_questions_for_background_run(active),
+                    name=f"recovered-question-poller-{run_id}",
+                )
                 self._active_run = active
                 self.notify(
                     f"Recovered background run {run_id} "
@@ -391,6 +398,15 @@ class WonderlandApp(App):
             self._drive_active_run(active),
             name=f"active-run-{run_id}",
         )
+        # Background runs use a disk-mediated operator-question
+        # bridge: the subprocess writes pending_question.json and
+        # blocks reading pending_answer.json. We poll for the
+        # question file, push AskUserModal when one appears, write
+        # the operator's reply (or None on skip) to pending_answer.
+        active.question_poller_task = asyncio.create_task(
+            self._poll_questions_for_background_run(active),
+            name=f"question-poller-{run_id}",
+        )
         self._active_run = active
         return active
 
@@ -459,6 +475,115 @@ class WonderlandApp(App):
             # exception; the buffer + status tell the UI what
             # happened without depending on this raise.
             raise
+
+    async def _poll_questions_for_background_run(
+        self, active: ActiveRun
+    ) -> None:
+        """Background-run operator-question bridge.
+
+        The subprocess writes ``pending_question.json`` to its run
+        dir when an agent fires QUESTION-to-operator, then blocks
+        reading ``pending_answer.json``. This task polls for the
+        question file, pushes ``AskUserModal`` when one appears,
+        and writes the operator's reply (or None on skip) to the
+        answer file. The subprocess reads it and continues.
+
+        Each question carries a uuid ``question_id`` so the
+        subprocess can distinguish its own answer from any stale
+        answer file that might be lying around (defensive against
+        crashes mid-question).
+
+        Lifecycle: runs until the active run is terminal. Cleans
+        up on cancellation so the App can shut down without
+        leaking poller tasks.
+        """
+        import json
+
+        run_dir = getattr(active.handle, "run_dir", None)
+        if run_dir is None:
+            return  # In-process handle — uses its own handler.
+        question_path = run_dir / "pending_question.json"
+        answer_path = run_dir / "pending_answer.json"
+        seen_ids: set[str] = set()
+        try:
+            while not active.is_terminal:
+                await asyncio.sleep(0.5)
+                if not question_path.is_file():
+                    continue
+                try:
+                    data = json.loads(
+                        question_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
+                    continue
+                qid = data.get("question_id")
+                if not isinstance(qid, str) or qid in seen_ids:
+                    continue
+                seen_ids.add(qid)
+                await self._surface_background_question(
+                    answer_path, qid, data
+                )
+        except asyncio.CancelledError:
+            raise
+
+    async def _surface_background_question(
+        self,
+        answer_path: "Path",  # noqa: F821 — Path is imported at module top
+        question_id: str,
+        question_data: dict,
+    ) -> None:
+        """Push AskUserModal for a subprocess-side question and
+        write the operator's response (or None on skip) to
+        ``answer_path`` once the modal dismisses. The subprocess
+        polls for the file and unblocks when it sees the matching
+        ``question_id``."""
+        import json
+
+        from wonderland.tui.screens.ask_user_modal import AskUserModal
+
+        future: asyncio.Future[str | None] = asyncio.Future()
+
+        def _on_dismissed(answer: str | None) -> None:
+            if not future.done():
+                future.set_result(answer)
+
+        options = question_data.get("options") or []
+        if not isinstance(options, list):
+            options = []
+        self.push_screen(
+            AskUserModal(
+                asking_agent=str(
+                    question_data.get("asking_agent")
+                    or "(unknown agent)"
+                ),
+                question=str(
+                    question_data.get("question") or "(no question)"
+                ),
+                options=[str(o) for o in options],
+            ),
+            _on_dismissed,
+        )
+        answer = await future
+        # Write answer back. Subprocess polls + cleans up both
+        # files on its side. We write atomically (write-then-no-
+        # rename is fine because the subprocess reads via
+        # read_text, retrying on JSONDecodeError; one half-written
+        # answer round-trips through the next poll cycle).
+        try:
+            answer_path.write_text(
+                json.dumps({
+                    "question_id": question_id,
+                    "answer": answer,
+                }),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            self.notify(
+                f"Failed to deliver operator answer to background "
+                f"run: {exc}",
+                severity="error",
+                timeout=6,
+            )
 
     def get_active_run(self, run_id: str) -> ActiveRun | None:
         """Look up an active run by run_id. Returns None when no run
