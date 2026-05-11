@@ -2529,15 +2529,17 @@ def _apply_emission_transition_for_utterance(
 
 def _find_blocking_review(
     new_utterances: list[Utterance], feature_slug: str
-) -> str | None:
+) -> dict | None:
     """Scan utterances emitted during this iteration for a review
     artifact whose verdict is request-changes or block. Returns the
-    review slug when found, else None.
+    artifact's full payload dict (slug, findings, target_files, etc.)
+    when found, else None.
 
     Used by ``_apply_post_meeting_transitions`` to route around the
     normal feature → ready_for_review transition when Caterpillar
-    flags issues — instead, tickets get marked ABORTED and the
-    operator drives the retry loop via the dashboard.
+    flags issues — instead, the substrate synthesizes follow-up
+    tickets from the review's findings and the original iteration's
+    tickets transition to DONE.
     """
     del feature_slug  # Reserved for future scoping; one feature
     # per M8 iteration today so the iteration's utterances are
@@ -2548,16 +2550,7 @@ def _find_blocking_review(
                 continue
             verdict = a.payload.get("verdict")
             if verdict in ("request-changes", "block"):
-                slug = a.payload.get("slug")
-                if isinstance(slug, str) and slug:
-                    return slug
-                # Slug missing: fall back to the title as a stable
-                # human-readable identifier. Better than dropping
-                # the routing entirely.
-                title = a.payload.get("title")
-                if isinstance(title, str):
-                    return title
-                return "(unknown review)"
+                return dict(a.payload)
     return None
 
 
@@ -2632,25 +2625,144 @@ def _complete_tickets_on_accept_review(
             continue
 
 
-def _abort_tickets_on_blocking_review(
+# Finding severities that justify synthesizing a follow-up
+# ticket. ``block`` and ``change-required`` map to "do this work
+# before merging"; ``suggestion`` and ``note`` stay informational
+# in the review artifact and don't spawn new iterations.
+_TICKETABLE_FINDING_SEVERITIES: frozenset[str] = frozenset(
+    {"block", "change-required"}
+)
+
+
+def _stack_span_for_finding_location(
+    location: str,
+) -> "TicketStackSpan":
+    """Heuristic: map a finding's ``file:line`` location to a
+    stack_span. Frontend paths land Tweedledee's follow-up,
+    backend paths land Tweedledum's; mixed / unrecognised stays
+    full-stack. Operator can re-label on the dashboard if the
+    heuristic guesses wrong."""
+    from wonderland.ticket import TicketStackSpan
+
+    if not isinstance(location, str):
+        return TicketStackSpan.FULL_STACK
+    lower = location.lower()
+    frontend_markers = (
+        "/frontend/", "frontend/src/", "/src/components/",
+        "/src/pages/", "/src/app.tsx", ".tsx", ".jsx", ".css",
+    )
+    backend_markers = (
+        "/backend/", "/src/backend/", "/api/", "/models.py",
+        "/main.py", "/migrations/", ".sql",
+    )
+    is_fe = any(m in lower for m in frontend_markers)
+    is_be = any(m in lower for m in backend_markers)
+    if is_fe and not is_be:
+        return TicketStackSpan.FRONTEND
+    if is_be and not is_fe:
+        return TicketStackSpan.BACKEND
+    return TicketStackSpan.FULL_STACK
+
+
+def _synthesize_followup_ticket_from_finding(
+    finding: dict,
+    *,
+    parent_feature_slug: str,
+    review_slug: str,
+) -> "TicketPayload | None":
+    """Convert a single ``ReviewFinding`` dict into a TicketPayload.
+    Returns None when the severity isn't ticket-worthy.
+
+    Field mapping:
+      - title ← finding.title (Caterpillar's noun-phrase heading)
+      - description ← finding.concern + finding.request
+        (concern names what's wrong; request names what would
+        resolve it)
+      - sources ← [parent_feature_slug, review_slug] so the
+        ticket markdown's Sources line links back to its
+        provenance
+      - stack_span ← derived from finding.location
+      - owner ← derived from stack_span
+      - tier ← V1 (these are merge-blockers; high priority)
+      - estimate ← "tbd — operator should refine" placeholder
+    """
+    from wonderland.ticket import (
+        TicketPayload,
+        TicketStackSpan,
+        TicketTier,
+    )
+
+    severity = finding.get("severity")
+    if (
+        not isinstance(severity, str)
+        or severity not in _TICKETABLE_FINDING_SEVERITIES
+    ):
+        return None
+    title = finding.get("title")
+    concern = finding.get("concern")
+    request = finding.get("request")
+    if not all(isinstance(v, str) and v.strip() for v in (
+        title, concern, request,
+    )):
+        # Skip malformed findings — schema should prevent this
+        # but defensive against partial reads.
+        return None
+    location = finding.get("location", "")
+    stack_span = _stack_span_for_finding_location(
+        location if isinstance(location, str) else ""
+    )
+    owner = {
+        TicketStackSpan.FRONTEND: "tweedledee",
+        TicketStackSpan.BACKEND: "tweedledum",
+        TicketStackSpan.FULL_STACK: "tweedledee",  # arbitrary default
+    }[stack_span]
+    description = (
+        f"From review ``{review_slug}`` ({severity}):\n\n"
+        f"**Concern:** {concern.strip()}\n\n"
+        f"**Request:** {request.strip()}\n\n"
+        f"**Location:** ``{location}``"
+    )
+    return TicketPayload(
+        title=title.strip(),
+        owner=owner,
+        tier=TicketTier.V1,
+        stack_span=stack_span,
+        estimate="tbd — operator should refine",
+        description=description,
+        sources=[parent_feature_slug, review_slug],
+        acceptance=[request.strip()],
+    )
+
+
+def _route_blocking_review(
     project_root: Path,
     *,
     feature_slug: str,
-    review_slug: str,
+    review_payload: dict,
     actor: str,
     meeting_id: str,
 ) -> None:
-    """Mark every ticket of ``feature_slug`` that's currently
-    IN_PROGRESS as ABORTED, with notes citing the review. Tickets
-    in other states (DONE / PENDING / already ABORTED) are left
-    alone — ABORTED is for "we just tried this and it didn't
-    pass review", not for retroactively flagging shipped tickets.
+    """Request-changes path:
 
-    Tickets that have no lifecycle state yet (typical pre-this-
-    feature case) get back-filled to IN_PROGRESS first, then
-    transitioned to ABORTED — the iteration ran, even if the
-    substrate didn't think to record it.
+      1. Mark the iteration's IN_PROGRESS tickets as DONE — their
+         implementation work shipped and Caterpillar's findings
+         are coherence gaps to address in follow-up work, not
+         "the original tickets failed entirely".
+      2. Convert ticket-worthy findings (severity ``block`` /
+         ``change-required``) into new TicketPayloads; write them
+         to disk via TicketRegistry; transition them to QUEUED
+         via ticket_lifecycle so the next imp run iterates only
+         the follow-ups.
+      3. Lower-severity findings (suggestion / note) stay
+         informational in the review artifact — no new tickets,
+         no operator burden.
+
+    The feature itself doesn't need an explicit transition: with
+    derived feature state, the rollup picks up the new QUEUED
+    tickets and lands on ``queued`` (or ``in_progress`` once the
+    operator launches the retry imp run).
     """
+    from wonderland.ticket import TicketRegistry
     from wonderland.ticket_lifecycle import (
         IllegalTransitionError as TicketIllegal,
         TicketState,
@@ -2659,20 +2771,26 @@ def _abort_tickets_on_blocking_review(
         transition as ticket_transition,
     )
 
-    notes = (
-        f"Auto-abort from {meeting_id!r} on request-changes verdict "
-        f"({review_slug!r}); operator can re-queue from the dashboard."
+    review_slug = (
+        review_payload.get("slug")
+        or review_payload.get("title")
+        or "(unknown review)"
     )
+
+    # Step 1: mark in-flight tickets DONE.
     ticket_to_feature = _ticket_to_feature_map(project_root)
     feature_tickets = [
         slug for slug, feat in ticket_to_feature.items()
         if feat == feature_slug
     ]
+    done_notes = (
+        f"Auto-complete from {meeting_id!r} on request-changes "
+        f"verdict ({review_slug!r}); follow-up tickets synthesized "
+        f"from review findings."
+    )
     for ticket_slug in feature_tickets:
         state = get_ticket_state(project_root, ticket_slug)
         if state is None:
-            # No lifecycle record yet — back-fill to in_progress so
-            # the abort transition is legal.
             try:
                 back_fill_state(
                     project_root,
@@ -2680,7 +2798,7 @@ def _abort_tickets_on_blocking_review(
                     TicketState.IN_PROGRESS,
                     notes=(
                         "Back-filled to in_progress before "
-                        "request-changes abort"
+                        "request-changes done-marking"
                     ),
                 )
                 state = TicketState.IN_PROGRESS
@@ -2692,13 +2810,59 @@ def _abort_tickets_on_blocking_review(
             ticket_transition(
                 project_root,
                 ticket_slug,
-                TicketState.ABORTED,
+                TicketState.DONE,
                 by=actor,
-                notes=notes,
+                notes=done_notes,
             )
         except TicketIllegal:
-            # Already terminal or other illegal — swallow; the
-            # transition layer shouldn't break meeting flow.
+            continue
+
+    # Step 2: synthesize follow-up tickets from findings.
+    findings = review_payload.get("findings")
+    if not isinstance(findings, list):
+        return
+    registry = TicketRegistry(project_root)
+    queue_notes = (
+        f"Synthesized from review ``{review_slug}`` finding; "
+        f"queued for next imp run."
+    )
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        payload = _synthesize_followup_ticket_from_finding(
+            finding,
+            parent_feature_slug=feature_slug,
+            review_slug=str(review_slug),
+        )
+        if payload is None:
+            continue
+        try:
+            record = registry.write(payload)
+        except Exception:  # noqa: BLE001 — registry write
+            # could fail on disk pressure / duplicate slug; skip
+            # this finding's follow-up rather than break the
+            # meeting flow.
+            continue
+        # Transition the new ticket to QUEUED so it's picked up
+        # on the next imp run. Back-fill PENDING first since
+        # fresh tickets have no lifecycle record yet.
+        try:
+            back_fill_state(
+                project_root,
+                record.slug,
+                TicketState.PENDING,
+                notes=queue_notes,
+            )
+            ticket_transition(
+                project_root,
+                record.slug,
+                TicketState.QUEUED,
+                by=actor,
+                notes=queue_notes,
+            )
+        except TicketIllegal:
+            continue
+        except Exception:  # noqa: BLE001
             continue
 
 
@@ -2840,10 +3004,10 @@ def _apply_post_meeting_transitions(
             new_utterances, feature_slug
         )
         if blocking_review is not None:
-            _abort_tickets_on_blocking_review(
+            _route_blocking_review(
                 project_root,
                 feature_slug=feature_slug,
-                review_slug=blocking_review,
+                review_payload=blocking_review,
                 actor=actor,
                 meeting_id=meeting.id,
             )

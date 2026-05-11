@@ -1425,26 +1425,35 @@ class TestResolveSeeds:
         )
         assert [t["slug"] for t in tickets] == ["alpha"]
 
-    def test_request_changes_review_aborts_tickets_not_advance_feature(
+    def test_request_changes_review_synthesizes_followup_tickets(
         self, tmp_path: Path
     ) -> None:
         """When a meeting emits a review with ``verdict=request-changes``,
-        the substrate skips the normal feature transition (which would
-        land it on ``ready_for_review``) and instead marks every
-        currently-in_progress ticket of that feature as ABORTED with
-        notes citing the review. Operator's next move is the per-ticket
-        re-queue from the dashboard — the loop closes."""
+        the substrate:
+          1. Marks the iteration's in-progress tickets DONE (they
+             shipped their scope; findings address coherence gaps).
+          2. Synthesizes follow-up tickets from the review's
+             ``findings`` (severities block + change-required only).
+          3. Queues the new tickets via ticket_lifecycle so the
+             next imp run iterates only the follow-ups.
+
+        Replaces the prior "mark all in-progress tickets ABORTED"
+        behavior, which forced a 9-ticket retry pass for what was
+        really 2-3 specific findings."""
         from wonderland.feature_lifecycle import (
             FeatureState,
-            get_state as get_feature_state,
             transition as feature_transition,
         )
+        from wonderland.ticket import TicketRegistry, TicketStackSpan
         from wonderland.ticket_lifecycle import (
             TicketState,
             get_state as get_ticket_state,
             transition as ticket_transition,
         )
-        from wonderland.workflow import _apply_post_meeting_transitions
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            _apply_post_meeting_transitions,
+        )
 
         wonderland = tmp_path / ".wonderland"
         (wonderland / "features").mkdir(parents=True)
@@ -1460,45 +1469,63 @@ class TestResolveSeeds:
                 encoding="utf-8",
             )
 
-        # Feature has rolled through to queued + in_progress; both
-        # tickets are in_progress mid-run.
         for st in (
             FeatureState.PROPOSED,
             FeatureState.IN_DESIGN,
             FeatureState.DESIGNED,
-            FeatureState.QUEUED,
-            FeatureState.IN_PROGRESS,
         ):
             feature_transition(tmp_path, "xp", st, by="test")
-        ticket_transition(
-            tmp_path, "alpha", TicketState.QUEUED, by="operator"
-        )
-        ticket_transition(
-            tmp_path, "alpha", TicketState.IN_PROGRESS, by="system"
-        )
-        ticket_transition(
-            tmp_path, "beta", TicketState.QUEUED, by="operator"
-        )
-        ticket_transition(
-            tmp_path, "beta", TicketState.IN_PROGRESS, by="system"
-        )
+        for slug in ("alpha", "beta"):
+            ticket_transition(
+                tmp_path, slug, TicketState.QUEUED, by="operator"
+            )
+            ticket_transition(
+                tmp_path, slug, TicketState.IN_PROGRESS, by="system"
+            )
 
-        # M8 emits a review with verdict=request-changes.
+        # M8 emits a review with two block findings + one suggestion.
+        # Only the block findings should turn into follow-up tickets.
         review_utt = _utt(
             thread_id="review-xp",
             speaker="caterpillar",
             artifacts=[
                 _art(
                     "review",
-                    slug="xp-cross-ticket-coherence",
+                    slug="xp-coherence",
                     title="cross-ticket coherence",
                     verdict="request-changes",
+                    findings=[
+                        {
+                            "severity": "block",
+                            "title": "Frontend reads stale data",
+                            "location": "frontend/src/api.ts:42",
+                            "quote": "fetch('/api/xp')",
+                            "read": "ignores cache invalidation",
+                            "concern": "stale data shown after refresh",
+                            "request": "call invalidate before fetch",
+                        },
+                        {
+                            "severity": "change-required",
+                            "title": "Backend missing validation",
+                            "location": "src/backend/api/xp.py:12",
+                            "quote": "amount = request.json['amount']",
+                            "read": "trusts client int",
+                            "concern": "negative amounts pass through",
+                            "request": "validate amount > 0",
+                        },
+                        {
+                            "severity": "suggestion",
+                            "title": "Could use a constant",
+                            "location": "frontend/src/api.ts:5",
+                            "quote": "const URL = '/api/xp'",
+                            "read": "hardcoded URL",
+                            "concern": "magic string",
+                            "request": "extract to config",
+                        },
+                    ],
                 )
             ],
         )
-
-        # Build the M8 Meeting object the substrate inspects.
-        from wonderland.workflow import Meeting as MeetingCls
 
         m8 = MeetingCls.model_validate({
             "id": "review",
@@ -1507,7 +1534,6 @@ class TestResolveSeeds:
             "goal": "review the feature's deliverable",
             "roster": ["caterpillar"],
             "per_item": "feature",
-            "transition_iteration_to": "ready_for_review",
             "seeds": [],
         })
 
@@ -1521,17 +1547,41 @@ class TestResolveSeeds:
             current_item_slug="xp",
         )
 
-        # Feature must NOT have advanced to ready_for_review.
-        assert (
-            get_feature_state(tmp_path, "xp")
-            == FeatureState.IN_PROGRESS
-        )
-        # Both tickets that were in_progress must be ABORTED with
-        # notes referencing the review.
+        # Original tickets transitioned to DONE.
         for slug in ("alpha", "beta"):
             assert (
-                get_ticket_state(tmp_path, slug) == TicketState.ABORTED
-            ), f"expected ticket {slug} to be ABORTED"
+                get_ticket_state(tmp_path, slug) == TicketState.DONE
+            ), f"expected {slug} → DONE; got {get_ticket_state(tmp_path, slug)}"
+
+        # Two follow-up tickets synthesized (block + change-required
+        # findings); the suggestion finding did NOT spawn a ticket.
+        records = TicketRegistry(tmp_path).list_tickets()
+        followups = [
+            r for r in records
+            if r.slug not in ("alpha", "beta")
+        ]
+        assert len(followups) == 2, (
+            f"expected 2 follow-up tickets; got "
+            f"{[r.slug for r in followups]}"
+        )
+
+        # Stack-span derivation: frontend finding → frontend ticket;
+        # backend finding → backend ticket.
+        from wonderland.ticket import read_ticket_stack_span
+
+        spans = {
+            r.slug: read_ticket_stack_span(tmp_path, r.slug)
+            for r in followups
+        }
+        assert TicketStackSpan.FRONTEND in spans.values()
+        assert TicketStackSpan.BACKEND in spans.values()
+
+        # All follow-ups are QUEUED.
+        for r in followups:
+            assert (
+                get_ticket_state(tmp_path, r.slug)
+                == TicketState.QUEUED
+            ), f"expected {r.slug} → QUEUED"
 
     def test_accept_review_completes_tickets_and_derives_ready(
         self, tmp_path: Path
