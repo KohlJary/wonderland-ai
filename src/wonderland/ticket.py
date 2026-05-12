@@ -191,6 +191,42 @@ _STACK_SPAN_RE = re.compile(
 )
 
 
+_BLOCKED_BY_RE = re.compile(
+    r"^\s*-\s*Blocked by:\s*(.+?)\s*$",
+    re.MULTILINE,
+)
+
+
+def read_ticket_blocked_by(
+    project_root: Path, slug: str
+) -> list[str]:
+    """Parse the ``- Blocked by:`` line from a ticket's on-disk
+    markdown into a list of dependency slugs. Returns an empty list
+    when the ticket file is missing, unreadable, the line is absent,
+    or the value is the literal "—" placeholder Rabbit writes when
+    there are no dependencies. Slugs are trimmed and stripped of
+    blanks; order matches what the operator/Rabbit wrote.
+    """
+    record = TicketRegistry(project_root).find_by_slug(slug)
+    if record is None:
+        return []
+    try:
+        text = record.path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    match = _BLOCKED_BY_RE.search(text)
+    if match is None:
+        return []
+    raw = match.group(1).strip()
+    if not raw or raw == "—":
+        return []
+    return [
+        part.strip()
+        for part in raw.split(",")
+        if part.strip() and part.strip() != "—"
+    ]
+
+
 class TicketRegistry:
     """Read/write registry over ``<project_root>/.wonderland/tickets/``.
 

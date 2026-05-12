@@ -623,10 +623,19 @@ class LiveRunScreen(Screen[None]):
 
     def _handle_artifact_shipped(self, event: "ArtifactShipped") -> None:
         a = event.artifact
-        # Attribute to the most-recently-opened meeting on the bus
-        # (tracked via _last_open_thread_id in _handle_meeting_started).
-        # Distinct from _selected_thread_id, which is user-driven.
-        owning_thread = self._last_open_thread_id or _ALL_MEETINGS
+        # Attribute to the thread the carrying utterance was emitted
+        # on. Parallel per_item iterations share the same meeting id
+        # but different thread_ids; without this, _last_open_thread_id
+        # races and attributes everything to the most-recently-opened
+        # iteration so the artifact browser only shows the last one's
+        # output. Falls back to _last_open_thread_id for old replays
+        # whose events were logged before thread_id landed on the
+        # ArtifactShipped event.
+        owning_thread = (
+            event.thread_id
+            or self._last_open_thread_id
+            or _ALL_MEETINGS
+        )
         self._meeting_artifacts[_ALL_MEETINGS].append(a)
         thread_artifacts = self._meeting_artifacts.setdefault(owning_thread, [])
         thread_artifacts.append(a)

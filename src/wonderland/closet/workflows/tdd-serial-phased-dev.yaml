@@ -31,3 +31,4 @@ defaults:
 # `extends:` mechanism (workflow.load_workflow). Defaults shallow-merge
 # (parent + child, child wins), so this file only needs to declare the
 # fields it changes (model, plus a budget reaffirmation).
+category: legacy

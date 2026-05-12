@@ -1547,6 +1547,16 @@ class ProjectDashboardScreen(Screen[None]):
         # mismatch fix in analysis 040 vintage).
         feature_to_tickets = self._load_ticket_tree()
 
+        # Pre-compute the ticket state map + blocked-by lookups so
+        # rendering is O(tickets) disk reads instead of
+        # O(tickets × deps). State map folds all_transitions once;
+        # blocked_by needs one read per ticket (could be cached too,
+        # but read counts are bounded by tree visibility).
+        state_map = self._current_ticket_state_map()
+        blocked_set = self._compute_blocked_tickets(
+            feature_to_tickets, state_map
+        )
+
         for row in visible:
             badge = _STATE_BADGE.get(row.state, "[dim]?[/dim]")
             title = row.title[:60] + ("…" if len(row.title) > 60 else "")
@@ -1589,8 +1599,17 @@ class ProjectDashboardScreen(Screen[None]):
                     badge_prefix = _TICKET_STATE_BADGE.get(
                         ticket_state, "[dim]·[/dim]"
                     )
+                    # Blocked badge — small lock prefix when this
+                    # ticket has unsatisfied blocked_by deps still
+                    # in the pipeline. Shows up alongside the state
+                    # badge so operator sees the gate at a glance.
+                    blocked_marker = (
+                        " [red]🔒[/red]"
+                        if ticket.slug in blocked_set
+                        else ""
+                    )
                     ticket_label = (
-                        f"{badge_prefix} {ticket_title}  "
+                        f"{badge_prefix}{blocked_marker} {ticket_title}  "
                         f"[dim]{ticket.slug}[/dim]"
                     )
                 node.add_leaf(
@@ -1634,9 +1653,20 @@ class ProjectDashboardScreen(Screen[None]):
                 continue
             out.setdefault(feature_slug, []).append(rec)
         # Sort tickets within each feature by ticket number for a
-        # stable, human-readable order.
+        # stable, human-readable order, then collapse duplicates
+        # (same case-insensitive title under the same feature) to the
+        # highest-numbered copy — that's the "latest" revision Rabbit
+        # produced when M3 revised mid-meeting. Operator can still see
+        # all copies via `wonderland list_tickets` on disk; this is a
+        # UI-only filter to keep the tree readable.
         for feature_slug in out:
-            out[feature_slug].sort(key=lambda r: r.number)
+            ordered = sorted(out[feature_slug], key=lambda r: r.number)
+            by_title: dict[str, object] = {}
+            for rec in ordered:
+                by_title[rec.title.strip().lower()] = rec
+            out[feature_slug] = sorted(
+                by_title.values(), key=lambda r: r.number  # type: ignore[arg-type]
+            )
         return out
 
     def _render_features_empty_state(self) -> None:
@@ -1731,6 +1761,17 @@ class ProjectDashboardScreen(Screen[None]):
         except Exception:  # noqa: BLE001
             pass
 
+    def on_screen_resume(self) -> None:
+        # Re-populate when the dashboard becomes the top screen again
+        # (e.g. operator just exited a live-run view). Feature state and
+        # the runs list both depend on disk state mutated by the run we
+        # just left, so without this the user has to manually click a
+        # filter chip or refresh to see updates.
+        self._populate_features()
+        self._populate_runs()
+        self._populate_artifacts()
+        self._populate_metrics()
+
     # ------------------------------------------------------------------ #
     # Actions
     # ------------------------------------------------------------------ #
@@ -1814,6 +1855,25 @@ class ProjectDashboardScreen(Screen[None]):
             target = TicketState.PENDING
             verb = "un-queued"
 
+        # Dependency gate — only applies when queueing. Unsatisfied
+        # blocked_by deps surface as a notification naming the
+        # offending slugs so the operator knows which tickets need
+        # to land first instead of failing silently. "Satisfied" =
+        # state ∈ {IN_PROGRESS, DONE} per the user's spec ("done or
+        # ready for review"). PENDING / QUEUED / ABORTED / None all
+        # count as still-blocking.
+        if target == TicketState.QUEUED:
+            unsatisfied = self._unsatisfied_blocked_by(slug)
+            if unsatisfied:
+                slug_list = ", ".join(unsatisfied)
+                self.notify(
+                    f"Can't queue {slug!r} — blocked by: {slug_list}. "
+                    "Land or run those first.",
+                    severity="warning",
+                    timeout=8,
+                )
+                return
+
         current = get_ticket_state(self.project.root_path, slug)
         try:
             if current is None:
@@ -1870,6 +1930,94 @@ class ProjectDashboardScreen(Screen[None]):
         if node.data.get("kind") != "ticket":
             return None
         return node.data["record"]
+
+    def _current_ticket_state_map(self) -> dict[str, object]:
+        """Fold the ticket-states.jsonl into {slug: TicketState} once.
+        Cheap-O(N) over the log, used by _populate_features and the
+        blocked-by computation so we don't re-read the log per ticket.
+        Returns an empty dict if the log can't be read at all."""
+        try:
+            from wonderland.ticket_lifecycle import all_transitions
+
+            current: dict[str, object] = {}
+            for record in all_transitions(self.project.root_path):
+                current[record.ticket_slug] = record.to_state
+            return current
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _compute_blocked_tickets(
+        self,
+        feature_to_tickets: dict[str, list],
+        state_map: dict[str, object],
+    ) -> set[str]:
+        """Set of ticket slugs whose blocked_by deps aren't all in
+        a satisfying state. Satisfied = state ∈ {IN_PROGRESS, DONE}.
+        Pure read pass — one ticket-file read per ticket to parse
+        the Blocked-by line; deps then looked up in ``state_map``
+        without further disk I/O.
+        """
+        from wonderland.ticket import read_ticket_blocked_by
+
+        try:
+            from wonderland.ticket_lifecycle import TicketState
+        except Exception:  # noqa: BLE001
+            return set()
+
+        satisfying = {TicketState.IN_PROGRESS, TicketState.DONE}
+        blocked: set[str] = set()
+        # Build a set of all known ticket slugs from the tree so we
+        # silently skip dep references that aren't real tickets.
+        known_slugs = {
+            tk.slug
+            for tickets in feature_to_tickets.values()
+            for tk in tickets
+        }
+        for tickets in feature_to_tickets.values():
+            for ticket in tickets:
+                deps = read_ticket_blocked_by(
+                    self.project.root_path, ticket.slug
+                )
+                if not deps:
+                    continue
+                for dep in deps:
+                    if dep not in known_slugs:
+                        continue
+                    if state_map.get(dep) not in satisfying:
+                        blocked.add(ticket.slug)
+                        break
+        return blocked
+
+    def _unsatisfied_blocked_by(self, ticket_slug: str) -> list[str]:
+        """Return the slugs of blocked_by deps that haven't reached
+        a satisfying state. Satisfied = ticket_lifecycle state ∈
+        {IN_PROGRESS, DONE}. PENDING / QUEUED / ABORTED / no-record
+        all count as still-blocking. Missing dep tickets (slug
+        doesn't resolve to a file on disk) are skipped silently —
+        Rabbit sometimes invents soft references that aren't real
+        ticket slugs and we'd rather not block on those.
+        """
+        from wonderland.ticket import (
+            TicketRegistry,
+            read_ticket_blocked_by,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+        )
+
+        deps = read_ticket_blocked_by(self.project.root_path, ticket_slug)
+        if not deps:
+            return []
+        registry = TicketRegistry(self.project.root_path)
+        unsatisfied: list[str] = []
+        for dep in deps:
+            if registry.find_by_slug(dep) is None:
+                continue  # not a real ticket slug; skip
+            state = get_ticket_state(self.project.root_path, dep)
+            if state not in (TicketState.IN_PROGRESS, TicketState.DONE):
+                unsatisfied.append(dep)
+        return unsatisfied
 
     def _handle_feature_action(self, button_id: str) -> None:
         """Per-feature action dispatch. Most actions are now bulk

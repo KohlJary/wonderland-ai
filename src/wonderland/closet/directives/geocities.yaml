@@ -16,3 +16,4 @@ body: |
 suggested_workflow: tdd-serial
 suggested_skeleton: fullstack-fastapi-react
 tags: [showcase, banner, gdpr, multi-tenant]
+category: demo

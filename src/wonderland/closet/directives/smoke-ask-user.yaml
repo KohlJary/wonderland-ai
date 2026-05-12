@@ -56,3 +56,4 @@ body: |
 suggested_workflow: smoke-ask-user
 suggested_skeleton: fullstack-fastapi-react
 tags: [smoke, ui, modal, ask-user]
+category: utility

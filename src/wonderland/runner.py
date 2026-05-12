@@ -437,6 +437,7 @@ class Runner:
                 bus=bus,
                 llm=llm_factory("alice", telemetry),
                 story_registry=StoryRegistry(project_root),
+                test_scenario_registry=TestScenarioRegistry(project_root),
             ),
             "cheshire_cat": CheshireCat(
                 memory=memories["cheshire_cat"],

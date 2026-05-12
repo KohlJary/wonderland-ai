@@ -87,6 +87,30 @@ class DirectivePreset(BaseModel):
             "e.g. ['greenfield', 'feature-rich']."
         ),
     )
+    category: str | None = Field(
+        default=None,
+        description=(
+            "Higher-level grouping shown in the preset picker as a "
+            "dropdown header. Free-form string; normalized to lower "
+            "case via ``normalized_category`` before comparison so "
+            "'Demo', 'demo', 'DEMO' all collapse. Examples: "
+            "'demo' (showcase directives for kicking off projects), "
+            "'utility' (project-underway housekeeping), 'workflow' "
+            "(directives written for a specific workflow). ``None`` "
+            "means uncategorized — they sort at the bottom under "
+            "an 'Other' header."
+        ),
+    )
+
+    @property
+    def normalized_category(self) -> str:
+        """Case-insensitive category for grouping. Empty / None
+        normalises to ``"other"`` so uncategorized presets cluster
+        at the bottom of the picker under a single bucket."""
+        if self.category is None:
+            return "other"
+        stripped = self.category.strip().lower()
+        return stripped or "other"
 
 
 def directives_dir() -> Path:

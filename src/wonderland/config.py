@@ -55,16 +55,23 @@ class AnthropicConfig:
 
 @dataclass
 class UIConfig:
-    """User-level UI preferences. Currently just the welcome-screen
-    toggle; expand as the TUI grows other persistent preferences
-    (default theme, default project, etc.).
+    """User-level UI preferences. Currently the welcome-screen and
+    update-check toggles; expand as the TUI grows other persistent
+    preferences (default theme, default project, etc.).
 
     show_welcome: when True, the welcome modal fires on app startup.
     Operators can dismiss it permanently via the modal's checkbox or
     re-enable it from Settings.
+
+    check_updates: when True, the TUI hits PyPI on startup and pops a
+    modal if a newer ``wonderland-ai`` release is available. The check
+    is best-effort — network failures are swallowed silently so a
+    disconnected operator still gets to work. Toggleable from the
+    update modal's "don't check again" checkbox.
     """
 
     show_welcome: bool = True
+    check_updates: bool = True
 
 
 @dataclass
@@ -92,6 +99,7 @@ def load_config(*, path: Path | None = None) -> WonderlandConfig:
         ),
         ui=UIConfig(
             show_welcome=ui_raw.get("show_welcome", True),
+            check_updates=ui_raw.get("check_updates", True),
         ),
     )
 

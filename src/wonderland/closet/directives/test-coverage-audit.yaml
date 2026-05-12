@@ -1,0 +1,30 @@
+name: test-coverage-audit
+title: Test coverage audit — identify untested code paths
+description: |
+  Project-underway audit. Hatter + Tweedles surface modules and code
+  paths that lack test coverage, then ship tickets to close the gaps.
+  Best run periodically; coverage drift after a few implementation
+  passes is the failure mode this catches.
+body: |
+  Audit test coverage. For each module / package in src/:
+
+  - Identify code paths that have no test exercising them. Use
+    `pytest --cov` or the equivalent for your stack as the
+    ground truth.
+  - Triage the gaps by risk:
+    - High: error handling, data layer mutations, auth checks,
+      anything the user trusts to be correct silently.
+    - Medium: feature happy-paths that have no test even though
+      the acceptance criteria are observable.
+    - Low: dead code, defensive branches the type system already
+      rules out, glue code with no logic.
+  - For each High / Medium gap, ship a ticket whose acceptance is
+    "a failing test exists for this path, and a passing
+    implementation does not regress it."
+
+  Don't paper-coverage trivially — a test that asserts True is
+  worse than no test. Each ticket should name what the test
+  exercises in plain English.
+suggested_workflow: tdd-design
+tags: [audit, testing, project-underway]
+category: utility

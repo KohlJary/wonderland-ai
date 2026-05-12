@@ -123,6 +123,18 @@ class Project(BaseModel):
             "project. None until the first run completes."
         ),
     )
+    prime_directive: str | None = Field(
+        default=None,
+        description=(
+            "Operator-blessed canonical directive for the project. "
+            "Used by NewRunScreen's preset table as a 'Prime' "
+            "starting point so design passes on long-running projects "
+            "stay oriented across N>1 runs. Auto-populated from the "
+            "first non-empty directive launched against the project; "
+            "subsequent updates currently require editing the registry "
+            "(in-TUI editor lands in a follow-on)."
+        ),
+    )
     archived: bool = Field(
         default=False,
         description=(

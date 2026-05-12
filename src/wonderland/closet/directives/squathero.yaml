@@ -21,3 +21,4 @@ body: |
   an LLM to generate a gym routine with the equipment I have available.
 suggested_workflow: tdd-design
 tags: [casual-tone, llm-integration, gamification, no-stack-hint]
+category: demo

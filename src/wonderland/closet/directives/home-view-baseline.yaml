@@ -1,0 +1,26 @@
+name: home-view-baseline
+title: Home view baseline — ensure a navigable landing exists
+description: |
+  Project-underway baseline directive. Use when feature work has
+  produced sub-pages / sub-routes but no coherent landing surface
+  exists yet. Drives Rabbit to design a home view that anchors
+  the existing features and gives users a place to start.
+body: |
+  The project has features but no home view (or the home view is
+  the framework's default scaffold). Design a real home view:
+
+  - Read the existing feature manifest. Which features are
+    user-facing? Which want surfacing on the landing page?
+  - Compose a home view that:
+    - Names what the project does in one sentence (visible above
+      the fold).
+    - Surfaces the 2-4 most important user-facing features as
+      direct entry points (cards / buttons / links).
+    - Shows the user's state on return visits (recent activity,
+      saved settings, last-place-they-were) when that's
+      applicable to this project.
+  - The home view is itself a feature with a ticket; ship it as
+    such — don't smuggle it in as ambient scaffolding.
+suggested_workflow: tdd-design
+tags: [ui, baseline, project-underway]
+category: utility

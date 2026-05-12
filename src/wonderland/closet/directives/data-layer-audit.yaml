@@ -1,0 +1,30 @@
+name: data-layer-audit
+title: Data layer audit — model coverage + migrations sanity
+description: |
+  Project-underway audit directive. Use when the codebase has features
+  but you want to confirm the data layer matches the feature
+  manifest — every persisted concept has a model + migration, model
+  fields align with feature acceptance criteria, indexes cover the
+  obvious access patterns. Best run on a quiet branch with no live
+  ticket work.
+body: |
+  Audit the data layer. For each feature in the project, verify:
+
+  - Every persisted concept the feature names is represented as a
+    model (SQLAlchemy / Prisma / equivalent).
+  - Every model has a corresponding migration, and migrations are
+    in linear order (no dangling heads).
+  - Model fields cover the feature's acceptance criteria — flag any
+    feature whose acceptance criterion references a value the
+    model can't represent.
+  - Indexes exist for the obvious query patterns (foreign keys,
+    fields used in WHERE / ORDER BY).
+  - Cascade + delete behavior matches the feature's intent (don't
+    silently orphan rows).
+
+  Ship tickets for each gap surfaced. Don't add speculative fields
+  the features don't justify; the audit is for missing coverage,
+  not gold-plating.
+suggested_workflow: tdd-design
+tags: [audit, data, project-underway]
+category: utility

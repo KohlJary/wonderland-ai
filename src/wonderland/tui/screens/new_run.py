@@ -54,13 +54,14 @@ from wonderland.skeleton import is_bare_project_root
 from wonderland.tui.screens.launch_confirmation import LaunchConfirmationScreen
 from wonderland.tui.screens.settings import SettingsScreen
 from wonderland.tui.screens.skeleton_picker import SkeletonPickerScreen
-from wonderland.workflow import list_workflows, load_workflow
+from wonderland.workflow import Workflow, list_workflows, load_workflow
 
 
 # Sentinel name for the "blank directive" pseudo-row at the top of
 # the preset table — selecting it clears the composer + description
 # so the user starts fresh.
 _BLANK_PRESET = "__blank__"
+_PRIME_PRESET = "__prime__"
 
 
 class NewRunScreen(Screen[None]):
@@ -87,11 +88,11 @@ class NewRunScreen(Screen[None]):
         "preset-table",
         "directive-composer",
         "description-composer",
-        "workflow-select",
-        "budget-input",
-        "project-input",
         "save-checkbox",
         "save-name-input",
+        "workflow-table",
+        "project-input",
+        "budget-input",
         "go-button",
     )
 
@@ -127,6 +128,20 @@ class NewRunScreen(Screen[None]):
         # Cache of (display_name, preset) tuples in display order so
         # row index → preset is a constant-time lookup.
         self._presets: list[tuple[str, DirectivePreset]] = []
+        # Same shape for the workflow picker — parallel list of
+        # (name, workflow) tuples. None payload = separator row.
+        self._workflows: list[tuple[str, Workflow | None]] = []
+        # Currently-selected workflow name; replaces the legacy
+        # Select widget. None until the user picks a row OR a
+        # default lands via on_mount.
+        self._selected_workflow_name: str | None = None
+        # Per-meeting enable/disable state for the currently-
+        # selected workflow. Map of meeting_id → enabled bool;
+        # rebuilt on workflow selection. Pre-filled True for all
+        # meetings. Wiring to actually skip disabled meetings on
+        # launch lands in a follow-on — the UI surface is here as
+        # the foundation for the broader run-config knob set.
+        self._meeting_enabled: dict[str, bool] = {}
         # Track whether the operator has explicitly OK'd launching
         # without a directive (via the empty-directive confirmation
         # modal). Lets the team work from seeds alone (features /
@@ -150,9 +165,16 @@ class NewRunScreen(Screen[None]):
                     "[dim](no project context)[/dim]",
                     id="new-run-header",
                 )
-            with Horizontal(id="new-run-main"):
+
+            # ── Row 1: directives ───────────────────────────────
+            # Three-pane row mirroring the workflow row below.
+            # Left: preset picker. Middle: directive composer.
+            # Right: directive description (the saved-preset summary)
+            # plus the save-as-preset controls tucked underneath
+            # since they belong to the directive shape.
+            with Horizontal(id="directive-row"):
                 with Vertical(id="preset-pane"):
-                    yield Static("[b]Presets[/b]", id="preset-label")
+                    yield Static("[b]Directives[/b]", id="preset-label")
                     yield DataTable(
                         id="preset-table",
                         cursor_type="row",
@@ -164,8 +186,10 @@ class NewRunScreen(Screen[None]):
                         id="directive-composer",
                         language=None,  # plain text
                     )
+                with Vertical(id="directive-summary-pane"):
                     yield Static(
-                        "[b]Description[/b] [dim](optional — used if saved as preset)[/dim]",
+                        "[b]Description[/b] "
+                        "[dim](optional — used if saved as preset)[/dim]",
                         id="description-label",
                     )
                     yield TextArea(
@@ -173,24 +197,63 @@ class NewRunScreen(Screen[None]):
                         id="description-composer",
                         language=None,
                     )
-            yield Static("[b]Configuration[/b]", id="config-label")
-            with Horizontal(id="config-row"):
-                yield Label("Workflow:", id="workflow-label")
-                # Prefill workflow from project default when the
-                # project is set AND the workflow exists in the
-                # bundled list. The Select widget is set after mount
-                # via on_mount so we don't have to fight Select's
-                # value= constructor (which rejects None / sentinels
-                # depending on Textual version).
-                yield Select(
-                    [(w, w) for w in list_workflows()],
-                    id="workflow-select",
-                    allow_blank=True,
-                    prompt="(pick a workflow)",
+                    yield Static(
+                        "[b]Save as preset[/b]",
+                        id="save-section-label",
+                    )
+                    yield Checkbox(
+                        "Save current directive",
+                        value=False,
+                        id="save-checkbox",
+                    )
+                    yield Input(
+                        placeholder="my-directive-name",
+                        id="save-name-input",
+                    )
+
+            # ── Row 2: workflows ────────────────────────────────
+            # Same three-pane shape: picker, meetings list with
+            # enable/disable checkboxes, workflow summary.
+            with Horizontal(id="workflow-row"):
+                with Vertical(id="workflow-pane"):
+                    yield Static(
+                        "[b]Workflows[/b]", id="workflow-label"
+                    )
+                    yield DataTable(
+                        id="workflow-table",
+                        cursor_type="row",
+                    )
+                with Vertical(id="workflow-meetings-pane"):
+                    yield Static(
+                        "[b]Meetings[/b]", id="workflow-meetings-label"
+                    )
+                    # Container that holds dynamically-added Checkbox
+                    # widgets — rebuilt on workflow selection.
+                    yield Vertical(id="meetings-list")
+                with Vertical(id="workflow-summary-pane"):
+                    yield Static(
+                        "[b]About this workflow[/b]",
+                        id="workflow-summary-label",
+                    )
+                    yield Static(
+                        "[dim]Pick a workflow from the left to see "
+                        "its summary.[/dim]",
+                        id="workflow-summary",
+                    )
+
+            # ── Row 3: run controls ─────────────────────────────
+            # Project root, budget, action buttons. Smaller / denser
+            # than the two pane rows — these are top-level run knobs
+            # that don't need a full pane each.
+            yield Static("[b]Run controls[/b]", id="controls-label")
+            with Horizontal(id="controls-row"):
+                yield Label("Project root:", id="project-label")
+                yield Input(
+                    value=str(self.project_root),
+                    placeholder="/path/to/project",
+                    id="project-input",
                 )
-                yield Label("Budget (soft cap):", id="budget-label")
-                # Prefill budget from project default; legacy path
-                # uses the historical $5.00 default.
+                yield Label("Budget:", id="budget-label")
                 budget_value = (
                     f"{self.project.default_budget:.2f}"
                     if self.project is not None
@@ -198,28 +261,19 @@ class NewRunScreen(Screen[None]):
                 )
                 yield Input(
                     value=budget_value,
-                    placeholder="$ — runs can exceed by 10-20%",
+                    placeholder="$ — soft cap",
                     id="budget-input",
                 )
-            with Horizontal(id="project-row"):
-                yield Label("Project root:", id="project-label")
-                yield Input(
-                    value=str(self.project_root),
-                    placeholder="/path/to/project",
-                    id="project-input",
-                )
-            with Horizontal(id="save-row"):
+                # Auto-merge: when checked, the run-bg subprocess
+                # attempts a fast-forward merge of the run branch
+                # back into the source branch on clean completion.
+                # FF-only — if the source moved during the run, the
+                # branch stays in place for manual resolution.
                 yield Checkbox(
-                    "Save as preset",
+                    "Auto-merge branch on success",
                     value=False,
-                    id="save-checkbox",
+                    id="auto-merge-checkbox",
                 )
-                yield Label("Name:", id="save-name-label")
-                yield Input(
-                    placeholder="my-directive-name",
-                    id="save-name-input",
-                )
-            with Horizontal(id="action-row"):
                 yield Button(
                     "▶ Go (g)",
                     id="go-button",
@@ -250,10 +304,14 @@ class NewRunScreen(Screen[None]):
             and self.project.last_workflow in list_workflows()
         ):
             target_workflow = self.project.last_workflow
+
+        # Populate the workflow table + select the default row if
+        # there's a target. Falls back to whatever the first non-
+        # separator row is when target isn't bundled, so the user
+        # always lands on something concrete in the meetings pane.
+        self._populate_workflow_table()
         if target_workflow:
-            self.query_one(
-                "#workflow-select", Select
-            ).value = target_workflow
+            self._select_workflow_by_name(target_workflow)
 
         # T92 path: pre-fill the directive textarea when the action
         # button supplied one. Deferred via call_after_refresh because
@@ -302,41 +360,219 @@ class NewRunScreen(Screen[None]):
             "—",
         )
 
-        # Bundled
+        # Row 1 — project's prime directive (the canonical "what is
+        # this project for" preset). Only surfaces when a Project is
+        # bound and a prime_directive has been captured. Auto-set on
+        # the first non-empty directive launched against the project
+        # (see _launch_run); operator can edit + re-save to update.
+        if (
+            self.project is not None
+            and self.project.prime_directive is not None
+            and self.project.prime_directive.strip()
+        ):
+            self._presets.append((_PRIME_PRESET, None))  # type: ignore[arg-type]
+            table.add_row(
+                "[b accent]★ prime[/b accent]",
+                f"[dim]project canonical · "
+                f"{self.project.prime_directive.strip().splitlines()[0][:50]}"
+                "[/dim]",
+                self.project.last_workflow or "—",
+            )
+
+        # Bundled — grouped by category with separator rows. Within
+        # a category, presets sort alphabetically by name (the
+        # filesystem order from list_directives). Categories
+        # themselves sort alphabetically with 'other' pinned last so
+        # uncategorized presets cluster at the bottom of the bundled
+        # section. Case-insensitive comparison via normalized_category.
+        bundled: list[tuple[str, DirectivePreset]] = []
         for name in list_directives():
             try:
                 p = load_directive(name)
             except Exception:  # noqa: BLE001 — best-effort listing
                 continue
-            self._presets.append((name, p))
-            table.add_row(
-                name,
-                p.title[:50] + ("…" if len(p.title) > 50 else ""),
-                p.suggested_workflow or "—",
-            )
+            bundled.append((name, p))
+        self._render_preset_group(table, bundled)
 
-        # Project — inserted only when there's at least one
+        # Project — inserted only when there's at least one. Same
+        # category grouping applies to the project-local section.
         if self.project_root and self.project_root.is_dir():
             project_names = list_project_directives(self.project_root)
             if project_names:
-                # Visual separator row; use a tuple slot so the lookup
-                # array stays parallel with the table rows. None means
-                # "not selectable as a preset".
                 self._presets.append(("", None))  # type: ignore[arg-type]
                 table.add_row(
                     "[dim]──── project ────[/dim]", "", ""
                 )
+                project_loaded: list[tuple[str, DirectivePreset]] = []
                 for name in project_names:
                     try:
                         p = load_project_directive(name, self.project_root)
                     except Exception:  # noqa: BLE001
                         continue
-                    self._presets.append((name, p))
-                    table.add_row(
-                        name,
-                        p.title[:50] + ("…" if len(p.title) > 50 else ""),
-                        p.suggested_workflow or "—",
+                    project_loaded.append((name, p))
+                self._render_preset_group(table, project_loaded)
+
+    def _render_preset_group(
+        self,
+        table: "DataTable",
+        items: list[tuple[str, "DirectivePreset"]],
+    ) -> None:
+        """Append a list of presets to the table grouped by category.
+        Category headers are non-selectable separator rows (None
+        payload). 'other' sorts last so uncategorized presets don't
+        appear above categorized ones."""
+        if not items:
+            return
+        by_category: dict[str, list[tuple[str, "DirectivePreset"]]] = {}
+        for name, preset in items:
+            by_category.setdefault(
+                preset.normalized_category, []
+            ).append((name, preset))
+
+        def _category_sort_key(cat: str) -> tuple[int, str]:
+            return (1 if cat == "other" else 0, cat)
+
+        for category in sorted(by_category, key=_category_sort_key):
+            entries = by_category[category]
+            self._presets.append(("", None))  # type: ignore[arg-type]
+            table.add_row(
+                f"[dim]── {category} ──[/dim]", "", ""
+            )
+            for name, preset in entries:
+                self._presets.append((name, preset))
+                table.add_row(
+                    name,
+                    preset.title[:50]
+                    + ("…" if len(preset.title) > 50 else ""),
+                    preset.suggested_workflow or "—",
+                )
+
+    # ------------------------------------------------------------------ #
+    # Workflow picker (post-26 redesign)
+    # ------------------------------------------------------------------ #
+
+    def _populate_workflow_table(self) -> None:
+        """Build the workflow DataTable from ``list_workflows``,
+        grouped by category. Same shape as ``_populate_presets``:
+        category-header rows are non-selectable separators with
+        ``None`` payload; selectable rows carry the workflow object."""
+        try:
+            table = self.query_one("#workflow-table", DataTable)
+        except Exception:  # noqa: BLE001 — pre-mount race
+            return
+        table.clear(columns=True)
+        table.add_columns("Name", "Meetings", "Description")
+
+        self._workflows = []
+        loaded: list[tuple[str, Workflow]] = []
+        for name in list_workflows():
+            try:
+                w = load_workflow(name)
+            except Exception:  # noqa: BLE001 — best-effort listing
+                continue
+            loaded.append((name, w))
+
+        by_category: dict[str, list[tuple[str, Workflow]]] = {}
+        for name, w in loaded:
+            by_category.setdefault(
+                w.normalized_category, []
+            ).append((name, w))
+
+        def _category_sort_key(cat: str) -> tuple[int, str]:
+            return (1 if cat in ("other", "legacy") else 0, cat)
+
+        for category in sorted(by_category, key=_category_sort_key):
+            self._workflows.append(("", None))
+            table.add_row(
+                f"[dim]── {category} ──[/dim]", "", ""
+            )
+            for name, w in by_category[category]:
+                self._workflows.append((name, w))
+                desc_first_line = (
+                    w.description.strip().splitlines()[0]
+                    if w.description.strip()
+                    else "—"
+                )
+                table.add_row(
+                    name,
+                    str(len(w.meetings)),
+                    desc_first_line[:40]
+                    + ("…" if len(desc_first_line) > 40 else ""),
+                )
+
+    def _select_workflow_by_name(self, name: str) -> None:
+        """Programmatically pick a workflow by name. Moves the
+        DataTable cursor + fires the detail render. Used by the
+        on-mount default-selection path and preset suggestion."""
+        for idx, (rn, w) in enumerate(self._workflows):
+            if rn == name and w is not None:
+                try:
+                    table = self.query_one(
+                        "#workflow-table", DataTable
                     )
+                    table.move_cursor(row=idx)
+                except Exception:  # noqa: BLE001
+                    pass
+                self._on_workflow_row_highlighted(idx)
+                return
+
+    def _on_workflow_row_highlighted(self, row: int | None) -> None:
+        """Cursor landed on a workflow row → update selection + render
+        the meetings list + summary. Separator rows leave selection
+        unchanged so the operator can scroll past headers without
+        losing their pick."""
+        if row is None or row < 0 or row >= len(self._workflows):
+            return
+        name, workflow = self._workflows[row]
+        if workflow is None:
+            # Separator — keep prior selection.
+            return
+        self._selected_workflow_name = name
+        self._render_workflow_detail(workflow)
+
+    def _render_workflow_detail(self, workflow: Workflow) -> None:
+        """Populate the meetings list (with enable/disable checkboxes)
+        and the workflow summary pane."""
+        # Reset meeting enable state — default-on for every meeting
+        # in the newly-selected workflow.
+        self._meeting_enabled = {m.id: True for m in workflow.meetings}
+
+        # Rebuild meetings list. Textual's mount() lets us add nodes
+        # one at a time; remove existing first to avoid duplicates
+        # on re-selection.
+        try:
+            container = self.query_one("#meetings-list", Vertical)
+        except Exception:  # noqa: BLE001
+            return
+        for child in list(container.children):
+            child.remove()
+        for meeting in workflow.meetings:
+            container.mount(
+                Checkbox(
+                    f"{meeting.label}  {meeting.name}",
+                    value=True,
+                    id=f"meeting-toggle-{meeting.id}",
+                )
+            )
+
+        # Summary panel: workflow blurb + meeting count + category +
+        # any pipeline indicator.
+        summary_lines = []
+        if workflow.description.strip():
+            summary_lines.append(workflow.description.strip())
+        meta = [
+            f"[b]{len(workflow.meetings)}[/b] meetings",
+            f"category: [b]{workflow.normalized_category}[/b]",
+        ]
+        if workflow.pipeline is not None:
+            meta.append("pipeline mode")
+        summary_lines.append("\n[dim]" + " · ".join(meta) + "[/dim]")
+        try:
+            self.query_one("#workflow-summary", Static).update(
+                "\n\n".join(summary_lines)
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------ #
     # Selection-driven population (lazygit pattern)
@@ -355,6 +591,9 @@ class NewRunScreen(Screen[None]):
           - Separator row (None payload, not blank): leave editors
             alone.
         """
+        if event.data_table.id == "workflow-table":
+            self._on_workflow_row_highlighted(event.cursor_row)
+            return
         if event.data_table.id != "preset-table":
             return
         row = event.cursor_row
@@ -372,19 +611,35 @@ class NewRunScreen(Screen[None]):
             # Don't touch workflow — user picks.
             return
 
+        if name == _PRIME_PRESET:
+            # Pop the project's canonical directive into the composer.
+            # Description gets a generated one-liner since prime is
+            # stored as raw text without metadata.
+            if (
+                self.project is not None
+                and self.project.prime_directive is not None
+            ):
+                composer.text = self.project.prime_directive
+                description.text = (
+                    f"Prime directive for project "
+                    f"{self.project.name}."
+                )
+                if self.project.last_workflow:
+                    self._select_workflow_by_name(
+                        self.project.last_workflow
+                    )
+            return
+
         if preset is None:
             # Inert separator row.
             return
 
         composer.text = preset.body
         description.text = preset.description
-        # Workflow pre-select (always overridable). The Select.Changed
-        # event fires async but on_select_changed checks has_focus
-        # before advancing, so this programmatic update doesn't jump
-        # past the user.
+        # Workflow pre-select (always overridable). Drives the
+        # workflow row's middle/right panes via _render_workflow_detail.
         if preset.suggested_workflow:
-            sel = self.query_one("#workflow-select", Select)
-            sel.value = preset.suggested_workflow
+            self._select_workflow_by_name(preset.suggested_workflow)
         # Pre-fill the save-name input with the preset's name as a
         # convenience (user is likely editing-then-resaving). Only
         # populate when the field is currently empty so we don't
@@ -433,7 +688,7 @@ class NewRunScreen(Screen[None]):
         description = self.query_one(
             "#description-composer", TextArea
         ).text.strip()
-        workflow_name = self.query_one("#workflow-select", Select).value
+        workflow_name = self._selected_workflow_name
         project_str = self.query_one("#project-input", Input).value
         budget_str = self.query_one("#budget-input", Input).value
         save_checked = self.query_one("#save-checkbox", Checkbox).value
@@ -452,14 +707,12 @@ class NewRunScreen(Screen[None]):
 
             self.app.push_screen(
                 EmptyDirectiveConfirmModal(
-                    workflow_name=str(workflow_name)
-                    if workflow_name and workflow_name != Select.BLANK
-                    else None,
+                    workflow_name=workflow_name,
                 ),
                 self._on_empty_directive_decision,
             )
             return
-        if workflow_name == Select.BLANK or not workflow_name:
+        if not workflow_name:
             self.notify("Pick a workflow.", severity="warning")
             return
         if not project_str:
@@ -554,6 +807,17 @@ class NewRunScreen(Screen[None]):
             # Refresh the table so the new preset appears.
             self._populate_presets()
 
+        # Auto-merge: when the checkbox is on, the run-bg subprocess
+        # will attempt a fast-forward merge back to the source branch
+        # on clean completion. Captured here so the post-confirm
+        # callback can plumb it into launch_background_run.
+        try:
+            auto_merge = self.query_one(
+                "#auto-merge-checkbox", Checkbox
+            ).value
+        except Exception:  # noqa: BLE001
+            auto_merge = False
+
         # Stash the validated launch parameters for the post-confirm
         # callback to read.
         self._pending_launch = {
@@ -561,6 +825,7 @@ class NewRunScreen(Screen[None]):
             "workflow_name": str(workflow_name),
             "project_path": project_path,
             "budget": budget,
+            "auto_merge": auto_merge,
         }
 
         # Push the confirmation modal. Burning $3-5 deserves a
@@ -722,10 +987,19 @@ class NewRunScreen(Screen[None]):
 
         # P11 T78: record run_id + workflow on the project so the
         # library / dashboard show the latest run.
+        # Prime-directive capture: first non-empty directive landed
+        # against a project becomes its canonical "prime" directive,
+        # surfaced in the preset table on subsequent runs so design
+        # passes stay oriented across N>1 iterations.
         if self.project is not None:
             try:
                 self.project.last_run_id = run_id
                 self.project.last_workflow = params["workflow_name"]
+                if (
+                    self.project.prime_directive is None
+                    and params["directive"].strip()
+                ):
+                    self.project.prime_directive = params["directive"]
                 save_project(self.project)
             except Exception as exc:  # noqa: BLE001 — non-fatal
                 self.notify(
@@ -741,6 +1015,7 @@ class NewRunScreen(Screen[None]):
                 budget=params["budget"],
                 model=workflow.defaults.model,
                 run_id=run_id,
+                auto_merge=bool(params.get("auto_merge", False)),
             )
         except RuntimeError as exc:
             self.notify(
@@ -812,16 +1087,29 @@ class NewRunScreen(Screen[None]):
         flag doesn't reliably distinguish user vs programmatic; the
         focus check is the structural fix.
         """
-        if event.select.id == "workflow-select" and event.value != Select.BLANK:
-            if event.select.has_focus:
-                self._advance_from("workflow-select")
+        # No-op now that the workflow Select widget has been replaced
+        # by a DataTable picker. Left here so any in-flight tests that
+        # post fake Select.Changed events still find the handler.
+        del event
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """When the user checks the save-as-preset box, advance to
         the name input so they can type the slug. Toggling off
         leaves focus alone. Same focus-based filter as
-        on_select_changed for programmatic vs user changes."""
-        if event.checkbox.id == "save-checkbox" and event.value:
+        on_select_changed for programmatic vs user changes.
+
+        Meeting-toggle checkboxes (added dynamically when a workflow
+        is picked) update the local enable map without advancing
+        focus — operator stays in the meetings pane to keep toggling.
+        Per-meeting skipping at launch is a follow-on; for now the
+        state is captured but not yet wired to the runner.
+        """
+        cb_id = event.checkbox.id or ""
+        if cb_id.startswith("meeting-toggle-"):
+            meeting_id = cb_id[len("meeting-toggle-"):]
+            self._meeting_enabled[meeting_id] = event.value
+            return
+        if cb_id == "save-checkbox" and event.value:
             if event.checkbox.has_focus:
                 self._advance_from("save-checkbox")
 

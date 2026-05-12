@@ -24,3 +24,4 @@ meetings:
     # convenor_directive omitted: entry meeting, runtime fills with
     # the user's directive
     seeds: []
+category: utility

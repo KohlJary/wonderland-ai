@@ -31,3 +31,4 @@ meetings:
       # story (or pass the second window if the first was sufficient).
       - name: discussion
         max_rotations: 2
+category: utility

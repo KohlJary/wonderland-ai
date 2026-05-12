@@ -126,6 +126,16 @@ class WonderlandApp(App):
 
             self.push_screen(WelcomeModal())
 
+        # PyPI update check runs as a worker so the startup path
+        # isn't blocked by the network round-trip. Modal only fires
+        # if a newer release exists AND the operator hasn't disabled
+        # the check. Skipped entirely on the welcome path so the
+        # first-run user isn't double-modal'd.
+        if self._should_check_updates():
+            self.run_worker(
+                self._check_for_updates(), exclusive=False
+            )
+
     def _discover_background_runs(self) -> None:
         """Scan registered projects for live ``wonderland run-bg``
         subprocesses and re-register the first one we find as the
@@ -203,6 +213,41 @@ class WonderlandApp(App):
             # Bad config file: still show welcome (the modal can help
             # them sort out the API key + repair the config).
             return True
+
+    def _should_check_updates(self) -> bool:
+        """Same shape as _should_show_welcome — config-driven toggle
+        with a bias toward checking unless explicitly disabled. The
+        check is best-effort and silent on failure so the cost of
+        defaulting to True is small."""
+        # Skip the check on the same path that suppresses welcome —
+        # tests passing show_welcome=False expect a quiet startup.
+        if self._show_welcome_override is False:
+            return False
+        try:
+            from wonderland.config import load_config
+
+            return load_config().ui.check_updates
+        except Exception:  # noqa: BLE001
+            return True
+
+    async def _check_for_updates(self) -> None:
+        """Worker coroutine: hit PyPI, surface the modal if newer."""
+        from wonderland.update_check import check_for_update
+
+        try:
+            result = await asyncio.to_thread(check_for_update)
+        except Exception:  # noqa: BLE001
+            return
+        if result is None or not result.update_available:
+            return
+        from wonderland.tui.screens.update_modal import UpdateAvailableModal
+
+        self.push_screen(
+            UpdateAvailableModal(
+                installed=result.installed,
+                latest=result.latest,
+            )
+        )
 
     # ---------------------------------------------------------------- #
     # App-wide vim navigation. Each action finds the currently focused
@@ -307,6 +352,7 @@ class WonderlandApp(App):
         budget: float,
         model: str | None = None,
         run_id: str | None = None,
+        auto_merge: bool = False,
     ) -> ActiveRun:
         """Spawn ``wonderland run-bg`` as a detached subprocess and
         register a SubprocessRunHandle as the active run.
@@ -374,6 +420,8 @@ class WonderlandApp(App):
         ]
         if model is not None:
             cmd.extend(["--model", model])
+        if auto_merge:
+            cmd.append("--auto-merge")
 
         proc = subprocess.Popen(  # noqa: S603 — args list is built locally, no shell
             cmd,

@@ -123,13 +123,47 @@ meetings:
     # to be"; both should pass.
     iterate_only_in_states: [queued, in_progress]
     meeting_budget: 0.50
-    # Entry meeting — the runtime relays the user's directive
-    # verbatim. The seeds (features, tickets, ADRs, contracts —
-    # all from disk via the seed-fallback shipped in 0.3.0) carry
-    # everything Hatter and Alice need; the user's directive at
-    # this stage can be terse like "implement the queued features
-    # per their contracts." Hatter's §V + Alice's persona-grounding
-    # carry the discipline.
+    # Entry meeting — the runtime still relays the user's directive
+    # at the top, but we layer an explicit convenor_directive on top
+    # to lock the artifact shapes per agent. Without it, Alice would
+    # default to ``story`` (her natural M1 voice) and pollute the
+    # user story pool with test-shaped stories like "As Maya, I want
+    # the timeout case to be handled"; with it, she emits
+    # ``test_scenario`` with her persona-anchored happy paths.
+    convenor_directive: |
+      **Tea party. Hatter ships failing tests grounded in the
+      ticket's acceptance criteria. Alice grounds those tests in
+      the persona's expected experience.**
+
+      **Hatter — your job (`test_scenario`).** Surface the edges,
+      failure modes, and degradations this ticket has to handle.
+      Severity-triage every scenario; underclaim if anything. Aim
+      to ship at least one failing-test artifact for this ticket
+      this iteration; you can ship multiple if the ticket genuinely
+      has multiple distinct edges.
+
+      **Alice — your job (`test_scenario`, NOT `story`).** In the
+      tea party you are NOT adding to the story pool — the stories
+      that sourced this ticket are already shipped, and re-emitting
+      them as more story artifacts pollutes the pool with
+      test-shaped duplicates. Your move here is to write
+      *happy-path* test scenarios from your persona's POV:
+        - "Maya pastes a 200-char draft and expects the translated
+          reply within 2s"
+        - "Sam taps the Reply button after a 5-minute idle and
+          expects their draft to still be there"
+      Severity for happy paths is typically `silent-wrongness`
+      (system returns the wrong thing) or `degradation` (system
+      works but slower than the persona would tolerate). If you
+      genuinely have nothing to add beyond Hatter's edges, choose
+      `silence` — don't pad the thread. **Use `decision:
+      "test_scenario"` with the `scenarios` array; do NOT use
+      `decision: "story"` in tea-party threads, ever.**
+
+      Both of you: every scenario you ship should be specific
+      enough that a Tweedle reading it in M7 can write the failing
+      test in code without ambiguity.
+
     seeds:
       - from: any
         kinds: [project_context]
@@ -413,3 +447,4 @@ meetings:
         max_rotations: 2
         team_groupings: [[caterpillar, tweedledee, tweedledum]]
         exit_condition_artifact: review
+category: implementation

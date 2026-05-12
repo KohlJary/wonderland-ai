@@ -97,10 +97,16 @@ class ArtifactShipped:
     only want disk artifacts can filter to ArtifactShipped events;
     consumers that want the full bus context should still consume
     UtteranceEmitted and read .content.artifacts.
+
+    ``thread_id`` carries the carrying utterance's thread so live-
+    watch consumers can attribute artifacts to the correct parallel
+    iteration. Old event-log replays without the field default to
+    None and fall back to the legacy last-open-thread heuristic.
     """
 
     timestamp: datetime
     artifact: RunArtifact
+    thread_id: str | None = None
 
 
 @dataclass(frozen=True)

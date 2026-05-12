@@ -118,6 +118,16 @@ meetings:
         kinds: [story]
         consumed_by: feature
 
+    # Phased so operators can size the generation pass (more
+    # rotations = more breadth; default 3 is the previous engagement-
+    # policy behavior). No exit_condition_artifact: M1 is generative
+    # — we want it to run rotations until quiescence (everyone has
+    # nothing more to add) or the cap is hit, not stop the moment
+    # Alice ships her first story.
+    phases:
+      - name: stories
+        max_rotations: 3
+
   # ─────────────────────────────────────────────────────────────────
   # M2 — Features composed from stories. Rabbit's job, with Alice
   # grounding and Caterpillar checking the composition pass.
@@ -655,3 +665,4 @@ meetings:
         max_rotations: 1
         team_groupings: [[tweedledee, tweedledum, alice]]
         exit_condition_artifact: contract_note
+category: design

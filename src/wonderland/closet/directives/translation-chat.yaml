@@ -18,3 +18,4 @@ body: |
 suggested_workflow: tdd-serial
 suggested_skeleton: fullstack-fastapi-react
 tags: [showcase, feature-rich, gdpr, real-time]
+category: demo

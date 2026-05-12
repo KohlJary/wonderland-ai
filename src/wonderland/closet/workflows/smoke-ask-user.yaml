@@ -37,3 +37,4 @@ meetings:
     phases:
       - name: discussion
         max_rotations: 2
+category: utility

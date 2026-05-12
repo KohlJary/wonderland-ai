@@ -1,0 +1,36 @@
+name: beast-crossroads
+title: Beast Crossroads — cozy life-sim with LLM villagers and real-world clock
+description: |
+  Cozy-life-sim directive in the Animal-Crossing genre lane, scrubbed of
+  Nintendo IP — generic anthropomorphic villagers, generic in-game
+  currency, no trademark names. First sample directive that couples two
+  hard substrate problems in one ask: real-world wall-clock progression
+  (shops open/close on real hours, seasonal events fire on real dates)
+  and persistent LLM-driven NPC dialogue with per-villager memory across
+  sessions. Tests whether Caterpillar surfaces foundation stories for
+  (a) a clock/calendar abstraction that the rest of the codebase can
+  fake in tests, and (b) per-NPC persistence + LLM-call layer separate
+  from the feature stories. Scope-sprawl risk is high — the genre has
+  fishing/foraging/decorating/weather/holidays/relationships, any of
+  which can balloon past the 3-6 feature ceiling; watch whether Alice
+  picks a coherent slice instead of one-of-everything. Also a deliberate
+  tension with the "no wall-clock semantics in turn-based venues"
+  feedback: here the deliverable IS wall-clock-driven, so the player's
+  in-game time tracks real time even though Wonderland's own substrate
+  remains turn-based — useful to see whether that distinction is
+  preserved in design.
+body: |
+  I want a cozy life-simulation game that runs in the terminal. The
+  player lives in a small village of anthropomorphic neighbors. The
+  game uses the real-world clock and calendar: shops have opening
+  hours, seasons rotate with the real date, and holidays fire on their
+  actual dates. Each villager has a persistent personality and
+  remembers past conversations with the player — dialogue is LLM-driven
+  and open-ended, not branching menus. Daily activities include
+  foraging, decorating your home, and attending village events. There
+  is no fail state; progression is measured in relationships and
+  seasonal milestones.
+suggested_workflow: tdd-design
+suggested_skeleton: python-tui
+tags: [llm-integration, real-time-clock, persistent-state, tui, cozy-genre]
+category: demo

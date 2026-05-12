@@ -35,6 +35,10 @@ from wonderland.identity import load_constitution
 from wonderland.llm import CachedBlock
 from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.story import StoryPayload, StoryRegistry
+from wonderland.test_scenario import (
+    TestScenarioPayload,
+    TestScenarioRegistry,
+)
 from wonderland.utterance import (
     Artifact,
     SpeechAct,
@@ -95,6 +99,7 @@ def alice_rules() -> EngagementRules:
 
 AliceDecision = Literal[
     "story",
+    "test_scenario",
     "concern",
     "question",
     "question_to_operator",
@@ -111,6 +116,13 @@ class AliceResponse(BaseModel):
     one ``StoryPayload`` — a story decision without stories is
     nonsense. Alice may produce multiple stories per turn because
     she's inhabiting multiple personas in succession.
+
+    When ``decision == "test_scenario"``, ``scenarios`` must contain
+    at least one ``TestScenarioPayload`` — the tea-party (M6)
+    extension where Alice writes happy-path scenarios from her
+    persona's POV instead of polluting the story pool with
+    test-shaped stories. Hatter still writes the edge / failure
+    scenarios; Alice covers the persona-anchored happy paths.
     """
 
     decision: AliceDecision
@@ -128,6 +140,7 @@ class AliceResponse(BaseModel):
         ),
     )
     stories: list[StoryPayload] = Field(default_factory=list)
+    scenarios: list[TestScenarioPayload] = Field(default_factory=list)
 
     @field_validator("body", mode="before")
     @classmethod
@@ -142,12 +155,23 @@ class AliceResponse(BaseModel):
     def _stories_none_to_empty(cls, v: object) -> object:
         return [] if v is None else v
 
+    @field_validator("scenarios", mode="before")
+    @classmethod
+    def _scenarios_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
+
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
         if self.decision == "story" and not self.stories:
             raise ValueError(
                 "AliceResponse: decision='story' requires at least one story "
                 "in `stories`. Choose a different decision (concern/question/etc.) "
                 "or include the stories you intended to issue."
+            )
+        if self.decision == "test_scenario" and not self.scenarios:
+            raise ValueError(
+                "AliceResponse: decision='test_scenario' requires at least "
+                "one scenario in `scenarios`. Choose a different decision "
+                "or include the scenarios you intended to issue."
             )
 
 
@@ -158,8 +182,8 @@ The JSON must conform to this schema:
 
 ```
 {
-  "decision": "story" | "concern" | "question" | "question_to_operator" |
-              "reframe" | "deference" | "silence",
+  "decision": "story" | "test_scenario" | "concern" | "question" |
+              "question_to_operator" | "reframe" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "stories": [                        // include ONLY when decision is "story"
     {
@@ -177,9 +201,33 @@ The JSON must conform to this schema:
         "include at least one — stories without flags are suspect (you weren't paying attention, or the story is too easy)"
       ]
     }
+  ],
+  "scenarios": [                      // include ONLY when decision is "test_scenario"
+    {
+      "title": "vivid, specific title from your persona's POV — 'Maya pastes a translated reply over the original draft', not 'happy-path translation flow'",
+      "severity": "breakage" | "silent-wrongness" | "degradation" | "curiosity" | "delight",
+      "setup": "the state of the world before the persona acts — be specific to the persona",
+      "trigger": "the persona's action that the system has to handle correctly",
+      "expected": "what the persona expects to see, in their own terms",
+      "concern": "why this scenario matters from a user-need POV — 'if this breaks, Maya can't tell that her translation landed'",
+      "property": "(optional) the general statement this scenario witnesses",
+      "implies": []
+    }
   ]
 }
 ```
+
+**`test_scenario` — Alice's tea-party (M6) move.** When you're in
+the tea party with the Mad Hatter, your job is NOT to add stories;
+the story pool is already shipped. Your job is to write happy-path
+test scenarios from your persona's POV — "Maya pastes a 200-char
+draft and expects the translated reply within 2s" — while the
+Hatter covers the edges. Severity for happy-path scenarios is
+typically `silent-wrongness` (the system appears to work but
+returns the wrong thing for the persona) or `degradation` (the
+system is slower than the persona would tolerate). Use this
+decision ONLY in tea-party threads where Hatter has been seeded
+as a co-roster; everywhere else, story is your shape.
 
 **`question_to_operator` — escalate to the human operator.** Use when
 the team needs a decision only the operator can make: stack
@@ -240,6 +288,7 @@ class Alice(WonderlandAgent):
         bus: Caucus,
         llm: LLMClient | None = None,
         story_registry: StoryRegistry | None = None,
+        test_scenario_registry: TestScenarioRegistry | None = None,
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(ALICE_NAME, root=constitutions_root)
@@ -249,10 +298,15 @@ class Alice(WonderlandAgent):
         )
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._story_registry = story_registry
+        self._test_scenario_registry = test_scenario_registry
 
     @property
     def story_registry(self) -> StoryRegistry | None:
         return self._story_registry
+
+    @property
+    def test_scenario_registry(self) -> TestScenarioRegistry | None:
+        return self._test_scenario_registry
 
     async def deliberate(self, context: Context) -> Utterance | None:
         if self.llm is None:
@@ -270,6 +324,10 @@ class Alice(WonderlandAgent):
         artifacts: list[Artifact] = []
         if response.decision == "story":
             artifacts.extend(self._record_stories(response.stories))
+        elif response.decision == "test_scenario":
+            artifacts.extend(
+                self._record_test_scenarios(response.scenarios)
+            )
 
         thread_id, parent_id = self._derive_threading(context)
         if response.decision == "question_to_operator":
@@ -307,6 +365,34 @@ class Alice(WonderlandAgent):
             artifacts.append(
                 Artifact(
                     kind="story",
+                    payload={
+                        "number": record.number,
+                        "slug": record.slug,
+                        "title": record.title,
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_test_scenarios(
+        self, payloads: list[TestScenarioPayload]
+    ) -> list[Artifact]:
+        """Mirror of ``_record_stories`` for the tea-party (M6) shape
+        where Alice writes persona-anchored happy-path scenarios.
+        Same on-disk shape as Hatter's scenarios; the substrate
+        treats them as test_scenario artifacts regardless of speaker
+        so M7 sees both alongside each other when iterating per
+        ticket.
+        """
+        if self._test_scenario_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._test_scenario_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="test_scenario",
                     payload={
                         "number": record.number,
                         "slug": record.slug,

@@ -328,6 +328,7 @@ class LiveRunHandle(RunHandle):
                                     yield ArtifactShipped(
                                         timestamp=u.timestamp,
                                         artifact=ra,
+                                        thread_id=u.thread_id,
                                     )
                     elif kind == "budget_exceeded":
                         outcome = "GLOBAL_BUDGET"

@@ -556,3 +556,4 @@ meetings:
         kinds: [feature]
       - from: implementation
         kinds: [implementation]
+category: legacy

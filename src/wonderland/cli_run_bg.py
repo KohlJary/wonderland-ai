@@ -117,6 +117,17 @@ def add_run_bg_subparser(subparsers: argparse._SubParsersAction) -> None:
             "right files."
         ),
     )
+    parser.add_argument(
+        "--auto-merge",
+        action="store_true",
+        help=(
+            "After the run completes cleanly, attempt a fast-forward "
+            "merge of the run branch back into the source branch the "
+            "operator was on at launch. Skipped on aborted / errored "
+            "runs. Falls back to leaving the branch in place if the "
+            "merge would need manual resolution."
+        ),
+    )
     parser.set_defaults(func=cmd_run_bg)
 
 
@@ -199,6 +210,16 @@ async def _run_bg_async(args: argparse.Namespace) -> int:
 
     handle.set_user_question_handler(_ask_operator)
 
+    # Per-run git branch. Captures the source branch so we can
+    # attempt a fast-forward merge back at the end (when --auto-merge
+    # is set). Open before status.json so source_branch can ride
+    # along on the status record. open_run_branch silently no-ops
+    # when git isn't available; the run continues without
+    # branch isolation in that case.
+    from wonderland.git_run import open_run_branch
+
+    source_branch = open_run_branch(project_root, runner.run_id)
+
     state = _BackgroundState(
         run_id=runner.run_id,
         started_at=datetime.now(tz=timezone.utc),
@@ -206,6 +227,8 @@ async def _run_bg_async(args: argparse.Namespace) -> int:
         directive=args.directive,
         meetings_completed=0,
         total_cost=0.0,
+        source_branch=source_branch,
+        auto_merge=bool(args.auto_merge),
     )
     _write_status(status_path, state, status="running")
 
@@ -278,6 +301,25 @@ async def _run_bg_async(args: argparse.Namespace) -> int:
             exit_code = 1
         finally:
             state.ended_at = datetime.now(tz=timezone.utc)
+            _write_status(status_path, state, status=final_status)
+
+    # Post-run git: commit working-tree changes onto the run branch,
+    # then optionally fast-forward merge back to source. Only runs
+    # when a source branch was successfully captured at start — if
+    # git wasn't available, both calls no-op.
+    if source_branch is not None:
+        from wonderland.git_run import attempt_merge, commit_run
+
+        commit_summary = (
+            f"workflow: {args.workflow}\n"
+            f"directive: {args.directive[:200].strip()}"
+        )
+        commit_run(project_root, runner.run_id, commit_summary)
+
+        if args.auto_merge and final_status == "complete":
+            merge_result = attempt_merge(project_root, source_branch)
+            state.merge_outcome = merge_result.outcome.value
+            state.merge_detail = merge_result.detail
             _write_status(status_path, state, status=final_status)
 
     return exit_code
@@ -396,6 +438,10 @@ class _BackgroundState:
         "directive",
         "meetings_completed",
         "total_cost",
+        "source_branch",
+        "auto_merge",
+        "merge_outcome",
+        "merge_detail",
     )
 
     def __init__(
@@ -407,6 +453,8 @@ class _BackgroundState:
         directive: str,
         meetings_completed: int,
         total_cost: float,
+        source_branch: str | None = None,
+        auto_merge: bool = False,
     ) -> None:
         self.run_id = run_id
         self.started_at = started_at
@@ -415,6 +463,11 @@ class _BackgroundState:
         self.directive = directive
         self.meetings_completed = meetings_completed
         self.total_cost = total_cost
+        self.source_branch = source_branch
+        self.auto_merge = auto_merge
+        # Set after the post-run merge attempt; None until then.
+        self.merge_outcome: str | None = None
+        self.merge_detail: str | None = None
 
 
 def _write_status(
@@ -437,6 +490,10 @@ def _write_status(
         "pid": os.getpid(),
         "workflow": state.workflow,
         "directive": state.directive,
+        "source_branch": state.source_branch,
+        "auto_merge": state.auto_merge,
+        "merge_outcome": state.merge_outcome,
+        "merge_detail": state.merge_detail,
     }
     path.write_text(json.dumps(data) + "\n", encoding="utf-8")
 

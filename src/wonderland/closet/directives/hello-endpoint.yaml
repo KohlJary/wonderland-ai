@@ -10,3 +10,4 @@ body: |
 suggested_workflow: smoke
 suggested_skeleton: fullstack-fastapi-react
 tags: [smoke, cheap, learning]
+category: demo

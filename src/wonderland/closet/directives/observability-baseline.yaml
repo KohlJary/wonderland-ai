@@ -1,0 +1,33 @@
+name: observability-baseline
+title: Observability baseline — logging, errors, request tracing
+description: |
+  Project-underway baseline. Use when features are landing but the
+  project has no story for "what happened?" when something breaks.
+  Drives Cat (architecture) + Caterpillar (devx) to design the
+  observability layer at the size the project actually needs —
+  not enterprise APM, just enough to debug a real bug.
+body: |
+  Design the project's observability layer. Cover at least:
+
+  - **Structured logging.** Every request / job / agent run emits
+    a log with a stable correlation id (request id, run id, etc.).
+    Logs are JSON or key=value, not free-form prose. Levels are
+    used correctly: ERROR for things that should page someone,
+    WARN for things worth investigating, INFO for normal flow,
+    DEBUG for off-by-default detail.
+  - **Error capture.** Unhandled exceptions land somewhere the
+    operator can find them (Sentry, a file, a table — pick one
+    that fits this project's size). The capture path itself is
+    test-covered so a broken error pipeline doesn't silently
+    swallow incidents.
+  - **Request tracing.** When the system has multiple services /
+    workers, propagate a correlation id end-to-end so a user's
+    request can be reconstructed across boundaries. Skip if the
+    project is single-process; revisit when that changes.
+
+  Don't over-engineer: a small project doesn't need OpenTelemetry.
+  Match the layer to the project's actual ops surface, then ship
+  tickets per gap.
+suggested_workflow: tdd-design
+tags: [baseline, ops, project-underway]
+category: utility

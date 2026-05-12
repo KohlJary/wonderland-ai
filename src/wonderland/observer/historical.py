@@ -716,6 +716,7 @@ class HistoricalRunHandle(RunHandle):
                     yield ArtifactShipped(
                         timestamp=u.timestamp,
                         artifact=run_artifact,
+                        thread_id=u.thread_id,
                     )
 
         # Close the final meeting (same end-marker lookup as above).

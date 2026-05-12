@@ -13,3 +13,4 @@ body: |
 suggested_workflow: tdd-serial
 suggested_skeleton: fullstack-fastapi-react
 tags: [greenfield, feature-rich, banner]
+category: demo

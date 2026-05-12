@@ -166,3 +166,4 @@ meetings:
     seeds:
       - from: implementation
         kinds: [implementation]
+category: legacy

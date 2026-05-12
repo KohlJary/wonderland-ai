@@ -709,6 +709,27 @@ class Workflow(BaseModel):
             "See Pipeline docstring for semantics."
         ),
     )
+    category: str | None = Field(
+        default=None,
+        description=(
+            "Higher-level grouping shown in the new-run-view workflow "
+            "picker (post-26 redesign) as a dropdown header. Free-form "
+            "string; normalized to lower case via ``normalized_category`` "
+            "before comparison. Examples: 'design' (design-pass "
+            "workflows like tdd-design), 'implementation' (tdd-implement), "
+            "'legacy' (older tdd-serial-* kept for analysis reference). "
+            "``None`` clusters under 'other'."
+        ),
+    )
+
+    @property
+    def normalized_category(self) -> str:
+        """Case-insensitive category for grouping. Empty / None →
+        ``"other"``. Mirrors ``DirectivePreset.normalized_category``."""
+        if self.category is None:
+            return "other"
+        stripped = self.category.strip().lower()
+        return stripped or "other"
 
     def meeting_by_id(self, meeting_id: str) -> Meeting | None:
         """Look up a meeting by id; None if not present."""
