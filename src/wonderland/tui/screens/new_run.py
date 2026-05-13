@@ -135,6 +135,13 @@ class NewRunScreen(Screen[None]):
         # Select widget. None until the user picks a row OR a
         # default lands via on_mount.
         self._selected_workflow_name: str | None = None
+        # Idempotency guard for _render_workflow_detail. Without it,
+        # the dashboard's default-workflow path triggers BOTH a
+        # _select_workflow_by_name call AND the DataTable's
+        # auto-highlight-first-row event, racing to mount the
+        # meeting-toggle-<id> checkboxes and tripping
+        # textual.css.query.DuplicateIds.
+        self._currently_rendered_workflow_id: str | None = None
         # Per-meeting enable/disable state for the currently-
         # selected workflow. Map of meeting_id → enabled bool;
         # rebuilt on workflow selection. Pre-filled True for all
@@ -242,9 +249,11 @@ class NewRunScreen(Screen[None]):
                     )
 
             # ── Row 3: run controls ─────────────────────────────
-            # Project root, budget, action buttons. Smaller / denser
-            # than the two pane rows — these are top-level run knobs
-            # that don't need a full pane each.
+            # Project root, budget, auto-merge toggle. The action
+            # buttons (Go / Cancel) live on their own row below so
+            # they always have room to render — putting them on the
+            # same row as inputs + label-input pairs squeezed them
+            # off-screen on narrower terminals.
             yield Static("[b]Run controls[/b]", id="controls-label")
             with Horizontal(id="controls-row"):
                 yield Label("Project root:", id="project-label")
@@ -274,6 +283,9 @@ class NewRunScreen(Screen[None]):
                     value=False,
                     id="auto-merge-checkbox",
                 )
+            # Action buttons get their own row — guaranteed visible
+            # even when the controls row above is tight.
+            with Horizontal(id="action-row"):
                 yield Button(
                     "▶ Go (g)",
                     id="go-button",
@@ -532,28 +544,55 @@ class NewRunScreen(Screen[None]):
 
     def _render_workflow_detail(self, workflow: Workflow) -> None:
         """Populate the meetings list (with enable/disable checkboxes)
-        and the workflow summary pane."""
+        and the workflow summary pane.
+
+        Idempotent on the same workflow — re-selecting the same
+        workflow (which happens when default_workflow triggers
+        ``_select_workflow_by_name`` AND the DataTable also fires
+        its automatic first-row-highlight) is a no-op. Without this
+        guard, two parallel mount calls produced duplicate
+        ``meeting-toggle-<id>`` widgets and Textual raised
+        DuplicateIds before the first removal completed.
+        """
+        # Skip if this workflow's detail is already mounted —
+        # cheap-O(1) check that prevents the double-mount race.
+        if self._currently_rendered_workflow_id == workflow.name:
+            return
+
         # Reset meeting enable state — default-on for every meeting
         # in the newly-selected workflow.
         self._meeting_enabled = {m.id: True for m in workflow.meetings}
 
-        # Rebuild meetings list. Textual's mount() lets us add nodes
-        # one at a time; remove existing first to avoid duplicates
-        # on re-selection.
+        # Rebuild meetings list. ``remove_children`` returns an
+        # AwaitRemove that schedules synchronous removal in the next
+        # message-loop tick; deferring the mount via call_after_refresh
+        # ensures the old widgets are gone before the new ones land,
+        # so DuplicateIds doesn't fire mid-swap.
         try:
             container = self.query_one("#meetings-list", Vertical)
         except Exception:  # noqa: BLE001
             return
-        for child in list(container.children):
-            child.remove()
-        for meeting in workflow.meetings:
-            container.mount(
-                Checkbox(
-                    f"{meeting.label}  {meeting.name}",
-                    value=True,
-                    id=f"meeting-toggle-{meeting.id}",
+        container.remove_children()
+        self._currently_rendered_workflow_id = workflow.name
+
+        def _mount_new_meeting_toggles() -> None:
+            # Re-query — the original container reference is still
+            # valid but defensive lookup keeps the post-refresh path
+            # robust if the screen got rebuilt.
+            try:
+                box = self.query_one("#meetings-list", Vertical)
+            except Exception:  # noqa: BLE001
+                return
+            for meeting in workflow.meetings:
+                box.mount(
+                    Checkbox(
+                        f"{meeting.label}  {meeting.name}",
+                        value=True,
+                        id=f"meeting-toggle-{meeting.id}",
+                    )
                 )
-            )
+
+        self.call_after_refresh(_mount_new_meeting_toggles)
 
         # Summary panel: workflow blurb + meeting count + category +
         # any pipeline indicator.
