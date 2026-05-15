@@ -1,0 +1,244 @@
+name: discovery
+description: |
+  Requirements-gathering phase (P14). Three short focused interviews
+  run in series — Alice on personas, Cheshire Cat on technical
+  constraints, White Rabbit on scope — each capturing operator answers
+  as structured ``requirement`` artifacts that seed subsequent design
+  + implementation runs.
+
+  ## Why this exists
+
+  Pre-P14, every design run started from a raw directive with no
+  continuity. Operators iterated tdd-design 5-10x against the same
+  project but each iteration regenerated framing from scratch.
+  Discovery captures intent once as structured requirement artifacts
+  on disk (``.wonderland/requirements/``); downstream meetings seed
+  from those instead of the raw directive text. See
+  ``project_interviews_milestones_thesis.md`` in user memory.
+
+  ## When to run
+
+  - Fresh project, before any design work: this is the natural entry
+    point. Run discovery, then iterate tdd-design against the
+    requirement corpus.
+  - Existing project with requirements gaps: surfaces what's missing.
+  - Project past discovery whose intent has shifted: re-run; the
+    interviewer reads existing requirements as context and synthesizes
+    new ones (the registry is append-only, operator can prune later).
+
+  Existing projects with no discovery history should consider
+  ``discovery-backfill`` instead — that variant has the agents
+  INFER requirements from existing project state rather than
+  interviewing the operator.
+
+  ## Shape
+
+  - I1 (Caucus Race) — Alice on personas + situations. ~5 min.
+  - I2 (Smile of the Cat) — Cheshire Cat on technical constraints +
+    integrations + deal-breakers. ~4 min.
+  - I3 (Rabbit's Schedule) — White Rabbit on scope + success criteria
+    + explicit out-of-scope. ~3 min.
+
+  Each interview ships ~3-5 questions. Total operator time: ~12 min
+  of focused attention. Each interviewer reads the operator's answers
+  and ships requirement artifacts; the loop allows one round of
+  follow-up questions per interview if the answers surface a gap.
+
+  ## Output
+
+  - ``persona``, ``situation`` requirements (Alice)
+  - ``constraint``, ``integration``, ``deal_breaker`` requirements (Cat)
+  - ``scope``, ``success_criterion``, ``out_of_scope`` requirements (Rabbit)
+  - Each with ``confidence: operator_stated`` (the operator said it
+    directly; downstream meetings can trust it without re-confirming)
+
+version: 1
+
+category: discovery
+
+defaults:
+  # Discovery is cheap — most of the cost is on the operator's
+  # attention, not LLM tokens. Each interviewer fires twice at most
+  # (round 1 + optional follow-up); each turn is a single agent.
+  budget_dollars: 1.50
+  quiescence_seconds: 60.0
+
+interviews:
+
+  # ─────────────────────────────────────────────────────────────────
+  # I1 — Personas. Alice's discovery move: who is this for, in
+  # concrete persona terms.
+  # ─────────────────────────────────────────────────────────────────
+  - id: persona-interview
+    label: I1
+    name: Who is this for?
+    interviewer: alice
+    goal: capture personas + situations that anchor downstream design
+    estimated_minutes: 5
+    allow_followup: true
+    questions:
+      - id: primary_persona
+        text: |
+          Who's the primary person using this? Be specific — name,
+          rough age range, role, and what's happening in their life
+          when they reach for the project. "Maya, 31, polyglot
+          moderator at a translation startup, end of day, scrolling
+          through 40 pending threads" beats "the user."
+        kind: free_text
+        required: true
+
+      - id: situation
+        text: |
+          What just happened to them, in the moment when they open
+          this? Surface the trigger — was something broken, a
+          deadline approaching, a routine starting?
+        kind: free_text
+        required: false
+
+      - id: existing_workflow
+        text: |
+          What do they do today instead of using this? (Manual
+          spreadsheet, another tool, a Slack thread, raw memory?)
+          The current workflow tells us what we're replacing or
+          augmenting.
+        kind: free_text
+        required: false
+
+      - id: success_signal
+        text: |
+          Which of these is the strongest signal they got what they
+          needed?
+        kind: single_choice
+        required: false
+        options:
+          - task_completed
+          - time_saved
+          - anxiety_reduced
+          - delight
+          - other (use free response)
+
+      - id: deferred_personas
+        text: |
+          Anyone we're deferring for v2 / fast-follow? Name them
+          explicitly so the team doesn't silently re-introduce
+          their needs into v1 scope.
+        kind: free_text
+        required: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # I2 — Constraints. Cheshire Cat's discovery move: what bounds
+  # the architectural solution space before he proposes anything.
+  # ─────────────────────────────────────────────────────────────────
+  - id: constraints-interview
+    label: I2
+    name: What can't move?
+    interviewer: cheshire_cat
+    goal: surface technical constraints, integrations, and deal-breakers
+    estimated_minutes: 4
+    allow_followup: true
+    questions:
+      - id: stack_constraints
+        text: |
+          Any stack choices already locked in? Language, framework,
+          host, database — the things you're NOT willing to switch
+          on this project even if it'd be marginally better.
+        kind: free_text
+        required: false
+
+      - id: integration_surface
+        text: |
+          What does this need to talk to? External APIs, OS surfaces,
+          other services, file formats. Be specific — "talks to
+          Slack" is less useful than "posts a daily summary to one
+          Slack channel via incoming-webhook."
+        kind: free_text
+        required: false
+
+      - id: scale_target
+        text: |
+          Rough scale at v1?
+        kind: single_choice
+        required: false
+        options:
+          - personal_use (just me)
+          - small_team (5-20 people)
+          - public_beta (hundreds)
+          - production (thousands+)
+
+      - id: deal_breakers
+        text: |
+          Anything that would make this a failure regardless of
+          features? (Performance floor, compliance requirement,
+          cost ceiling, latency target.) Hidden constraints surface
+          best as deal-breakers — name them now or watch them
+          surface in M4 when it's expensive to pivot.
+        kind: free_text
+        required: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # I3 — Scope. White Rabbit's discovery move: when are we done,
+  # and what's explicitly NOT v1.
+  # ─────────────────────────────────────────────────────────────────
+  - id: scope-interview
+    label: I3
+    name: When are we done?
+    interviewer: white_rabbit
+    goal: pin down success criteria + explicit out-of-scope
+    estimated_minutes: 3
+    allow_followup: true
+    questions:
+      - id: ship_criteria
+        text: |
+          What does "shipped" mean for v1? Be specific enough that
+          three people on the team would agree from the same answer.
+          "The Pomodoro timer is shipped" is too vague; "Maya can
+          start a 25-min focus session, get a notification at
+          0:00, and review yesterday's sessions in a list view"
+          is the target.
+        kind: free_text
+        required: true
+
+      - id: explicit_out_of_scope
+        text: |
+          Anything tempting that's explicitly NOT v1? List the
+          features the team might propose that you want to defer.
+          Naming them here prevents M2 from silently composing them
+          into a feature you'd have to reject later.
+        kind: free_text
+        required: false
+
+      - id: access_model
+        text: |
+          Who can use the v1 system, and how do they get in? Pick
+          the shape that fits — or describe a custom mix:
+
+            - **Single-user local** — one operator, no accounts,
+              app trusts whoever opens it (typical for personal
+              tools, dev dashboards).
+            - **Multi-user with accounts** — register / log in;
+              data is scoped per user. Name the auth mechanism
+              (email + password, magic link, OAuth provider, etc.).
+            - **Public, no login** — anyone can use it; no per-user
+              data persistence beyond browser state.
+
+          This is load-bearing because "we'll add auth later" is a
+          common omission that makes the first design pass ship
+          features assuming a user context that doesn't exist yet.
+          If accounts ARE in v1, name what registration + login look
+          like concretely (e.g., "email + password, no email
+          verification for v1, password reset via magic link").
+        kind: free_text
+        required: true
+
+      - id: timeline_pressure
+        text: |
+          Is there a deadline driving this? (Demo, release window,
+          board meeting, personal milestone.) If so, name the date
+          + the consequence of missing it — the team factors deadline
+          pressure into tier decisions.
+        kind: free_text
+        required: false
+
+# No meetings: discovery is interview-only. Operators run discovery
+# first, review the requirement corpus, then run tdd-design which
+# seeds from those requirements.

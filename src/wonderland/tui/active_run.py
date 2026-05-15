@@ -59,6 +59,12 @@ class ActiveRun:
     # AskUserModal. None for in-process runs (the LiveRunHandle's
     # direct handler covers them) or before the poller starts.
     question_poller_task: asyncio.Task | None = None
+    # Same shape for P14 interviews: the substrate writes
+    # pending_interview.json, this task surfaces InterviewModal +
+    # writes the operator's answers back. Sibling to the question
+    # poller — both bridges run in parallel for the lifetime of the
+    # active run.
+    interview_poller_task: asyncio.Task | None = None
 
     def subscribe(self, callback: EventCallback) -> Callable[[], None]:
         """Register ``callback`` to receive every event — past

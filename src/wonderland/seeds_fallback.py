@@ -94,6 +94,52 @@ def _load_reviews(project_root: Path) -> list[Any]:
     return ReviewRegistry(project_root).list_reviews()
 
 
+def _load_requirements(project_root: Path) -> list[Any]:
+    """P14 requirement artifacts. Speaker varies by which interviewer
+    produced the requirement (Alice/Cat/Rabbit) but for synthetic-
+    seed purposes we attribute to alice (the first interviewer in
+    the discovery workflow); downstream meetings just need the
+    artifact's body, not authorship.
+
+    Adapter records carry the same shape (.path / .title / .slug /
+    .number / .body) as the other loaders' records, so the
+    synthesis path doesn't need to special-case milestones."""
+    from wonderland.interview import RequirementRegistry
+
+    records = RequirementRegistry(project_root).list_requirements()
+    return [_RegistryRecordAdapter(r) for r in records]
+
+
+def _load_milestones(project_root: Path) -> list[Any]:
+    """P15 milestone artifacts. Speaker = white_rabbit (the canonical
+    plan owner). milestone-plan re-runs read these as cross-run
+    context so agents can amend rather than restart."""
+    from wonderland.milestone import MilestoneRegistry
+
+    records = MilestoneRegistry(project_root).list_milestones()
+    return [_RegistryRecordAdapter(r) for r in records]
+
+
+class _RegistryRecordAdapter:
+    """Adapter shaping a RequirementRecord or MilestoneRecord like
+    the other loader records (StoryRecord, TicketRecord, etc.).
+    The bodies of those registries already render to the standard
+    markdown shape; this just exposes .body for the synthesis path
+    that reads file contents."""
+
+    def __init__(self, record: Any) -> None:
+        self.path = record.path
+        self.title = getattr(record, "title", None) or getattr(
+            record, "name", record.slug
+        )
+        self.slug = record.slug
+        self.number = getattr(record, "number", None) or getattr(
+            record, "order", 0
+        )
+        # Body read lazily by the synthesis path; just exposing the
+        # path is enough for the existing pipeline.
+
+
 def _load_observations(project_root: Path) -> list[Any]:
     from wonderland.observation import ObservationRegistry
 
@@ -220,6 +266,22 @@ _LOADERS: dict[str, tuple[Callable[[Path], list[Any]], str, SpeechAct]] = {
     ),
     "review": (_load_reviews, "caterpillar", SpeechAct.REVIEW),
     "observation": (_load_observations, "dormouse", SpeechAct.OBSERVATION),
+    # P14 requirements — synthesized by Alice (first interviewer in
+    # the discovery workflow). Downstream meetings (milestone-plan,
+    # tdd-design) read these via from: any kinds: [requirement].
+    "requirement": (
+        _load_requirements,
+        "alice",
+        SpeechAct.INTERVIEW_REVIEW,
+    ),
+    # P15 milestones — synthesized by Rabbit (canonical plan owner).
+    # tdd-design --milestone reads these via from: any kinds:
+    # [milestone] then filters on slug.
+    "milestone": (
+        _load_milestones,
+        "white_rabbit",
+        SpeechAct.MILESTONE_PLAN,
+    ),
     # The Dodo "speaks" the directive in-run via relay_directive.
     # When restoring from disk for a meeting that didn't see the
     # original launch (e.g. M4 architecture), we attribute the

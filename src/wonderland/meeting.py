@@ -42,6 +42,7 @@ from wonderland.turns import (
 )
 from wonderland.utterance import (
     AgentIdentity,
+    Artifact,
     SpeechAct,
     Utterance,
     UtteranceContent,
@@ -350,6 +351,135 @@ def _check_exit_condition(
                 return
 
 
+async def _maybe_apply_coverage_nudge(
+    *,
+    meeting: "Meeting",
+    state: PhaseState,
+    runner: "Runner",
+    capture: "WorkflowCapture",
+    thread_id: str,
+    phase_name: str,
+):
+    """P15 T-m8 — at the end of each rotation, run the phase's
+    coverage check (if any). If a gap exists, publish a synthetic
+    Dodo OBSERVATION naming the gap items so the next rotation
+    sees the deficit + grant one bonus rotation (capped by
+    ``meeting.coverage_max_extra_rotations``) so the phase doesn't
+    immediately terminate on its baseline budget.
+
+    No-op when:
+      - the phase doesn't declare coverage_check (original
+        behavior preserved)
+      - runner doesn't expose a project_root (fake runners /
+        unit tests)
+      - the check is unknown / coverage is complete
+      - the bonus budget is exhausted (gap still flagged in the
+        observation, but no further extensions — phase ends at the
+        baseline)
+
+    Yields the published observation as a ``RunnerEvent`` so the
+    workflow event loop sees it on the wire + the live-watch
+    surface can render the nudge.
+    """
+    check_name = state.definition.coverage_check
+    if not check_name:
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+
+    # Lazy-import to keep meeting.py free of the coverage module
+    # at load time. coverage is a leaf module that imports nothing
+    # from meeting.
+    from wonderland.coverage import run_coverage_check
+
+    # ``milestone_slug`` is the workflow-run-level milestone scope
+    # (T-m4) — pull from the same module-level registry the
+    # tdd-design hook reads. None when no --milestone is active.
+    from wonderland.workflow import get_active_milestone_scope
+
+    scope = get_active_milestone_scope()
+    milestone_slug = scope.slug if scope is not None else None
+    gap = run_coverage_check(
+        check_name,
+        project_root,
+        milestone_slug=milestone_slug,
+    )
+    if gap is None:
+        return
+
+    # Grant a bonus rotation if we have headroom — without this the
+    # phase exhausts before agents can respond to the observation.
+    cap = getattr(meeting, "coverage_max_extra_rotations", 0)
+    if state.bonus_rotations < cap:
+        state.bonus_rotations += 1
+
+    # Override exit_condition: when coverage_check is active and a
+    # gap exists, the phase MUST NOT exit on "first artifact
+    # shipped" semantics — the gate is "coverage closes," not
+    # "primary artifact ships." Without this, M2's commit phase
+    # (which has exit_condition_artifact: feature) would exit on
+    # rotation 1 even though most milestone requirements remain
+    # unrealized. Clearing the flag lets the loop continue past
+    # the first ship until coverage_check passes (or the bonus
+    # budget exhausts).
+    if state.exit_condition_met:
+        state.exit_condition_met = False
+
+    # Build the synthetic Dodo observation. Body lists the gap
+    # items + names which check caught it so the operator can
+    # trace it back when reading the transcript.
+    dodo_id = AgentIdentity(name="dodo", constitution_version="1")
+    body_lines: list[str] = [
+        f"**Coverage check — {gap.check_name}**.",
+        "",
+        gap.summary,
+        "",
+        "Items still uncovered:",
+    ]
+    for slug in gap.items:
+        body_lines.append(f"  - ``{slug}``")
+    body_lines.append("")
+    body_lines.append(
+        "Revise the plan so each item lands in a milestone's "
+        "``consumes_requirements`` list (or surface a "
+        "``concern`` explaining why this item shouldn't be "
+        "consumed by any milestone — e.g., it's a process note "
+        "or cross-cutting constraint that doesn't decompose). "
+        "The substrate uses MilestoneRegistry's update-by-slug "
+        "semantics, so re-emitting a milestone with an expanded "
+        "consumes list updates the existing one cleanly."
+    )
+    obs = Utterance(
+        thread_id=thread_id,
+        speaker=dodo_id,
+        addressed_to="caucus",
+        speech_act=SpeechAct.OBSERVATION,
+        content=UtteranceContent(
+            body="\n".join(body_lines),
+            artifacts=[
+                Artifact(
+                    kind="coverage_gap",
+                    payload={
+                        "check_name": gap.check_name,
+                        "gap_kind": gap.gap_kind,
+                        "items": list(gap.items),
+                    },
+                )
+            ],
+        ),
+    )
+    await runner.bus.publish(obs)
+    capture.observe(obs)
+    from wonderland.runner import RunnerEvent as _RunnerEvent
+
+    yield _RunnerEvent(
+        kind="utterance",
+        elapsed=0.0,
+        payload={"utterance": obs},
+    )
+
+
 # ---------------------------------------------------------------------
 # Main orchestrator
 # ---------------------------------------------------------------------
@@ -517,7 +647,35 @@ async def run_phased_meeting(
                 except (asyncio.TimeoutError, TimeoutError):
                     return None
 
-            while not state.is_complete():
+            while True:
+                # P15 T-m8 — coverage gate. When the phase is ABOUT to
+                # end (via exit_condition_met or exhaustion or all-
+                # passed), give the coverage check one last chance to
+                # extend. If a gap exists + we have bonus headroom,
+                # the hook bumps ``state.bonus_rotations`` + clears
+                # ``state.exit_condition_met``, so the loop continues
+                # for at least one more rotation. Without this gate
+                # at the loop boundary, M2's commit phase
+                # (exit_condition_artifact: feature) exits the moment
+                # Rabbit ships his first feature — the rotation-end
+                # hook below never fires because the phase already
+                # short-circuited. The gate runs every iteration but
+                # only does work when is_complete would otherwise
+                # exit, so the steady-state cost is one cheap
+                # ``is_complete()`` re-check.
+                if state.is_complete():
+                    async for _ce in _maybe_apply_coverage_nudge(
+                        meeting=meeting,
+                        state=state,
+                        runner=runner,
+                        capture=capture,
+                        thread_id=thread_id,
+                        phase_name=phase_def.name,
+                    ):
+                        yield _ce
+                    if state.is_complete():
+                        break
+
                 # Pause gate. Set by default — the await is a no-op
                 # while resumed. When the operator calls runner.pause(),
                 # the event clears and this await blocks until
@@ -627,6 +785,19 @@ async def run_phased_meeting(
 
                     if action == WindowAction.ACTED:
                         assert response is not None
+                        # P15 T-m6 stage-leak guardrail. The phased
+                        # orchestrator publishes directly via
+                        # bus.publish (bypassing the agent's speak()
+                        # loop where the filter normally fires), so
+                        # we have to call the filter explicitly
+                        # here. Without this, milestone-plan (which
+                        # is phased) doesn't enforce its
+                        # allowed_decisions: tickets/stories shipped
+                        # by stage-leaking agents land on disk.
+                        filtered: Utterance = runner.agents[
+                            agent_id
+                        ]._apply_allowed_decisions_filter(response)
+                        response = filtered
                         await runner.bus.publish(response)
                         capture.observe(response)
                         state.outcomes.append(
@@ -741,6 +912,26 @@ async def run_phased_meeting(
                     if phase_event_writer is not None:
                         await phase_event_writer(rot_evt)
                     yield rot_evt
+
+                    # P15 T-m8 — coverage-check hook. When the phase
+                    # declares ``coverage_check``, compute the gap;
+                    # if any items are still missing, inject a
+                    # synthetic Dodo observation listing them + grant
+                    # one bonus rotation (capped by Meeting.
+                    # coverage_max_extra_rotations) so agents have
+                    # somewhere to spend the revision turn.
+                    # Generators run lazily; only fires on actual
+                    # rotation boundary. No-op when coverage_check
+                    # is None — original behavior preserved.
+                    async for _ce in _maybe_apply_coverage_nudge(
+                        meeting=meeting,
+                        state=state,
+                        runner=runner,
+                        capture=capture,
+                        thread_id=thread_id,
+                        phase_name=phase_def.name,
+                    ):
+                        yield _ce
 
             phase_end = PhaseEndEvent(
                 thread_id=thread_id,

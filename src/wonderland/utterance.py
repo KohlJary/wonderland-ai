@@ -42,6 +42,28 @@ class SpeechAct(StrEnum):
     REFRAME = "reframe"
     DEFERENCE = "deference"
     CONTRACT_NOTE = "contract_note"
+    # P14 — interview lifecycle. INTERVIEW_QUESTIONS is the
+    # interviewer's round-1 utterance carrying a question batch
+    # the substrate writes to disk for the operator to answer.
+    # INTERVIEW_REVIEW is the interviewer's synthesis utterance
+    # carrying requirement artifacts (and optionally a follow-up
+    # question batch) after the operator submits answers.
+    INTERVIEW_QUESTIONS = "interview_questions"
+    INTERVIEW_REVIEW = "interview_review"
+    # P15 — milestone planning. MILESTONE_PLAN is the utterance
+    # an agent (Rabbit / Cat / Alice) ships during the planning
+    # meeting carrying one or more milestone artifacts. The
+    # substrate's MilestoneRegistry dedups by slug.
+    MILESTONE_PLAN = "milestone_plan"
+    # P15 T-m7 — artifact retraction. RETRACT carries one or more
+    # ``retraction`` artifacts ({target_kind, target_slug, reason}).
+    # The substrate scans the utterance after publish, deletes the
+    # targeted file via the matching registry, and records the slug
+    # in module-level state so resolve_seeds filters retracted
+    # artifacts out of downstream seed pools. The retract utterance
+    # itself stays in the transcript as an auditable record of who
+    # removed what and why.
+    RETRACT = "retract"
 
     # Procedural — issued primarily by the Dodo
     NUDGE = "nudge"
@@ -72,6 +94,10 @@ SUBSTANTIVE_ACTS: frozenset[SpeechAct] = frozenset(
         SpeechAct.RULING,
         SpeechAct.OBSERVATION,
         SpeechAct.REFRAME,
+        SpeechAct.INTERVIEW_QUESTIONS,
+        SpeechAct.INTERVIEW_REVIEW,
+        SpeechAct.MILESTONE_PLAN,
+        SpeechAct.RETRACT,
         SpeechAct.DEFERENCE,
         SpeechAct.CONTRACT_NOTE,
     }

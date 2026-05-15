@@ -27,6 +27,7 @@ def test_payload_requires_non_empty_title() -> None:
             tickets=["t1"],
             stack_span=StackSpan.FRONTEND,
             tier=TicketTier.V1,
+            sources=["s"],
         )
 
 
@@ -38,6 +39,7 @@ def test_payload_requires_non_empty_description() -> None:
             tickets=["t1"],
             stack_span=StackSpan.FRONTEND,
             tier=TicketTier.V1,
+            sources=["s"],
         )
 
 
@@ -56,6 +58,7 @@ def test_payload_accepts_empty_tickets_at_m2_ship_time() -> None:
         tickets=[],  # empty at M2 ship time — M3 fills via reverse-index
         stack_span=StackSpan.FRONTEND,
         tier=TicketTier.V1,
+        sources=["seeded-story"],
     )
     assert payload.tickets == []
 
@@ -89,9 +92,29 @@ def test_payload_optional_fields_default_empty() -> None:
         tickets=["t1"],
         stack_span=StackSpan.FRONTEND,
         tier=TicketTier.V1,
+        sources=["s"],
     )
+    # ``personas`` remains optional; ``sources`` is required (T-m8b
+    # follow-up — features without sources are unmoored claims that
+    # break the milestone-realization coverage walk).
     assert payload.personas == []
-    assert payload.sources == []
+    assert payload.sources == ["s"]
+
+
+def test_payload_rejects_empty_sources() -> None:
+    """T-m8b follow-up — every feature must cite at least one story
+    slug. The discovery2 pilot produced a feature with empty
+    Sources line that broke the coverage walk; validator catches
+    it at parse time so White Rabbit's retry loop fixes it."""
+    with pytest.raises(ValidationError):
+        FeaturePayload(
+            title="t",
+            description="x",
+            tickets=["t1"],
+            stack_span=StackSpan.FRONTEND,
+            tier=TicketTier.V1,
+            sources=[],
+        )
 
 
 def test_payload_kind_defaults_to_capability() -> None:
@@ -103,6 +126,7 @@ def test_payload_kind_defaults_to_capability() -> None:
         description="x",
         stack_span=StackSpan.FRONTEND,
         tier=TicketTier.V1,
+        sources=["s"],
     )
     from wonderland.feature import FeatureKind
 
@@ -139,6 +163,7 @@ def test_render_feature_includes_kind_for_capability() -> None:
         description="x",
         stack_span=StackSpan.FRONTEND,
         tier=TicketTier.V1,
+        sources=["s"],
     )
     out = render_feature(1, payload)
     assert "**Kind:** capability" in out
@@ -168,16 +193,19 @@ def test_render_feature_includes_all_required_sections() -> None:
     assert "share-link-display" in out
 
 
-def test_render_feature_uses_dash_for_empty_optionals() -> None:
+def test_render_feature_uses_dash_for_empty_personas() -> None:
+    """Personas remains optional + renders as dash when empty;
+    sources is now required (T-m8b) so it always has a value."""
     payload = FeaturePayload(
         title="t",
         description="x",
         tickets=["t1"],
         stack_span=StackSpan.BACKEND,
         tier=TicketTier.FAST_FOLLOW,
+        sources=["a-story"],
     )
     out = render_feature(1, payload)
-    assert "**Sources:** —" in out
+    assert "**Sources:** a-story" in out
     assert "**Personas:** —" in out
 
 
@@ -191,6 +219,7 @@ def _payload(title: str = "f", tickets: list[str] | None = None) -> FeaturePaylo
         tickets=tickets or ["t1"],
         stack_span=StackSpan.FRONTEND,
         tier=TicketTier.V1,
+        sources=["seed-story"],
     )
 
 
@@ -209,6 +238,22 @@ def test_registry_numbers_increment(tmp_path: Path) -> None:
     b = reg.write(_payload(title="beta"))
     c = reg.write(_payload(title="gamma"))
     assert (a.number, b.number, c.number) == (1, 2, 3)
+
+
+def test_registry_re_emit_same_slug_updates_in_place(tmp_path: Path) -> None:
+    """P15 follow-up — update-by-slug semantics. Re-emitting a
+    feature with the same slug overwrites in place; the second
+    write preserves the original number and path. Previously, the
+    registry always allocated a new number, producing duplicate
+    files for identical slugs (discovery5 pilot)."""
+    reg = FeatureRegistry(tmp_path)
+    first = reg.write(_payload(title="alpha"))
+    second = reg.write(_payload(title="alpha"))
+    assert first.number == second.number == 1
+    assert first.path == second.path
+    # Only one file on disk.
+    files = sorted(reg.path.glob("feature-*.md"))
+    assert len(files) == 1
 
 
 def test_registry_next_number_derives_from_disk(tmp_path: Path) -> None:

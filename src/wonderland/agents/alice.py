@@ -32,6 +32,15 @@ from wonderland.engagement import (
     speaker_is,
 )
 from wonderland.identity import load_constitution
+from wonderland.interview import (
+    InterviewQuestion,
+    RequirementPayload,
+    RequirementRegistry,
+)
+from wonderland.milestone import (
+    MilestonePayload,
+    MilestoneRegistry,
+)
 from wonderland.llm import CachedBlock
 from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.story import StoryPayload, StoryRegistry
@@ -100,13 +109,36 @@ def alice_rules() -> EngagementRules:
 AliceDecision = Literal[
     "story",
     "test_scenario",
+    "interview_questions",
+    "interview_review",
+    "milestone_plan",
     "concern",
     "question",
     "question_to_operator",
     "reframe",
+    "retract",
     "deference",
     "silence",
 ]
+
+
+class AliceRetractionPayload(BaseModel):
+    """One retraction Alice ships when she catches her own off-scope
+    story (or another agent's artifact she's the right voice to walk
+    back). P15 T-m7 substrate."""
+
+    target_kind: Literal[
+        "story", "feature", "ticket", "adr", "milestone", "requirement"
+    ]
+    target_slug: str
+    reason: str = Field(
+        ...,
+        description=(
+            "One-line scope/coherence note explaining why this "
+            "artifact is being walked back. Surfaces in the "
+            "ArtifactRetracted observer event."
+        ),
+    )
 
 
 class AliceResponse(BaseModel):
@@ -123,6 +155,13 @@ class AliceResponse(BaseModel):
     persona's POV instead of polluting the story pool with
     test-shaped stories. Hatter still writes the edge / failure
     scenarios; Alice covers the persona-anchored happy paths.
+
+    When ``decision == "interview_review"``, ``requirements`` must
+    contain at least one ``RequirementPayload`` — the discovery (P14)
+    extension where Alice reads operator answers from an interview
+    and synthesizes them into structured requirement artifacts.
+    ``followup_questions`` is optional; non-empty means the
+    interviewer wants to ask another round before closing.
     """
 
     decision: AliceDecision
@@ -141,6 +180,42 @@ class AliceResponse(BaseModel):
     )
     stories: list[StoryPayload] = Field(default_factory=list)
     scenarios: list[TestScenarioPayload] = Field(default_factory=list)
+    requirements: list[RequirementPayload] = Field(default_factory=list)
+    retractions: list[AliceRetractionPayload] = Field(default_factory=list)
+    milestones: list[MilestonePayload] = Field(
+        default_factory=list,
+        description=(
+            "Milestone proposals shipped during the milestone-plan "
+            "(P15) meeting. Required (non-empty) when "
+            "decision='milestone_plan'. Each milestone has a stable "
+            "slug; the substrate's MilestoneRegistry dedups by slug "
+            "(re-emit = update, new slug = append). Alice's lens "
+            "is persona-anchored: each milestone should ship "
+            "something the named persona would notice."
+        ),
+    )
+    questions: list[InterviewQuestion] = Field(
+        default_factory=list,
+        description=(
+            "Round-1 question batch on ``interview_questions`` "
+            "decisions. Shaped from the directive + YAML templates "
+            "the substrate seeds into context — the agent takes the "
+            "templates as a starting point and customizes them to "
+            "the operator's directive. Required (non-empty) when "
+            "decision='interview_questions'."
+        ),
+    )
+    followup_questions: list[InterviewQuestion] = Field(
+        default_factory=list,
+        description=(
+            "Optional follow-up question batch on interview_review "
+            "decisions. Non-empty means 'one more round before "
+            "closing this interview'. The substrate writes these to "
+            "disk via the bridge for the operator's next pass. "
+            "Ignored when decision is anything other than "
+            "interview_review."
+        ),
+    )
 
     @field_validator("body", mode="before")
     @classmethod
@@ -160,6 +235,17 @@ class AliceResponse(BaseModel):
     def _scenarios_none_to_empty(cls, v: object) -> object:
         return [] if v is None else v
 
+    @field_validator(
+        "requirements",
+        "milestones",
+        "questions",
+        "followup_questions",
+        mode="before",
+    )
+    @classmethod
+    def _list_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
+
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
         if self.decision == "story" and not self.stories:
             raise ValueError(
@@ -173,18 +259,120 @@ class AliceResponse(BaseModel):
                 "one scenario in `scenarios`. Choose a different decision "
                 "or include the scenarios you intended to issue."
             )
+        if self.decision == "interview_review" and not self.requirements:
+            raise ValueError(
+                "AliceResponse: decision='interview_review' requires at "
+                "least one requirement in `requirements`. If the operator's "
+                "answers don't surface anything actionable, choose a "
+                "different decision."
+            )
+        if self.decision == "interview_questions" and not self.questions:
+            raise ValueError(
+                "AliceResponse: decision='interview_questions' requires "
+                "at least one question in `questions`. Ship the shaped "
+                "batch (typically the YAML templates tailored to the "
+                "directive); choose 'silence' if you genuinely have "
+                "nothing to ask."
+            )
+        if self.decision == "milestone_plan" and not self.milestones:
+            raise ValueError(
+                "AliceResponse: decision='milestone_plan' requires at "
+                "least one milestone in `milestones`. Ship the plan "
+                "(your lens: persona-anchored ordering); choose a "
+                "different decision if you have nothing to propose."
+            )
+        if self.decision == "retract" and not self.retractions:
+            raise ValueError(
+                "AliceResponse: decision='retract' requires at least "
+                "one entry in `retractions`. Each entry names the "
+                "(target_kind, target_slug, reason) of an artifact "
+                "being removed from this run's deliverables."
+            )
 
 
 _OUTPUT_PROTOCOL = """\
 You will respond with exactly one fenced JSON block. No prose outside the block.
 
+**Meeting type determines your primary decision.** Before
+generating a response, read the Dodo's convenor_directive in your
+triggers and identify the meeting context. Match your decision
+to the meeting:
+
+  - **milestone-plan** (P15 planning): your default is
+    ``milestone_plan`` (your persona-anchored-ordering lens) or
+    ``concern`` (push back on Rabbit's draft). NEVER ship
+    ``story`` here — story composition is M1's job in
+    tdd-design; shipping a story in planning is a stage-leak the
+    substrate rejects + deletes, wasting the turn.
+  - **tdd-design M1** (Caucus Race): default is ``story``. THIS
+    is where you write stories. **If you notice mid-meeting that
+    a story you (or another agent) shipped earlier is off-scope —
+    a persona you imported instead of one the seeded requirements
+    name, a story in a different problem domain than this run is
+    about — choose ``retract`` to walk it back instead of leaving
+    it on disk as drift.** Caterpillar can retract too; the first
+    voice to catch the violation wins. Retraction is the
+    correction you couldn't do before this primitive shipped.
+    **Each story you ship MUST populate ``realizes_requirements``
+    with the slug(s) of the discovery requirement(s) it
+    addresses.** When the run is milestone-scoped, the substrate
+    walks ``milestone.consumes_requirements → stories realizing
+    each → features sourcing those stories`` to verify the
+    milestone is fully realized at M2 commit. Your linkage is
+    the load-bearing piece that makes that walk possible. Empty
+    list ships are permitted only when no seeded requirement
+    plausibly fits — usually a sign the story shouldn't be in
+    scope at all.
+
+    **Slug stability is load-bearing in M1, same as in
+    milestone-plan.** When you see stories already in your seed
+    context (from a prior rotation in this meeting or a prior
+    run on the project), you have two choices: (a) the
+    conceptual story is already adequately captured — leave it
+    alone, don't re-emit a slight rephrasing as a "new" story;
+    (b) the existing story needs a real refinement —
+    ``retract`` it and ship a clean replacement, NOT a parallel
+    version. **Never ship a fresh story whose conceptual content
+    overlaps an existing one's persona + need + acceptance
+    triple but whose slug differs because you used different
+    words for the title.** The discovery2 pilot produced 15
+    story files for 5 conceptual stories that way — the slugs
+    all differed because each rotation rephrased the title, so
+    StoryRegistry treated each as new. Downstream features then
+    cite all 15 in their Sources list, which clutters the
+    project + breaks the cleanliness of the design chain. When
+    in doubt about whether a story is "the same" as an existing
+    one, ``concern`` it for refinement rather than coining a
+    parallel.
+  - **tdd-design M2** (composition): default is ``concern`` if a
+    feature drifts from your stories, ``silence`` otherwise.
+  - **tdd-implement M6** (Tea Party): default is
+    ``test_scenario`` (persona-anchored happy paths). NEVER
+    ship ``story`` here; the story pool is closed.
+  - **discovery** (P14 persona interview): default is
+    ``interview_questions`` (round 1) or ``interview_review``
+    (after answers).
+
+When the meeting type isn't obvious from the convenor_directive,
+default to ``concern`` or ``question`` — never default to
+``story`` without confirming the meeting calls for it.
+
 The JSON must conform to this schema:
 
 ```
 {
-  "decision": "story" | "test_scenario" | "concern" | "question" |
-              "question_to_operator" | "reframe" | "deference" | "silence",
+  "decision": "story" | "test_scenario" | "interview_questions" |
+              "interview_review" | "milestone_plan" | "concern" |
+              "question" | "question_to_operator" | "reframe" |
+              "retract" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
+  "retractions": [                    // include ONLY when decision is "retract"
+    {
+      "target_kind": "story" | "feature" | "ticket" | "adr" | "milestone" | "requirement",
+      "target_slug": "the slug of the artifact you are removing — must match a slug already on the bus / on disk in this run",
+      "reason": "one-line scope/coherence justification — surfaces in the live-watch + audit log"
+    }
+  ],
   "stories": [                        // include ONLY when decision is "story"
     {
       "title": "short, specific title",
@@ -199,6 +387,10 @@ The JSON must conform to this schema:
       "confusion_flags": [
         "things that felt wrong to you as you wrote this, even if you can't fully articulate why",
         "include at least one — stories without flags are suspect (you weren't paying attention, or the story is too easy)"
+      ],
+      "realizes_requirements": [
+        "requirement-slug-this-story-addresses",
+        "another-requirement-slug-if-the-story-spans-two"
       ]
     }
   ],
@@ -212,6 +404,53 @@ The JSON must conform to this schema:
       "concern": "why this scenario matters from a user-need POV — 'if this breaks, Maya can't tell that her translation landed'",
       "property": "(optional) the general statement this scenario witnesses",
       "implies": []
+    }
+  ],
+  "questions": [                      // include ONLY when decision is "interview_questions"
+    {
+      "id": "stable slug-shaped id (use the template's id when shipping a template question; coin a fresh slug for new ones)",
+      "text": "the question text the operator will see — SHAPED to the directive: 'Who's using your Pomodoro app and what's prompting them to start a session?' beats the generic 'Who's the primary person using this?'",
+      "kind": "free_text" | "single_choice" | "multi_choice" | "numeric",
+      "required": false,
+      "options": []                   // populate for single_choice / multi_choice
+    }
+  ],
+  "requirements": [                   // include ONLY when decision is "interview_review"
+    {
+      "title": "short specific title — 'Maya: end-of-day translation triage' beats 'persona 1'",
+      "interview_id": "the interview's id from your context (e.g. 'persona-interview')",
+      "question_id": "which of the operator's answered questions this requirement came from",
+      "kind": "persona" | "situation" | "constraint" | "integration" | "scope" | "success_criterion" | "out_of_scope" | "deal_breaker",
+      "body": "your structured rendering of what the operator said — 1-3 sentences, the stable claim that downstream meetings will read",
+      "operator_quote": "raw verbatim from the operator's answer, for traceability",
+      "confidence": "operator_stated"
+    }
+  ],
+  "followup_questions": [             // optional; include on interview_review when the answers surface a gap
+    {
+      "id": "slug-shaped id unique within this followup batch",
+      "text": "one specific question — the operator's first answer raised this gap",
+      "kind": "free_text" | "single_choice" | "multi_choice" | "numeric",
+      "required": false,
+      "options": []                   // populate for single_choice / multi_choice
+    }
+  ],
+  "milestones": [                     // include ONLY when decision is "milestone_plan"
+    {
+      "slug": "stable slug — re-emit the same slug to amend an existing milestone; new slug appends",
+      "name": "human-readable name shown in the dashboard — 'Foundation: data layer + profile shell' beats 'milestone 1'",
+      "order": 1,
+      "goal": "one-to-three-sentence statement of what this milestone accomplishes",
+      "done_when": [
+        "observable condition — concrete enough the operator can check it",
+        "another condition"
+      ],
+      "consumes_requirements": [
+        "requirement-slug-1",
+        "requirement-slug-2"
+      ],
+      "deferred": false,
+      "confidence": "operator_stated"
     }
   ]
 }
@@ -228,6 +467,94 @@ returns the wrong thing for the persona) or `degradation` (the
 system is slower than the persona would tolerate). Use this
 decision ONLY in tea-party threads where Hatter has been seeded
 as a co-roster; everywhere else, story is your shape.
+
+**`interview_questions` — Alice's discovery (P14) round-1 move.**
+When you're the interviewer in a discovery thread AND no operator
+answers have arrived yet, your job is to SHAPE the question batch
+to the operator's directive. The substrate seeds the YAML's
+template questions into your context as a starting point — take
+them as the structural skeleton (8 kinds of requirement, persona
++ situation focus for you specifically) and tailor the question
+TEXT and OPTIONS to the directive. Keep ids stable when re-using
+a template question so downstream synthesis can route answers
+back to the right requirement kind.
+
+Example: the template asks "Who's the primary person using this?"
+For directive "Build a Pomodoro tracker", you'd ship "Who's using
+your Pomodoro tracker — name + role + what's prompting them to
+reach for a timer?" For directive "Audit our data layer", you'd
+ship "Whose work does the data layer touch — name the developers
+and the moments their workflow stalls on it." Same id
+(``primary_persona``), shaped text.
+
+Skip a template question entirely when the directive renders it
+irrelevant. Add new questions when the directive surfaces a gap
+the template missed. 3-5 questions is the target — operator
+attention is the limiting cost, not LLM tokens.
+
+**`milestone_plan` — Alice's planning (P15) move.** When the team
+is in the milestone-plan meeting, your lens is *persona-anchored
+ordering*: which milestone delivers something the named persona
+would notice first? Read the requirement corpus + existing
+milestones (when this is a re-planning pass) in your context, and
+propose milestones ordered so each one ships a coherent
+persona-visible slice. Rabbit owns the final order; your job is
+to push back when a proposed order would have the persona seeing
+something incomplete-feeling before something complete-feeling
+(e.g., shipping gamification before logging would put XP bars on
+an empty session list — Marcus would notice).
+
+**Slug stability is load-bearing here, same as in M1 stories.**
+The MilestoneRegistry dedups by **exact slug match**: when
+Rabbit (or your own prior rotation) has already shipped a
+milestone covering a conceptual chunk, you have two clean moves:
+
+  - Re-emit that milestone with the **same slug** to amend it
+    (add a ``done_when`` clause, fold in a newly-arrived
+    requirement, sharpen the persona-anchored framing).
+  - ``concern`` the existing milestone if your persona lens
+    disagrees with its framing or ordering — let Rabbit revise
+    rather than shipping a parallel.
+
+What you should NEVER do: coin a new milestone with a slightly-
+different slug for the same conceptual chunk just because you'd
+title it differently. The discovery3 pilot produced 6 milestone
+files (two per concept) that way — your rotation-1 emissions used
+topic-anchored slugs (``m1-session-logging-experience-foundation``)
+and your rotation-2 emissions used persona-anchored slugs
+(``m1-marcus-logs-his-first-session``) for the same milestone.
+Both stayed on disk. If the persona-anchored framing is the right
+one, retract your rotation-1 emissions instead of shipping a
+parallel set. Slug stability isn't aesthetic — it's the only way
+the substrate can dedup.
+
+**`interview_review` — Alice's discovery (P14) synthesis move.**
+When you're the interviewer in a discovery thread and the operator
+has just submitted answers, your job is to SYNTHESIZE those
+answers into structured requirement artifacts the design phase
+will seed from.
+Read each answered question carefully:
+  - For a persona question: ship `kind: persona` requirements naming
+    the specific people involved (Maya, Sam, etc.), plus
+    `kind: situation` requirements for the contexts in which they
+    reach for the system.
+  - For a success-signal question: ship `kind: success_criterion`
+    requirements that name the observable test (not "they're happy"
+    — "Maya can dismiss the EOD pile in under 5 minutes").
+  - For a deferred-personas question: ship `kind: out_of_scope`
+    requirements naming each excluded persona so M2 doesn't
+    silently re-introduce them.
+Every requirement should preserve the operator's exact wording in
+`operator_quote` for traceability — the `body` is your rendering,
+the quote is the evidence. Use `confidence: operator_stated` (the
+default) for everything the operator actually said; only flip to
+`interviewer_inferred` in the backfill flow where you're reading
+existing code instead of interviewing.
+
+Use `followup_questions` ONLY when the operator's answers
+surface a specific gap you need to close before requirements can
+be complete — not as a fishing expedition. One round of follow-up
+is the cap; the substrate closes the interview after that.
 
 **`question_to_operator` — escalate to the human operator.** Use when
 the team needs a decision only the operator can make: stack
@@ -289,6 +616,8 @@ class Alice(WonderlandAgent):
         llm: LLMClient | None = None,
         story_registry: StoryRegistry | None = None,
         test_scenario_registry: TestScenarioRegistry | None = None,
+        requirement_registry: RequirementRegistry | None = None,
+        milestone_registry: MilestoneRegistry | None = None,
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(ALICE_NAME, root=constitutions_root)
@@ -299,6 +628,8 @@ class Alice(WonderlandAgent):
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._story_registry = story_registry
         self._test_scenario_registry = test_scenario_registry
+        self._requirement_registry = requirement_registry
+        self._milestone_registry = milestone_registry
 
     @property
     def story_registry(self) -> StoryRegistry | None:
@@ -307,6 +638,14 @@ class Alice(WonderlandAgent):
     @property
     def test_scenario_registry(self) -> TestScenarioRegistry | None:
         return self._test_scenario_registry
+
+    @property
+    def requirement_registry(self) -> RequirementRegistry | None:
+        return self._requirement_registry
+
+    @property
+    def milestone_registry(self) -> MilestoneRegistry | None:
+        return self._milestone_registry
 
     async def deliberate(self, context: Context) -> Utterance | None:
         if self.llm is None:
@@ -328,6 +667,61 @@ class Alice(WonderlandAgent):
             artifacts.extend(
                 self._record_test_scenarios(response.scenarios)
             )
+        elif response.decision == "interview_questions":
+            # Round-1 question batch — substrate picks up the
+            # interview_question_batch artifact and writes it to
+            # disk via the bridge for the operator to fill out.
+            artifacts.append(
+                Artifact(
+                    kind="interview_question_batch",
+                    payload={
+                        "questions": [
+                            q.model_dump()
+                            for q in response.questions
+                        ],
+                    },
+                )
+            )
+        elif response.decision == "interview_review":
+            artifacts.extend(
+                self._record_requirements(response.requirements)
+            )
+            # Follow-up questions ride on the utterance as a
+            # separate artifact kind so _run_one_interview can pick
+            # them up + re-open the bridge for a second round.
+            if response.followup_questions:
+                artifacts.append(
+                    Artifact(
+                        kind="interview_followup_questions",
+                        payload={
+                            "questions": [
+                                q.model_dump()
+                                for q in response.followup_questions
+                            ],
+                        },
+                    )
+                )
+        elif response.decision == "milestone_plan":
+            artifacts.extend(
+                self._record_milestones(response.milestones)
+            )
+        elif response.decision == "retract":
+            # Alice names artifacts to remove (typically her own
+            # stories that drifted from the milestone scope); the
+            # substrate's _apply_retraction_for_utterance reads the
+            # (target_kind, target_slug, reason) triples + walks
+            # them back from disk and seed pools.
+            for r in response.retractions:
+                artifacts.append(
+                    Artifact(
+                        kind="retraction",
+                        payload={
+                            "target_kind": r.target_kind,
+                            "target_slug": r.target_slug,
+                            "reason": r.reason,
+                        },
+                    )
+                )
 
         thread_id, parent_id = self._derive_threading(context)
         if response.decision == "question_to_operator":
@@ -369,6 +763,62 @@ class Alice(WonderlandAgent):
                         "number": record.number,
                         "slug": record.slug,
                         "title": record.title,
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_milestones(
+        self, payloads: list[MilestonePayload]
+    ) -> list[Artifact]:
+        """Write milestone artifacts to MilestoneRegistry + return
+        bus-side Artifact pointers. The registry's update-by-slug
+        semantics handle cross-run continuity: same slug as an
+        existing milestone = overwrite; new slug = append. Skips
+        when no registry was wired."""
+        if self._milestone_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._milestone_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="milestone",
+                    payload={
+                        "slug": record.slug,
+                        "order": record.order,
+                        "name": record.name,
+                        "deferred": record.deferred,
+                        "confidence": record.confidence.value,
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_requirements(
+        self, payloads: list[RequirementPayload]
+    ) -> list[Artifact]:
+        """Write requirement artifacts to the RequirementRegistry on
+        disk + return bus-side Artifact pointers. Mirror of
+        ``_record_stories`` / ``_record_test_scenarios`` for the
+        discovery (P14) flow. Skips if no registry was wired into
+        construction (tests, the LLM-less mock case)."""
+        if self._requirement_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._requirement_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="requirement",
+                    payload={
+                        "number": record.number,
+                        "slug": record.slug,
+                        "title": record.title,
+                        "kind": record.kind.value,
+                        "confidence": record.confidence.value,
                         "path": str(record.path),
                     },
                 )

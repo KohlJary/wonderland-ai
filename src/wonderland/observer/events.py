@@ -64,6 +64,114 @@ class RunStarted:
 
 
 @dataclass(frozen=True)
+class ArtifactSuppressed:
+    """The substrate's stage-leak guardrail (P15 T-m6) dropped an
+    artifact before it reached the bus. Surfaces in the live-watch
+    UI so the operator can see what was filtered + flag it for the
+    next constitution / directive refinement.
+
+    ``thread_id``: the meeting thread the suppression happened in.
+    ``speech_act``: the speech_act on the utterance that shipped
+        the dropped artifact (e.g., "ticket" when Rabbit shipped a
+        ticket in a milestone-plan meeting).
+    ``artifact_kind``: the dropped artifact's kind.
+    ``agent``: the agent whose utterance carried the artifact.
+    ``reason``: human-readable reason — typically references the
+        allowed-list the meeting declared, so the operator can map
+        the drop back to the constraint that caught it.
+    """
+
+    timestamp: datetime
+    thread_id: str
+    speech_act: str
+    artifact_kind: str
+    agent: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class ArtifactRetracted:
+    """An agent explicitly retracted a previously shipped artifact (P15
+    T-m7). Unlike ArtifactSuppressed — which is a substrate veto on the
+    way to the bus — retraction is the agent's own correction: an
+    artifact already on disk + already on the bus is named for removal.
+    The substrate handles the mechanical work (file unlink, scope-out
+    of downstream seeds) and emits this event so the live-watch surface
+    can show what the team decided to walk back, and why.
+
+    ``thread_id``: the meeting thread the retraction was issued in.
+    ``retractor``: the agent that emitted the RETRACT utterance.
+    ``target_kind``: the kind of the retracted artifact (story /
+        feature / ticket / adr / requirement / milestone).
+    ``target_slug``: the slug of the retracted artifact.
+    ``reason``: free-text justification from the retractor — usually
+        a one-line scope or coherence note (e.g., 'off milestone scope:
+        translation, not onboarding').
+    """
+
+    timestamp: datetime
+    thread_id: str
+    retractor: str
+    target_kind: str
+    target_slug: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class InterviewStarted:
+    """An Interview just opened — interviewer agent is about to ship
+    its question batch. Consumers (live-watch / dashboard) use this
+    to render an interview-in-progress badge that's visually distinct
+    from a meeting-in-progress (operator action is required to
+    advance, not just team deliberation)."""
+
+    timestamp: datetime
+    interview_id: str
+    label: str
+    name: str
+    interviewer: str
+    thread_id: str
+
+
+@dataclass(frozen=True)
+class InterviewQuestionsPosted:
+    """The interviewer shipped a question batch to disk. The TUI's
+    interview poller surfaces the InterviewModal in response.
+    ``question_count`` lets the UI render a progress hint without
+    re-reading the file."""
+
+    timestamp: datetime
+    interview_id: str
+    question_count: int
+
+
+@dataclass(frozen=True)
+class InterviewAnswersReceived:
+    """The operator submitted answers — the interviewer's next turn
+    has the answers available as utterance context."""
+
+    timestamp: datetime
+    interview_id: str
+    section_skipped: bool
+    answer_count: int
+
+
+@dataclass(frozen=True)
+class InterviewEnded:
+    """An Interview just closed. ``outcome`` is COMPLETE (operator
+    submitted, interviewer shipped requirements), SKIPPED (operator
+    hit skip-section), or ABORTED (run was killed mid-interview).
+    Mirrors MeetingEnded so the live-watch UI can pair start/end
+    events uniformly."""
+
+    timestamp: datetime
+    interview_id: str
+    outcome: str
+    elapsed_seconds: float
+    requirements_shipped: int
+
+
+@dataclass(frozen=True)
 class MeetingStarted:
     """A meeting or per_item iteration just opened.
 
@@ -288,9 +396,15 @@ class RotationCompleted:
 # checks read against it.
 RunEvent = Union[
     RunStarted,
+    InterviewStarted,
+    InterviewQuestionsPosted,
+    InterviewAnswersReceived,
+    InterviewEnded,
     MeetingStarted,
     UtteranceEmitted,
     ArtifactShipped,
+    ArtifactSuppressed,
+    ArtifactRetracted,
     AgentTelemetryDelta,
     MeetingEnded,
     RunEnded,
@@ -308,6 +422,12 @@ __all__ = [
     "AgentPassed",
     "AgentTelemetryDelta",
     "ArtifactShipped",
+    "ArtifactSuppressed",
+    "ArtifactRetracted",
+    "InterviewAnswersReceived",
+    "InterviewEnded",
+    "InterviewQuestionsPosted",
+    "InterviewStarted",
     "MeetingEnded",
     "MeetingStarted",
     "PhaseEnded",

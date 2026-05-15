@@ -3322,7 +3322,7 @@ async def test_project_dashboard_mounts_with_tabs(
         screen = app.screen
         assert isinstance(screen, ProjectDashboardScreen)
         # Runs column: always-visible list pane, not a tab.
-        screen.query_one("#runs-column")
+        screen.query_one("#runs-row")
         screen.query_one("#runs-table", DataTable)
         # Drill-down tabs: Artifacts (default) / Files / Metrics.
         tabs = screen.query_one("#dashboard-tabs", TabbedContent)
@@ -3846,7 +3846,7 @@ async def test_dashboard_drilldown_tabs_still_present(
         # Metrics. Runs is no longer a tab.
         assert tabs.active in ("tab-artifacts", None)
         # And the runs column is mounted (not as a tab pane).
-        app.screen.query_one("#runs-column")
+        app.screen.query_one("#runs-row")
         await pilot.press("escape")
         await pilot.press("q")
 
@@ -4741,3 +4741,256 @@ async def test_new_run_screen_empty_directive_pushes_confirmation_modal(
         assert isinstance(app.screen, NewRunScreen)
         await pilot.press("escape")
         await pilot.press("q")
+
+
+# ---------------------------------------------------------------------------
+# P14 — InterviewModal smoke tests
+# ---------------------------------------------------------------------------
+
+
+async def test_interview_modal_renders_question_widgets() -> None:
+    """Each question's kind renders the right widget — TextArea for
+    free_text, RadioSet for single_choice, Checkbox group for
+    multi_choice, Input for numeric."""
+    from textual.widgets import Checkbox, Input, RadioSet, TextArea
+
+    from wonderland.tui.screens.interview_modal import InterviewModal
+
+    payload = {
+        "batch_id": "b1",
+        "interview_id": "persona-interview",
+        "label": "I1",
+        "name": "Who is this for?",
+        "interviewer": "alice",
+        "goal": "capture personas",
+        "estimated_minutes": 5,
+        "questions": [
+            {
+                "id": "primary_persona",
+                "text": "Who?",
+                "kind": "free_text",
+                "required": True,
+                "options": [],
+            },
+            {
+                "id": "success",
+                "text": "Strongest signal:",
+                "kind": "single_choice",
+                "required": False,
+                "options": ["task_completed", "anxiety_reduced"],
+            },
+            {
+                "id": "integrations",
+                "text": "Which integrations matter?",
+                "kind": "multi_choice",
+                "required": False,
+                "options": ["openai", "github", "stripe"],
+            },
+            {
+                "id": "scale",
+                "text": "Expected daily users:",
+                "kind": "numeric",
+                "required": False,
+                "options": [],
+            },
+        ],
+    }
+
+    app = WonderlandApp(show_welcome=False)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(InterviewModal(payload))
+        await pilot.pause()
+
+        screen = app.screen
+        # free_text → TextArea
+        assert screen.query_one("#q-primary_persona-text", TextArea)
+        # single_choice → RadioSet
+        assert screen.query_one("#q-success-radio", RadioSet)
+        # multi_choice → Checkbox group (one per option)
+        assert screen.query_one("#q-integrations-check-0", Checkbox)
+        assert screen.query_one("#q-integrations-check-1", Checkbox)
+        assert screen.query_one("#q-integrations-check-2", Checkbox)
+        # numeric → Input
+        assert screen.query_one("#q-scale-numeric", Input)
+        # Every question gets a free-response Input
+        assert screen.query_one("#q-primary_persona-free", Input)
+        assert screen.query_one("#q-success-free", Input)
+
+
+async def test_interview_modal_submit_collects_answers() -> None:
+    """Pressing the Submit button collects all four question kinds
+    into the dismissal result."""
+    from textual.widgets import Checkbox, Input, TextArea
+
+    from wonderland.tui.screens.interview_modal import (
+        InterviewModal,
+        InterviewModalResult,
+    )
+
+    payload = {
+        "batch_id": "b1",
+        "interview_id": "persona-interview",
+        "label": "I1",
+        "name": "Who is this for?",
+        "interviewer": "alice",
+        "goal": "g",
+        "estimated_minutes": 5,
+        "questions": [
+            {
+                "id": "p",
+                "text": "Persona?",
+                "kind": "free_text",
+                "required": False,
+                "options": [],
+            },
+            {
+                "id": "integrations",
+                "text": "Which integrations matter?",
+                "kind": "multi_choice",
+                "required": False,
+                "options": ["openai", "github"],
+            },
+            {
+                "id": "scale",
+                "text": "Scale:",
+                "kind": "numeric",
+                "required": False,
+                "options": [],
+            },
+        ],
+    }
+
+    app = WonderlandApp(show_welcome=False)
+    results: list[InterviewModalResult | None] = []
+
+    def _on_dismissed(result: InterviewModalResult | None) -> None:
+        results.append(result)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        modal = InterviewModal(payload)
+        app.push_screen(modal, _on_dismissed)
+        await pilot.pause()
+
+        # Fill the free_text answer
+        text_widget = modal.query_one("#q-p-text", TextArea)
+        text_widget.text = "Maya at translation startup"
+        # Toggle one multi_choice option
+        cb = modal.query_one("#q-integrations-check-0", Checkbox)
+        cb.value = True
+        # Fill numeric
+        scale = modal.query_one("#q-scale-numeric", Input)
+        scale.value = "100"
+        # Add a free-response on persona
+        free = modal.query_one("#q-p-free", Input)
+        free.value = "and Sam from QA"
+
+        modal.action_submit()
+        await pilot.pause()
+
+    assert len(results) == 1
+    result = results[0]
+    assert result is not None
+    assert result.section_skipped is False
+    assert result.batch_id == "b1"
+    assert result.interview_id == "persona-interview"
+    assert len(result.answers) == 3
+
+    by_id = {a["question_id"]: a for a in result.answers}
+    assert by_id["p"]["value"] == "Maya at translation startup"
+    assert by_id["p"]["free_response"] == "and Sam from QA"
+    assert by_id["integrations"]["value"] == ["openai"]
+    assert by_id["scale"]["value"] == 100.0
+
+
+async def test_interview_modal_skip_section_short_circuits() -> None:
+    """Clicking 'Skip section' dismisses with section_skipped=True +
+    empty answers list."""
+    from wonderland.tui.screens.interview_modal import (
+        InterviewModal,
+        InterviewModalResult,
+    )
+
+    payload = {
+        "batch_id": "b1",
+        "interview_id": "i1",
+        "label": "I1",
+        "name": "Test",
+        "interviewer": "alice",
+        "goal": "g",
+        "estimated_minutes": 5,
+        "questions": [
+            {
+                "id": "q1",
+                "text": "Q?",
+                "kind": "free_text",
+                "required": True,
+                "options": [],
+            },
+        ],
+    }
+
+    app = WonderlandApp(show_welcome=False)
+    results: list[InterviewModalResult | None] = []
+
+    def _on_dismissed(result: InterviewModalResult | None) -> None:
+        results.append(result)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        modal = InterviewModal(payload)
+        app.push_screen(modal, _on_dismissed)
+        await pilot.pause()
+        modal._dismiss_skip()
+        await pilot.pause()
+
+    assert len(results) == 1
+    assert results[0] is not None
+    assert results[0].section_skipped is True
+    assert results[0].answers == []
+
+
+async def test_interview_modal_blocks_submit_on_unanswered_required() -> None:
+    """Submit with a required field unfilled should NOT dismiss —
+    operator gets a notification + stays on the modal."""
+    from wonderland.tui.screens.interview_modal import (
+        InterviewModal,
+        InterviewModalResult,
+    )
+
+    payload = {
+        "batch_id": "b1",
+        "interview_id": "i1",
+        "label": "I1",
+        "name": "Test",
+        "interviewer": "alice",
+        "goal": "g",
+        "estimated_minutes": 5,
+        "questions": [
+            {
+                "id": "q1",
+                "text": "REQUIRED Q?",
+                "kind": "free_text",
+                "required": True,
+                "options": [],
+            },
+        ],
+    }
+
+    app = WonderlandApp(show_welcome=False)
+    results: list[InterviewModalResult | None] = []
+
+    def _on_dismissed(result: InterviewModalResult | None) -> None:
+        results.append(result)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        modal = InterviewModal(payload)
+        app.push_screen(modal, _on_dismissed)
+        await pilot.pause()
+        # Submit without filling required field
+        modal.action_submit()
+        await pilot.pause()
+        # No dismissal — modal still mounted
+        assert results == []

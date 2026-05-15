@@ -185,10 +185,18 @@ class ADRRegistry:
             payload if isinstance(payload, ADRPayload) else ADRPayload.model_validate(payload)
         )
 
-        number = self.next_number()
         slug = slugify(validated.title)
-        filename = f"adr-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        # P15 follow-up: update-by-slug semantics. Re-emit with the
+        # same slug overwrites in place; new slug appends with the
+        # next available number. Mirrors MilestoneRegistry.write.
+        existing = self.find_by_slug(slug)
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            filename = f"adr-{number:03d}-{slug}.md"
+            full_path = self._root / filename
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_adr(number, validated), encoding="utf-8")

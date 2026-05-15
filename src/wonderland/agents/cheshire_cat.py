@@ -32,6 +32,15 @@ from pydantic import BaseModel, Field, field_validator
 
 from wonderland.adr import ADRPayload, ADRRegistry
 from wonderland.agent import Context, WonderlandAgent, format_utterance
+from wonderland.interview import (
+    InterviewQuestion,
+    RequirementPayload,
+    RequirementRegistry,
+)
+from wonderland.milestone import (
+    MilestonePayload,
+    MilestoneRegistry,
+)
 from wonderland.engagement import (
     EngagementRules,
     addressed_to,
@@ -133,6 +142,9 @@ def cheshire_cat_rules() -> EngagementRules:
 
 CatDecision = Literal[
     "proposal",
+    "interview_questions",
+    "interview_review",
+    "milestone_plan",
     "question",
     "question_to_operator",
     "reframe",
@@ -160,6 +172,37 @@ class CatResponse(BaseModel):
             "decision is anything else."
         ),
     )
+    # P14 discovery — populated on interview_review decisions when
+    # the Cat is the interviewer for the technical-constraints
+    # interview (I2 in the discovery workflow). See alice.py for
+    # the shape; same model is reused.
+    requirements: list["RequirementPayload"] = Field(default_factory=list)
+    questions: list["InterviewQuestion"] = Field(
+        default_factory=list,
+        description=(
+            "Round-1 question batch on ``interview_questions`` "
+            "decisions. Required (non-empty) when "
+            "decision='interview_questions'."
+        ),
+    )
+    followup_questions: list["InterviewQuestion"] = Field(
+        default_factory=list,
+        description=(
+            "Optional follow-up question batch on interview_review. "
+            "Non-empty means one more round before closing. Ignored "
+            "when decision isn't interview_review."
+        ),
+    )
+    milestones: list["MilestonePayload"] = Field(
+        default_factory=list,
+        description=(
+            "Milestone proposals shipped during the milestone-plan "
+            "(P15) meeting. Required (non-empty) when "
+            "decision='milestone_plan'. The Cat's lens is "
+            "architectural-ordering: which milestone foundation "
+            "must be built before another can be designed against."
+        ),
+    )
 
     @field_validator("body", mode="before")
     @classmethod
@@ -167,6 +210,17 @@ class CatResponse(BaseModel):
         # The LLM occasionally emits explicit nulls for omitted fields
         # (especially on `silence`). Coerce to default.
         return "" if v is None else v
+
+    @field_validator(
+        "requirements",
+        "questions",
+        "followup_questions",
+        "milestones",
+        mode="before",
+    )
+    @classmethod
+    def _list_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
 
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
         # Per the calibrated "ship the provisional ADR" guidance in §VI/§VIII:
@@ -186,17 +240,62 @@ class CatResponse(BaseModel):
                 "the tradeoffs explicitly (mark uncertain ones with what "
                 "would have to be true to settle them) and ship the ADR."
             )
+        if self.decision == "interview_review" and not self.requirements:
+            raise ValueError(
+                "CatResponse: decision='interview_review' requires at least "
+                "one requirement in `requirements`. If the operator's answers "
+                "don't surface anything actionable, choose a different "
+                "decision (concern / question_to_operator)."
+            )
+        if self.decision == "interview_questions" and not self.questions:
+            raise ValueError(
+                "CatResponse: decision='interview_questions' requires at "
+                "least one question in `questions`. Ship the shaped batch "
+                "(YAML templates tailored to the directive)."
+            )
+        if self.decision == "milestone_plan" and not self.milestones:
+            raise ValueError(
+                "CatResponse: decision='milestone_plan' requires at least "
+                "one milestone in `milestones`. Ship the architectural-"
+                "ordering proposal; choose a different decision if you "
+                "have nothing to propose."
+            )
 
 
 _OUTPUT_PROTOCOL = """\
 You will respond with exactly one fenced JSON block. No prose outside the block.
 
+**Meeting type determines your primary decision.** Before
+generating a response, read the Dodo's convenor_directive in your
+triggers and identify the meeting context. Match your decision
+to the meeting:
+
+  - **milestone-plan** (P15 planning): your default is
+    ``milestone_plan`` (your architectural-ordering lens) or
+    ``concern`` (push back on Rabbit's draft). NEVER ship
+    ``proposal`` (ADR) here — architectural commitments happen
+    in tdd-design M4, with the milestone's requirements visible;
+    shipping an ADR in planning is a stage-leak the substrate
+    rejects + deletes, wasting the turn.
+  - **tdd-design M4** (architecture): default is ``proposal``
+    with an ADR. THIS is where you architect.
+  - **tdd-design M2** (composition): default is ``concern`` if
+    composition looks wrong, ``silence`` otherwise.
+  - **discovery** (P14 constraints interview): default is
+    ``interview_questions`` (round 1) or ``interview_review``
+    (after answers).
+
+When the meeting type isn't obvious from the convenor_directive,
+default to ``concern`` or ``question`` — never default to
+``proposal`` without confirming the meeting calls for it.
+
 The JSON must conform to this schema:
 
 ```
 {
-  "decision": "proposal" | "question" | "question_to_operator" | "reframe" |
-              "concern" | "deference" | "silence",
+  "decision": "proposal" | "interview_questions" | "interview_review" |
+              "milestone_plan" | "question" | "question_to_operator" |
+              "reframe" | "concern" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "options": ["SQLite", "Postgres", "Either is fine"],
                                       // OPTIONAL: include with question_to_operator
@@ -208,9 +307,100 @@ The JSON must conform to this schema:
     "context": "what problem is being decided; what forces are at play",
     "decision": "what is being chosen, in concrete terms",
     "tradeoffs": ["explicit cost or closed door", "another", "..."]
-  }
+  },
+  "questions": [                      // include ONLY when decision is "interview_questions"
+    {
+      "id": "stable slug-shaped id",
+      "text": "the constraint question SHAPED to the directive — e.g. for 'Pomodoro tracker' you'd ship 'Any storage or sync constraints? Local-only, cloud-backed, both? What's the failure mode you want to avoid?' rather than the generic 'Any stack choices already locked in?'",
+      "kind": "free_text" | "single_choice" | "multi_choice" | "numeric",
+      "required": false,
+      "options": []
+    }
+  ],
+  "requirements": [                   // include ONLY when decision is "interview_review"
+    {
+      "title": "short specific title — 'SQLite-only deployment, no Postgres' beats 'database choice'",
+      "interview_id": "the interview's id from your context (typically 'constraints-interview' for the Cat)",
+      "question_id": "which of the operator's answered questions this came from",
+      "kind": "constraint" | "integration" | "deal_breaker" | "scope" | "out_of_scope",
+      "body": "your structured rendering of the operator's answer — the stable claim downstream meetings will read",
+      "operator_quote": "raw verbatim from the operator's answer",
+      "confidence": "operator_stated"
+    }
+  ],
+  "followup_questions": [             // optional on interview_review — one round only
+    {
+      "id": "slug-shaped id",
+      "text": "one specific gap the answers raised",
+      "kind": "free_text" | "single_choice" | "multi_choice" | "numeric",
+      "required": false,
+      "options": []
+    }
+  ],
+  "milestones": [                     // include ONLY when decision is "milestone_plan"
+    {
+      "slug": "stable slug — re-emit to amend an existing milestone",
+      "name": "human-readable name",
+      "order": 1,
+      "goal": "what this milestone accomplishes",
+      "done_when": ["observable condition", "another"],
+      "consumes_requirements": ["requirement-slug-1"],
+      "deferred": false,
+      "confidence": "operator_stated"
+    }
+  ]
 }
 ```
+
+**`interview_questions` — the Cat's discovery (P14) round-1 move.**
+When you're the interviewer and no operator answers have arrived
+yet, shape the constraint-interview's question batch to the
+directive. The substrate seeds the YAML templates into your
+context; take them as the structural skeleton (constraints,
+integrations, scale, deal-breakers — your interview's coverage
+areas) and tailor TEXT and OPTIONS to what the directive implies.
+Same id when re-using a template question; new ids for new
+questions you add. 3-5 questions total; operator attention is
+the limiting cost.
+
+**`milestone_plan` — the Cat's planning (P15) move.** When the
+team is in the milestone-plan meeting, your lens is *architectural
+ordering*: which milestone foundation must be built before another
+can be designed against it. Read the requirement corpus + existing
+milestones in your context, and propose milestones ordered such
+that each one's architectural dependencies (data layer, auth
+shape, integration surface) are already in place from earlier
+milestones. Rabbit owns the final order; your job is to push
+back when a proposed order would have M4 architecting against a
+foundation that hasn't shipped (e.g., gamification before SQLite =
+no data to gamify on).
+
+**Slug stability is load-bearing.** The MilestoneRegistry dedups
+by **exact slug match**: when Rabbit (or Alice) has already
+shipped a milestone covering a conceptual chunk, you have two
+clean moves: re-emit the same slug to amend it (add a
+``done_when``, sharpen the architectural framing), or
+``concern`` the existing milestone if your architectural lens
+disagrees. **Never coin a new slug for the same conceptual
+chunk** — the pilot's discovery3 run produced 6 milestone files
+where 3 belonged because agents shipped parallel slugs for the
+same concept. Slug-stability is the only way the substrate can
+dedup; align with Rabbit's titling rather than re-coining.
+
+**`interview_review` — the Cat's discovery (P14) synthesis move.**
+When you're the interviewer in a discovery thread and the operator
+has just submitted answers about technical constraints, your job
+is to SYNTHESIZE those answers into structured `constraint` /
+`integration` / `deal_breaker` requirements. Focus on what the
+operator's answers FORECLOSE — stack choices already made, external
+systems that must be integrated, scale or compliance requirements
+that bound the solution space. Architecture comes later (in M4);
+your interview job is to capture what architecture can't ignore.
+
+Use `followup_questions` ONLY when the operator's answers surface a
+specific gap that's load-bearing for downstream architecture — e.g.
+they named "must talk to S3" but didn't say whether reads or writes
+or both. One round of follow-up is the cap.
 
 **`question_to_operator` — escalate to the human operator.** Use this
 when the team needs a decision only the operator can make: a stack
@@ -359,6 +549,8 @@ class CheshireCat(WonderlandAgent):
         bus: Caucus,
         llm: LLMClient | None = None,
         adr_registry: ADRRegistry | None = None,
+        requirement_registry: RequirementRegistry | None = None,
+        milestone_registry: MilestoneRegistry | None = None,
         tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
@@ -369,11 +561,21 @@ class CheshireCat(WonderlandAgent):
         )
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._adr_registry = adr_registry
+        self._requirement_registry = requirement_registry
+        self._milestone_registry = milestone_registry
         self._tools = tools  # base attribute, set here so deliberate sees it
 
     @property
     def adr_registry(self) -> ADRRegistry | None:
         return self._adr_registry
+
+    @property
+    def requirement_registry(self) -> RequirementRegistry | None:
+        return self._requirement_registry
+
+    @property
+    def milestone_registry(self) -> MilestoneRegistry | None:
+        return self._milestone_registry
 
     async def deliberate(self, context: Context) -> Utterance | None:
         if self.llm is None:
@@ -400,6 +602,38 @@ class CheshireCat(WonderlandAgent):
             adr_artifact = self._record_adr(response.adr)
             if adr_artifact is not None:
                 artifacts.append(adr_artifact)
+        elif response.decision == "interview_questions":
+            artifacts.append(
+                Artifact(
+                    kind="interview_question_batch",
+                    payload={
+                        "questions": [
+                            q.model_dump()
+                            for q in response.questions
+                        ],
+                    },
+                )
+            )
+        elif response.decision == "interview_review":
+            artifacts.extend(
+                self._record_requirements(response.requirements)
+            )
+            if response.followup_questions:
+                artifacts.append(
+                    Artifact(
+                        kind="interview_followup_questions",
+                        payload={
+                            "questions": [
+                                q.model_dump()
+                                for q in response.followup_questions
+                            ],
+                        },
+                    )
+                )
+        elif response.decision == "milestone_plan":
+            artifacts.extend(
+                self._record_milestones(response.milestones)
+            )
 
         thread_id, parent_id = self._derive_threading(context)
         # ``question_to_operator`` is a special routing — the bus
@@ -435,6 +669,59 @@ class CheshireCat(WonderlandAgent):
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+
+    def _record_milestones(
+        self, payloads: list[MilestonePayload]
+    ) -> list[Artifact]:
+        """Write milestone artifacts via MilestoneRegistry (which
+        dedups by slug — see milestone.py for cross-run continuity
+        semantics). Returns bus-side Artifact pointers."""
+        if self._milestone_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._milestone_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="milestone",
+                    payload={
+                        "slug": record.slug,
+                        "order": record.order,
+                        "name": record.name,
+                        "deferred": record.deferred,
+                        "confidence": record.confidence.value,
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_requirements(
+        self, payloads: list[RequirementPayload]
+    ) -> list[Artifact]:
+        """Write requirement artifacts to RequirementRegistry +
+        return bus-side Artifact pointers. Mirror of Alice's
+        ``_record_requirements`` — both interviewers ship the same
+        artifact kind. Skips when no registry was wired."""
+        if self._requirement_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._requirement_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="requirement",
+                    payload={
+                        "number": record.number,
+                        "slug": record.slug,
+                        "title": record.title,
+                        "kind": record.kind.value,
+                        "confidence": record.confidence.value,
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
 
     def _record_adr(self, payload: ADRPayload) -> Artifact | None:
         """Persist an ADR through the registry; return an Artifact pointer.

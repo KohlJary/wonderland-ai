@@ -63,6 +63,19 @@ class StoryPayload(BaseModel):
     """Things that felt wrong to Alice as she wrote this, even if
     she can't fully articulate why. The grin equivalent — required
     even when the answer is honestly 'nothing felt wrong here'."""
+    realizes_requirements: list[str] = Field(default_factory=list)
+    """P15 T-m8b — slug list of ``requirement`` artifacts this story
+    realizes. The substrate's milestone_realization coverage check
+    walks ``milestone.consumes_requirements`` → stories with that
+    slug in ``realizes_requirements`` → features sourcing those
+    stories, and flags any requirement with no chain. Empty list is
+    permitted (Alice can ship a story she can't trace to a specific
+    requirement — typically a story responding to operator
+    directive context rather than a discovery artifact) but
+    discouraged when the run is milestone-scoped: an empty list in
+    a scoped run means the coverage check has nothing to anchor
+    against. Slugs are the requirement filename's slug component,
+    same shape as ``milestone.consumes_requirements``."""
 
     @field_validator("confusion_flags")
     @classmethod
@@ -122,6 +135,18 @@ def render_story(number: int, payload: StoryPayload) -> str:
     lines.append("**Confusion-flags:**")
     lines.extend(f"- {flag}" for flag in payload.confusion_flags)
     lines.append("")
+    # P15 T-m8b — realizes_requirements section. Always render the
+    # header (empty list renders "- —" sentinel) so coverage parsers
+    # can distinguish "Alice ships a story with no realizations" from
+    # "old-format story without the field". When the list is empty,
+    # downstream coverage flags the milestone's requirements as
+    # potentially unrealized.
+    lines.append("**Realizes requirements:**")
+    if payload.realizes_requirements:
+        lines.extend(f"- {slug}" for slug in payload.realizes_requirements)
+    else:
+        lines.append("- —")
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -180,14 +205,34 @@ class StoryRegistry:
     # ------------------------------------------------------------------ #
 
     def write(self, payload: StoryPayload | dict) -> StoryRecord:
+        """Create or update a story by slug. Existing story with the
+        same slug → overwrite in place (preserves the original
+        number); new slug → append with the next available number.
+
+        P15 follow-up: previously, StoryRegistry always allocated a
+        new number on every write, which meant Alice re-emitting the
+        same story across rotations produced ``story-002`` and
+        ``story-006`` with identical slugs (discovery5 pilot:
+        8 files for 4 conceptual stories). MilestoneRegistry has had
+        update-by-slug semantics since T-m1; this aligns the rest of
+        the registries with that shape.
+        """
         validated = (
             payload if isinstance(payload, StoryPayload) else StoryPayload.model_validate(payload)
         )
 
-        number = self.next_number()
         slug = slugify(validated.title)
-        filename = f"story-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        # Update-by-slug: if a story with this slug already exists,
+        # overwrite it in place (preserving its number). Otherwise
+        # allocate the next number + create a fresh file.
+        existing = self.find_by_slug(slug)
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            filename = f"story-{number:03d}-{slug}.md"
+            full_path = self._root / filename
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_story(number, validated), encoding="utf-8")

@@ -54,7 +54,12 @@ from wonderland.skeleton import is_bare_project_root
 from wonderland.tui.screens.launch_confirmation import LaunchConfirmationScreen
 from wonderland.tui.screens.settings import SettingsScreen
 from wonderland.tui.screens.skeleton_picker import SkeletonPickerScreen
-from wonderland.workflow import Workflow, list_workflows, load_workflow
+from wonderland.workflow import (
+    Workflow,
+    category_sort_key,
+    list_workflows,
+    load_workflow,
+)
 
 
 # Sentinel name for the "blank directive" pseudo-row at the top of
@@ -103,6 +108,7 @@ class NewRunScreen(Screen[None]):
         project: Project | None = None,
         default_workflow: str | None = None,
         default_directive: str | None = None,
+        default_milestone: str | None = None,
     ) -> None:
         super().__init__()
         # P11: when a Project is supplied, prefill defaults from it
@@ -125,6 +131,10 @@ class NewRunScreen(Screen[None]):
         # both are set; explicit-from-action-button > project default.
         self._default_workflow = default_workflow
         self._default_directive = default_directive
+        # P15 T-m5: when set, the run launches scoped to a milestone
+        # (tdd-design / tdd-implement use this). Wired into the
+        # launch_background_run kwargs at action_go time.
+        self._default_milestone = default_milestone
         # Cache of (display_name, preset) tuples in display order so
         # row index → preset is a constant-time lookup.
         self._presets: list[tuple[str, DirectivePreset]] = []
@@ -441,10 +451,7 @@ class NewRunScreen(Screen[None]):
                 preset.normalized_category, []
             ).append((name, preset))
 
-        def _category_sort_key(cat: str) -> tuple[int, str]:
-            return (1 if cat == "other" else 0, cat)
-
-        for category in sorted(by_category, key=_category_sort_key):
+        for category in sorted(by_category, key=category_sort_key):
             entries = by_category[category]
             self._presets.append(("", None))  # type: ignore[arg-type]
             table.add_row(
@@ -490,10 +497,11 @@ class NewRunScreen(Screen[None]):
                 w.normalized_category, []
             ).append((name, w))
 
-        def _category_sort_key(cat: str) -> tuple[int, str]:
-            return (1 if cat in ("other", "legacy") else 0, cat)
-
-        for category in sorted(by_category, key=_category_sort_key):
+        # Use the canonical flow-order helper so workflows appear
+        # in operator-flow sequence (discovery → planning → design
+        # → implementation) instead of alphabetical (which dropped
+        # `design` before `discovery` — wrong order for new users).
+        for category in sorted(by_category, key=category_sort_key):
             self._workflows.append(("", None))
             table.add_row(
                 f"[dim]── {category} ──[/dim]", "", ""
@@ -1055,6 +1063,7 @@ class NewRunScreen(Screen[None]):
                 model=workflow.defaults.model,
                 run_id=run_id,
                 auto_merge=bool(params.get("auto_merge", False)),
+                milestone_slug=self._default_milestone,
             )
         except RuntimeError as exc:
             self.notify(

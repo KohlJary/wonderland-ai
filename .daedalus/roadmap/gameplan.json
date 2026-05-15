@@ -200,56 +200,74 @@
     {
       "id": "p13-cross-run-stability",
       "title": "Cross-run stability: make iterating tdd-design + tdd-implement against the same project the expected mode of operation",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [
         "171b36e1"
       ],
       "notes": "Most observed failure modes from multi-pass obol runs land as either 'everything completed at $0' (cross-run seeds re-emitted as fresh work) or duplicate artifacts (Rabbit revising mid-meeting, M2/M3 source-set sprawl). P12 shipped piecemeal patches (per-thread cost f36bbf7, exit_condition is_seed filter v0.3.2, consumed_by binding fb4fc0e); P13 closes the remaining gaps so cross-run iteration is the workflow's expected economic shape."
+    },
+    {
+      "id": "p14-discovery",
+      "title": "Discovery: requirements gathering as a first-class phase",
+      "status": "done",
+      "roadmapItems": [],
+      "notes": "New Interview abstraction (sibling to Meeting), three focused interviews (Alice/Cat/Rabbit) that capture operator intent as structured requirement artifacts before any design work. Optional \u2014 projects can still skip straight to tdd-design. Backfill workflow lets existing projects catch up. This is the structural layer that lets Wonderland be a long-running collaboration tool instead of a series of one-shot generation passes \u2014 see project_interviews_milestones_thesis.md. Milestones layer follows in a subsequent phase, shape TBD based on what the requirement-artifact corpus looks like in practice."
+    },
+    {
+      "id": "p15-milestones",
+      "title": "Milestones: sequential ordering above features",
+      "status": "in_progress",
+      "roadmapItems": [],
+      "notes": "Adds the layer between requirements and features. Three-agent planning meeting (Rabbit + Cat + Alice) groups requirements into ordered milestones; tdd-design runs scoped to a milestone; dashboard surfaces milestone progression as the operator's primary attention surface. Cross-run continuity: re-running milestone-plan after a follow-up discovery reads the existing plan + new requirements and amends or appends as makes sense (registry updates by slug match). Status derived from features-belonging-to-milestone (no separate lifecycle log in v1)."
     }
   ],
   "activePhase": {
-    "id": "p13-cross-run-stability",
-    "title": "Cross-run stability: make iterating tdd-design + tdd-implement against the same project the expected mode of operation",
-    "started": "2026-05-10",
-    "goal": "Close the cross-run stability gaps that emerged from running tdd-design + tdd-implement multiple times against a single project. Make cross-run iteration (5\u201310\u00d7 design passes per project, partial implement runs, operator-driven re-queuing) the workflow's expected mode of operation rather than the surprise edge case the substrate has been treating it as. Operator should be able to wipe .wonderland/ and re-run, OR run a focused follow-on design pass (mock data, observability, etc.), without manually pruning duplicates or chasing 'everything completed at $0' diagnostics.",
-    "sequencing": "Layer 1 (foundation): T95 + T91 \u2014 substrate primitives that close the duplicate-emission and partial-run-state classes. T95 stops the bleeding at the source (M2/M3 don't ship duplicates anymore); T91 reconciles state when meetings abort or operators edit files outside the substrate. Layer 2 (observability): T96 \u2014 operator can see when API breaks (today's diagnosis was '$0 meetings' with no signal that the API was failing). Layer 3 (hardening): T97 + T98 \u2014 smaller polish that prevents specific drift classes. T97 closes the Cat-Flask-service drift door by adding process_model as an explicit project_context field; T98 distinguishes replay from live runs in the live-watch UI so the operator can't mistake a snapshot for in-flight work. Critical path: T95 first \u2014 duplicate emissions affect every other concern. T91 second \u2014 partial-run recovery requires lifecycle reconciliation. Then observability + polish in parallel.",
+    "id": "p15-milestones",
+    "title": "Milestones: sequential ordering above features",
+    "started": "2026-05-14",
+    "goal": "Land the Milestone abstraction end-to-end: substrate + registry with update-by-slug semantics, three-agent milestone_plan decision mode, milestone-plan.yaml workflow with cross-run continuity (existing milestones seeded into the next planning pass), tdd-design --milestone <slug> filtering, dashboard milestone surfacing. Output: an operator runs discovery, then milestone-plan, then iterates tdd-design milestone-by-milestone with the team scoped to that milestone's requirements. Re-running discovery + milestone-plan after the initial cut amends the existing plan rather than starting from scratch.",
+    "sequencing": "T-m1 (substrate) \u2192 T-m2 (agent decision mode) \u2192 T-m3 (workflow YAML + planning meeting) is the critical path. T-m4 (tdd-design --milestone integration) + T-m5 (dashboard surfacing) parallelize after T-m3 lands. Status is derived from features-belonging-to-milestone \u2014 no separate milestone_lifecycle log in v1; (a) and (b) from the design conversation deferred until the implicit-status approach hits a real limit.",
     "tasks": [
       {
-        "id": "T95",
-        "title": "Auto-dedup duplicate features/tickets at meeting close",
-        "status": "pending",
-        "details": "Substrate-side fix for the M2/M3 revision-pass duplication observed twice in obol (May 10 mock-data design pass: M3 produced 36 tickets representing ~14 unique work atoms across 3 revision passes). Operator-side workaround shipped as the dashboard ticket-prune UI (commit e4ca7b5) but that's the band-aid; the substrate-side dedup is the real fix. Two coordinated changes: (1) iteration-time filter in _collect_per_item_items dedupes by (kind, frozenset(sources)) \u2014 last-emitted wins; (2) disk cleanup at meeting close \u2014 after commit phase ends, scan emitted utterances, group by (kind, frozenset(sources)), keep latest, unlink the older files. Safety: only fires when source-list MATCHES EXACTLY (definitionally redundant per Rabbit's semantics). Distinct-but-overlapping sources keep both items (e.g. story-010 + story-011 from this session \u2014 different personas, different framings, both keep). See roadmap item 171b36e1 for full design + alternatives."
-      },
-      {
-        "id": "T91",
-        "title": "Auto-transition lifecycle reconciler (artifact-presence-driven)",
-        "status": "pending",
-        "details": "Deferred from P12 \u2014 described originally as 'background watcher that auto-transitions features based on artifact presence: proposed \u2192 in_progress on first impl artifact; in_progress \u2192 ready_for_review on (every ticket implemented + tests pass + M6 verdict approve). No auto past ready_for_review \u2014 operator gate strict. Layers on top of T87's explicit workflow-level transitions.'\n\nT87 (shipped) is meeting-driven \u2014 fires on phase COMPLETE outcome via transition_iteration_to / transition_emitted_to YAML fields. T91 is artifact-presence-driven \u2014 scans .wonderland/<artifact-dirs>/ and proposes transitions independent of meeting completion.\n\nCases T87 misses that T91 catches:\n1. Meeting aborts mid-iteration (MEETING_BUDGET / TIMEOUT). Implementation file landed before abort, but feature stays at prior state because outcome wasn't COMPLETE.\n2. Operator manually drops files into src/ outside any meeting.\n3. Cross-run resumption: implementations on disk from prior run whose M8 never completed. Features stuck at in_progress.\n4. Partial run recovery: some lanes finished M8, others budget-capped mid-M7. Features stuck at in_progress.\n\nPipeline mode (commit 156e76e) makes partial runs more common \u2014 one lane completes while another aborts. T91's value lights up when partial-run recovery starts mattering, which is what cross-run iteration is.\n\nImplementation shape: ~150-200 LoC. New reconcile_lifecycle() function called periodically (or on dashboard open / at run start). Scans implementations/, reviews/, tickets/ and proposes lifecycle transitions via feature_lifecycle.transition(). Read-only file scan + lifecycle write. No agent involvement."
-      },
-      {
-        "id": "T96",
-        "title": "API error visibility in telemetry + live-watch banner",
-        "status": "pending",
-        "details": "Today's '$0 meetings' diagnosis was that out-of-credits \u2192 API errors \u2192 agent.py speak() catches the exception and treats as silence \u2192 quiescence \u2192 meetings 'complete' at $0. Graceful degradation but operator-invisible: from the dashboard, API down looks identical to 'team converged with nothing to add.'\n\nTwo-part fix:\n1. Telemetry records API errors (currently they land in stderr only). Add error_count + last_error_message fields to TokenTelemetry; agent.py's speak() exception handler reports through the existing on_token_usage callback (or a new on_error callback).\n2. Live-watch screen surfaces a banner when error rate is non-zero. Subtle when 1 error (transient retry); prominent when error rate >50% over recent window (probably API down or credit out).\n\nOptional follow-up: per-error-type categorization. 401/insufficient credits is different from 429/rate-limit is different from 500/server error. Each suggests a different operator action (refill credits, wait, retry later)."
-      },
-      {
-        "id": "T97",
-        "title": "ProjectContext.process_model field + Cat constitutional clause",
-        "status": "pending",
-        "details": "Close the Cat-Flask-service drift class that surfaced in obol's keeper run. Cat's ADR led with 'TUI client' (the directive-as-seed fix landed) but committed to 'TUI client / lightweight backend split' with a REST service in the middle \u2014 every keypress crosses an HTTP boundary on localhost. The Tweedles' implementation built the Flask service even though the actual TUI imports backend.py directly (the service is unused).\n\nProjectContext today has 'runtime: tui' which Cat read as 'the user-facing thing is a TUI' while keeping a hybrid architecture. Add process_model: single | client-server | distributed as a separately authoritative field. 'runtime: tui, process_model: single' closes the door explicitly.\n\nTwo complementary changes:\n1. Schema: ProjectStack gains process_model field. Skeleton manifests populate it (python-tui = single, fullstack-fastapi-react = client-server, etc.). Render shows 'Process model: single' in the seeded body.\n2. Cat's constitution gets a clause: 'Architectural decisions that introduce a deployment boundary (separate processes, network calls, IPC) within a project whose process_model is single MUST be confirmed via question_to_operator before locking in. The deployment shape is operator-bounded; ADRs that drift it require explicit operator authorization.'\n\nThe constitutional clause leverages the operator-question pipeline (commit 2cdb3c8 + 716448e) \u2014 Cat asks 'should this be split into client+server, or stay single-process?' before shipping the ADR. Operator gets click-to-submit options ('Stay single-process' / 'Split for v2 plumbing' / 'Both, document why')."
-      },
-      {
-        "id": "T98",
-        "title": "Distinguish replay from live runs in the live-watch UI",
-        "status": "pending",
-        "details": "From the prior obol session: when meetings showed 'complete \u00b7 $0' across the board, one diagnostic hypothesis was 'maybe the operator launched a replay (MockTurtle) instead of a live run.' That hypothesis turned out wrong (it was the API credit issue), but the underlying confusion is real: live-watch consumes both LiveRunHandle (real, costs money) and MockTurtleHandle (replay, $0) interchangeably. There's no visual signal distinguishing the two.\n\nAdd a [REPLAY] badge or color treatment to the live-watch screen header when consuming a MockTurtleHandle. Status bar showing 'replay \u00b7 5x speed \u00b7 src=run-20260510T085719' so the operator can tell at a glance which mode they're in.\n\nSmall but high-leverage UX: the diagnosis-confusion class (was that meeting really at $0, or am I watching a snapshot?) shows up enough that prevention is cheaper than re-asking each time."
-      },
-      {
-        "id": "T99",
-        "title": "Phased-path lifecycle dispatch fix",
+        "id": "T-m1",
+        "title": "Milestone substrate",
         "status": "done",
-        "details": "Phased dispatch branch in _run_one_meeting bypassed both transition_emitted_to (per-utterance) and transition_iteration_to (post-MeetingEnd), since both lived inside _convene_one. Symptom: M3 + M5 silently skipped despite upstream meetings shipping artifacts; features stuck at no-state or proposed depending on which transition was missing. Fix: hoisted transition_emitted_to to per-utterance and mirrored both hooks into the phased branch. Caught by live-debugging two obol2 design passes.",
-        "resolution": "Two-commit fix (1546581 + 2aa46b3) on top of 112b0a4. Per-utterance transition_emitted_to + post-MeetingEnd transition_iteration_to now both fire on the phased dispatch path. Regression tests added in tests/test_workflow_lifecycle.py::TestEmissionHookFiresInEventLoop covering convene + phased + iteration paths. Operator-visible: M3 stops skipping with '(no items)' on cross-run design passes; M5 picks up M3-decomposed features. Lesson: dispatch asymmetry between _convene_one and run_phased_meeting is a recurring failure shape \u2014 when adding behavior post-meeting, mirror into both branches. Released as 0.3.3 (transition_emitted_to portion); transition_iteration_to portion will ship in next patch."
+        "details": "wonderland/milestone.py: Milestone, MilestoneStatus enum (proposed/in_progress/done/deferred \u2014 DERIVED from features, not lifecycle-tracked), MilestonePayload, MilestoneRegistry with update-by-slug semantics (re-write of same slug overwrites prior file), render_milestone markdown. Tests cover round-trip + update-vs-append behavior.",
+        "resolution": "Substrate landed at src/wonderland/milestone.py with 33 unit tests passing. Shipped: MilestonePayload (slug-pattern validator, duplicate-requirement check), MilestoneRegistry with update-by-slug semantics (overwrite + rename-on-order-shift) for cross-run continuity, MilestoneStatus enum + derive_status() folding feature states + deferred flag, render_milestone markdown. Top-level wonderland namespace exposes Milestone as an alias for MilestonePayload (mirrors Story/Ticket pattern)."
+      },
+      {
+        "id": "T-m2",
+        "title": "Three agents pick up milestone_plan decision",
+        "status": "done",
+        "details": "Alice / Cat / Rabbit gain milestone_plan decision mode + milestones: list[MilestonePayload] field on the response. Each emits the plan from their lens: Alice grounds in persona-shipped value, Cat checks architectural ordering / dependencies, Rabbit owns the order + done-criteria. Additive \u2014 existing decisions unchanged. New _record_milestones method per agent + RequirementRegistry-style artifact emission.",
+        "resolution": "Alice / Cat / Rabbit each pick up milestone_plan decision mode + milestones field + milestone_registry param + _record_milestones method. SpeechAct.MILESTONE_PLAN added. Runner wires MilestoneRegistry into all three. Each agent has a distinct lens in the output protocol (Alice persona-anchored, Cat architectural, Rabbit canonical-order owner). 169 tests passing."
+      },
+      {
+        "id": "T-m3",
+        "title": "milestone-plan.yaml workflow + planning meeting",
+        "status": "done",
+        "details": "closet/workflows/milestone-plan.yaml: single meeting 'planning' with roster [white_rabbit, cheshire_cat, alice]. Phased shape \u2014 discussion phase + commit phase, both with exit_condition_artifact: milestone. Seeds: requirements + existing milestones from disk (cross-run continuity). Category: planning. Operator runs this after discovery; re-runs after follow-up discovery to extend the plan.",
+        "resolution": "milestone-plan.yaml authored at closet/workflows/milestone-plan.yaml. Single meeting (P1 The Caucus on the Map) with roster [white_rabbit, cheshire_cat, alice], phased shape (discussion 3 rotations + commit 2 rotations, both exit_condition_artifact: milestone). Seeds: project_context + requirement + milestone for cross-run continuity. Category: planning, budget $1.50. Side-fix on seeds_fallback: both 'requirement' and 'milestone' kinds were missing from the loader dispatch (P14 gap); both wired now via RequirementRegistry + MilestoneRegistry with a new _RegistryRecordAdapter. 174 tests passing."
+      },
+      {
+        "id": "T-m4",
+        "title": "tdd-design seeds from milestone",
+        "status": "done",
+        "details": "Add --milestone <slug> to launch_background_run + cli_run_bg argparse + NewRunScreen as an optional input. tdd-design's M1+ seed filtering: when --milestone is set, filter requirements to milestone.consumed_requirements list; supplemental framing on M1's convenor_directive includes milestone.goal + milestone.done_criteria. Without --milestone: legacy behavior (all requirements visible). Same plumbing for tdd-implement so an operator can scope implementation to a milestone.",
+        "resolution": "Shipped --milestone <slug> wire-up end-to-end. cli_run_bg.py --milestone flag \u2192 LiveRunHandle(milestone_slug=...) \u2192 run_workflow(milestone_slug=...) \u2192 _resolve_milestone_scope reads MilestoneRegistry, parses goal + done_when + consumes_requirements out of the markdown, builds a _MilestoneScope dataclass, stores it module-level via set_active_milestone_scope. resolve_seeds reads the scope and, for any binding pulling requirement-kind artifacts, narrows to the consumed slug list (drops off-scope utterances; slices kept utterances so on-scope requirements + non-requirement artifacts pass through, off-scope requirements drop out). Entry meeting's convenor_directive gets the milestone framing (name, slug, goal, done-when bullets) prepended so M1+ read the scope first thing. tdd-design.yaml M1 now binds the requirement kind so discovery output flows in. T-i7 (tdd-design seeds from requirements) was absorbed by this task \u2014 the requirement seeds + scope filter ship together. TUI picker deferred to T-m5 (Dashboard surfacing). 8 new tests in test_workflow.py (TestResolveSeedsMilestoneScope + TestParseMilestoneBody), full test_workflow + test_allowed_decisions + test_milestone suites green."
+      },
+      {
+        "id": "T-m5",
+        "title": "Dashboard surfacing of milestones",
+        "status": "pending",
+        "details": "Features tree in ProjectDashboardScreen groups by milestone (top-level nodes = milestones, child nodes = features that belong to each via the milestone's consumed_requirements \u2192 features-sourcing-those-requirements derivation). New 'Milestones' status pane shows ordered list with derived status (proposed if no features queued, in_progress if any feature is in_progress, done if all features verified, deferred if marked so in YAML). Dashboard's primary action becomes 'Run design for <next milestone>' rather than 'Run design'."
+      },
+      {
+        "id": "T-m6",
+        "title": "Substrate-level meeting allowed_decisions guardrail",
+        "status": "done",
+        "details": "Add allowed_decisions: list[str] field to Meeting in workflow.py. When set, _run_one_meeting drops artifacts shipped from decisions outside the list (with a warning logged). Belt-and-suspenders against agent stage-leak \u2014 e.g., Rabbit shipping tickets in a milestone-plan meeting despite the convenor_directive explicitly forbidding them. Surface dropped artifacts in the live-watch UI so the operator knows something was suppressed. Constitution-respecting (per don't-lightly-change-constitutions memory): the directive remains primary, this just prevents bad output from reaching disk when the directive isn't enough.",
+        "resolution": "Meeting.allowed_decisions field + module-level thread registry in workflow.py + WonderlandAgent._apply_allowed_decisions_filter on the publish path + ArtifactSuppressed observer event + milestone-plan.yaml wired with the allowed list. Filter deletes on-disk files (best-effort, tolerates missing) + strips artifacts via model_copy; utterance stays as transcript record. _run_one_meeting wraps dispatch in try/finally around set/clear; body split to _run_one_meeting_inner for cleanness. Runner integration of the suppression event hook deferred \u2014 filter works without it. 16 new tests in test_allowed_decisions.py; 417 passing across affected suites."
       }
     ],
     "deferred": []

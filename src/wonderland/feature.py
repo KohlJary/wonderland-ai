@@ -116,8 +116,19 @@ class FeaturePayload(BaseModel):
     stack_span: StackSpan
     tier: TicketTier
     sources: list[str] = Field(
-        default_factory=list,
-        description="Story slugs whose intent this feature realizes.",
+        ...,
+        min_length=1,
+        description=(
+            "Story slugs whose intent this feature realizes. "
+            "REQUIRED and non-empty — a feature without source "
+            "stories is an unmoored claim; M3 decomposition needs "
+            "the story chain to know what the feature was supposed "
+            "to deliver and the T-m8b coverage check walks "
+            "milestone.consumes_requirements → stories realizing "
+            "those → features sourcing those stories. An empty "
+            "sources list breaks that walk + leaves the feature "
+            "orphaned in lifecycle queries."
+        ),
     )
 
 
@@ -212,16 +223,27 @@ class FeatureRegistry:
         return None
 
     def write(self, payload: FeaturePayload | dict) -> FeatureRecord:
+        """Create or update a feature by slug — update-by-slug
+        semantics mirror MilestoneRegistry. Re-emit with the same
+        slug overwrites in place (preserves number); new slug
+        appends with the next available number. P15 follow-up
+        aligning the design-time registries with the planning
+        registry's dedup shape."""
         validated = (
             payload
             if isinstance(payload, FeaturePayload)
             else FeaturePayload.model_validate(payload)
         )
 
-        number = self.next_number()
         slug = slugify(validated.title)
-        filename = f"feature-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        existing = self.find_by_slug(slug)
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            filename = f"feature-{number:03d}-{slug}.md"
+            full_path = self._root / filename
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_feature(number, validated), encoding="utf-8")

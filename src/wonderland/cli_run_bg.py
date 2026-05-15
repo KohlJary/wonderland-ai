@@ -128,6 +128,20 @@ def add_run_bg_subparser(subparsers: argparse._SubParsersAction) -> None:
             "merge would need manual resolution."
         ),
     )
+    parser.add_argument(
+        "--milestone",
+        type=str,
+        default=None,
+        help=(
+            "P15 — when set, scope the workflow's seed pool to this "
+            "milestone's consumes_requirements list, and prepend the "
+            "milestone's goal + done_when to the entry meeting's "
+            "convenor_directive. Used by tdd-design and tdd-implement "
+            "to focus the team on one milestone at a time. Slug "
+            "matches a milestone file at "
+            "``<project>/.wonderland/milestones/milestone-NN-<slug>.md``."
+        ),
+    )
     parser.set_defaults(func=cmd_run_bg)
 
 
@@ -191,6 +205,7 @@ async def _run_bg_async(args: argparse.Namespace) -> int:
         runner=runner,
         workflow=workflow,
         directive=args.directive,
+        milestone_slug=getattr(args, "milestone", None),
     )
     # Wire the disk-mediated operator-question handler. The TUI's
     # background-run poller (in App._poll_questions_for_run) picks

@@ -11,6 +11,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -362,9 +363,25 @@ class TestMeetingTeamGroupingValidation:
 
 class TestWorkflow:
     def test_minimal_workflow(self):
-        wf = Workflow(name="t", description="d", meetings=[])
+        wf = Workflow(
+            name="t",
+            description="d",
+            meetings=[
+                Meeting(id="a", label="M1", goal="g", roster=["alice"]),
+            ],
+        )
         assert wf.version == 1
         assert wf.defaults == WorkflowDefaults()
+
+    def test_empty_workflow_rejected(self):
+        """Pre-P14 a workflow with no meetings was constructible
+        (and entry_meeting raised on access). With Interviews
+        landing alongside Meetings, the substrate now requires at
+        least one of the two — a workflow with neither has nothing
+        to execute."""
+        import pytest
+        with pytest.raises(ValueError, match="must be non-empty"):
+            Workflow(name="t", description="d", meetings=[])
 
     def test_meeting_by_id(self):
         wf = Workflow(
@@ -391,7 +408,37 @@ class TestWorkflow:
         assert wf.entry_meeting.id == "first"
 
     def test_entry_meeting_raises_on_empty(self):
-        wf = Workflow(name="t", description="d", meetings=[])
+        """Interview-only workflows (P14 discovery) have no entry
+        meeting — accessing the property should raise. Construct
+        with an Interview so the at-least-one-phase validator
+        passes."""
+        from wonderland.interview import (
+            Interview,
+            InterviewQuestion,
+            QuestionKind,
+        )
+
+        wf = Workflow(
+            name="t",
+            description="d",
+            interviews=[
+                Interview(
+                    id="i1",
+                    label="I1",
+                    name="Test",
+                    interviewer="alice",
+                    goal="g",
+                    questions=[
+                        InterviewQuestion(
+                            id="q1",
+                            text="Q?",
+                            kind=QuestionKind.FREE_TEXT,
+                        ),
+                    ],
+                ),
+            ],
+            meetings=[],
+        )
         with pytest.raises(ValueError, match="no meetings"):
             wf.entry_meeting
 
@@ -510,10 +557,19 @@ class TestBundledWorkflowIntegrity:
         return load_workflow(workflow_name)
 
     def test_meeting_ids_are_unique(self, wf):
+        if not wf.has_meetings:
+            pytest.skip(
+                f"workflow {wf.name!r} has no meetings "
+                "(interview-only — discovery flow)"
+            )
         ids = [m.id for m in wf.meetings]
         assert len(ids) == len(set(ids)), f"duplicate meeting ids: {ids}"
 
     def test_meeting_labels_are_unique(self, wf):
+        if not wf.has_meetings:
+            pytest.skip(
+                f"workflow {wf.name!r} has no meetings"
+            )
         labels = [m.label for m in wf.meetings]
         assert len(labels) == len(set(labels))
 
@@ -527,10 +583,29 @@ class TestBundledWorkflowIntegrity:
                 )
             seen.add(meeting.id)
 
-    def test_entry_meeting_has_no_directive(self, wf):
-        assert wf.entry_meeting.convenor_directive == ""
+    def test_entry_meeting_directive_supplements_user_input(self, wf):
+        """Interview-only workflows (discovery) have no entry meeting
+        — skip there. Pre-0.5.3 convention: entry meetings had EMPTY
+        convenor_directive (user input filled it). With supplemental
+        framing (e.g. tdd-implement's M6 locking Alice to
+        test_scenario shape), an entry meeting CAN carry framing
+        prose — the runtime renders user directive on top + the
+        YAML's convenor_directive below as a HOW supplement. The
+        convention this test guards is now 'whatever is here will
+        be shown UNDER the user's directive, not INSTEAD of it'."""
+        # Test only asserts the shape is non-None (str type); the
+        # runtime merge behavior is covered in test_run_workflow.
+        if not wf.has_meetings:
+            pytest.skip(
+                f"workflow {wf.name!r} has no meetings"
+            )
+        assert isinstance(wf.entry_meeting.convenor_directive, str)
 
     def test_non_entry_meetings_have_directives(self, wf):
+        if not wf.has_meetings:
+            pytest.skip(
+                f"workflow {wf.name!r} has no meetings"
+            )
         for m in wf.meetings[1:]:
             assert m.convenor_directive.strip(), (
                 f"meeting {m.id!r} has empty convenor_directive — only the "
@@ -2042,6 +2117,380 @@ class TestResolveSeeds:
         assert "c1" in titles
         assert "c2" not in titles
         assert "c3-disk-fallback" in titles
+
+
+# ---------------------------------------------------------------------------
+# Milestone-scope filtering in resolve_seeds (T-m4)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveSeedsMilestoneScope:
+    """Filter the requirement seed pool by the active milestone's
+    consumes_requirements list. Scope is module-level state — set
+    via set_active_milestone_scope, cleared in teardown."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_scope(self):
+        from wonderland.workflow import set_active_milestone_scope
+
+        set_active_milestone_scope(None)
+        yield
+        set_active_milestone_scope(None)
+
+    @pytest.fixture
+    def capture_with_requirements(self) -> WorkflowCapture:
+        cap = WorkflowCapture()
+        cap.observe(_utt(
+            thread_id="discovery",
+            artifacts=[_art("requirement", slug="req-in", title="kept")],
+        ))
+        cap.observe(_utt(
+            thread_id="discovery",
+            artifacts=[_art("requirement", slug="req-out", title="dropped")],
+        ))
+        cap.observe(_utt(
+            thread_id="discovery",
+            artifacts=[_art("requirement", slug="req-also-in", title="also-kept")],
+        ))
+        return cap
+
+    def _scope(self, *, consumes: list[str]):
+        from wonderland.workflow import _MilestoneScope
+
+        return _MilestoneScope(
+            slug="m-test",
+            name="Test milestone",
+            goal="testing",
+            done_when=tuple(),
+            consumes=frozenset(consumes),
+        )
+
+    def test_no_scope_passes_all_requirements_through(
+        self, capture_with_requirements
+    ):
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "any", "kinds": ["requirement"]})],
+            capture_with_requirements,
+        )
+        slugs = {
+            a.payload.get("slug")
+            for u in seeds
+            for a in u.content.artifacts
+        }
+        assert slugs == {"req-in", "req-out", "req-also-in"}
+
+    def test_scope_filters_to_consumed_slugs(
+        self, capture_with_requirements
+    ):
+        from wonderland.workflow import set_active_milestone_scope
+
+        set_active_milestone_scope(self._scope(consumes=["req-in", "req-also-in"]))
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "any", "kinds": ["requirement"]})],
+            capture_with_requirements,
+        )
+        slugs = {
+            a.payload.get("slug")
+            for u in seeds
+            for a in u.content.artifacts
+        }
+        assert slugs == {"req-in", "req-also-in"}
+
+    def test_scope_skips_utterance_with_zero_matches(
+        self, capture_with_requirements
+    ):
+        from wonderland.workflow import set_active_milestone_scope
+
+        set_active_milestone_scope(self._scope(consumes=["does-not-exist"]))
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "any", "kinds": ["requirement"]})],
+            capture_with_requirements,
+        )
+        assert seeds == []
+
+    def test_scope_ignored_when_binding_has_no_requirement_kind(self):
+        """A binding pulling story/feature/etc. should not be affected
+        — milestone framing only narrows the requirement corpus."""
+        from wonderland.workflow import set_active_milestone_scope
+
+        cap = WorkflowCapture()
+        cap.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="story-x", title="s")],
+        ))
+        set_active_milestone_scope(self._scope(consumes=["unrelated"]))
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "scoping", "kinds": ["story"]})],
+            cap,
+        )
+        assert len(seeds) == 1
+
+    def test_empty_consumes_set_is_no_op(
+        self, capture_with_requirements
+    ):
+        """A milestone whose markdown didn't enumerate consumes (or
+        consumes was hand-stripped) treats the scope as inactive
+        rather than nuking the seed pool — operators may add later."""
+        from wonderland.workflow import set_active_milestone_scope
+
+        set_active_milestone_scope(self._scope(consumes=[]))
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "any", "kinds": ["requirement"]})],
+            capture_with_requirements,
+        )
+        slugs = {
+            a.payload.get("slug")
+            for u in seeds
+            for a in u.content.artifacts
+        }
+        assert slugs == {"req-in", "req-out", "req-also-in"}
+
+    def test_scope_preserves_non_requirement_artifacts_on_kept_utterance(
+        self,
+    ):
+        """When one utterance carries both a requirement and a non-
+        requirement artifact, the requirement gets sliced but the
+        other kind passes through."""
+        from wonderland.workflow import set_active_milestone_scope
+
+        cap = WorkflowCapture()
+        cap.observe(_utt(
+            thread_id="mixed",
+            artifacts=[
+                _art("requirement", slug="req-in", title="kept-req"),
+                _art("project_context", title="ctx"),
+            ],
+        ))
+        cap.observe(_utt(
+            thread_id="mixed",
+            artifacts=[
+                _art("requirement", slug="req-out", title="dropped-req"),
+                _art("project_context", title="orphan-ctx"),
+            ],
+        ))
+        set_active_milestone_scope(self._scope(consumes=["req-in"]))
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({
+                "from": "any",
+                "kinds": ["requirement", "project_context"],
+            })],
+            cap,
+        )
+        # First utterance is kept (req-in matches); its project_context
+        # rides along. Second utterance is dropped wholesale even
+        # though it carries a project_context — its requirement is
+        # off-scope and the slice rule treats requirement-bearing
+        # utterances as a single unit.
+        kinds_per_u = [
+            {a.kind for a in u.content.artifacts} for u in seeds
+        ]
+        assert {"requirement", "project_context"} in kinds_per_u
+        assert all(
+            a.payload.get("slug") != "req-out"
+            for u in seeds
+            for a in u.content.artifacts
+            if a.kind == "requirement"
+        )
+
+
+class TestRetractionSubstrate:
+    """T-m7 — substrate-level retraction processing. The agent ships a
+    RETRACT speech_act carrying retraction artifacts; the substrate
+    deletes the targeted file + records (kind, slug) so resolve_seeds
+    filters retracted artifacts from downstream seed pools."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_state(self):
+        from wonderland.workflow import clear_retractions
+
+        clear_retractions()
+        yield
+        clear_retractions()
+
+    def test_register_and_query_retraction(self):
+        from wonderland.workflow import (
+            get_retracted_artifacts,
+            is_retracted,
+            register_retraction,
+        )
+
+        register_retraction("story", "off-scope-story")
+        assert is_retracted("story", "off-scope-story")
+        assert not is_retracted("story", "different-story")
+        assert not is_retracted("feature", "off-scope-story")
+        snapshot = get_retracted_artifacts()
+        assert snapshot == {"story": {"off-scope-story"}}
+
+    def test_clear_wipes_registry(self):
+        from wonderland.workflow import (
+            clear_retractions,
+            get_retracted_artifacts,
+            register_retraction,
+        )
+
+        register_retraction("story", "s1")
+        register_retraction("feature", "f1")
+        clear_retractions()
+        assert get_retracted_artifacts() == {}
+
+    def test_apply_retraction_unlinks_disk_file(self, tmp_path):
+        """A RETRACT utterance carrying a retraction for an on-disk
+        story should unlink the file + register the slug."""
+        from wonderland.story import StoryPayload, StoryRegistry
+        from wonderland.workflow import (
+            _apply_retraction_for_utterance,
+            is_retracted,
+        )
+
+        project_root = tmp_path / "proj"
+        project_root.mkdir()
+        (project_root / ".wonderland").mkdir()
+        reg = StoryRegistry(project_root)
+        payload = StoryPayload(
+            title="Off-scope story",
+            persona="Maya",
+            situation="working in translation app",
+            need="As Maya, I want X, so that Y.",
+            acceptance=["happens"],
+            tier="core",
+            confusion_flags=["unsure"],
+        )
+        record = reg.write(payload)
+        assert record.path.exists()
+
+        retract_utt = Utterance(
+            thread_id="scoping",
+            speaker=AgentIdentity(name="caterpillar", constitution_version="1"),
+            addressed_to="caucus",
+            speech_act=SpeechAct.RETRACT,
+            content=UtteranceContent(
+                body="off scope",
+                artifacts=[
+                    Artifact(
+                        kind="retraction",
+                        payload={
+                            "target_kind": "story",
+                            "target_slug": record.slug,
+                            "reason": "translation off-topic for onboarding milestone",
+                        },
+                    )
+                ],
+            ),
+        )
+
+        runner = SimpleNamespace(project_root=project_root)
+        records = _apply_retraction_for_utterance(
+            runner=runner, utterance=retract_utt
+        )
+
+        assert len(records) == 1
+        assert records[0].target_kind == "story"
+        assert records[0].target_slug == record.slug
+        assert records[0].retractor == "caterpillar"
+        assert not record.path.exists()  # file unlinked
+        assert is_retracted("story", record.slug)
+
+    def test_apply_retraction_noop_on_non_retract_utterance(
+        self, tmp_path
+    ):
+        from wonderland.workflow import _apply_retraction_for_utterance
+
+        utt = Utterance(
+            thread_id="scoping",
+            speaker=AgentIdentity(name="alice", constitution_version="1"),
+            addressed_to="caucus",
+            speech_act=SpeechAct.STORY,
+            content=UtteranceContent(body="", artifacts=[]),
+        )
+        runner = SimpleNamespace(project_root=tmp_path)
+        records = _apply_retraction_for_utterance(
+            runner=runner, utterance=utt
+        )
+        assert records == []
+
+    def test_resolve_seeds_drops_retracted_artifact(self):
+        from wonderland.workflow import register_retraction
+
+        cap = WorkflowCapture()
+        cap.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="kept", title="ok")],
+        ))
+        cap.observe(_utt(
+            thread_id="scoping",
+            artifacts=[_art("story", slug="retracted", title="bad")],
+        ))
+        register_retraction("story", "retracted")
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "scoping", "kinds": ["story"]})],
+            cap,
+        )
+        slugs = {
+            a.payload.get("slug")
+            for u in seeds
+            for a in u.content.artifacts
+        }
+        assert slugs == {"kept"}
+
+    def test_resolve_seeds_slices_mixed_kind_utterance(self):
+        """When one utterance carries multiple artifacts, retracted
+        ones get sliced out but live siblings stay."""
+        from wonderland.workflow import register_retraction
+
+        cap = WorkflowCapture()
+        cap.observe(_utt(
+            thread_id="scoping",
+            artifacts=[
+                _art("story", slug="alive", title="ok"),
+                _art("story", slug="dead", title="bad"),
+            ],
+        ))
+        register_retraction("story", "dead")
+        seeds = resolve_seeds(
+            [SeedBinding.model_validate({"from": "scoping", "kinds": ["story"]})],
+            cap,
+        )
+        slugs = {
+            a.payload.get("slug")
+            for u in seeds
+            for a in u.content.artifacts
+        }
+        assert slugs == {"alive"}
+
+
+class TestParseMilestoneBody:
+    """``_parse_milestone_body`` extracts goal / done_when / consumes
+    from a milestone's markdown. Tolerant of operator hand-edits."""
+
+    def test_parses_canonical_shape(self):
+        from wonderland.workflow import _parse_milestone_body
+
+        body = (
+            "## Milestone 01: Onboarding\n\n"
+            "**Slug:** m1\n"
+            "**Order:** 1\n\n"
+            "**Goal:**\n\n"
+            "User can sign up and pick equipment.\n\n"
+            "**Done when:**\n\n"
+            "- Auth works\n"
+            "- Equipment list editable\n\n"
+            "**Consumes requirements:**\n\n"
+            "- req-a\n"
+            "- req-b\n"
+            "- req-c\n"
+        )
+        goal, done, consumes = _parse_milestone_body(body)
+        assert "sign up" in goal
+        assert done == ["Auth works", "Equipment list editable"]
+        assert consumes == ["req-a", "req-b", "req-c"]
+
+    def test_missing_sections_yield_empty_lists(self):
+        from wonderland.workflow import _parse_milestone_body
+
+        goal, done, consumes = _parse_milestone_body("just a header\n")
+        assert goal == ""
+        assert done == []
+        assert consumes == []
 
 
 # ---------------------------------------------------------------------------
@@ -3795,3 +4244,522 @@ class TestResolveSeedsConsumedBy:
             if a.kind == "story"
         ]
         assert slugs == ["story-a"]
+
+
+# ---------------------------------------------------------------------------
+# Interview wiring (T-i2) — verifies workflow.interviews execution
+# ---------------------------------------------------------------------------
+
+
+class TestInterviewWiring:
+    """T-i2 lays the orchestration loop for interviews. T-i3 + T-i4
+    fill in the disk bridge + agent decisions. These tests verify the
+    wiring exists end-to-end: workflow.interviews drives
+    _run_one_interview, which emits start/end events and records the
+    visit on the capture."""
+
+    async def test_interview_only_workflow_emits_start_and_end(self):
+        from wonderland.interview import (
+            Interview,
+            InterviewQuestion,
+            QuestionKind,
+        )
+        from wonderland.observer.events import (
+            InterviewEnded,
+            InterviewStarted,
+        )
+
+        wf = Workflow(
+            name="discovery-test",
+            description="just an interview",
+            interviews=[
+                Interview(
+                    id="persona-interview",
+                    label="I1",
+                    name="Who is this for?",
+                    interviewer="alice",
+                    goal="capture personas",
+                    questions=[
+                        InterviewQuestion(
+                            id="q1",
+                            text="Who?",
+                            kind=QuestionKind.FREE_TEXT,
+                        ),
+                    ],
+                ),
+            ],
+        )
+        runner = FakeRunner({})
+        events = []
+        async for ev in run_workflow(wf, runner, "directive"):
+            events.append(ev)
+
+        kinds = [type(ev).__name__ for ev in events]
+        assert "InterviewStarted" in kinds
+        assert "InterviewEnded" in kinds
+        # Order: start before end
+        start_idx = kinds.index("InterviewStarted")
+        end_idx = kinds.index("InterviewEnded")
+        assert start_idx < end_idx
+
+        started = next(
+            ev for ev in events if isinstance(ev, InterviewStarted)
+        )
+        assert started.interview_id == "persona-interview"
+        assert started.interviewer == "alice"
+        assert started.label == "I1"
+
+        ended = next(
+            ev for ev in events if isinstance(ev, InterviewEnded)
+        )
+        assert ended.interview_id == "persona-interview"
+        # FakeRunner doesn't expose agents/project_root/run_id, so
+        # _run_one_interview can't actually drive the interviewer +
+        # bridge — it closes gracefully as SKIPPED. Real flow tested
+        # in test_interview_drives_agent_through_bridge below.
+        assert ended.outcome == "SKIPPED"
+
+    async def test_multiple_interviews_run_in_declaration_order(self):
+        from wonderland.interview import (
+            Interview,
+            InterviewQuestion,
+            QuestionKind,
+        )
+        from wonderland.observer.events import InterviewStarted
+
+        def _iv(iv_id: str, interviewer: str) -> Interview:
+            return Interview(
+                id=iv_id,
+                label=iv_id.upper(),
+                name=iv_id,
+                interviewer=interviewer,
+                goal="g",
+                questions=[
+                    InterviewQuestion(
+                        id="q1", text="?", kind=QuestionKind.FREE_TEXT
+                    ),
+                ],
+            )
+
+        wf = Workflow(
+            name="three-interviews",
+            description="d",
+            interviews=[
+                _iv("persona", "alice"),
+                _iv("constraints", "cheshire_cat"),
+                _iv("scope", "white_rabbit"),
+            ],
+        )
+        runner = FakeRunner({})
+        events = []
+        async for ev in run_workflow(wf, runner, "directive"):
+            events.append(ev)
+
+        started_ids = [
+            ev.interview_id
+            for ev in events
+            if isinstance(ev, InterviewStarted)
+        ]
+        assert started_ids == ["persona", "constraints", "scope"]
+
+    async def test_interviews_run_before_meetings(self):
+        """When a workflow declares both, interviews run first so the
+        meetings can seed from requirement artifacts (when T-i7 wires
+        that up). For the T-i2 stub, just verify the order."""
+        from wonderland.interview import (
+            Interview,
+            InterviewQuestion,
+            QuestionKind,
+        )
+        from wonderland.observer.events import InterviewStarted
+        from wonderland.workflow import MeetingStartEvent
+
+        wf = Workflow(
+            name="mixed",
+            description="d",
+            interviews=[
+                Interview(
+                    id="i1",
+                    label="I1",
+                    name="First",
+                    interviewer="alice",
+                    goal="g",
+                    questions=[
+                        InterviewQuestion(
+                            id="q1",
+                            text="?",
+                            kind=QuestionKind.FREE_TEXT,
+                        ),
+                    ],
+                ),
+            ],
+            meetings=[
+                Meeting(
+                    id="m1",
+                    label="M1",
+                    goal="g",
+                    roster=["alice"],
+                    meeting_budget=0.50,
+                ),
+            ],
+        )
+        runner = FakeRunner({"m1": [FakeEvent("complete")]})
+        events = []
+        async for ev in run_workflow(wf, runner, "directive"):
+            events.append(ev)
+
+        # First InterviewStarted must precede first MeetingStartEvent.
+        # MeetingStartEvent is the workflow-internal event the
+        # orchestrator yields; observer-side MeetingStarted is what
+        # LiveRunHandle translates from it for streaming consumers.
+        interview_idx = next(
+            (
+                i for i, ev in enumerate(events)
+                if isinstance(ev, InterviewStarted)
+            ),
+            -1,
+        )
+        meeting_idx = next(
+            (
+                i for i, ev in enumerate(events)
+                if isinstance(ev, MeetingStartEvent)
+            ),
+            -1,
+        )
+        assert interview_idx >= 0, "no InterviewStarted seen"
+        assert meeting_idx >= 0, "no MeetingStartEvent seen"
+        assert interview_idx < meeting_idx
+
+
+    async def test_interview_drives_agent_through_bridge(
+        self, tmp_path: Path
+    ) -> None:
+        """End-to-end T-i4: the substrate writes YAML questions to
+        the bridge, mocks the operator's answer submission, drives the
+        interviewer agent with the answers as context, and counts the
+        requirement artifacts the agent ships.
+
+        Uses a hand-rolled FakeInterviewer that mimics the
+        WonderlandAgent.compose_context + deliberate surface — same
+        contract Alice / Cat / Rabbit implement. Tests the runtime
+        path, not LLM behavior."""
+        import json as _json
+
+        from wonderland.interview import (
+            Interview,
+            InterviewQuestion,
+            QuestionKind,
+            PENDING_INTERVIEW_FILENAME,
+            PENDING_INTERVIEW_ANSWERS_FILENAME,
+        )
+        from wonderland.observer.events import (
+            InterviewAnswersReceived,
+            InterviewEnded,
+            InterviewQuestionsPosted,
+        )
+        from wonderland.utterance import (
+            Artifact,
+            AgentIdentity,
+            SpeechAct,
+            Utterance,
+            UtteranceContent,
+        )
+
+        wf = Workflow(
+            name="discovery-smoke",
+            description="d",
+            interviews=[
+                Interview(
+                    id="persona-interview",
+                    label="I1",
+                    name="Who is this for?",
+                    interviewer="alice",
+                    goal="capture personas",
+                    questions=[
+                        InterviewQuestion(
+                            id="primary_persona",
+                            text="Who's using this?",
+                            kind=QuestionKind.FREE_TEXT,
+                        ),
+                    ],
+                    allow_followup=False,
+                ),
+            ],
+        )
+
+        # Hand-rolled interviewer that mimics the two-call shape
+        # _run_one_interview now uses: round-1 shaping (returns an
+        # interview_question_batch artifact) then round-1 review
+        # (returns a requirement artifact). compose_context echoes
+        # triggers back as the "context".
+        class _FakeInterviewer:
+            def __init__(self) -> None:
+                self.contexts_received: list[Any] = []
+                self.calls = 0
+
+            async def compose_context(
+                self, triggers: list[Utterance]
+            ) -> Any:
+                return triggers
+
+            async def deliberate(self, context: Any) -> Utterance:
+                self.contexts_received.append(context)
+                self.calls += 1
+                if self.calls == 1:
+                    # Round-1 shaping: ship the question batch
+                    # (substrate writes it to the bridge).
+                    return Utterance(
+                        thread_id="interview.persona-interview",
+                        speaker=AgentIdentity(
+                            name="alice",
+                            constitution_version="test",
+                        ),
+                        addressed_to="caucus",
+                        speech_act=SpeechAct.INTERVIEW_QUESTIONS,
+                        content=UtteranceContent(
+                            body="Shaped batch.",
+                            artifacts=[
+                                Artifact(
+                                    kind="interview_question_batch",
+                                    payload={
+                                        "questions": [
+                                            {
+                                                "id": "primary_persona",
+                                                "text": "Who's using your Pomodoro tracker?",
+                                                "kind": "free_text",
+                                                "required": True,
+                                                "options": [],
+                                            },
+                                        ],
+                                    },
+                                ),
+                            ],
+                        ),
+                    )
+                # Round-1 review: synthesize answers → requirement.
+                return Utterance(
+                    thread_id="interview.persona-interview",
+                    speaker=AgentIdentity(
+                        name="alice",
+                        constitution_version="test",
+                    ),
+                    addressed_to="caucus",
+                    speech_act=SpeechAct.INTERVIEW_REVIEW,
+                    content=UtteranceContent(
+                        body="Captured persona.",
+                        artifacts=[
+                            Artifact(
+                                kind="requirement",
+                                payload={
+                                    "title": "Maya at translation startup",
+                                    "kind": "persona",
+                                },
+                            ),
+                        ],
+                    ),
+                )
+
+        fake_alice = _FakeInterviewer()
+
+        run_id_value = "20260512T210000"
+        run_dir = tmp_path / ".wonderland" / "runs" / run_id_value
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        class _FakeRunnerWithAgents:
+            project_root = tmp_path
+            run_id = run_id_value
+            agents = {"alice": fake_alice}
+
+        # Simulate the operator submission as a background task:
+        # wait briefly for the bridge to write its pending question,
+        # then write the answers file.
+        async def _submit_answers_soon() -> None:
+            await asyncio.sleep(0.2)
+            question_file = run_dir / PENDING_INTERVIEW_FILENAME
+            data = _json.loads(question_file.read_text(encoding="utf-8"))
+            batch_id = data["batch_id"]
+            (run_dir / PENDING_INTERVIEW_ANSWERS_FILENAME).write_text(
+                _json.dumps(
+                    {
+                        "batch_id": batch_id,
+                        "interview_id": "persona-interview",
+                        "answers": [
+                            {
+                                "question_id": "primary_persona",
+                                "value": "Maya at translation startup",
+                            },
+                        ],
+                        "section_skipped": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        submit_task = asyncio.create_task(_submit_answers_soon())
+
+        events = []
+        async for ev in run_workflow(
+            wf, _FakeRunnerWithAgents(), "directive"  # type: ignore[arg-type]
+        ):
+            events.append(ev)
+        await submit_task
+
+        # Bridge fired
+        posted = [
+            e for e in events if isinstance(e, InterviewQuestionsPosted)
+        ]
+        received = [
+            e for e in events if isinstance(e, InterviewAnswersReceived)
+        ]
+        ended = [
+            e for e in events if isinstance(e, InterviewEnded)
+        ]
+        assert len(posted) == 1
+        assert posted[0].question_count == 1
+        assert len(received) == 1
+        assert received[0].section_skipped is False
+        assert received[0].answer_count == 1
+        assert len(ended) == 1
+        assert ended[0].outcome == "COMPLETE"
+        assert ended[0].requirements_shipped == 1
+
+        # Interviewer called twice: once for round-1 shaping, once
+        # for review after operator answers landed.
+        assert fake_alice.calls == 2
+
+    async def test_interview_skipped_when_operator_skips_section(
+        self, tmp_path: Path
+    ) -> None:
+        """Operator hits 'skip section' → bridge returns
+        section_skipped=True → interviewer is NEVER called → outcome
+        SKIPPED with zero requirements shipped."""
+        import json as _json
+
+        from wonderland.interview import (
+            Interview,
+            InterviewQuestion,
+            QuestionKind,
+            PENDING_INTERVIEW_FILENAME,
+            PENDING_INTERVIEW_ANSWERS_FILENAME,
+        )
+        from wonderland.observer.events import InterviewEnded
+        from wonderland.utterance import Utterance
+
+        wf = Workflow(
+            name="discovery-skip",
+            description="d",
+            interviews=[
+                Interview(
+                    id="persona-interview",
+                    label="I1",
+                    name="Who is this for?",
+                    interviewer="alice",
+                    goal="capture personas",
+                    questions=[
+                        InterviewQuestion(
+                            id="primary_persona",
+                            text="Who?",
+                            kind=QuestionKind.FREE_TEXT,
+                        ),
+                    ],
+                ),
+            ],
+        )
+
+        # Even with skip-section, round-1 shaping fires (the agent
+        # decides what to ask before the operator can skip). For
+        # the skip path: shape → write to bridge → operator skips →
+        # close without review. So deliberate fires ONCE (shaping).
+        class _FakeInterviewer:
+            def __init__(self) -> None:
+                self.deliberate_calls = 0
+
+            async def compose_context(
+                self, triggers: list[Utterance]
+            ) -> Any:
+                return triggers
+
+            async def deliberate(self, context: Any) -> Any:
+                self.deliberate_calls += 1
+                # Round-1 shaping returns the question batch.
+                from wonderland.utterance import (
+                    AgentIdentity,
+                    Artifact,
+                    SpeechAct,
+                    Utterance,
+                    UtteranceContent,
+                )
+
+                return Utterance(
+                    thread_id="interview.persona-interview",
+                    speaker=AgentIdentity(
+                        name="alice", constitution_version="test"
+                    ),
+                    addressed_to="caucus",
+                    speech_act=SpeechAct.INTERVIEW_QUESTIONS,
+                    content=UtteranceContent(
+                        body="batch",
+                        artifacts=[
+                            Artifact(
+                                kind="interview_question_batch",
+                                payload={
+                                    "questions": [
+                                        {
+                                            "id": "q1",
+                                            "text": "Who?",
+                                            "kind": "free_text",
+                                            "required": True,
+                                            "options": [],
+                                        },
+                                    ],
+                                },
+                            ),
+                        ],
+                    ),
+                )
+
+        fake_alice = _FakeInterviewer()
+
+        run_id_value = "20260512T220000"
+        run_dir = tmp_path / ".wonderland" / "runs" / run_id_value
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        class _FakeRunner2:
+            project_root = tmp_path
+            run_id = run_id_value
+            agents = {"alice": fake_alice}
+
+        async def _submit_skip() -> None:
+            await asyncio.sleep(0.2)
+            question_file = run_dir / PENDING_INTERVIEW_FILENAME
+            data = _json.loads(question_file.read_text(encoding="utf-8"))
+            batch_id = data["batch_id"]
+            (run_dir / PENDING_INTERVIEW_ANSWERS_FILENAME).write_text(
+                _json.dumps(
+                    {
+                        "batch_id": batch_id,
+                        "interview_id": "persona-interview",
+                        "answers": [],
+                        "section_skipped": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        submit_task = asyncio.create_task(_submit_skip())
+
+        events = []
+        async for ev in run_workflow(
+            wf, _FakeRunner2(), "directive"  # type: ignore[arg-type]
+        ):
+            events.append(ev)
+        await submit_task
+
+        ended = next(
+            e for e in events if isinstance(e, InterviewEnded)
+        )
+        assert ended.outcome == "SKIPPED"
+        assert ended.requirements_shipped == 0
+        # Round-1 shaping fired exactly once; review never did
+        # because operator skipped before submitting answers.
+        assert fake_alice.deliberate_calls == 1

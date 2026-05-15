@@ -187,6 +187,11 @@ class WonderlandApp(App):
                     self._poll_questions_for_background_run(active),
                     name=f"recovered-question-poller-{run_id}",
                 )
+                # Sibling interview poller for P14 discovery runs.
+                active.interview_poller_task = asyncio.create_task(
+                    self._poll_interviews_for_background_run(active),
+                    name=f"recovered-interview-poller-{run_id}",
+                )
                 self._active_run = active
                 self.notify(
                     f"Recovered background run {run_id} "
@@ -353,6 +358,7 @@ class WonderlandApp(App):
         model: str | None = None,
         run_id: str | None = None,
         auto_merge: bool = False,
+        milestone_slug: str | None = None,
     ) -> ActiveRun:
         """Spawn ``wonderland run-bg`` as a detached subprocess and
         register a SubprocessRunHandle as the active run.
@@ -422,6 +428,8 @@ class WonderlandApp(App):
             cmd.extend(["--model", model])
         if auto_merge:
             cmd.append("--auto-merge")
+        if milestone_slug:
+            cmd.extend(["--milestone", milestone_slug])
 
         proc = subprocess.Popen(  # noqa: S603 — args list is built locally, no shell
             cmd,
@@ -454,6 +462,14 @@ class WonderlandApp(App):
         active.question_poller_task = asyncio.create_task(
             self._poll_questions_for_background_run(active),
             name=f"question-poller-{run_id}",
+        )
+        # Sibling interview poller for P14 discovery runs — surfaces
+        # InterviewModal when the substrate writes
+        # pending_interview.json, ships answers back via
+        # pending_interview_answers.json.
+        active.interview_poller_task = asyncio.create_task(
+            self._poll_interviews_for_background_run(active),
+            name=f"interview-poller-{run_id}",
         )
         self._active_run = active
         return active
@@ -523,6 +539,120 @@ class WonderlandApp(App):
             # exception; the buffer + status tell the UI what
             # happened without depending on this raise.
             raise
+
+    async def _poll_interviews_for_background_run(
+        self, active: ActiveRun
+    ) -> None:
+        """Background-run interview bridge — sibling to the question
+        poller.
+
+        The substrate's ``_run_one_interview`` writes
+        ``pending_interview.json`` under the run dir when it's ready
+        for operator input; this poller picks it up, pushes
+        ``InterviewModal``, and writes the operator's answers (or a
+        skip marker) to ``pending_interview_answers.json`` for the
+        bridge to consume.
+
+        Each interview batch carries a uuid ``batch_id`` so the
+        substrate can disambiguate this answer set from any stale
+        follow-up answers file (interviews can loop on follow-up
+        rounds; each round gets a fresh batch_id).
+        """
+        import json
+
+        from wonderland.interview import (
+            PENDING_INTERVIEW_ANSWERS_FILENAME,
+            PENDING_INTERVIEW_FILENAME,
+        )
+
+        run_dir = getattr(active.handle, "run_dir", None)
+        if run_dir is None:
+            return  # In-process handle — uses its own handler.
+        question_path = run_dir / PENDING_INTERVIEW_FILENAME
+        answer_path = run_dir / PENDING_INTERVIEW_ANSWERS_FILENAME
+        seen_batch_ids: set[str] = set()
+        try:
+            while not active.is_terminal:
+                await asyncio.sleep(0.5)
+                if not question_path.is_file():
+                    continue
+                try:
+                    data = json.loads(
+                        question_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError):
+                    continue
+                batch_id = data.get("batch_id")
+                if not isinstance(batch_id, str) or batch_id in seen_batch_ids:
+                    continue
+                seen_batch_ids.add(batch_id)
+                await self._surface_background_interview(
+                    answer_path, data
+                )
+        except asyncio.CancelledError:
+            raise
+
+    async def _surface_background_interview(
+        self,
+        answer_path: "Path",  # noqa: F821 — Path imported at module top
+        question_data: dict,
+    ) -> None:
+        """Push InterviewModal + write the operator's submission to
+        ``pending_interview_answers.json``. The subprocess polls for
+        the file and unblocks when it sees the matching ``batch_id``.
+
+        On Cancel (operator dismissed without committing), the
+        substrate's wait loop will time out naturally — we don't
+        write an answer file in that case, since "operator dismissed"
+        is distinct from "operator skipped section" (which writes a
+        section_skipped=True payload).
+        """
+        import json
+
+        from wonderland.tui.screens.interview_modal import (
+            InterviewModal,
+            InterviewModalResult,
+        )
+
+        future: asyncio.Future["InterviewModalResult | None"] = (
+            asyncio.Future()
+        )
+
+        def _on_dismissed(
+            result: "InterviewModalResult | None",
+        ) -> None:
+            if not future.done():
+                future.set_result(result)
+
+        self.push_screen(
+            InterviewModal(question_data), _on_dismissed
+        )
+        result = await future
+        if result is None:
+            # Operator hit Cancel/Esc. Don't write the answers file;
+            # the bridge times out (or the operator can re-enter the
+            # modal if the substrate re-writes the question — but
+            # current shape is one-shot per batch).
+            return
+        try:
+            answer_path.write_text(
+                json.dumps(
+                    {
+                        "batch_id": result.batch_id,
+                        "interview_id": result.interview_id,
+                        "answers": result.answers,
+                        "section_skipped": result.section_skipped,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            self.notify(
+                f"Failed to deliver interview answers to background "
+                f"run: {exc}",
+                severity="error",
+                timeout=6,
+            )
 
     async def _poll_questions_for_background_run(
         self, active: ActiveRun

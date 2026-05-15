@@ -95,10 +95,12 @@ class LiveRunHandle(RunHandle):
         runner: "Runner",
         workflow: "Workflow",
         directive: str,
+        milestone_slug: str | None = None,
     ) -> None:
         self._runner = runner
         self._workflow = workflow
         self._directive = directive
+        self._milestone_slug = milestone_slug
         # Accumulated state for the non-streaming methods. Updated
         # as events flow during stream_events.
         self._utterances_buffer: list[Utterance] = []
@@ -176,7 +178,10 @@ class LiveRunHandle(RunHandle):
             )
 
             async for event in run_workflow(
-                self._workflow, self._runner, self._directive
+                self._workflow,
+                self._runner,
+                self._directive,
+                milestone_slug=self._milestone_slug,
             ):
                 # workflow.MeetingStartEvent → our MeetingStarted
                 if isinstance(event, MeetingStartEvent):

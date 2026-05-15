@@ -1,0 +1,319 @@
+name: milestone-plan
+description: |
+  Planning phase (P15). Operator runs this after discovery; three
+  agents (White Rabbit + Cheshire Cat + Alice) read the requirement
+  corpus + any existing milestone plan and propose an ordered
+  sequence of milestones. Each milestone names which requirements
+  it consumes + what observable signal means it's done.
+
+  ## Why this exists
+
+  Without milestones, M2 (composition) in tdd-design sees all
+  requirements at once and composes features against a flat pool —
+  some are foundation work (data layer, profile shell), some are
+  user-facing (logging UI, gamification), some are deferred
+  follow-ons. The features end up unordered and tdd-implement
+  can't sequence them sensibly.
+
+  Milestones inject an explicit ordering layer: foundation
+  ships first, the core loop second, gamification third, etc.
+  Each tdd-design run scopes to one milestone via
+  ``--milestone <slug>`` and produces features inside that
+  milestone's frame.
+
+  ## Cross-run continuity
+
+  Re-running this workflow after a follow-up discovery should
+  AMEND the existing plan, not replace it. The seed shape pulls
+  existing milestones from
+  ``.wonderland/milestones/`` and presents them alongside the
+  new requirements. Agents re-emit existing milestone slugs to
+  update them (adding newly-arrived requirements, tightening a
+  done_when, etc.) and coin new slugs to append. The registry
+  dedups by slug — same slug = overwrite, new slug = append.
+
+  ## Roles
+
+  - **White Rabbit** owns the canonical plan. Alice + Cat push
+    back from their lenses; Rabbit's milestones are what the
+    substrate records.
+  - **Cheshire Cat** checks architectural ordering — flags when
+    a proposed order would have M4 architecting against a
+    foundation that hasn't shipped.
+  - **Alice** grounds in persona-shipped value — flags when a
+    proposed order would have the persona seeing something
+    incomplete-feeling before something complete-feeling.
+
+  Target 3-7 milestones for a v1 cut. More than that and the
+  operator loses track; fewer than that and milestones aren't
+  pulling their weight as a sequencing layer.
+
+version: 1
+
+category: planning
+
+defaults:
+  # Planning is cheap — one meeting, three agents, two phases.
+  # Most of the cost is in reasoning about an existing requirement
+  # corpus; the agents don't generate much new structured content
+  # per turn (a milestone is ~5 fields + a list of slugs).
+  budget_dollars: 1.50
+  quiescence_seconds: 60.0
+
+meetings:
+
+  # ─────────────────────────────────────────────────────────────────
+  # The single planning meeting. Three agents, two phases.
+  # ─────────────────────────────────────────────────────────────────
+  - id: planning
+    label: P1
+    name: The Caucus on the Map
+    goal: |
+      compose the milestone plan from the requirement corpus —
+      ordered, with done-criteria, scoped to consumed requirements
+    roster: [white_rabbit, cheshire_cat, alice]
+    meeting_budget: 1.50
+    # P15 T-m6 stage-leak guardrail. The convenor_directive below
+    # tells agents what to ship; this list is the substrate-side
+    # enforcement that catches what slips past. milestone_plan is
+    # the productive output; concern + question_to_operator are
+    # valid push-back / clarification shapes; question lets agents
+    # ask each other for context; deference + silence are first-
+    # class no-ops. Everything else (ticket, feature, story, ADR,
+    # interview_review, etc.) gets the artifacts stripped + their
+    # on-disk files deleted before reaching the bus.
+    allowed_decisions:
+      - milestone_plan
+      - concern
+      - deference
+      - silence
+    # NOTE: ``question`` and ``question_to_operator`` are
+    # deliberately EXCLUDED. First two observed runs got stuck
+    # in a loop of agents asking each other questions instead of
+    # committing. T-m6's filter is artifact-level (it doesn't drop
+    # question utterances since they carry no artifacts), so this
+    # list mostly serves as a hint — the load-bearing forcing
+    # function is the convenor_directive's "DO NOT ask each other
+    # questions" section. If the loop persists, T-m6 wants
+    # expanding to utterance-level filtering.
+    convenor_directive: |
+      **THE ONLY PRODUCTIVE OUTPUT OF THIS MEETING IS A
+      `milestone_plan` DECISION.** That's your assignment. Read
+      the requirement corpus, compose an ordered plan, ship it
+      as `milestone_plan` with the `milestones` field populated.
+
+      Example of what your response should look like:
+
+      ```json
+      {
+        "decision": "milestone_plan",
+        "body": "First cut: foundation → core loop → gamification. Marcus needs the logging foundation before XP bars make sense.",
+        "milestones": [
+          {
+            "slug": "foundation",
+            "name": "Foundation: data layer + profile shell",
+            "order": 1,
+            "goal": "Marcus can launch the app, create a profile, and the persistence layer is ready for the logging loop.",
+            "done_when": [
+              "App launches on a fresh machine",
+              "Profile creation works + persists across restart"
+            ],
+            "consumes_requirements": [
+              "marcus-late-20s-software-engineer-post-work-gym-sessions",
+              "marcus-moving-from-pen-and-paper-notebooks-to-digital-tracking",
+              "local-storage-is-sqlite-file-based-single-device-multi-profile-capable",
+              "multi-user-local-profiles-no-authentication-in-v1",
+              "deployment-flexibility-offline-first-cloud-as-follow-on"
+            ],
+            "deferred": false,
+            "confidence": "operator_stated"
+          }
+        ]
+      }
+      ```
+
+      **DO NOT ship any of these decisions in this meeting:**
+        - **NO `story`** — story composition happens in tdd-design
+          M1, scoped to a milestone, not here. Stories are NOT
+          milestones; they're persona-anchored need statements
+          that downstream design will derive.
+        - **NO `interview_questions`** — this is NOT a discovery
+          meeting. The interviewing is done; the requirements are
+          on disk. Don't ask the operator anything; compose the
+          plan from what's already there.
+        - **NO `ticket`** — decomposition into tickets happens in
+          tdd-design M3, not here. Even if you can see what
+          tickets a milestone will need, ship the milestone alone.
+        - **NO `feature`** — feature composition happens in
+          tdd-design M2, scoped to one milestone at a time, not
+          here. The milestone's `done_when` conditions are NOT
+          features; they're operator-observable signals.
+        - **NO `proposal` / ADR** — architectural commitments
+          happen in tdd-design M4 with the milestone's
+          requirements visible. Ship a `concern` if you spot an
+          architectural problem with the proposed ordering.
+        - **NO `test_scenario`** — testing concerns belong to
+          tdd-implement, not here.
+
+      The valid response shapes for this meeting are exactly:
+        - `milestone_plan` — your contribution to the canonical
+          plan (productive output).
+        - `concern` — push back on someone else's proposed order
+          or coverage.
+        - `question` — ask the team for context.
+        - `question_to_operator` — escalate to the human when the
+          team needs a decision only they can make (rare here —
+          the operator already gave their answers via discovery).
+        - `silence` — defer to the others; you have nothing
+          load-bearing to add.
+
+      Anything else — the substrate's stage-leak guardrail will
+      drop the artifact + delete the on-disk file before it
+      reaches the bus. The utterance survives as a transcript
+      record but the work is wasted. Don't waste turns.
+
+      **Rabbit — your FIRST turn in this meeting is a
+      milestone_plan decision.** Don't ask questions. Don't ship
+      a concern first. Don't wait for alignment with Cat or
+      Alice. Read the requirement corpus, draft your best
+      initial cut, ship it. Imperfect is fine — Cat and Alice
+      will push back if your draft has issues. The substrate
+      will record your milestones; subsequent turns can amend.
+
+      **Cat — push back on Rabbit's draft via `concern`, OR
+      ship your own competing `milestone_plan`.** Don't ask
+      Rabbit clarifying questions. The requirements are
+      settled — the operator already answered all the
+      architectural seam questions during discovery + the
+      interview meeting. If you see an ordering problem in
+      Rabbit's draft, name it as a concern (1-2 sentences,
+      pointed at a specific milestone slug). If you have a
+      fundamentally different order in mind, ship your own
+      `milestone_plan` and the substrate will record both
+      versions (different slugs = both kept; same slug = your
+      version overwrites Rabbit's).
+
+      **Alice — push back via `concern` from the persona lens,
+      OR ship your own competing `milestone_plan`.** Don't ask
+      clarifying questions about persona shape — Marcus is
+      Marcus. If Rabbit's order would have the persona seeing
+      something incomplete-feeling before something
+      complete-feeling, name the concern. If you'd order
+      differently, ship your own milestone_plan.
+
+      **Nobody asks the operator anything in this meeting.**
+      Discovery is over. The requirements are settled. The
+      operator has already given everything they're going to
+      give until they review what this meeting ships. If a
+      question feels load-bearing, write a milestone whose
+      `goal` notes the open question — the operator will see
+      it in the next dashboard review.
+
+      **DO NOT ask each other questions.** Observed failure
+      mode: Cat surfaces a "seam," Alice adds nuance, Rabbit
+      summarizes, no one commits. Eleven question turns, zero
+      milestones, meeting times out. Don't do that. If you have
+      a position, ship it as `milestone_plan` or `concern`.
+      Silence is also valid when you have nothing to add to a
+      shipped draft.
+
+      **Target shape:** 3-7 milestones, each with:
+        - stable slug (re-emit to amend an existing milestone)
+        - 1-indexed order
+        - human-readable name
+        - 1-3 sentence goal
+        - observable done_when conditions (concrete enough to
+          check)
+        - **rich** list of consumes_requirements (requirement
+          slugs scoped to this milestone — see Coverage below)
+
+      **Each milestone should ship a *coherent thing* —
+      operator-observable, not just internal architectural
+      plumbing.** The first milestone often is foundation
+      (data layer + skeleton) and that's fine — but the
+      done_when should describe an operator-visible outcome
+      ("app launches, profile can be created and selected")
+      not just "schema exists."
+
+      **Coverage discipline — every requirement gets a home.**
+      Look through your context seed-by-seed. Each requirement
+      (you'll see one ``(artifacts: requirement slug=...)``
+      annotation per seed utterance) must appear in at least one
+      milestone's ``consumes_requirements`` list. Multi-milestone
+      membership is expected and good:
+
+        - **Persona + situation requirements** (Marcus, gym-floor
+          moment, etc.) typically appear in EVERY milestone that
+          ships something Marcus would touch. Don't list them in
+          only one — they're the universal grounding.
+        - **Cross-cutting constraints** (offline-first, SQLite,
+          deal-breakers) typically appear in every milestone they
+          bound — repeat the slug if the constraint is
+          load-bearing for that milestone.
+        - **Scope requirements** anchor to the milestone whose
+          done_when they describe.
+        - **Out_of_scope + deferral requirements** anchor to the
+          milestone they explicitly bound (e.g.,
+          ``out_of_scope: fitness-tracker-integration`` lives in
+          the first milestone that would have touched fitness
+          trackers, marking the boundary).
+
+      Before you ship the plan, do a coverage pass: walk the
+      requirement seeds in your context one more time and confirm
+      each has a home. If a requirement genuinely doesn't fit any
+      milestone, ship a ``concern`` calling that out — it's a
+      planning gap worth surfacing.
+
+      **Aim for richness over minimalism in consumes_requirements.**
+      A milestone with one requirement is a planning failure —
+      downstream design (tdd-design --milestone <slug>) will starve
+      on thin seeds. Two requirements per milestone is a floor;
+      five to ten is typical for a meaningful foundation /
+      capability slice.
+
+    seeds:
+      # Project context — the directive + skeleton + stack facts
+      # that frame everything. Cheap to include; downstream
+      # planning decisions benefit from grounding.
+      - from: any
+        kinds: [project_context]
+      # Requirement corpus from disk. Discovery has already run
+      # (or operator hand-edited markdown); the planning meeting
+      # composes against this pool.
+      - from: any
+        kinds: [requirement]
+      # Existing milestones — cross-run continuity. First-run
+      # finds nothing (empty); re-runs surface the prior plan so
+      # agents can amend rather than restart.
+      - from: any
+        kinds: [milestone]
+
+    phases:
+      # Single phase — no discussion-before-commit. First
+      # observed run pattern was Cat surfacing a seam, Alice
+      # adding nuance, Rabbit asking the operator, getting an
+      # answer, Cat surfacing another seam, infinitely. The
+      # team treated planning like an architecture meeting (M4)
+      # and never converged.
+      #
+      # NO exit_condition_artifact: the third observed run had
+      # Rabbit ship a milestone_plan on turn 1, then the phase
+      # exited immediately because the exit_condition fired —
+      # Cat and Alice never got their turn to refine. The two
+      # rotations give each agent ONE turn to ship their initial
+      # position and a second turn to amend / push back. Phase
+      # ends naturally on rotation cap or when everyone passes
+      # in succession (registered quiescence).
+      - name: plan
+        max_rotations: 3
+        # P15 T-m8 — closed-loop coverage check. After each rotation
+        # the substrate verifies every decomposable requirement is
+        # consumed by some milestone; gaps trigger a synthetic Dodo
+        # observation listing the orphan slugs + grant a bonus
+        # rotation so Rabbit can revise. Bonus rotations are capped
+        # by ``coverage_max_extra_rotations`` (default 2 on Meeting).
+        # End-of-phase outcome is COMPLETE when coverage closes,
+        # COVERAGE_INCOMPLETE when the cap exhausts with gap
+        # remaining — operator notices the difference in the
+        # MeetingEndEvent.
+        coverage_check: requirement_coverage

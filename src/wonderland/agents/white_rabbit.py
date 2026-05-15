@@ -37,6 +37,15 @@ from wonderland.engagement import (
 )
 from wonderland.feature import FeaturePayload, FeatureRegistry
 from wonderland.identity import load_constitution
+from wonderland.interview import (
+    InterviewQuestion,
+    RequirementPayload,
+    RequirementRegistry,
+)
+from wonderland.milestone import (
+    MilestonePayload,
+    MilestoneRegistry,
+)
 from wonderland.llm import CachedBlock
 from wonderland.parsing import ResponseParseError, extract_and_validate
 from wonderland.ticket import TicketPayload, TicketRegistry
@@ -129,6 +138,9 @@ def white_rabbit_rules() -> EngagementRules:
 RabbitDecision = Literal[
     "ticket",
     "feature",
+    "interview_questions",
+    "interview_review",
+    "milestone_plan",
     "concern",
     "question",
     "question_to_operator",
@@ -145,6 +157,12 @@ class RabbitResponse(BaseModel):
     one ``TicketPayload`` — a ticket decision without tickets is
     nonsense. Same for ``decision == "feature"`` and ``features``.
     For other decisions, both lists are ignored.
+
+    When ``decision == "interview_review"``, ``requirements`` must
+    contain at least one ``RequirementPayload`` — the Rabbit's
+    discovery (P14) move where he reads operator scope / success-
+    criteria answers and synthesizes them into structured
+    requirements that bound v1.
     """
 
     decision: RabbitDecision
@@ -163,6 +181,33 @@ class RabbitResponse(BaseModel):
     )
     tickets: list[TicketPayload] = Field(default_factory=list)
     features: list[FeaturePayload] = Field(default_factory=list)
+    requirements: list["RequirementPayload"] = Field(default_factory=list)
+    questions: list["InterviewQuestion"] = Field(
+        default_factory=list,
+        description=(
+            "Round-1 question batch on ``interview_questions`` "
+            "decisions. Required (non-empty) when "
+            "decision='interview_questions'."
+        ),
+    )
+    followup_questions: list["InterviewQuestion"] = Field(
+        default_factory=list,
+        description=(
+            "Optional follow-up question batch on interview_review. "
+            "Non-empty means one more round before closing. Ignored "
+            "when decision isn't interview_review."
+        ),
+    )
+    milestones: list["MilestonePayload"] = Field(
+        default_factory=list,
+        description=(
+            "Milestone proposals shipped during the milestone-plan "
+            "(P15) meeting. Required (non-empty) when "
+            "decision='milestone_plan'. The Rabbit OWNS the final "
+            "order — Alice and Cat push back from their lenses, but "
+            "the Rabbit's milestones are the canonical plan."
+        ),
+    )
 
     @field_validator("body", mode="before")
     @classmethod
@@ -181,6 +226,17 @@ class RabbitResponse(BaseModel):
     def _features_none_to_empty(cls, v: object) -> object:
         return [] if v is None else v
 
+    @field_validator(
+        "requirements",
+        "questions",
+        "followup_questions",
+        "milestones",
+        mode="before",
+    )
+    @classmethod
+    def _list_none_to_empty(cls, v: object) -> object:
+        return [] if v is None else v
+
     def model_post_init(self, _context: object) -> None:  # type: ignore[override]
         if self.decision == "ticket" and not self.tickets:
             raise ValueError(
@@ -194,17 +250,58 @@ class RabbitResponse(BaseModel):
                 "in `features`. Features group constituent tickets into user-facing "
                 "units; emitting feature-decision without features is nonsense."
             )
+        if self.decision == "interview_review" and not self.requirements:
+            raise ValueError(
+                "RabbitResponse: decision='interview_review' requires at least "
+                "one requirement in `requirements`. If the operator's answers "
+                "don't surface anything actionable, choose a different decision."
+            )
+        if self.decision == "interview_questions" and not self.questions:
+            raise ValueError(
+                "RabbitResponse: decision='interview_questions' requires at "
+                "least one question in `questions`. Ship the shaped batch "
+                "(YAML templates tailored to the directive)."
+            )
+        if self.decision == "milestone_plan" and not self.milestones:
+            raise ValueError(
+                "RabbitResponse: decision='milestone_plan' requires at least "
+                "one milestone in `milestones`. You own the canonical plan; "
+                "ship it or choose a different decision."
+            )
 
 
 _OUTPUT_PROTOCOL = """\
 You will respond with exactly one fenced JSON block. No prose outside the block.
 
+**Meeting type determines your primary decision.** Before
+generating a response, read the Dodo's convenor_directive in your
+triggers (it opens with ``**M<N> — ...**`` or similar) and
+identify the meeting context. Match your decision to the meeting:
+
+  - **milestone-plan** (P15 planning): your default is
+    ``milestone_plan``. NEVER ship ``ticket`` here — that's a
+    stage-leak the substrate will reject + delete from disk,
+    wasting the turn. Concrete decomposition is M3's job.
+  - **tdd-design M2** (composition): default is ``feature``.
+  - **tdd-design M3** (decomposition): default is ``ticket``.
+  - **tdd-design M5** (contract negotiation): you're not in
+    roster here; defer if you somehow are.
+  - **discovery** (P14 interviews): default is
+    ``interview_questions`` (round 1) or ``interview_review``
+    (after answers).
+
+When the meeting type isn't obvious from the convenor_directive,
+default to ``concern`` or ``question`` — never default to your
+"usual" artifact without confirming the meeting calls for it.
+
 The JSON must conform to this schema:
 
 ```
 {
-  "decision": "ticket" | "feature" | "concern" | "question" |
-              "question_to_operator" | "reframe" | "deference" | "silence",
+  "decision": "ticket" | "feature" | "interview_questions" |
+              "interview_review" | "milestone_plan" | "concern" |
+              "question" | "question_to_operator" | "reframe" |
+              "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
   "tickets": [                        // include ONLY when decision is "ticket"
     {
@@ -235,9 +332,102 @@ The JSON must conform to this schema:
       "tier": "v1" | "fast-follow" | "post-launch",
       "sources": ["story slugs whose intent this feature realizes"]
     }
+  ],
+  "questions": [                      // include ONLY when decision is "interview_questions"
+    {
+      "id": "stable slug-shaped id",
+      "text": "the scope/criteria question SHAPED to the directive — e.g. for 'Pomodoro tracker' you'd ship 'What does shipped v1 mean? A working timer + history? With charts? Cross-device sync?' rather than the generic 'What does shipped mean for v1?'",
+      "kind": "free_text" | "single_choice" | "multi_choice" | "numeric",
+      "required": false,
+      "options": []
+    }
+  ],
+  "requirements": [                   // include ONLY when decision is "interview_review"
+    {
+      "title": "short specific title — name the criterion in domain language ('v1 ships when the named personas can complete the core workflow end-to-end') rather than the boilerplate ('success criterion 1')",
+      "interview_id": "the interview's id (typically 'scope-interview' for the Rabbit)",
+      "question_id": "which of the operator's answered questions this came from",
+      "kind": "scope" | "success_criterion" | "out_of_scope" | "deal_breaker",
+      "body": "your structured rendering — what 'shipped' or 'not v1' means in concrete terms",
+      "operator_quote": "raw verbatim from the operator's answer",
+      "confidence": "operator_stated"
+    }
+  ],
+  "followup_questions": [             // optional on interview_review — one round only
+    {
+      "id": "slug-shaped id",
+      "text": "one specific gap",
+      "kind": "free_text" | "single_choice" | "multi_choice" | "numeric",
+      "required": false,
+      "options": []
+    }
+  ],
+  "milestones": [                     // include ONLY when decision is "milestone_plan"
+    {
+      "slug": "stable slug — re-emit to amend an existing milestone",
+      "name": "human-readable name",
+      "order": 1,
+      "goal": "what this milestone accomplishes",
+      "done_when": ["observable condition", "another"],
+      "consumes_requirements": ["requirement-slug-1"],
+      "deferred": false,
+      "confidence": "operator_stated"
+    }
   ]
 }
 ```
+
+**`interview_questions` — the Rabbit's discovery (P14) round-1 move.**
+When you're the interviewer and no operator answers have arrived
+yet, shape the scope-interview's question batch to the directive.
+Take the YAML templates as the structural skeleton (ship criteria,
+out-of-scope, timeline pressure) and tailor TEXT and OPTIONS to
+what the directive implies. Same id when re-using a template
+question; new ids for new questions you add. 3-5 questions total.
+
+**`milestone_plan` — the Rabbit's planning (P15) move.** When the
+team is in the milestone-plan meeting, YOU own the canonical
+order. Alice pushes back from a persona-anchored lens, Cat pushes
+back on architectural-ordering grounds; both contributions inform
+your final ordering but the Rabbit's shipped milestones are what
+the substrate records. Read the requirement corpus + existing
+milestones in your context, propose milestones with stable slugs
++ explicit ``done_when`` conditions + ``consumes_requirements``
+lists. Re-emit existing slugs to amend (fold in newly-arrived
+requirements after follow-up discovery; tighten a ``done_when``
+based on operator feedback). Coin new slugs for new milestones.
+Each milestone should ship a *coherent thing* — operator-
+observable, not just internal architectural plumbing. Target
+3-7 milestones for a v1 cut; more than that and the operator
+loses track.
+
+**Slug stability is load-bearing.** When the substrate ships a
+``coverage_gap`` observation listing requirements not yet
+consumed, your move is to **revise an existing milestone** by
+adding the orphan to its ``consumes_requirements`` — not to
+coin a fresh milestone with a slightly-different title. The
+MilestoneRegistry dedups by **exact slug match**: if the prior
+turn's milestone was ``m1-onboarding-and-profile`` and you ship
+``m1-onboarding-profile-setup`` this turn, the substrate
+treats them as TWO milestones and the operator ends with a
+disk full of variants. When you re-emit a milestone, **copy
+its slug verbatim** from your context — don't rephrase, don't
+"improve" it, don't switch hyphens to underscores. Only coin a
+new slug when you're proposing a genuinely new milestone the
+prior turn didn't have. This is the difference between a clean
+6-milestone plan and a 15-file mess of near-duplicates the
+operator has to manually consolidate.
+
+**`interview_review` — the Rabbit's discovery (P14) synthesis move.**
+When you're the interviewer in a discovery thread and the operator
+has just submitted answers about scope and success criteria, your
+job is to SYNTHESIZE those answers into `scope` / `success_criterion`
+/ `out_of_scope` / `deal_breaker` requirements that bound v1.
+Capture what the operator NAMED — explicit ship-criteria, explicit
+non-goals — and pin them down as the contract M2 will compose
+features against. Don't make up criteria the operator didn't
+state; ship `question_to_operator` if the answers leave a real
+gap. One round of follow-up questions is the cap.
 
 `kind` discriminates user-facing capability work from developer-
 experience plumbing. Default to `capability`. Use `foundation` when
@@ -324,6 +514,8 @@ class WhiteRabbit(WonderlandAgent):
         llm: LLMClient | None = None,
         ticket_registry: TicketRegistry | None = None,
         feature_registry: FeatureRegistry | None = None,
+        requirement_registry: RequirementRegistry | None = None,
+        milestone_registry: MilestoneRegistry | None = None,
         tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
@@ -335,6 +527,8 @@ class WhiteRabbit(WonderlandAgent):
         super().__init__(identity=identity, memory=memory, bus=bus, llm=llm)
         self._ticket_registry = ticket_registry
         self._feature_registry = feature_registry
+        self._requirement_registry = requirement_registry
+        self._milestone_registry = milestone_registry
         # tools is forwarded to the base Agent which handles tool-use
         # loops in deliberate(); needed for M3.5 consolidation where
         # Rabbit prunes duplicate tickets via delete_file.
@@ -347,6 +541,14 @@ class WhiteRabbit(WonderlandAgent):
     @property
     def feature_registry(self) -> FeatureRegistry | None:
         return self._feature_registry
+
+    @property
+    def requirement_registry(self) -> RequirementRegistry | None:
+        return self._requirement_registry
+
+    @property
+    def milestone_registry(self) -> MilestoneRegistry | None:
+        return self._milestone_registry
 
     async def deliberate(self, context: Context) -> Utterance | None:
         if self.llm is None:
@@ -366,6 +568,38 @@ class WhiteRabbit(WonderlandAgent):
             artifacts.extend(self._record_tickets(response.tickets))
         elif response.decision == "feature":
             artifacts.extend(self._record_features(response.features))
+        elif response.decision == "interview_questions":
+            artifacts.append(
+                Artifact(
+                    kind="interview_question_batch",
+                    payload={
+                        "questions": [
+                            q.model_dump()
+                            for q in response.questions
+                        ],
+                    },
+                )
+            )
+        elif response.decision == "interview_review":
+            artifacts.extend(
+                self._record_requirements(response.requirements)
+            )
+            if response.followup_questions:
+                artifacts.append(
+                    Artifact(
+                        kind="interview_followup_questions",
+                        payload={
+                            "questions": [
+                                q.model_dump()
+                                for q in response.followup_questions
+                            ],
+                        },
+                    )
+                )
+        elif response.decision == "milestone_plan":
+            artifacts.extend(
+                self._record_milestones(response.milestones)
+            )
 
         thread_id, parent_id = self._derive_threading(context)
         if response.decision == "question_to_operator":
@@ -393,6 +627,60 @@ class WhiteRabbit(WonderlandAgent):
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+
+    def _record_milestones(
+        self, payloads: list[MilestonePayload]
+    ) -> list[Artifact]:
+        """Write milestone artifacts via MilestoneRegistry. Same
+        update-by-slug semantics as Alice / Cat's recorders —
+        cross-run continuity comes from re-emitting existing
+        slugs."""
+        if self._milestone_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._milestone_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="milestone",
+                    payload={
+                        "slug": record.slug,
+                        "order": record.order,
+                        "name": record.name,
+                        "deferred": record.deferred,
+                        "confidence": record.confidence.value,
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_requirements(
+        self, payloads: list[RequirementPayload]
+    ) -> list[Artifact]:
+        """Write requirement artifacts to RequirementRegistry + return
+        bus-side Artifact pointers. Mirror of Alice / Cat's
+        ``_record_requirements`` — all three interviewers ship the
+        same artifact kind. Skips when no registry was wired."""
+        if self._requirement_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            record = self._requirement_registry.write(payload)
+            artifacts.append(
+                Artifact(
+                    kind="requirement",
+                    payload={
+                        "number": record.number,
+                        "slug": record.slug,
+                        "title": record.title,
+                        "kind": record.kind.value,
+                        "confidence": record.confidence.value,
+                        "path": str(record.path),
+                    },
+                )
+            )
+        return artifacts
 
     def _record_tickets(self, payloads: list[TicketPayload]) -> list[Artifact]:
         """Persist each ticket through the registry, return Artifact pointers.

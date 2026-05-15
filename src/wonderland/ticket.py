@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from wonderland.adr import slugify
 
@@ -70,6 +70,30 @@ class TicketDependencies(BaseModel):
     soft: list[str] = Field(default_factory=list)
 
 
+# Non-feature slug prefixes that are NOT valid ticket sources. A
+# ticket's ``Sources:`` must enumerate the parent feature slug
+# (FIRST entry) + optionally other feature/story slugs the ticket
+# realizes. P15 T-m7 substrate guard: reject sources whose slug
+# matches a known non-source-kind prefix at parse time, surfacing
+# the error back to Rabbit's response retry loop.
+#
+# Pattern observed in the discovery2 pilot: Rabbit shipped a
+# ticket with ``Sources: contract-note-003``. Contract notes are
+# meeting-scoped artifacts about agreed-upon contracts; they have
+# no decomposition relationship to tickets. Same logic applies
+# to ADRs, milestones, requirements, retractions, reviews, and
+# tickets themselves — none of those are valid ticket parents.
+_INVALID_TICKET_SOURCE_PREFIXES = (
+    "contract-note-",
+    "adr-",
+    "milestone-",
+    "requirement-",
+    "retraction-",
+    "review-",
+    "ticket-",
+)
+
+
 class TicketPayload(BaseModel):
     """Structured payload the Rabbit attaches to a ticket-issuing utterance."""
 
@@ -80,6 +104,32 @@ class TicketPayload(BaseModel):
     description: str = Field(min_length=1)
     sources: list[str] = Field(default_factory=list)
     dependencies: TicketDependencies = Field(default_factory=TicketDependencies)
+
+    @field_validator("sources", mode="after")
+    @classmethod
+    def _reject_non_feature_sources(cls, v: list[str]) -> list[str]:
+        """Reject ticket sources whose slug matches a non-feature
+        prefix (contract-note-, adr-, milestone-, requirement-, etc.).
+        Tickets descend from features (and optionally from stories
+        they realize); they don't descend from contracts, ADRs, or
+        other artifact kinds. Surfaces an explicit error back to
+        Rabbit's response-parse retry loop so he relabels."""
+        offenders = [
+            s for s in v
+            if any(s.startswith(p) for p in _INVALID_TICKET_SOURCE_PREFIXES)
+        ]
+        if offenders:
+            raise ValueError(
+                "TicketPayload.sources: the following entries are not valid "
+                f"ticket parents — {offenders}. Tickets descend from "
+                "``feature`` slugs (the parent feature's slug must be the "
+                "FIRST entry); ``story`` slugs are permitted as additional "
+                "sources when the ticket realizes a story. Contract notes, "
+                "ADRs, milestones, requirements, and other artifact kinds "
+                "are NOT valid sources for a ticket — drop them or replace "
+                "them with the appropriate feature/story slug."
+            )
+        return v
     acceptance: list[str] = Field(default_factory=list)
     risk: str = ""
     status: TicketStatus = TicketStatus.OPEN
@@ -282,14 +332,28 @@ class TicketRegistry:
     # ------------------------------------------------------------------ #
 
     def write(self, payload: TicketPayload | dict) -> TicketRecord:
+        """Create or update a ticket by slug. Update-by-slug
+        semantics mirror MilestoneRegistry: re-emit with the same
+        slug overwrites in place (preserves number); new slug
+        appends with the next available number. P15 follow-up —
+        the discovery5 pilot showed Rabbit re-decomposing the
+        same feature on every per_item iteration, producing
+        ticket-001 and ticket-008 with identical content + the
+        same conceptual slug. Update-by-slug collapses those into
+        one file."""
         validated = (
             payload if isinstance(payload, TicketPayload) else TicketPayload.model_validate(payload)
         )
 
-        number = self.next_number()
         slug = slugify(validated.title)
-        filename = f"ticket-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        existing = self.find_by_slug(slug)
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            filename = f"ticket-{number:03d}-{slug}.md"
+            full_path = self._root / filename
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_ticket(number, validated), encoding="utf-8")

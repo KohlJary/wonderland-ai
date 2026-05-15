@@ -43,6 +43,7 @@ from pydantic import (
     model_validator,
 )
 
+from wonderland.interview import Interview
 from wonderland.turns import PhaseDefinition
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,22 @@ class PhaseSpec(BaseModel):
             "exactly one team, no overlap, no orphans."
         ),
     )
+    coverage_check: str | None = Field(
+        default=None,
+        description=(
+            "P15 T-m8: name a registered coverage check (see "
+            "``wonderland.coverage._CHECK_REGISTRY``) and the "
+            "runtime computes the gap at end of each rotation in "
+            "this phase. When a gap exists, the substrate injects "
+            "a synthetic Dodo observation listing the gap items + "
+            "extends ``max_rotations`` by 1 (capped at "
+            "``coverage_max_extra_rotations`` on the parent Meeting). "
+            "Phase terminates normally when the gap closes. None = "
+            "no coverage gating, original behavior preserved. "
+            "Validated as a string; unknown check names degrade "
+            "silently to no-op (operator notices via absent nudges)."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_team_groupings_no_overlap(self) -> "PhaseSpec":
@@ -200,6 +217,7 @@ class PhaseSpec(BaseModel):
             max_rotations=self.max_rotations,
             exit_condition_artifact=self.exit_condition_artifact,
             team_groupings=tuple(tuple(team) for team in self.team_groupings),
+            coverage_check=self.coverage_check,
         )
 
 
@@ -354,6 +372,40 @@ class Meeting(BaseModel):
             "by M4 to mark features as 'designed' when scenarios "
             "ship; by M6 to mark as 'ready_for_review' when reviews "
             "approve."
+        ),
+    )
+    coverage_max_extra_rotations: int = Field(
+        default=2,
+        ge=0,
+        description=(
+            "P15 T-m8 — when a phase has ``coverage_check`` set and "
+            "reaches its ``max_rotations`` with a gap still open, the "
+            "substrate may grant up to this many extra rotations to "
+            "let agents close the gap. Hard cap to prevent infinite "
+            "loops; reaching it ends the phase with a "
+            "COVERAGE_INCOMPLETE outcome instead of COMPLETE so the "
+            "operator sees what wasn't covered. Default 2 = one "
+            "natural revision pass + one safety net."
+        ),
+    )
+    allowed_decisions: list[str] | None = Field(
+        default=None,
+        description=(
+            "P15 T-m6 stage-leak guardrail. When set to a non-empty "
+            "list, the substrate filters every utterance published "
+            "from this meeting: only utterances whose speech_act is "
+            "in the list keep their artifacts; others get their "
+            "artifacts stripped (and the on-disk files those "
+            "artifacts point at deleted) before reaching the bus. "
+            "The utterance itself stays as a transcript record. "
+            "``None`` (default) preserves all existing workflows' "
+            "behavior — no filtering. Use when a meeting has a "
+            "narrow output shape (milestone-plan ships milestone "
+            "artifacts only; agents pattern-matching to the next "
+            "stage shouldn't be able to write tickets/stories "
+            "into the project). Belt-and-suspenders for the "
+            "convenor_directive — the directive remains primary, "
+            "this catches what slips past."
         ),
     )
     gates_on_dependencies: bool = Field(
@@ -694,13 +746,27 @@ class Pipeline(BaseModel):
 
 
 class Workflow(BaseModel):
-    """A complete workflow — name, description, ordered meetings."""
+    """A complete workflow — name, description, optional ordered
+    interviews + ordered meetings.
+
+    Interviews (P14 / discovery) run first, in declaration order, and
+    each captures structured operator answers into requirement
+    artifacts. Meetings run after, in declaration order (or per
+    ``pipeline:`` semantics when set). A workflow can ship interviews
+    only (the discovery workflow), meetings only (every workflow
+    pre-P14), or both — but at least one of the two must be non-empty
+    or there's nothing to execute.
+    """
 
     name: str
     description: str
     version: int = 1
     defaults: WorkflowDefaults = Field(default_factory=WorkflowDefaults)
-    meetings: list[Meeting]
+    interviews: list["Interview"] = Field(default_factory=list)
+    """Discovery interviews — sibling to meetings. Run before
+    meetings in workflow order; each ships requirement artifacts the
+    later meetings seed from. Pre-P14 workflows leave this empty."""
+    meetings: list[Meeting] = Field(default_factory=list)
     pipeline: Pipeline | None = Field(
         default=None,
         description=(
@@ -717,10 +783,42 @@ class Workflow(BaseModel):
             "string; normalized to lower case via ``normalized_category`` "
             "before comparison. Examples: 'design' (design-pass "
             "workflows like tdd-design), 'implementation' (tdd-implement), "
-            "'legacy' (older tdd-serial-* kept for analysis reference). "
+            "'legacy' (older tdd-serial-* kept for analysis reference), "
+            "'discovery' (requirements-gathering interviews). "
             "``None`` clusters under 'other'."
         ),
     )
+    disallowed_decisions: list[str] | None = Field(
+        default=None,
+        description=(
+            "P15 follow-up — workflow-level kill-list of speech_acts "
+            "that are NEVER valid in this workflow. The substrate "
+            "applies this filter across every meeting in the workflow "
+            "(via the same artifact-stripping mechanism as "
+            "``Meeting.allowed_decisions``). Used to block cross-"
+            "workflow leakage: e.g. ``tdd-design`` declares "
+            "``[milestone_plan, interview_questions, "
+            "interview_review]`` so agents who pattern-match to the "
+            "wrong workflow's primary decision can't clobber the "
+            "registry. Pairs with the meeting-level "
+            "``allowed_decisions`` positive filter: this list is "
+            "applied IN ADDITION to whatever the meeting itself "
+            "restricts."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _at_least_one_phase(self) -> "Workflow":
+        """A workflow needs at least one interview or meeting to be
+        meaningful. The "all empty" shape used to be impossible
+        because meetings was required; now that both are optional we
+        validate explicitly."""
+        if not self.interviews and not self.meetings:
+            raise ValueError(
+                f"workflow {self.name!r}: at least one of "
+                "interviews / meetings must be non-empty"
+            )
+        return self
 
     @property
     def normalized_category(self) -> str:
@@ -738,12 +836,200 @@ class Workflow(BaseModel):
                 return m
         return None
 
+    def interview_by_id(self, interview_id: str) -> "Interview | None":
+        """Look up an interview by id; None if not present."""
+        for i in self.interviews:
+            if i.id == interview_id:
+                return i
+        return None
+
     @property
     def entry_meeting(self) -> Meeting:
-        """The first meeting — receives the user's runtime directive."""
+        """The first meeting — receives the user's runtime directive.
+        For interview-only workflows (discovery), there's no entry
+        meeting and callers should check ``has_meetings`` first."""
         if not self.meetings:
-            raise ValueError(f"workflow {self.name!r} has no meetings")
+            raise ValueError(
+                f"workflow {self.name!r} has no meetings — "
+                "check has_meetings before accessing entry_meeting"
+            )
         return self.meetings[0]
+
+    @property
+    def has_meetings(self) -> bool:
+        return bool(self.meetings)
+
+    @property
+    def has_interviews(self) -> bool:
+        return bool(self.interviews)
+
+
+# Canonical flow order for workflow categories. Drives the new-run
+# picker so operators see workflows in the order they're meant to
+# run: discovery → planning → design → implementation. Categories
+# not in this list sort after these, alphabetically. Utility +
+# legacy + smoke land at the bottom so an operator first sees the
+# normal-path workflows.
+_CATEGORY_FLOW_ORDER: tuple[str, ...] = (
+    "discovery",
+    "planning",
+    "design",
+    "implementation",
+)
+_CATEGORY_TAIL: tuple[str, ...] = ("utility", "smoke", "legacy", "other")
+
+
+def category_sort_key(category: str) -> tuple[int, str]:
+    """Sort key for workflow + preset categories. Returns a
+    ``(bucket, name)`` tuple; lower bucket sorts first.
+
+    Buckets:
+      - 0: flow-order categories (discovery / planning / design /
+        implementation), ordered by position in the flow.
+      - 1: anything else not in the tail.
+      - 2: tail categories (utility / smoke / legacy / other),
+        ordered by their position in the tail.
+
+    Within a bucket, secondary sort is alphabetical by category.
+    """
+    cat = category.lower()
+    try:
+        return (0, f"{_CATEGORY_FLOW_ORDER.index(cat):02d}-{cat}")
+    except ValueError:
+        pass
+    try:
+        return (2, f"{_CATEGORY_TAIL.index(cat):02d}-{cat}")
+    except ValueError:
+        pass
+    return (1, cat)
+
+
+# ---------------------------------------------------------------------- #
+# Thread → allowed_decisions registry (P15 T-m6).
+#
+# WonderlandAgent.speak() consults this map before publishing an
+# utterance. When the current thread has an entry, the agent filters
+# its utterance's artifacts: speech_act in the allowed list → keep,
+# otherwise → strip (and delete the on-disk files those artifacts
+# point at). Substrate-side enforcement of the meeting's narrow
+# output shape; belt-and-suspenders for the convenor_directive.
+#
+# Lifecycle: ``_run_one_meeting`` sets the entry before convene + clears
+# after. Concurrent meetings (pipelined workflows) keep distinct
+# entries — keyed by thread_id, not by agent identity.
+# ---------------------------------------------------------------------- #
+
+
+_THREAD_ALLOWED_DECISIONS: dict[str, frozenset[str]] = {}
+
+
+# ---------------------------------------------------------------------- #
+# Active milestone scope (P15 T-m4).
+#
+# When set at the top of ``run_workflow`` (because the operator passed
+# ``--milestone <slug>``), this drives two behaviors:
+#
+#   1. ``resolve_seeds`` post-filters requirement-kind utterances to
+#      those whose slug is in the scope's ``consumes`` list. Other
+#      kinds (story, feature, etc.) pass through unchanged — milestone
+#      scoping is requirement-only since other artifact kinds are
+#      already milestone-scoped via the design/implementation flow
+#      that produced them.
+#
+#   2. The entry meeting's convenor_directive gets a milestone-framing
+#      preamble prepended: the milestone's goal + done_when become
+#      load-bearing context for M1+.
+#
+# Module-level state (not threaded through every signature) for the
+# same reasons _THREAD_ALLOWED_DECISIONS uses module-level: the scope
+# is a workflow-run-level invariant, and threading it through every
+# resolve_seeds / _run_one_meeting / _convene_one call chain would
+# require touching ~10 signatures.
+# ---------------------------------------------------------------------- #
+
+
+@dataclass
+class _MilestoneScope:
+    slug: str
+    name: str
+    goal: str
+    done_when: tuple[str, ...]
+    consumes: frozenset[str]
+
+
+_ACTIVE_MILESTONE_SCOPE: _MilestoneScope | None = None
+
+
+def set_active_milestone_scope(scope: "_MilestoneScope | None") -> None:
+    """Register / clear the active milestone scope for the current
+    workflow run. Set by ``run_workflow`` at start + cleared in
+    its finally. Tests can set this directly to exercise scoped
+    paths without spinning up the full runner."""
+    global _ACTIVE_MILESTONE_SCOPE
+    _ACTIVE_MILESTONE_SCOPE = scope
+
+
+def get_active_milestone_scope() -> "_MilestoneScope | None":
+    return _ACTIVE_MILESTONE_SCOPE
+
+
+def set_thread_allowed_decisions(
+    thread_id: str, decisions: list[str] | None
+) -> None:
+    """Register the allowed-decisions filter for a thread. Pass
+    ``None`` or an empty list to unregister (no filtering)."""
+    if not decisions:
+        _THREAD_ALLOWED_DECISIONS.pop(thread_id, None)
+        return
+    _THREAD_ALLOWED_DECISIONS[thread_id] = frozenset(decisions)
+
+
+def get_thread_allowed_decisions(
+    thread_id: str,
+) -> frozenset[str] | None:
+    """Lookup the allowed-decisions filter for a thread. Returns
+    None when no filter is set (preserves existing behavior for
+    workflows that don't declare allowed_decisions)."""
+    return _THREAD_ALLOWED_DECISIONS.get(thread_id)
+
+
+def clear_thread_allowed_decisions(thread_id: str) -> None:
+    """Drop the entry for ``thread_id``. Call after the meeting
+    finishes so subsequent meetings on the same thread (rare) don't
+    inherit a stale filter."""
+    _THREAD_ALLOWED_DECISIONS.pop(thread_id, None)
+
+
+# Workflow-level disallowed-decisions registry (P15 follow-up).
+# Set at run_workflow entry from the active workflow's
+# ``disallowed_decisions`` field; cleared in finally so subsequent
+# runs in the same process don't inherit. The agent filter reads
+# this in addition to the per-thread allowed_decisions: an
+# utterance whose speech_act is in the workflow's disallowed
+# list has its artifacts stripped before reaching the bus,
+# regardless of which meeting it came from.
+_ACTIVE_DISALLOWED_DECISIONS: frozenset[str] = frozenset()
+
+
+def set_active_disallowed_decisions(decisions: list[str] | None) -> None:
+    """Stamp the workflow-level kill-list. None / empty clears."""
+    global _ACTIVE_DISALLOWED_DECISIONS
+    _ACTIVE_DISALLOWED_DECISIONS = (
+        frozenset(decisions) if decisions else frozenset()
+    )
+
+
+def get_active_disallowed_decisions() -> frozenset[str]:
+    """Read the workflow-level kill-list. Empty frozenset when no
+    workflow is active or the active workflow doesn't declare one."""
+    return _ACTIVE_DISALLOWED_DECISIONS
+
+
+def clear_active_disallowed_decisions() -> None:
+    """Wipe the workflow-level kill-list. Called at run_workflow
+    exit (paired with set_active_disallowed_decisions at entry)."""
+    global _ACTIVE_DISALLOWED_DECISIONS
+    _ACTIVE_DISALLOWED_DECISIONS = frozenset()
 
 
 def workflows_dir() -> Path:
@@ -751,6 +1037,50 @@ def workflows_dir() -> Path:
     import wonderland
 
     return Path(wonderland.__file__).parent / "closet" / "workflows"
+
+
+# ---------------------------------------------------------------------- #
+# Retracted-artifact registry (P15 T-m7).
+#
+# When an agent emits a RETRACT speech_act carrying retraction artifacts,
+# ``_apply_retraction_for_utterance`` records the (kind, slug) pair here
+# so resolve_seeds can drop the retracted artifacts from downstream seed
+# pools. The on-disk file is unlinked at retraction time; this set
+# closes the in-memory side so the bus's existing utterances (which
+# still carry the retracted payload) don't re-seed the artifact via the
+# WorkflowCapture path.
+#
+# Module-level for the same reason as _ACTIVE_MILESTONE_SCOPE: the set
+# is a workflow-run-level invariant and threading it through every
+# resolve_seeds call site would add noise without adding clarity.
+# Cleared at run_workflow boundary.
+# ---------------------------------------------------------------------- #
+
+
+_RETRACTED_ARTIFACTS: dict[str, set[str]] = {}
+
+
+def register_retraction(target_kind: str, target_slug: str) -> None:
+    """Record that an artifact has been retracted. Subsequent
+    ``resolve_seeds`` calls will drop it from candidate utterances."""
+    _RETRACTED_ARTIFACTS.setdefault(target_kind, set()).add(target_slug)
+
+
+def is_retracted(target_kind: str, target_slug: str) -> bool:
+    """Has the (kind, slug) pair been retracted in this run?"""
+    return target_slug in _RETRACTED_ARTIFACTS.get(target_kind, set())
+
+
+def clear_retractions() -> None:
+    """Wipe the retracted-artifact registry. Called at run_workflow
+    boundaries so retractions don't leak across runs."""
+    _RETRACTED_ARTIFACTS.clear()
+
+
+def get_retracted_artifacts() -> dict[str, set[str]]:
+    """Read-only snapshot of the retracted-artifact registry. Tests
+    use this to assert what was caught."""
+    return {k: set(v) for k, v in _RETRACTED_ARTIFACTS.items()}
 
 
 def load_workflow(name_or_path: str | Path) -> Workflow:
@@ -823,6 +1153,10 @@ class WorkflowCapture:
     """
 
     utterances: list[Utterance] = field(default_factory=list)
+    interview_visits: list[str] = field(default_factory=list)
+    """interview_ids that have been visited during this workflow run.
+    Populated by _run_one_interview; tests + future seed-filter logic
+    can dispatch on which interviews actually ran in this pass."""
 
     def observe(self, u: Utterance) -> None:
         # Only keep utterances that carried artifacts (the substantive ones).
@@ -838,6 +1172,12 @@ class WorkflowCapture:
         needed.
         """
         return [u for u in self.utterances if u.thread_id == meeting_id]
+
+    def add_interview_visit(self, interview_id: str) -> None:
+        """Record that an interview was visited. Idempotent — re-runs
+        of the same interview (follow-up rounds) don't double-add."""
+        if interview_id not in self.interview_visits:
+            self.interview_visits.append(interview_id)
 
 
 def resolve_seeds(
@@ -954,6 +1294,101 @@ def resolve_seeds(
                 list(binding.kinds),
                 thread_id=binding.from_meeting,
             )
+
+        # Retraction filter (T-m7): drop artifacts whose (kind, slug)
+        # pair has been retracted in this run. Same two-step shape as
+        # the milestone-scope filter: drop utterances whose entire
+        # artifact set is retracted; slice utterances that carry
+        # mixed (retracted + live) artifacts. Runs BEFORE the
+        # milestone-scope filter so a retracted artifact never even
+        # reaches the scope check (which only narrows requirement
+        # kinds — retraction works for any kind).
+        retracted = get_retracted_artifacts()
+        if retracted and any(
+            kind in retracted for kind in binding.kinds
+        ):
+            unretracted: list[Utterance] = []
+            for u in kinded:
+                surviving = [
+                    a
+                    for a in u.content.artifacts
+                    if not (
+                        a.kind in retracted
+                        and a.payload.get("slug") in retracted[a.kind]
+                    )
+                ]
+                if not surviving:
+                    # Every artifact on this utterance is retracted —
+                    # drop the whole utterance from the seed pool.
+                    continue
+                if len(surviving) == len(u.content.artifacts):
+                    unretracted.append(u)
+                else:
+                    unretracted.append(
+                        u.model_copy(
+                            update={
+                                "content": u.content.model_copy(
+                                    update={"artifacts": surviving}
+                                )
+                            }
+                        )
+                    )
+            kinded = unretracted
+
+        # Milestone-scope filter (T-m4): when an active milestone is
+        # in effect and this binding pulls ``requirement`` artifacts,
+        # narrow the artifact pool to the milestone's
+        # ``consumes_requirements`` list. Forward-prunes the requirement
+        # corpus so M1 only sees stories worth grounding for *this*
+        # milestone, not the full discovery output.
+        #
+        # Two-step (mirrors per-iteration slicing): (1) drop utterances
+        # whose requirement artifacts don't match any consumed slug;
+        # (2) for the kept utterances, rewrite their artifact list so
+        # off-scope requirement artifacts are stripped while other
+        # kinds in the same utterance pass through. The scope's
+        # ``consumes`` set comes from the milestone markdown, so an
+        # empty set means "no requirements were enumerated" — we
+        # treat that as a no-op (don't strip everything) since the
+        # operator may not have backfilled the consumes list yet.
+        scope = get_active_milestone_scope()
+        if (
+            scope is not None
+            and scope.consumes
+            and "requirement" in binding.kinds
+        ):
+            scoped: list[Utterance] = []
+            for u in kinded:
+                req_artifacts = [
+                    a for a in u.content.artifacts if a.kind == "requirement"
+                ]
+                if not req_artifacts:
+                    scoped.append(u)
+                    continue
+                matching = [
+                    a for a in req_artifacts
+                    if a.payload.get("slug") in scope.consumes
+                ]
+                if not matching:
+                    continue
+                kept = [
+                    a for a in u.content.artifacts
+                    if a.kind != "requirement"
+                    or a.payload.get("slug") in scope.consumes
+                ]
+                if len(kept) == len(u.content.artifacts):
+                    scoped.append(u)
+                else:
+                    scoped.append(
+                        u.model_copy(
+                            update={
+                                "content": u.content.model_copy(
+                                    update={"artifacts": kept}
+                                )
+                            }
+                        )
+                    )
+            kinded = scoped
 
         # Consumption filter (binding.consumed_by): drop utterances
         # whose slug already appears in some downstream artifact's
@@ -1443,6 +1878,19 @@ async def _run_pipelined_workflow(
     assert pipeline.levels is not None  # validator guarantees
     capture = WorkflowCapture()
 
+    # Interviews run before the pipeline opens — same sequencing as
+    # the non-pipelined path. A pipelined workflow CAN ship its own
+    # interviews if the discovery happens to be feature-local
+    # (unlikely in practice but the substrate doesn't forbid it).
+    for interview in workflow.interviews:
+        async for event in _run_one_interview(
+            interview=interview,
+            runner=runner,
+            capture=capture,
+            directive=directive,
+        ):
+            yield event
+
     per_item_meetings: dict[str, str] = {
         m.id: m.per_item for m in workflow.meetings if m.per_item is not None
     }
@@ -1918,6 +2366,8 @@ async def run_workflow(
     workflow: Workflow,
     runner: Runner,
     directive: str,
+    *,
+    milestone_slug: str | None = None,
 ) -> AsyncIterator[Any]:
     """Drive a workflow against a started Runner. Async generator
     yielding MeetingStartEvent / MeetingEndEvent / RunnerEvent.
@@ -1942,13 +2392,268 @@ async def run_workflow(
     Per_item meetings (e.g., M4/M5 in tdd-serial) are convened once per
     matching artifact found in the capture. Each iteration emits its own
     MeetingStart/MeetingEnd events with iteration metadata populated.
+
+    ``milestone_slug`` (P15 T-m4): when set, look up the matching
+    milestone via MilestoneRegistry; scope requirement seeds to its
+    ``consumes_requirements`` list; prepend the milestone's goal +
+    done_when to the entry meeting's directive. Pre-design /
+    pre-implement runs use this to focus the team on one milestone
+    at a time. ``None`` preserves all existing workflows' behavior
+    unchanged.
     """
-    if workflow.pipeline is not None:
-        async for event in _run_pipelined_workflow(workflow, runner, directive):
+    # Set milestone scope at the top + clear in finally. The scope is
+    # module-level so resolve_seeds (which has many call sites) can
+    # read it without parameter threading. ``directive`` gets
+    # prefix-merged with milestone framing when scope is active.
+    scope = _resolve_milestone_scope(runner, milestone_slug)
+    set_active_milestone_scope(scope)
+    if scope is not None:
+        directive = _prepend_milestone_framing(
+            directive, scope, runner=runner
+        )
+
+    # T-m7: retraction registry is per-run state — wipe on entry so a
+    # prior run's retractions don't bleed in, wipe on exit so we don't
+    # leak across runs that share a process.
+    clear_retractions()
+
+    # P15 follow-up — workflow-level disallowed-decisions kill-list.
+    # Stamped at run start, cleared at exit so subsequent runs in
+    # the same process don't inherit. tdd-design declares
+    # [milestone_plan, interview_questions, interview_review] so a
+    # stray Rabbit / Alice milestone_plan utterance during design
+    # can't clobber the milestone registry (discovery4 pilot).
+    set_active_disallowed_decisions(workflow.disallowed_decisions)
+
+    try:
+        if workflow.pipeline is not None:
+            async for event in _run_pipelined_workflow(
+                workflow, runner, directive
+            ):
+                yield event
+            return
+        async for event in _run_workflow_serial(
+            workflow=workflow,
+            runner=runner,
+            directive=directive,
+        ):
             yield event
-        return
+    finally:
+        set_active_milestone_scope(None)
+        clear_retractions()
+        clear_active_disallowed_decisions()
+
+
+def _resolve_milestone_scope(
+    runner: Runner, milestone_slug: str | None
+) -> "_MilestoneScope | None":
+    """Look up the milestone via MilestoneRegistry + build a scope
+    object. Returns None when slug is None, when the milestone
+    can't be found, or when the runner doesn't expose a project_root.
+    No exceptions escape — a missing milestone is a config error
+    that logs to stderr and falls back to unscoped behavior."""
+    if not milestone_slug:
+        return None
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return None
+    try:
+        from wonderland.milestone import MilestoneRegistry
+
+        reg = MilestoneRegistry(project_root)
+        record = reg.find_by_slug(milestone_slug)
+        if record is None:
+            import sys
+
+            print(
+                f"warn: milestone slug {milestone_slug!r} not found "
+                f"in {project_root}/.wonderland/milestones/ — "
+                "running without milestone scope",
+                file=sys.stderr,
+            )
+            return None
+        body = record.read()
+        # Parse goal + done_when + consumes_requirements from the
+        # markdown body. The milestone parser only extracts a few
+        # fields by filename + first lines; we want the rich body
+        # content for the scope.
+        goal, done_when, consumes = _parse_milestone_body(body)
+        return _MilestoneScope(
+            slug=record.slug,
+            name=record.name,
+            goal=goal,
+            done_when=tuple(done_when),
+            consumes=frozenset(consumes),
+        )
+    except Exception:  # noqa: BLE001 — fall back to unscoped
+        return None
+
+
+def _parse_milestone_body(text: str) -> tuple[str, list[str], list[str]]:
+    """Pull ``Goal:``, ``Done when:`` bullets, and
+    ``Consumes requirements:`` bullets out of a milestone's markdown.
+    Tolerates operator hand-edits — same shape as the other registry
+    parsers."""
+    lines = text.splitlines()
+    goal_lines: list[str] = []
+    done_when: list[str] = []
+    consumes: list[str] = []
+    section: str | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "**Goal:**":
+            section = "goal"
+            continue
+        if stripped == "**Done when:**":
+            section = "done"
+            continue
+        if stripped == "**Consumes requirements:**":
+            section = "consumes"
+            continue
+        if stripped.startswith("**") and stripped.endswith(":**"):
+            # Some other section opened — leave the current one.
+            section = None
+            continue
+        if section == "goal" and stripped:
+            goal_lines.append(stripped)
+        elif section == "done" and stripped.startswith("- "):
+            done_when.append(stripped[2:].strip())
+        elif section == "consumes" and stripped.startswith("- "):
+            consumes.append(stripped[2:].strip())
+    return " ".join(goal_lines), done_when, consumes
+
+
+def _format_seeded_personas_block(runner: "Runner | None") -> str:
+    """Read persona-kind requirements from disk + render a bullet
+    list of their titles. Empty string when no runner / no
+    requirements exist. Used to give agents an exhaustive whitelist
+    of valid personas so the anti-hallucination guard can name
+    them concretely rather than asking agents to guess. P15
+    follow-up to the persona drift observed in the discovery4
+    pilot (Alice invented Alex when Marcus was the seeded
+    persona)."""
+    import re
+
+    if runner is None:
+        return ""
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return ""
+    req_dir = project_root / ".wonderland" / "requirements"
+    if not req_dir.is_dir():
+        return ""
+    titles: list[str] = []
+    filename_re = re.compile(r"requirement-(\d+)-(.+)\.md")
+    for path in sorted(req_dir.glob("requirement-*.md")):
+        m = filename_re.match(path.name)
+        if not m:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        kind_m = re.search(
+            r"^\*\*Kind:\*\*\s*(\S+)", text, re.MULTILINE
+        )
+        if not kind_m or kind_m.group(1).strip().lower() != "persona":
+            continue
+        title_m = re.match(r"##\s*(.+?)$", text, re.MULTILINE)
+        if title_m:
+            # Strip the "Requirement NNN: " prefix from the title.
+            title = title_m.group(1).strip()
+            title = re.sub(
+                r"^Requirement\s+\d+:\s*", "", title
+            )
+            titles.append(title)
+    if not titles:
+        return ""
+    bullets = "\n".join(f"  - {t}" for t in titles)
+    return (
+        f"**Seeded personas for this project** (these are the ONLY "
+        f"personas your stories / features / tickets may name —"
+        f"any other persona is a constitutional-prior leak):\n"
+        f"{bullets}\n"
+        f"\n"
+    )
+
+
+def _prepend_milestone_framing(
+    directive: str, scope: "_MilestoneScope", *, runner: "Runner | None" = None,
+) -> str:
+    """Build the directive the entry meeting sees: milestone framing
+    on top (so M1 reads it first), then the operator's original
+    directive below. The framing names the milestone, its goal, and
+    its done-criteria so M1+ scope their work to it. When ``runner``
+    is supplied, also lists the seeded persona slugs so agents have
+    an exhaustive whitelist for the anti-hallucination guard."""
+    done_block = "\n".join(f"  - {d}" for d in scope.done_when)
+    persona_block = _format_seeded_personas_block(runner)
+    framing = (
+        f"**Milestone scope: {scope.name}** (slug: ``{scope.slug}``).\n"
+        f"\n"
+        f"**Goal of this milestone:** {scope.goal}\n"
+        f"\n"
+        f"**Done when:**\n{done_block}\n"
+        f"\n"
+        f"Stay scoped to this milestone. The seed pool is "
+        f"already filtered to this milestone's consumes_requirements "
+        f"list; features, tickets, and ADRs you produce in this run "
+        f"should serve this milestone's done-criteria + no others. "
+        f"If you see a requirement that belongs to a different "
+        f"milestone, leave it for that milestone's design pass.\n"
+        f"\n"
+        f"{persona_block}"
+        f"**PERSONA + DOMAIN DISCIPLINE (anti-hallucination guard).** "
+        f"Every persona you reference MUST be named in the seeded "
+        f"requirements + project_context. Every problem-domain "
+        f"reference (translation, payment processing, social "
+        f"networking, healthcare workflows, etc.) MUST be evidenced "
+        f"in the seeded material. Your constitutions carry example "
+        f"personas — Maya the developer, Sarah the cross-language "
+        f"reader, Akira in Tokyo, Jordan checking balances, the "
+        f"polyglot moderator — these are pedagogical illustrations of "
+        f"the artifact *shape*, NOT permission to import them as "
+        f"characters in this project. If you find yourself writing a "
+        f"story / feature / ticket about Maya, Sarah, Akira, Jordan, "
+        f"or any persona not named in the seeds, stop: that's a "
+        f"constitutional-prior leak. Either ground the artifact in a "
+        f"seed-named persona, or ``retract`` it (Caterpillar + Alice "
+        f"both have this move) so it doesn't propagate. Same rule "
+        f"for problem domains: if this milestone is about onboarding "
+        f"+ equipment + experience-level and you start composing "
+        f"translation-bridge / cross-language / multi-locale "
+        f"features, that's the leak — walk it back.\n"
+        f"\n"
+        f"────────────────────────────────────────────────────\n"
+    )
+    return f"{framing}\n{directive}"
+
+
+async def _run_workflow_serial(
+    *,
+    workflow: Workflow,
+    runner: Runner,
+    directive: str,
+) -> AsyncIterator[Any]:
+    """Original run_workflow body, split out so the wrapper can manage
+    milestone-scope lifecycle. Identical behavior to pre-T-m4 — only
+    the wrapping changed."""
 
     capture = WorkflowCapture()
+
+    # Interviews run first, in declaration order. Each ships
+    # requirement artifacts that downstream meetings can seed from.
+    # Interviews are wall-clock unbounded — they don't burn the
+    # rotation budget while operators fill the form. Discovery-only
+    # workflows (no meetings) ship their requirements here and exit.
+    for interview in workflow.interviews:
+        async for event in _run_one_interview(
+            interview=interview,
+            runner=runner,
+            capture=capture,
+            directive=directive,
+        ):
+            yield event
 
     # Map of meeting_id → per_item kind for every per_item meeting.
     # Used by resolve_seeds to know when to look across iteration
@@ -2481,6 +3186,256 @@ def _consumed_source_slugs(
             if source:
                 consumed.add(source)
     return consumed
+
+
+def _apply_retraction_for_utterance(
+    *,
+    runner: Runner,
+    utterance: Utterance,
+) -> list["_RetractionRecord"]:
+    """P15 T-m7 — process retraction artifacts in a freshly emitted
+    utterance. Walks the utterance's ``retraction`` artifacts; for
+    each, looks up the targeted on-disk file via the matching
+    registry, unlinks it, and records the (kind, slug) in the
+    module-level ``_RETRACTED_ARTIFACTS`` set so resolve_seeds
+    filters retracted artifacts from downstream seeds.
+
+    The retract utterance itself stays in the transcript as the
+    auditable record of who removed what. Returns the list of
+    successful retractions so the meeting loop can fan out
+    ``ArtifactRetracted`` observer events.
+
+    Non-RETRACT utterances are a no-op. Missing files / unknown
+    target_kinds / payload errors degrade silently — retraction is
+    correction, not a critical-path operation."""
+    from wonderland.utterance import SpeechAct
+
+    if utterance.speech_act is not SpeechAct.RETRACT:
+        return []
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return []
+
+    records: list[_RetractionRecord] = []
+    for art in utterance.content.artifacts:
+        if art.kind != "retraction":
+            continue
+        if not isinstance(art.payload, dict):
+            continue
+        target_kind = art.payload.get("target_kind")
+        target_slug = art.payload.get("target_slug")
+        reason = str(art.payload.get("reason", ""))
+        if not isinstance(target_kind, str) or not target_kind:
+            continue
+        if not isinstance(target_slug, str) or not target_slug:
+            continue
+
+        path = _resolve_retraction_target_path(
+            project_root, target_kind, target_slug
+        )
+        if path is not None:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+        register_retraction(target_kind, target_slug)
+        records.append(
+            _RetractionRecord(
+                target_kind=target_kind,
+                target_slug=target_slug,
+                reason=reason,
+                retractor=utterance.speaker.name,
+                thread_id=utterance.thread_id,
+            )
+        )
+    return records
+
+
+@dataclass
+class _RetractionRecord:
+    """In-memory record of a successful retraction. Used to fan out
+    ``ArtifactRetracted`` observer events from the meeting loop."""
+
+    target_kind: str
+    target_slug: str
+    reason: str
+    retractor: str
+    thread_id: str
+
+
+def _emit_retracted_event(
+    runner: Runner, rec: "_RetractionRecord"
+) -> None:
+    """Surface an ArtifactRetracted event to the runner's observer
+    handler. Lazy import to avoid the observer ↔ workflow circular
+    at module-load time. Silent on every failure path — observer
+    is non-critical."""
+    handler = getattr(runner, "_event_handler", None) or getattr(
+        runner, "event_handler", None
+    )
+    if handler is None:
+        return
+    try:
+        from datetime import datetime, timezone
+
+        from wonderland.observer.events import ArtifactRetracted
+
+        handler(
+            ArtifactRetracted(
+                timestamp=datetime.now(tz=timezone.utc),
+                thread_id=rec.thread_id,
+                retractor=rec.retractor,
+                target_kind=rec.target_kind,
+                target_slug=rec.target_slug,
+                reason=rec.reason,
+            )
+        )
+    except Exception:  # noqa: BLE001 — observability is non-critical
+        pass
+
+
+def _resolve_retraction_target_path(
+    project_root: Path, target_kind: str, target_slug: str
+) -> Path | None:
+    """Look up the on-disk path for a (kind, slug) pair via the
+    matching registry. Returns None when the kind is unknown or
+    when the slug doesn't resolve to a file. Lazy registry imports
+    so the workflow module doesn't pull every registry at load."""
+    try:
+        if target_kind == "story":
+            from wonderland.story import StoryRegistry
+
+            record = StoryRegistry(project_root).find_by_slug(target_slug)
+            return record.path if record else None
+        if target_kind == "feature":
+            from wonderland.feature import FeatureRegistry
+
+            record = FeatureRegistry(project_root).find_by_slug(target_slug)
+            return record.path if record else None
+        if target_kind == "ticket":
+            from wonderland.ticket import TicketRegistry
+
+            record = TicketRegistry(project_root).find_by_slug(target_slug)
+            return record.path if record else None
+        if target_kind == "adr":
+            from wonderland.adr import ADRRegistry
+
+            record = ADRRegistry(project_root).find_by_slug(target_slug)
+            return record.path if record else None
+        if target_kind == "milestone":
+            from wonderland.milestone import MilestoneRegistry
+
+            record = MilestoneRegistry(project_root).find_by_slug(target_slug)
+            return record.path if record else None
+        if target_kind == "requirement":
+            from wonderland.interview import RequirementRegistry
+
+            record = RequirementRegistry(project_root).find_by_slug(target_slug)
+            return record.path if record else None
+    except Exception:  # noqa: BLE001 — best-effort
+        return None
+    return None
+
+
+def _apply_source_resolution_for_utterance(
+    *,
+    runner: Runner,
+    utterance: Utterance,
+) -> None:
+    """P15 follow-up — strip + disk-delete ticket/feature artifacts
+    whose ``sources`` slugs don't resolve to actual stories or
+    features on disk. The discovery4 pilot showed Rabbit shipping
+    tickets sourced to invented story-prefixed slugs (e.g.
+    ``story-equipment-list-management`` when no story by that slug
+    existed). The ``TicketPayload.sources`` validator blocks known-
+    bad prefixes (``contract-note-*``, etc.) but doesn't verify
+    slug existence; this hook does.
+
+    Filter logic:
+      - Ticket: every source must resolve to a real feature or
+        story slug on disk. Any unresolvable → strip the ticket +
+        delete its file.
+      - Feature: every source must resolve to a real story slug on
+        disk. Any unresolvable → strip the feature + delete its
+        file.
+
+    Mirrors the allowed_decisions filter shape: the utterance
+    stays in the transcript as an auditable record, the artifact
+    + its on-disk file are removed. Silent on every error path —
+    this is cleanup, not the critical path."""
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    if not utterance.content.artifacts:
+        return
+
+    # Build lookup sets once per utterance (cheap; sizes bounded by
+    # the project's current artifact count).
+    import re
+
+    story_slugs = _collect_disk_slugs(
+        project_root / ".wonderland" / "stories",
+        re.compile(r"story-(\d+)-(.+)\.md"),
+    )
+    feature_slugs = _collect_disk_slugs(
+        project_root / ".wonderland" / "features",
+        re.compile(r"feature-(\d+)-(.+)\.md"),
+    )
+
+    for art in utterance.content.artifacts:
+        if art.kind not in ("ticket", "feature"):
+            continue
+        if not isinstance(art.payload, dict):
+            continue
+        sources = art.payload.get("sources") or []
+        if not isinstance(sources, list):
+            continue
+
+        # Ticket sources may resolve to features OR stories.
+        # Feature sources resolve to stories only.
+        if art.kind == "ticket":
+            valid_pool = feature_slugs | story_slugs
+        else:
+            valid_pool = story_slugs
+
+        unresolved = [
+            s for s in sources
+            if isinstance(s, str) and s and s not in valid_pool
+        ]
+        if not unresolved:
+            continue
+
+        # Strip the artifact from the bus utterance + delete on disk.
+        path_raw = art.payload.get("path")
+        if path_raw:
+            try:
+                Path(str(path_raw)).unlink()
+            except OSError:
+                pass
+        # Mutate the utterance's artifact list in place. The bus
+        # version that other agents read is the same object, so
+        # this propagates without a separate publish step.
+        try:
+            utterance.content.artifacts.remove(art)
+        except ValueError:
+            pass
+
+
+def _collect_disk_slugs(
+    directory: Path, filename_re,
+) -> set[str]:
+    """Read filenames in ``directory`` matching ``filename_re`` and
+    return the slug component (capture group 2). Empty set when
+    the directory doesn't exist or has no matching files."""
+    if not directory.is_dir():
+        return set()
+    out: set[str] = set()
+    for path in directory.glob("*.md"):
+        m = filename_re.match(path.name)
+        if m:
+            out.add(m.group(2))
+    return out
 
 
 def _apply_emission_transition_for_utterance(
@@ -3044,6 +3999,418 @@ def _apply_post_meeting_transitions(
             )
 
 
+# Cap on follow-up rounds within a single interview. The interviewer
+# constitution says "one round of follow-up is the cap" — this is the
+# substrate-side guardrail so a buggy agent can't loop forever asking
+# the operator to clarify.
+_MAX_INTERVIEW_ROUNDS = 3
+
+
+async def _run_one_interview(
+    *,
+    interview: Interview,
+    runner: "Runner",
+    capture: "WorkflowCapture",
+    directive: str | None = None,
+) -> AsyncIterator[Any]:
+    """Execute one Interview end-to-end:
+
+      1. Emit ``InterviewStarted``.
+      2. Write the YAML question batch to
+         ``.wonderland/runs/<run_id>/pending_interview.json`` via the
+         disk bridge (no agent turn — questions are predefined).
+      3. Wait for ``pending_interview_answers.json`` to appear; surface
+         events as the bridge progresses.
+      4. Build a synthetic OBSERVATION utterance from the operator
+         carrying the answers as an ``interview_answers`` artifact,
+         compose context for the interviewer, call deliberate().
+      5. Interviewer ships requirement artifacts (written to
+         RequirementRegistry on disk via the agent's ``_record_
+         requirements`` path) and optionally a follow-up
+         ``interview_followup_questions`` artifact.
+      6. If follow-up present + ``allow_followup`` True, loop back
+         to (2) with the follow-up question batch.
+      7. Emit ``InterviewEnded``.
+
+    Outcomes mirror the Meeting outcome vocabulary loosely:
+      - COMPLETE: interviewer shipped requirements and closed cleanly.
+      - SKIPPED: operator hit "skip section" OR no interviewer agent
+        found OR agent chose silence on review.
+      - TIMEOUT: bridge timed out waiting for operator answers (no
+        TUI attached / operator walked away).
+    """
+    from datetime import datetime, timezone
+
+    from wonderland.interview import (
+        Interview as InterviewModel,
+        InterviewQuestion,
+        await_interview_answers,
+        write_pending_interview,
+    )
+    from wonderland.observer.events import (
+        InterviewAnswersReceived,
+        InterviewEnded,
+        InterviewQuestionsPosted,
+        InterviewStarted,
+    )
+    from wonderland.utterance import (
+        Artifact,
+        SpeechAct,
+        Utterance,
+        UtteranceContent,
+        operator_identity,
+    )
+
+    start_ts = datetime.now(tz=timezone.utc)
+    thread_id = f"interview.{interview.id}"
+
+    yield InterviewStarted(
+        timestamp=start_ts,
+        interview_id=interview.id,
+        label=interview.label,
+        name=interview.name,
+        interviewer=interview.interviewer,
+        thread_id=thread_id,
+    )
+
+    capture.add_interview_visit(interview.id)
+
+    interviewer = getattr(runner, "agents", {}).get(interview.interviewer)
+    project_root = getattr(runner, "project_root", None)
+    run_id = getattr(runner, "run_id", None)
+
+    def _emit_end(
+        outcome: str, requirements_shipped: int = 0
+    ) -> "InterviewEnded":
+        elapsed = (
+            datetime.now(tz=timezone.utc) - start_ts
+        ).total_seconds()
+        return InterviewEnded(
+            timestamp=datetime.now(tz=timezone.utc),
+            interview_id=interview.id,
+            outcome=outcome,
+            elapsed_seconds=elapsed,
+            requirements_shipped=requirements_shipped,
+        )
+
+    if interviewer is None or project_root is None or run_id is None:
+        # Runner doesn't expose the agent or paths the bridge needs.
+        # Skip the interview gracefully — better than crashing the run.
+        yield _emit_end("SKIPPED")
+        return
+
+    run_dir = project_root / ".wonderland" / "runs" / run_id
+
+    requirements_shipped = 0
+    # Round 1 questions: shaped by the agent from the YAML templates.
+    # Subsequent rounds: agent ships followup_questions in
+    # interview_review. Initial value is the YAML templates as the
+    # fallback path if the agent fails to ship a shaped batch.
+    current_questions: list[InterviewQuestion] = list(interview.questions)
+    rounds = 0
+
+    while rounds < _MAX_INTERVIEW_ROUNDS:
+        rounds += 1
+
+        # On round 1, ask the interviewer to shape questions based on
+        # the directive + YAML templates. The substrate seeds the
+        # templates as an OBSERVATION utterance the agent reads as
+        # "these are your defaults — shape them to the directive."
+        if rounds == 1:
+            shaping_trigger = _build_question_shaping_trigger(
+                thread_id=thread_id,
+                interview=interview,
+            )
+            shaping_triggers: list[Utterance] = []
+            if directive and directive.strip():
+                shaping_triggers.append(
+                    Utterance(
+                        thread_id=thread_id,
+                        speaker=operator_identity(),
+                        addressed_to="caucus",
+                        speech_act=SpeechAct.DIRECTIVE,
+                        content=UtteranceContent(
+                            body=directive.strip(),
+                            artifacts=[],
+                        ),
+                    )
+                )
+            shaping_triggers.append(shaping_trigger)
+            shaping_ctx = await interviewer.compose_context(shaping_triggers)
+            shaped_response = await interviewer.deliberate(shaping_ctx)
+            if shaped_response is not None:
+                batch_artifact = next(
+                    (
+                        a
+                        for a in shaped_response.content.artifacts
+                        if a.kind == "interview_question_batch"
+                    ),
+                    None,
+                )
+                if batch_artifact is not None:
+                    try:
+                        shaped_questions = [
+                            InterviewQuestion.model_validate(q)
+                            for q in batch_artifact.payload.get(
+                                "questions", []
+                            )
+                        ]
+                    except Exception:  # noqa: BLE001 — malformed batch
+                        shaped_questions = []
+                    if shaped_questions:
+                        current_questions = shaped_questions
+                # Capture so the shaping turn shows up in the
+                # transcript / history for downstream meetings.
+                capture.observe(shaped_response)
+
+        # Build a per-round Interview shell to feed the bridge —
+        # same metadata, swapped question list (round 1 gets the
+        # shaped batch, follow-up rounds get the agent's followup).
+        round_iv = InterviewModel(
+            id=interview.id,
+            label=interview.label,
+            name=(
+                interview.name
+                if rounds == 1
+                else f"{interview.name} (follow-up {rounds - 1})"
+            ),
+            interviewer=interview.interviewer,
+            goal=interview.goal,
+            questions=current_questions,
+            estimated_minutes=interview.estimated_minutes,
+            allow_followup=interview.allow_followup,
+        )
+        batch_id = write_pending_interview(run_dir, round_iv)
+        yield InterviewQuestionsPosted(
+            timestamp=datetime.now(tz=timezone.utc),
+            interview_id=interview.id,
+            question_count=len(current_questions),
+        )
+
+        answers = await await_interview_answers(
+            run_dir, batch_id=batch_id
+        )
+        if answers is None:
+            yield _emit_end("TIMEOUT", requirements_shipped)
+            return
+
+        yield InterviewAnswersReceived(
+            timestamp=datetime.now(tz=timezone.utc),
+            interview_id=interview.id,
+            section_skipped=answers.section_skipped,
+            answer_count=len(answers.answers),
+        )
+
+        if answers.section_skipped:
+            yield _emit_end("SKIPPED", requirements_shipped)
+            return
+
+        # Synthesize the operator's answers as an OBSERVATION utterance
+        # for the interviewer's next turn. The structured payload lets
+        # the agent dispatch on individual question answers; the body
+        # is human-readable prose for the LLM context.
+        synthetic_utterance = Utterance(
+            thread_id=thread_id,
+            speaker=operator_identity(),
+            addressed_to="caucus",
+            speech_act=SpeechAct.OBSERVATION,
+            content=UtteranceContent(
+                body=_format_interview_answers_as_body(
+                    round_iv, answers
+                ),
+                artifacts=[
+                    Artifact(
+                        kind="interview_answers",
+                        payload={
+                            "interview_id": interview.id,
+                            "answers": [
+                                a.model_dump() for a in answers.answers
+                            ],
+                            "section_skipped": answers.section_skipped,
+                        },
+                    ),
+                ],
+            ),
+        )
+
+        # Seed the interviewer's context with the operator's launch
+        # directive (when present) so synthesis happens in the right
+        # frame — Alice's persona answers mean different things for
+        # "Build a Pomodoro app" vs "Audit our data layer". The
+        # directive rides as a separate DIRECTIVE utterance from the
+        # operator so the agent's existing engagement-state machinery
+        # treats it like the directive seed entry meetings get.
+        triggers: list[Utterance] = []
+        if directive and directive.strip():
+            triggers.append(
+                Utterance(
+                    thread_id=thread_id,
+                    speaker=operator_identity(),
+                    addressed_to="caucus",
+                    speech_act=SpeechAct.DIRECTIVE,
+                    content=UtteranceContent(
+                        body=directive.strip(),
+                        artifacts=[],
+                    ),
+                )
+            )
+        triggers.append(synthetic_utterance)
+        context = await interviewer.compose_context(triggers)
+        response = await interviewer.deliberate(context)
+        if response is None:
+            # Interviewer chose silence on review — close out without
+            # follow-up. Operator might re-run if they want a redo.
+            yield _emit_end("SKIPPED", requirements_shipped)
+            return
+
+        capture.observe(response)
+
+        for a in response.content.artifacts:
+            if a.kind == "requirement":
+                requirements_shipped += 1
+
+        if not interview.allow_followup:
+            yield _emit_end("COMPLETE", requirements_shipped)
+            return
+
+        followup_artifact = next(
+            (
+                a
+                for a in response.content.artifacts
+                if a.kind == "interview_followup_questions"
+            ),
+            None,
+        )
+        if followup_artifact is None:
+            yield _emit_end("COMPLETE", requirements_shipped)
+            return
+
+        try:
+            current_questions = [
+                InterviewQuestion.model_validate(q)
+                for q in followup_artifact.payload.get("questions", [])
+            ]
+        except Exception:  # noqa: BLE001 — malformed follow-up
+            yield _emit_end("COMPLETE", requirements_shipped)
+            return
+        if not current_questions:
+            yield _emit_end("COMPLETE", requirements_shipped)
+            return
+        # loop continues with the new question batch
+
+    # Hit the round cap — close without further follow-up.
+    yield _emit_end("COMPLETE", requirements_shipped)
+
+
+def _build_question_shaping_trigger(
+    *, thread_id: str, interview: "Interview"
+) -> "Utterance":
+    """Build the synthetic OBSERVATION that primes the interviewer
+    on round 1: "you're conducting interview X with goal Y; here are
+    the template questions to shape to the directive." Triggers the
+    ``interview_questions`` decision."""
+    from wonderland.utterance import (
+        Artifact,
+        SpeechAct,
+        Utterance,
+        UtteranceContent,
+        operator_identity,
+    )
+
+    template_block = "\n".join(
+        [
+            (
+                f"  - id: {q.id}\n"
+                f"    text: {q.text!r}\n"
+                f"    kind: {q.kind.value}\n"
+                + (
+                    f"    options: {q.options!r}\n"
+                    if q.options
+                    else ""
+                )
+                + (
+                    "    required: true\n"
+                    if q.required
+                    else ""
+                )
+            )
+            for q in interview.questions
+        ]
+    )
+    body = (
+        f"**Discovery interview opening — {interview.label}: "
+        f"{interview.name}.**\n\n"
+        f"You're the interviewer. Goal: {interview.goal}.\n\n"
+        f"Template questions (shape these to the directive in your "
+        f"context, then ship `interview_questions` with the shaped "
+        f"batch):\n\n"
+        f"{template_block}\n\n"
+        f"Ship one `interview_questions` decision. Keep ids stable "
+        f"when re-using a template; coin new slug-shaped ids for "
+        f"questions you add. The operator's directive has already "
+        f"been seeded into your context — read it and tailor "
+        f"question TEXT + OPTIONS to what the project is actually "
+        f"about."
+    )
+    return Utterance(
+        thread_id=thread_id,
+        speaker=operator_identity(),
+        addressed_to="caucus",
+        speech_act=SpeechAct.OBSERVATION,
+        content=UtteranceContent(
+            body=body,
+            artifacts=[
+                Artifact(
+                    kind="interview_templates",
+                    payload={
+                        "interview_id": interview.id,
+                        "templates": [
+                            q.model_dump() for q in interview.questions
+                        ],
+                    },
+                ),
+            ],
+        ),
+    )
+
+
+def _format_interview_answers_as_body(
+    interview: Interview, answers: "InterviewAnswers"
+) -> str:
+    """Render the operator's structured answers as a prose body the
+    interviewer's LLM context can read. Each Q/A pair is laid out so
+    the agent can see the question that was asked alongside what was
+    answered — the structured artifact still rides on the utterance
+    for any caller that wants to dispatch on values directly."""
+    from wonderland.interview import InterviewAnswers as _IA  # noqa: F401
+
+    questions_by_id = {q.id: q for q in interview.questions}
+    lines: list[str] = [
+        f"**Operator answers from {interview.label}: {interview.name}.**",
+        "",
+    ]
+    for answer in answers.answers:
+        q = questions_by_id.get(answer.question_id)
+        question_text = q.text if q is not None else answer.question_id
+        lines.append(f"**{question_text}**")
+        if answer.skipped:
+            lines.append("- _(skipped)_")
+            lines.append("")
+            continue
+        if answer.value is not None and answer.value != "":
+            if isinstance(answer.value, list):
+                rendered = ", ".join(str(v) for v in answer.value)
+            else:
+                rendered = str(answer.value)
+            lines.append(f"- Answer: {rendered}")
+        if answer.free_response.strip():
+            lines.append(
+                f"- Free response: {answer.free_response.strip()}"
+            )
+        lines.append("")
+    return "\n".join(lines)
+
+
 async def _run_one_meeting(
     *,
     meeting: Meeting,
@@ -3079,6 +4446,53 @@ async def _run_one_meeting(
     # ``meeting`` object remains unchanged.
     if item_payload is not None:
         meeting = meeting.apply_roster_filter(item_payload)
+
+    # P15 T-m6 stage-leak guardrail. Register this meeting's
+    # allowed_decisions for the thread so each agent's publish
+    # path filters utterances before they reach the bus. Cleared
+    # below via _ClearAllowedDecisions context manager so subsequent
+    # meetings on the same thread (rare) don't inherit a stale
+    # entry. No-op when the meeting didn't declare a list.
+    set_thread_allowed_decisions(thread_id, meeting.allowed_decisions)
+    try:
+        async for event in _run_one_meeting_inner(
+            meeting=meeting,
+            runner=runner,
+            capture=capture,
+            directive=directive,
+            per_item_meetings=per_item_meetings,
+            current_item_kind=current_item_kind,
+            current_item_slug=current_item_slug,
+            thread_id=thread_id,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+            iteration_label=iteration_label,
+            lane_thread_prefix=lane_thread_prefix,
+        ):
+            yield event
+    finally:
+        clear_thread_allowed_decisions(thread_id)
+
+
+async def _run_one_meeting_inner(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    capture: WorkflowCapture,
+    directive: str | None,
+    per_item_meetings: dict[str, str],
+    current_item_kind: str | None,
+    current_item_slug: str | None,
+    thread_id: str,
+    iteration_index: int | None,
+    iteration_total: int | None,
+    iteration_label: str | None,
+    lane_thread_prefix: str | None = None,
+) -> AsyncIterator[Any]:
+    """Original dispatch body of _run_one_meeting. Split out so the
+    wrapper can manage thread-state lifecycle (P15 T-m6) cleanly
+    without indenting the entire dispatch body inside a try block.
+    """
     if meeting.phases:
         # Local import to avoid the meeting ↔ workflow circular at
         # module-load time (meeting.py imports MeetingStartEvent /
@@ -3141,6 +4555,25 @@ async def _run_one_meeting(
                         runner=runner,
                         utterance=emitted,
                     )
+                    # P15 follow-up — ticket/feature source slugs
+                    # must resolve to real artifacts on disk.
+                    # Strip + delete any whose sources don't.
+                    _apply_source_resolution_for_utterance(
+                        runner=runner,
+                        utterance=emitted,
+                    )
+                    # T-m7: same retraction processing as the convene-
+                    # one path. Phased meetings (milestone-plan) need
+                    # the same hook, otherwise an agent retracting an
+                    # artifact mid-phased-meeting wouldn't clear it
+                    # from the seed pool. Lazy import via shared
+                    # helper — no extra cost when no retractions fire.
+                    retractions = _apply_retraction_for_utterance(
+                        runner=runner,
+                        utterance=emitted,
+                    )
+                    for rec in retractions:
+                        _emit_retracted_event(runner, rec)
 
             # transition_iteration_to fires on phased COMPLETE just
             # like the convene-one path. Without this, M3's
@@ -3219,7 +4652,24 @@ async def _convene_one(
         lane_thread_prefix=lane_thread_prefix,
     )
 
-    convenor_directive = directive if directive is not None else meeting.convenor_directive
+    # Resolve the directive shown to the team for this meeting.
+    # Pre-P14, the convention was: entry meetings had empty
+    # convenor_directive (user input filled it) and non-entry
+    # meetings carried framing in YAML. With supplemental framing
+    # on entry meetings (tdd-implement's M6 Alice/Hatter lock), an
+    # entry meeting can carry BOTH — we render the user's directive
+    # first (the WHY) and the YAML's convenor_directive below (the
+    # HOW for this meeting). Either alone is also fine.
+    if directive is not None and meeting.convenor_directive.strip():
+        convenor_directive = (
+            f"{directive}\n\n"
+            f"───────────────────────────────────────\n\n"
+            f"{meeting.convenor_directive}"
+        )
+    elif directive is not None:
+        convenor_directive = directive
+    else:
+        convenor_directive = meeting.convenor_directive
 
     # Surface the meeting label, name, and iteration metadata to the
     # team. Iteration label puts the current feature's title into the
@@ -3292,6 +4742,25 @@ async def _convene_one(
                     runner=runner,
                     utterance=emitted,
                 )
+                # P15 follow-up — strip ticket/feature artifacts
+                # whose sources don't resolve to on-disk slugs.
+                # discovery4 pilot showed Rabbit shipping tickets
+                # cited to invented story-prefixed slugs.
+                _apply_source_resolution_for_utterance(
+                    runner=runner,
+                    utterance=emitted,
+                )
+                # T-m7: process retraction artifacts in this utterance —
+                # delete targeted files + record (kind, slug) so
+                # resolve_seeds filters retracted artifacts from
+                # downstream seed pools. Emit observer events so the
+                # live-watch UI surfaces what got walked back.
+                retractions = _apply_retraction_for_utterance(
+                    runner=runner,
+                    utterance=emitted,
+                )
+                for rec in retractions:
+                    _emit_retracted_event(runner, rec)
 
             yield event
 

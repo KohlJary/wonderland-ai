@@ -52,6 +52,12 @@ class PhaseDefinition:
     concurrently inside one team window, recovering the parallelism
     that constitutional pairs deserve. Frozen-tuple-of-tuples (not
     list-of-lists) so PhaseDefinition stays hashable."""
+    coverage_check: str | None = None
+    """P15 T-m8: name of a registered coverage check in
+    ``wonderland.coverage``. When set, the meeting engine runs the
+    check at end of each rotation; on gap, injects a synthetic Dodo
+    observation + extends ``max_rotations`` by 1 (capped). None =
+    no gating, original behavior preserved."""
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -126,6 +132,13 @@ class PhaseState:
     exit_condition_met: bool = False
     """Set by the engine when the phase's exit_condition_artifact
     ships. Phase-end logic reads it via is_complete()."""
+    bonus_rotations: int = 0
+    """P15 T-m8 — extra rotations granted by the coverage-check
+    nudge loop when ``definition.coverage_check`` is set + the
+    requirement gap is still open at the rotation cliff. Capped
+    by ``Meeting.coverage_max_extra_rotations``. Folds into
+    ``is_exhausted`` so the standard exhaustion check honors any
+    granted extension."""
 
     def __post_init__(self) -> None:
         if not self.cast:
@@ -159,12 +172,15 @@ class PhaseState:
         )
 
     def is_exhausted(self) -> bool:
-        """True when the rotation budget is fully spent.
+        """True when the rotation budget is fully spent — including
+        any bonus rotations granted by the T-m8 coverage-check loop.
 
         Distinct from ``all_passed_in_succession`` — exhaustion is
         the forced phase-end, succession is the natural one.
         """
-        return self.current_rotation >= self.definition.max_rotations
+        return self.current_rotation >= (
+            self.definition.max_rotations + self.bonus_rotations
+        )
 
     def is_complete(self) -> bool:
         """The phase is done — by exit condition, by everyone passing

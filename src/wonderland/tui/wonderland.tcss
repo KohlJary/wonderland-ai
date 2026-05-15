@@ -307,8 +307,37 @@ NewRunScreen #description-composer {
     width: 30;
 }
 
+/* Run controls row: project-root + budget + auto-merge sit on one
+ * line above the action buttons. Without an explicit height the
+ * Horizontal collapses and the controls render off-screen. */
+
+#controls-label {
+    padding: 0 1;
+    height: auto;
+    color: $primary;
+    margin: 1 0 0 0;
+}
+
+#controls-row {
+    height: 3;
+    padding: 0 1;
+    align: left middle;
+}
+
+#controls-row Label {
+    height: 3;
+    content-align: left middle;
+    margin: 0 1 0 0;
+}
+
+#project-input {
+    width: 40;
+    margin: 0 2 0 0;
+}
+
 #budget-input {
     width: 12;
+    margin: 0 2 0 0;
 }
 
 #save-checkbox {
@@ -747,28 +776,100 @@ CastBrowserScreen #cast-constitution-pane {
     min-width: 18;
 }
 
-/* Content row: Runs column (left, always visible) + Features section
- * (right). The runs column tees up background runs the operator can
- * leave going while navigating other views; features stay the
- * dominant surface within the row. */
+/* P15 T-m5 layout: top row is Milestones (left, 50%) + Features
+ * (right, 50%) — milestones become the primary navigation surface;
+ * selecting one filters the features pane via the T-m8b story chain.
+ * Runs sits below as the always-visible history reference. */
 
-#content-row {
+#top-row {
     height: 2fr;
     padding: 0 2;
 }
 
-#runs-column {
+/* Milestones row: list (5fr) + detail (3fr), mirroring the
+ * features row's list+detail proportions so both panes feel
+ * structurally parallel to the operator. */
+
+#milestones-row {
+    width: 1fr;
+    height: 1fr;
+}
+
+#milestones-list-pane {
+    width: 5fr;
+    height: 1fr;
+    margin: 0 1 1 0;
+}
+
+#milestones-detail-pane {
     width: 3fr;
     height: 1fr;
     margin: 0 1 1 0;
 }
 
-/* Features primary surface — dominant content area within the
- * content row (per the P12 reshape: features are the operator's
- * main attention point). Features-row sits to the right of the
- * runs column and contains the list + detail panes. */
+#milestones-label,
+#milestones-detail-label {
+    padding: 0 1;
+    color: $primary;
+    height: auto;
+}
+
+#milestones-orphan-hint {
+    padding: 0 1;
+    height: auto;
+    color: $warning;
+}
+
+#milestones-tree {
+    height: 1fr;
+}
+
+#milestones-empty-cta {
+    height: auto;
+    margin: 1 1;
+    min-width: 30;
+}
+
+#milestones-detail-scroll {
+    height: 1fr;
+}
+
+#milestones-detail {
+    padding: 0 1;
+}
+
+#milestone-design-cta {
+    height: auto;
+    margin: 1 1 0 1;
+    min-width: 30;
+}
+
+/* Features primary surface — right half of the top row, same width
+ * as the Milestones pane (1fr / 1fr). Contains the list + detail
+ * panes. */
 
 #features-row {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* Bottom row: Runs list (3fr) + Run detail (7fr) — the runs row
+ * sits below Milestones/Features so the operator's primary
+ * navigation surface stays on top + run history is reference
+ * below. */
+
+#runs-row {
+    height: 1fr;
+    padding: 0 2;
+}
+
+#runs-list-pane {
+    width: 3fr;
+    height: 1fr;
+    margin: 0 1 0 0;
+}
+
+#runs-detail-pane {
     width: 7fr;
     height: 1fr;
 }

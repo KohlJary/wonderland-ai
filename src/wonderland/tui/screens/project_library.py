@@ -493,10 +493,13 @@ class ProjectLibraryScreen(Screen[None]):
 
         self.app.push_screen(NewProjectScreen(), self._on_new_project_done)
 
-    def _on_new_project_done(self, project: Project | None) -> None:
+    def _on_new_project_done(
+        self, result: "NewProjectResult | None"
+    ) -> None:
         self._refresh_projects()
-        if project is None:
+        if result is None:
             return
+        project = result.project
         # Move to "Open project" action so the new project is visible.
         action_table = self.query_one("#action-table", DataTable)
         action_table.cursor_coordinate = (0, 0)
@@ -507,6 +510,56 @@ class ProjectLibraryScreen(Screen[None]):
                 table = self.query_one("#project-table", DataTable)
                 table.cursor_coordinate = (i, 0)
                 break
+        # P15 T-m8 UX — if the operator confirmed the post-create
+        # discovery prompt, launch the discovery workflow directly
+        # (skip NewRunScreen). Discovery is the natural first move on
+        # every fresh project + uses the prime directive set during
+        # project creation; the operator already made the decision to
+        # run it via the modal, so a confirmation screen is friction
+        # without value. $3.50 budget is a sane default for the
+        # three-interview discovery flow (typical spend $1.50-2.50).
+        if result.start_discovery:
+            self._launch_discovery_for_new_project(project)
+
+    def _launch_discovery_for_new_project(self, project) -> None:
+        """Auto-launch the discovery workflow for a freshly-created
+        project. Uses the project's prime_directive (set on
+        NewProjectScreen) as the run directive; falls back to a
+        generic directive when the operator left it blank.
+        Discovery is interview-driven — the operator answers questions
+        in the InterviewModal that pops up during the run, so this
+        launch is just kicking off the background run; no further
+        configuration screen needed."""
+        directive = (
+            project.prime_directive
+            or f"Discover the team's intent for {project.name}. "
+            "Surface personas, technical constraints, and v1 scope "
+            "via the three-interview flow."
+        )
+        try:
+            self.app.launch_background_run(  # type: ignore[attr-defined]
+                directive=directive,
+                workflow_name="discovery",
+                project_root=project.root_path,
+                budget=3.50,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface failure
+            self.notify(
+                f"Couldn't auto-launch discovery: {exc}. "
+                f"Open the project + run it manually.",
+                severity="error",
+                timeout=8,
+            )
+            return
+        # Push LiveRunScreen so the operator immediately sees the
+        # discovery run starting — they can answer interview
+        # questions as they come in, or pop back to the library
+        # while it works.
+        from wonderland.tui.screens.live_run import LiveRunScreen
+
+        active = getattr(self.app, "_active_run", None)
+        if active is not None:
+            self.app.push_screen(LiveRunScreen(run_id=active.run_id))
 
     def action_edit_project(self) -> None:
         project = self._selected_project()

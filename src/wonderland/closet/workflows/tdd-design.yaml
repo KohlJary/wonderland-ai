@@ -63,6 +63,21 @@ description: |
 
 version: 1
 
+# Block speech_acts that belong to other workflows. ``milestone_plan``
+# is the canonical example: discovery4's pilot showed Rabbit shipping
+# a stray milestone_plan utterance mid-design that overwrote M1's
+# consumes_requirements with invented slugs, breaking the
+# realization chain. interview_* are the discovery workflow's
+# decisions — they don't make sense in design either. The substrate
+# strips artifacts of these speech_acts at publish time (same shape
+# as the meeting-level allowed_decisions filter), so an agent who
+# pattern-matches to the wrong workflow's primary decision can't
+# corrupt the registry.
+disallowed_decisions:
+  - milestone_plan
+  - interview_questions
+  - interview_review
+
 defaults:
   budget_dollars: 3.00
   quiescence_seconds: 300.0
@@ -111,9 +126,20 @@ meetings:
     # sourcing them — same logic as M2's binding. A story that
     # already has a feature is past M1's job; surfacing it here
     # would re-prompt Alice/Caterpillar on settled material.
+    #
+    # ``requirement`` seeds are the discovery output (personas,
+    # constraints, success criteria, stack decisions). When
+    # ``--milestone <slug>`` is passed, the runner narrows the
+    # requirement pool to that milestone's ``consumes_requirements``
+    # list, so M1 generates stories grounded in *this* milestone's
+    # slice of the corpus rather than the full discovery payload.
+    # When no milestone is set, all requirements are visible — same
+    # as if scoping never existed.
     seeds:
       - from: any
         kinds: [project_context]
+      - from: any
+        kinds: [requirement]
       - from: any
         kinds: [story]
         consumed_by: feature
@@ -159,9 +185,14 @@ meetings:
       For each feature, name:
         - ``kind`` — capability or foundation (per above)
         - ``stack_span`` (frontend / backend / full-stack)
-        - ``personas`` — at least one persona name from M1; for
-          foundation features the persona is typically a developer
-          (Maya, etc.) from a Caterpillar plumbing story
+        - ``personas`` — at least one persona name from an M1
+          story already in your context; do NOT invent new
+          personas or import example names from your training
+          (this is a documented bleed pattern — see the
+          milestone framing). For foundation features the
+          persona is typically a developer from a Caterpillar
+          plumbing story; copy the persona's name straight from
+          that story.
         - ``tickets`` — leave as an empty list; M3 will populate
         - ``tier`` (v1 / fast-follow / post-launch)
         - ``sources`` — story slugs this feature realizes
@@ -170,6 +201,35 @@ meetings:
       feature when they describe the same capability from different
       personas; one story can split into multiple features when
       the persona's need spans distinct user-visible surfaces.
+
+      **Dedup discipline — features must be distinguishable
+      flows, not overlapping slices of the same flow.** A common
+      composition failure mode (observed in pilot runs): Rabbit
+      ships two features whose titles + descriptions describe the
+      *same user journey* with different framing — e.g., "Marcus
+      completes registration and equipment setup to start
+      onboarding" + "Marcus completes onboarding and is ready to
+      view his first routine" both describe the same end-to-end
+      onboarding flow. Before shipping a feature, check every
+      existing feature in your context:
+
+        - If your candidate feature's ``personas`` overlap with an
+          existing feature's personas, AND its ``sources`` overlap
+          with that existing feature's sources, you're shipping
+          a duplicate — pick one framing and skip the other.
+        - If two of your already-shipped features have overlapping
+          personas + sources, that's the same bug; ship a third
+          feature that *merges* them, then `concern` the operator
+          that the substrate doesn't currently have a feature-
+          merge primitive so the duplicates stay until pruned
+          manually.
+
+      The downstream cost of duplicate features is enormous: M3
+      decomposes each into tickets independently, so the same
+      implementation work shows up under two features' decomposition
+      iterations, and the operator has to figure out which
+      attribution is correct. Better to ship one well-named
+      feature than two that fight over their tickets.
 
       **Cross-run note on the story pool you see.** The stories
       seeded into this meeting are only those *without* an existing
@@ -230,6 +290,18 @@ meetings:
       - name: commit
         max_rotations: 2
         exit_condition_artifact: feature
+        # P15 T-m8b — at end of each rotation, verify every
+        # requirement the active milestone consumes has at least
+        # one feature realizing it (via the story-level
+        # ``realizes_requirements`` linkage from T-m8b).
+        # Triggers a synthetic Dodo observation listing unrealized
+        # requirements + grants a bonus rotation so Rabbit can
+        # compose additional features. No-op when ``--milestone``
+        # isn't passed (no scope to anchor against). Gates ONLY
+        # the commit phase, not discussion — discussion's job is
+        # to surface concerns; commit's job is to ship features
+        # that close the milestone.
+        coverage_check: milestone_realization
 
   # ─────────────────────────────────────────────────────────────────
   # M3 — Tickets per feature. Rabbit decomposes one feature at a
@@ -568,7 +640,15 @@ meetings:
     parallel: true  # T93: contracts negotiate per-feature seams
                     # independently. Feature A's API shape and
                     # feature B's UI envelope are separate concerns.
-    meeting_budget: 0.40
+    # Bumped from 0.40 → 0.60 after the discovery2 pilot — M5
+    # was hitting MEETING_BUDGET on routine contracts (89s elapsed,
+    # ~$0.40 burned, no COMPLETE), which leaves the feature stuck
+    # at in_design instead of transitioning to designed. The two-
+    # Tweedle back-and-forth on schema is genuinely more expensive
+    # than a single-voice generation step; 0.60 covers the
+    # observed median + a little headroom without giving M5
+    # license to spiral.
+    meeting_budget: 0.60
     convenor_directive: |
       **Tweedles — negotiate the contract for this feature.**
 

@@ -137,9 +137,29 @@ CaterpillarDecision = Literal[
     "concern",
     "question",
     "question_to_operator",
+    "retract",
     "deference",
     "silence",
 ]
+
+
+class RetractionPayload(BaseModel):
+    """Payload shape for a single retraction the Caterpillar ships
+    when an artifact already on disk (story / feature / etc.) has
+    drifted from scope and needs to be removed. P15 T-m7 substrate."""
+
+    target_kind: Literal[
+        "story", "feature", "ticket", "adr", "milestone", "requirement"
+    ]
+    target_slug: str
+    reason: str = Field(
+        ...,
+        description=(
+            "One-line scope/coherence note explaining why this "
+            "artifact is being walked back. Surfaces in the "
+            "ArtifactRetracted observer event."
+        ),
+    )
 
 
 class CaterpillarResponse(BaseModel):
@@ -177,6 +197,7 @@ class CaterpillarResponse(BaseModel):
     )
     reviews: list[ReviewPayload] = Field(default_factory=list)
     stories: list[StoryPayload] = Field(default_factory=list)
+    retractions: list[RetractionPayload] = Field(default_factory=list)
 
     @field_validator("body", mode="before")
     @classmethod
@@ -197,6 +218,13 @@ class CaterpillarResponse(BaseModel):
                 "review in `reviews`. Choose a different decision (concern/"
                 "question/etc.) or include the review you intended to issue."
             )
+        if self.decision == "retract" and not self.retractions:
+            raise ValueError(
+                "CaterpillarResponse: decision='retract' requires at least "
+                "one entry in `retractions`. Each entry names the "
+                "(target_kind, target_slug, reason) of an artifact you are "
+                "removing from this run's deliverables."
+            )
 
 
 _OUTPUT_PROTOCOL = """\
@@ -207,8 +235,15 @@ The JSON must conform to this schema:
 ```
 {
   "decision": "review" | "story" | "concern" | "question" |
-              "question_to_operator" | "deference" | "silence",
+              "question_to_operator" | "retract" | "deference" | "silence",
   "body": "the natural-language content of your utterance (omit for silence)",
+  "retractions": [                    // include ONLY when decision is "retract"
+    {
+      "target_kind": "story" | "feature" | "ticket" | "adr" | "milestone" | "requirement",
+      "target_slug": "the slug of the artifact you are removing — must match a slug already on the bus / on disk in this run",
+      "reason": "one-line scope/coherence justification — surfaces in the live-watch + audit log"
+    }
+  ],
   "stories": [                        // include ONLY when decision is "story"
     {
       "title": "short, specific title",
@@ -222,6 +257,9 @@ The JSON must conform to this schema:
       "tier": "core" | "enrichment" | "fast-follow",
       "confusion_flags": [
         "things that felt wrong as you wrote this — at least one is required"
+      ],
+      "realizes_requirements": [
+        "requirement-slug-this-plumbing-story-addresses (often a `constraint` or `integration` kind from discovery, e.g., 'react-frontend-sqlite-backend-v1-stack-locked')"
       ]
     }
   ],
@@ -319,6 +357,61 @@ balances, Maya tracking invoices), it belongs to Alice; defer.
 At meetings other than M1, `story` is rare — use it when you
 notice during a review that a missing plumbing story was the
 upstream cause of the bug you're flagging.
+
+**`retract` — remove an off-scope artifact already on disk.** The
+substrate gave you this primitive in P15 T-m7 because `concern`
+names a violation without correcting it — and once a story or
+feature is on disk and on the bus, downstream meetings will pick
+it up unless something actually walks it back. Use `retract` when:
+
+  - A previously shipped story / feature / ticket / ADR is
+    *demonstrably outside* the milestone scope or the operator's
+    directive (e.g., agents inhabited a wrong persona, or a
+    feature composed from coherent stories drifted into an
+    unrelated domain mid-meeting).
+  - Two artifacts duplicate each other and one should win.
+  - An artifact's required field (persona, sources, acceptance)
+    is so broken the artifact is more confusing than absent.
+
+Each retraction names ``target_kind``, ``target_slug``, and a
+one-line ``reason``. The framework deletes the on-disk file and
+filters the artifact out of every downstream meeting's seed pool;
+the retract utterance itself stays in the transcript as the
+auditable record. `retract` is **not** a substitute for `concern` —
+use `concern` when the next agent should reconsider their move,
+and `retract` when the artifact itself has to leave. **Never
+retract your own approval votes** — those aren't artifacts; revise
+them with a new `review`. And **never retract on stylistic
+grounds** (you can ship a `concern` finding instead): retraction
+is reserved for scope or coherence violations, not preferences.
+
+**M2 composition is a hotspot for retract.** When you're in the
+``composition`` thread (M2 — Advice from a Caterpillar), do this
+on each rotation BEFORE you consider a `review`:
+
+  1. List every ``feature`` artifact in your context (those Rabbit
+     has shipped this meeting + any from prior runs).
+  2. For each, trace its ``personas`` field to the M1 stories also
+     in your seed context. Every persona named on the feature MUST
+     appear as the ``persona`` of at least one M1 story.
+  3. Trace its ``sources`` slugs to the actual stories in seeds.
+     The story slugs must resolve.
+  4. If a feature names a persona that no story in seeds writes
+     about, OR names a problem domain (translation, multi-language,
+     payment, healthcare, etc.) that no seeded requirement
+     mentions, that is a constitutional-prior leak from Rabbit's
+     training. **Retract it immediately** — every rotation it
+     survives in the bus is a rotation downstream M3 might
+     decompose it into tickets, which is wasted budget + drift
+     the operator has to clean up by hand.
+
+This trace-to-M1 check is the single concrete move that catches
+the bleed pattern observed in the discovery2 pilot runs: M1 stories
+were 100% scoped to the seeded persona, but M2 Rabbit composed
+features that imported "Maya the polyglot moderator" and "Sarah on
+cross-language threads" from his own training-time examples. Three
+runs in a row, those features made it to disk because nobody
+walked them back. Your M2 retract trigger fixes that.
 
 **`question_to_operator` — escalate to the human operator.** Use
 when the team needs a decision only the operator can make: a
@@ -470,6 +563,23 @@ class Caterpillar(WonderlandAgent):
             artifacts.extend(self._record_reviews(response.reviews))
         elif response.decision == "story":
             artifacts.extend(self._record_stories(response.stories))
+        elif response.decision == "retract":
+            # Caterpillar names artifacts to remove; the substrate
+            # actually unlinks the files + filters the seed pool
+            # downstream. Each retraction artifact carries the
+            # (target_kind, target_slug, reason) triple the workflow's
+            # _apply_retraction_for_utterance helper reads.
+            for r in response.retractions:
+                artifacts.append(
+                    Artifact(
+                        kind="retraction",
+                        payload={
+                            "target_kind": r.target_kind,
+                            "target_slug": r.target_slug,
+                            "reason": r.reason,
+                        },
+                    )
+                )
 
         thread_id, parent_id = self._derive_threading(context)
         if response.decision == "question_to_operator":

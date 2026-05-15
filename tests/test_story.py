@@ -149,6 +149,20 @@ def test_write_creates_parent_directory(tmp_path: Path) -> None:
     assert registry.path.is_dir()
 
 
+def test_write_re_emit_same_slug_updates_in_place(tmp_path: Path) -> None:
+    """P15 follow-up — update-by-slug semantics. Alice re-emitting
+    the same story across rotations now overwrites in place rather
+    than creating story-002 + story-006 with identical slugs
+    (discovery5 pilot behavior)."""
+    registry = StoryRegistry(tmp_path)
+    first = registry.write(_payload())
+    second = registry.write(_payload())
+    assert first.number == second.number == 1
+    assert first.path == second.path
+    files = sorted(registry.path.glob("story-*.md"))
+    assert len(files) == 1
+
+
 def test_write_accepts_dict_payload(tmp_path: Path) -> None:
     registry = StoryRegistry(tmp_path)
     record = registry.write(

@@ -1221,6 +1221,16 @@
       "status": "backlog",
       "created_at": "2026-05-10T16:55:22.654747",
       "created_by": "daedalus"
+    },
+    {
+      "id": "7ce72b6c-a5f2-4c51-b71b-e084ca9b2692",
+      "title": "Substrate-recognized exempt-per-decision for non-decomposable requirements",
+      "description": "Surfaced during the P15 T-m8a pilot — the discovery2 corpus contains a 'scope'-kind requirement ('no-hard-deadline-on-v1-team-prioritizes-depth-over-speed') that's process-meta and shouldn't decompose into a milestone. Today the coverage check flags it as an orphan and the closed-loop nudges Rabbit forever (or until rotation cap). Rabbit needs a substrate-recognized way to mark a requirement as 'cross-cutting / exempt-by-decision' that the coverage helper honors, without coining a fake milestone to satisfy the check. Two candidate shapes: (a) new SpeechAct.EXEMPT_REQUIREMENT that ships an artifact with target_slug + reason; substrate adds the slug to an exempt set; coverage check honors. (b) Allow a milestone to carry an 'exempts:' list separate from 'consumes:'. (a) is cleaner since exemption is orthogonal to milestone composition. Pair with the existing retract primitive — both are corrections to substrate state.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-14T21:06:07.250495",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

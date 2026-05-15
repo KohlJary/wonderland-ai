@@ -71,6 +71,8 @@ from wonderland.consensus import SyntheticConsensusGuard
 from wonderland.contract_note import ContractNoteRegistry
 from wonderland.escalation import EscalationBrief, EscalationRecord, EscalationRegistry
 from wonderland.implementation import ImplementationRegistry
+from wonderland.interview import RequirementRegistry
+from wonderland.milestone import MilestoneRegistry
 from wonderland.llm import LLMClient
 from wonderland.memory import AgentMemory
 from wonderland.observation import ObservationRegistry
@@ -438,12 +440,16 @@ class Runner:
                 llm=llm_factory("alice", telemetry),
                 story_registry=StoryRegistry(project_root),
                 test_scenario_registry=TestScenarioRegistry(project_root),
+                requirement_registry=RequirementRegistry(project_root),
+                milestone_registry=MilestoneRegistry(project_root),
             ),
             "cheshire_cat": CheshireCat(
                 memory=memories["cheshire_cat"],
                 bus=bus,
                 llm=llm_factory("cheshire_cat", telemetry),
                 adr_registry=ADRRegistry(project_root),
+                requirement_registry=RequirementRegistry(project_root),
+                milestone_registry=MilestoneRegistry(project_root),
                 tools=shared_tools,
             ),
             "white_rabbit": WhiteRabbit(
@@ -452,6 +458,8 @@ class Runner:
                 llm=llm_factory("white_rabbit", telemetry),
                 ticket_registry=TicketRegistry(project_root),
                 feature_registry=FeatureRegistry(project_root),
+                requirement_registry=RequirementRegistry(project_root),
+                milestone_registry=MilestoneRegistry(project_root),
                 tools=shared_tools,
             ),
             "mad_hatter": MadHatter(

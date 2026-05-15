@@ -124,6 +124,47 @@ def test_payload_rejects_unknown_tier() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "bad_source",
+    [
+        "contract-note-003",
+        "adr-001-stack-locked",
+        "milestone-01-onboarding",
+        "requirement-007-marcus",
+        "retraction-x",
+        "review-002",
+        "ticket-001",
+    ],
+)
+def test_payload_rejects_non_feature_source_prefix(bad_source: str) -> None:
+    """T-m7 substrate guard: tickets descend from features (and
+    optionally stories), not from contract-notes / ADRs / etc."""
+    with pytest.raises(ValidationError):
+        TicketPayload(
+            title="t",
+            owner="tweedledum",
+            tier=TicketTier.V1,
+            estimate="1d",
+            description="d",
+            sources=[bad_source],
+        )
+
+
+def test_payload_accepts_feature_and_story_sources() -> None:
+    """Slugs that don't match a known non-feature prefix pass through —
+    the validator can't tell a feature slug from a story slug without
+    a registry lookup, so both are accepted by shape."""
+    payload = TicketPayload(
+        title="t",
+        owner="tweedledum",
+        tier=TicketTier.V1,
+        estimate="1d",
+        description="d",
+        sources=["marcus-onboarding-flow", "story-007"],
+    )
+    assert payload.sources == ["marcus-onboarding-flow", "story-007"]
+
+
 # ---------- render_ticket ----------
 
 
@@ -304,6 +345,20 @@ def test_write_auto_increments_number(tmp_path: Path) -> None:
     b = registry.write(_simple("B"))
     c = registry.write(_simple("C"))
     assert (a.number, b.number, c.number) == (1, 2, 3)
+
+
+def test_write_re_emit_same_slug_updates_in_place(tmp_path: Path) -> None:
+    """P15 follow-up — update-by-slug semantics. Rabbit re-emitting
+    the same ticket across M3 iterations now overwrites in place
+    rather than creating ticket-001 + ticket-008 with similar
+    content (discovery5 pilot)."""
+    registry = TicketRegistry(tmp_path)
+    first = registry.write(_simple("Ship the registration form"))
+    second = registry.write(_simple("Ship the registration form"))
+    assert first.number == second.number == 1
+    assert first.path == second.path
+    files = sorted(registry.path.glob("ticket-*.md"))
+    assert len(files) == 1
 
 
 def test_written_file_round_trips_through_render_ticket(tmp_path: Path) -> None:

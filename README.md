@@ -1,6 +1,6 @@
 # Wonderland
 
-**An identity-native multi-agent development system.**
+**An identity-native multi-agent system that runs the full software development lifecycle — discovery → planning → design → implementation → verification — as a cast of characters who carry the project across sessions.**
 
 > Generic AI agents perform roles. Identity-native agents inhabit them.
 
@@ -21,10 +21,23 @@
 > start there.
 
 Wonderland is a cast of agents — each named after an Alice-in-Wonderland
-character — that collaborate on software development tasks. The Cheshire Cat
-is the architect. The White Rabbit is the project manager. The Mad Hatter is
-QA. Every character has a stable self-model (a "constitution"), persistent
-per-agent memory, and a working relationship with the others.
+character — that collaborate across the entire software production pipeline.
+The Cheshire Cat is the architect. The White Rabbit is the project manager.
+The Mad Hatter is QA. Alice inhabits personas to write stories the team
+designs against. The Tweedles ship code; the Caterpillar reviews it. Every
+character has a stable self-model (a "constitution"), persistent per-agent
+memory, and a working relationship with the others.
+
+The earlier framing was "multi-agent development system" — a fair description
+when the entry surface was `directive in → features out`. The project has
+since grown into something closer to **an end-to-end emulation of how a small
+software team actually produces shipping product**: a discovery phase that
+interviews the operator about personas and scope, a planning phase that
+organizes the captured requirements into sequenced milestones, then
+per-milestone design and implementation passes that close coverage loops the
+substrate verifies. The Wonderland-flavored part is unchanged — identity
+still does the work — but the surface the operator interacts with is now the
+flow, not the meeting.
 
 The architectural claim is that **identity does real work**. An agent with a
 constitution it inhabits across many threads behaves differently from an
@@ -79,11 +92,54 @@ on recognizing what went wrong; agents whose failure modes are part of
 their identity can participate in that cycle as colleagues, not as tools
 that need supervising out of their bad habits.
 
+## How it works end-to-end
+
+The operator's flow through Wonderland mirrors the four-phase
+arc of an actual software project, with each phase grounded in
+the previous one's artifacts:
+
+1. **Discovery** — Alice, Cheshire Cat, and White Rabbit each run
+   a short interview (personas, technical constraints, scope +
+   success criteria). The substrate writes the answers to disk as
+   structured ``requirement`` artifacts. The whole loop is ~12
+   minutes of operator attention; every later workflow seeds from
+   this corpus rather than re-asking what the project is for.
+2. **Planning** — the ``milestone-plan`` workflow organizes the
+   captured requirements into 3-7 ordered milestones, each
+   declaring ``consumes_requirements`` + ``done_when`` criteria.
+   A substrate-level coverage check runs at end of each rotation:
+   any decomposable requirement not assigned to a milestone fires
+   a synthetic Dodo observation nudging the team to revise.
+3. **Design (per milestone)** — ``tdd-design --milestone <slug>``
+   composes stories from the milestone's requirements (M1), turns
+   them into features (M2), decomposes features into tickets (M3),
+   negotiates architecture (M4) and per-feature contracts (M5).
+   M2 runs its own coverage check verifying every milestone
+   requirement is realized by a feature before the meeting closes.
+4. **Implementation (per ticket)** — ``tdd-implement`` opens
+   per-ticket meetings where the Tweedles write red tests, ship
+   code that turns them green, and the Caterpillar reviews the
+   diff. The working tree IS the implementation artifact; review
+   is against `git diff`, not a parallel metadata utterance.
+
+Cross-cutting through all four phases: agents can ``retract``
+artifacts they shipped earlier when they realize they drifted
+off-scope. A workflow-level kill-list blocks speech_acts from
+leaking between phases (e.g., a stray ``milestone_plan`` utterance
+during ``tdd-design`` is silently stripped). The project
+dashboard derives the current phase from disk and surfaces the
+next-recommended workflow as a one-line CTA.
+
+See [`projects/discovery2/.wonderland`](./projects/discovery2)
+(or any of the discovery* projects) for the actual artifact
+shapes the team produces.
+
 ## Status
 
-In-progress, building in public. P1–P6 complete; P8 (operator
-interface) shipping in sub-phases — three of five done as of
-0.1.0, two remain. P7 (evals) is the final post-P8 phase.
+In-progress, building in public. The vertical slice through
+discovery → planning → design lands in 0.6.0; implementation
+through a full milestone is the next demo target. P7 (evals)
+will close out the phase numbering once the lifecycle stabilizes.
 
 - [x] **P1 — Foundation** ([overview](./WONDERLAND_SPEC.md#12-build-order))
       Schema, Caucus event bus, episodic memory, agent base class.
@@ -171,18 +227,54 @@ interface) shipping in sub-phases — three of five done as of
       users no longer drop to the shell to write a config file.
       First end-to-end TUI run shipped a story for $0.0119
       against the smoke workflow.
-- [ ] **P8.6 — New-project spinup**
+- [x] **P8.6 — New-project spinup**
       Skeleton picker + stack-detection routine for adopting
       existing non-Wonderland projects. Closes the on-ramp from
       "I have a project idea" to "team's ready to start" without
       leaving the TUI.
-- [ ] **P8.7 — First-use polish**
+- [x] **P8.7 — First-use polish**
       Welcome screen, error states, abort flow, quiescence
-      indicator, README + SHOWCASE refresh.
+      indicator.
+- [x] **P11 — Projects: first-class project model + dashboard**
+      ``Project`` registered in a JSON registry at
+      ``~/.wonderland/projects.json``; per-project dashboard
+      becomes the operator's primary attention surface.
+      ``project.yaml`` carries stack-as-runtime-fact the team
+      consults at every meeting.
+- [x] **P12 — Feature lifecycle + workflow composability**
+      Split design / implement / verify into separate workflow
+      atoms. Per-feature lifecycle states (proposed → in_design
+      → designed → queued → in_progress → ready_review →
+      verified). Operator batches: queue several features in
+      designed state, run ``tdd-implement`` against the queue.
+- [x] **P13 — Cross-run stability**
+      Iterating ``tdd-design`` + ``tdd-implement`` against the
+      same project becomes the expected mode of operation. Seed
+      fallback reads prior runs' artifacts off disk; emission
+      transitions fire per-utterance so dashboard state tracks
+      reality without backfill races.
+- [x] **P14 — Discovery**
+      Requirements gathering as a first-class pre-design phase.
+      Three-interview flow (Alice → personas / situations,
+      Cheshire Cat → constraints / integrations, White Rabbit →
+      scope / success criteria). Disk-mediated operator bridge
+      so interviews don't burn rotation budget while operators
+      think. Wall-clock unbounded.
+- [x] **P15 — Milestones**
+      ``milestone-plan`` workflow organizes captured requirements
+      into a sequenced milestone trajectory. ``tdd-design
+      --milestone <slug>`` scopes design to one milestone. Two
+      closed-loop coverage checks: (a) every decomposable
+      requirement lands in a milestone, (b) every milestone
+      requirement is realized by a feature. Retract primitive
+      lets agents walk back off-scope artifacts; workflow-level
+      kill-list blocks cross-workflow speech_act leakage.
+      Dashboard surfaces the derived lifecycle phase + the
+      next-recommended workflow as a one-line CTA.
 - [ ] **P7 — Evals**
       Generic-baseline vs Wonderland comparison. The compounding
-      curve. Reordered after P8 so the eval harness has a usable
-      operator surface.
+      curve. Reordered after the lifecycle stabilizes so the
+      eval harness has a usable end-to-end surface.
 
 [`WONDERLAND_SPEC.md`](./WONDERLAND_SPEC.md) is the design document.
 [`constitutions/`](./constitutions) holds each character's identity in plain
@@ -221,37 +313,63 @@ First-run flow: the library opens empty. Open `Settings`, paste an
 Anthropic API key (saved to your platform's user-config dir), back
 out. Press `n` to create a project — pick a path, pick a skeleton
 (`python-tui`, `python-cli`, `python-fastapi`, `react-vite`,
-`fullstack-fastapi-react`), and the substrate writes a
-`.wonderland/project.yaml` carrying the stack as authoritative
-project context the team consults at every meeting. The project's
-dashboard opens automatically.
+`fullstack-fastapi-react`), optionally seed the project's prime
+directive from a demo preset (squathero, pomodoro, geocities, …).
+On confirm, the TUI offers to launch the discovery workflow
+immediately — yes lands you on the live-watch screen where the
+first interview modal pops up; later just opens the project
+dashboard. ``project.yaml`` carrying the stack-as-runtime-fact
+gets written either way so the team has runtime context at every
+meeting.
+
+After discovery completes, the dashboard's phase badge reads
+``PLANNING — N requirements captured`` with a "Run milestone-plan"
+button right above the project context. After planning, the badge
+reads ``DESIGN — Milestone N (M of K designed)`` with a "Design
+milestone: <slug>" button at the bottom of the milestone detail
+pane. The substrate computes the phase from disk every refresh,
+so an operator returning to a project after a week sees what's
+next without re-orienting.
 
 The screens, in the order an operator typically meets them:
 
 - **Project library** — your projects with metadata. `n` for new,
   Enter to open the dashboard, `s` for settings.
-- **New project** — name, path, skeleton picker, workflow default.
-  Skeleton apply lays down a working scaffold AND writes
-  `project.yaml` so M4 architecture and M5 contracts ground in
-  the runtime fact, not just the directive's prose. Existing
-  non-bare projects get a retrofit path that writes `project.yaml`
-  without clobbering existing files.
+- **New project** — name, path, prime directive (with a demo
+  picker that populates the composer from bundled directives),
+  skeleton picker. On submit the TUI offers to jump straight
+  into the discovery workflow — the natural first move on a
+  fresh project. Skeleton apply lays down a working scaffold AND
+  writes `project.yaml` so M4 architecture and M5 contracts
+  ground in the runtime fact, not just the directive's prose.
+  Existing non-bare projects get a retrofit path that writes
+  `project.yaml` without clobbering existing files.
 - **Per-project dashboard** — the operator's primary attention
-  surface in P12. Features tree on the left (each feature
-  expandable to show its constituent tickets); state filter chips
+  surface. Phase badge at the top derives the project's current
+  state (`DISCOVERY` / `PLANNING` / `DESIGN — Milestone N` /
+  `IMPLEMENTATION` / `COMPLETE`) from disk + names the next
+  recommended workflow. Below: Milestones pane (left) with a
+  collapsible tree of milestones + their consumed requirements +
+  a Cross-cutting node for personas / situations / out-of-scope
+  reqs that don't belong to any specific milestone. Selecting
+  a milestone filters the Features pane (right) to features
+  that realize that milestone's requirements via the
+  story → feature chain. Feature pane has state filter chips
   (designed / queued / ready_review / in_progress / verified /
-  rejected); detail pane on the right renders the highlighted
-  feature or ticket markdown. State-aware action buttons —
-  `Design`, `Implement`, `Verify`, `Custom run` — surface counts
-  for what's actionable; the highest-priority action gets the
-  primary variant. Drill-down tabs for run history, raw artifacts,
-  the project's working tree, and metrics charts.
+  rejected) that stack with the milestone filter. Runs row sits
+  below as the always-visible history reference. State-aware
+  action buttons (`Design`, `Implement`, `Verify`, `Custom run`)
+  surface counts for what's actionable.
 - **Lifecycle moves from the dashboard** — `q` queues a designed
   feature for implementation; `Verify` opens a modal that captures
   the operator's verdict with optional notes (verified / rejected
   → recorded in `.wonderland/feature-states.jsonl` for next-run
   context); `m`/`D` mark and bulk-delete duplicate tickets when
-  Rabbit's M3 ships revision-pass redundancy.
+  Rabbit's M3 ships revision-pass redundancy. The Milestone
+  detail pane offers a "Design milestone: <slug>" CTA at the
+  bottom when the highlighted milestone has zero realizing
+  features yet — operator-driven path into ``tdd-design`` with
+  the scope pre-filled.
 - **New run composer** — preset picker (left) + directive editor
   (right) + workflow / budget / project-root config + inline
   save-as-preset form. Bundled directives: `pomodoro`,
@@ -274,6 +392,16 @@ The screens, in the order an operator typically meets them:
   question as a modal. Your reply lands on the bus as an
   `observation` from the operator identity; the meeting resumes
   with the team seeing the answer in their context.
+- **Interview modal** — surfaced during discovery workflow when
+  Alice / Cheshire Cat / White Rabbit ship their question
+  batches. One widget per question kind (free-text TextArea,
+  single-choice RadioSet, multi-choice Checkbox group, numeric
+  Input). Submit / Skip section / Cancel exits; required fields
+  block submit until filled. The substrate writes answers to
+  ``.wonderland/runs/<id>/pending_interview_answers.json`` and
+  the interviewer's next turn synthesizes them into
+  ``requirement`` artifacts. Wall-clock unbounded — interviews
+  don't burn rotation budget while the operator's away.
 - **Cast view** — single-page lazygit shape: character list at
   top, bio + constitution side-by-side below. Bios cover both
   the literary character and how it shapes each agent's
@@ -321,18 +449,20 @@ wonderland-ai/
 ```
 
 A target project that runs Wonderland gets a `.wonderland/` directory of
-its own — per-agent episodic/semantic/relational memory, ADRs, tickets,
-transcripts, contract notes, test scenarios, implementations, reviews.
-The runtime here is project-agnostic; per-project state lives with the
-project.
+its own — per-agent episodic/semantic/relational memory plus the artifacts
+the team produces across the lifecycle: requirements (from discovery),
+milestones (from planning), stories, features, tickets, ADRs, contract
+notes, test scenarios, implementations, reviews. The runtime here is
+project-agnostic; per-project state lives with the project.
 
 ```bash
 wonderland init [path]   # create the .wonderland/ skeleton; idempotent
 ```
 
-`init` creates `architecture/`, `tickets/`, `stories/`, `escalations/`,
-and `memory/` plus a README documenting the layout. Re-running is safe —
-existing artifacts and a user-edited README are left alone.
+`init` creates `requirements/`, `milestones/`, `stories/`, `features/`,
+`tickets/`, `architecture/`, `escalations/`, and `memory/` plus a README
+documenting the layout. Re-running is safe — existing artifacts and a
+user-edited README are left alone.
 
 ## Install
 

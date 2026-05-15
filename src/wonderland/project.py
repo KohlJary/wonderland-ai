@@ -33,7 +33,287 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from enum import StrEnum
+
 from pydantic import BaseModel, Field, field_validator
+
+
+# ---------------------------------------------------------------------- #
+# Project lifecycle phase — P15 T-m8 UX work
+#
+# An operator opening the dashboard should immediately see WHERE the
+# project sits in the discovery → planning → design → implementation
+# flow, and what the recommended next workflow is. ``derive_project_phase``
+# reads ``.wonderland/`` directly and computes the phase from disk
+# state — no separate state file to keep in sync, no agent involvement.
+# ---------------------------------------------------------------------- #
+
+
+class ProjectPhase(StrEnum):
+    DISCOVERY = "discovery"
+    """No requirements captured yet — operator should run the discovery
+    workflow first to interview the team about personas, constraints,
+    scope, and success criteria."""
+
+    PLANNING = "planning"
+    """Requirements exist, but no milestones — operator should run
+    milestone-plan to organize the requirements into a 3-7 milestone
+    sequence."""
+
+    DESIGN = "design"
+    """Milestones planned. At least one milestone hasn't yet been
+    designed (no features sourcing its consumed requirements'
+    stories). Operator should run tdd-design with --milestone <slug>
+    for the next undesigned milestone."""
+
+    IMPLEMENTATION = "implementation"
+    """All planned milestones have features. Operator should queue
+    features + run tdd-implement to ship them."""
+
+    COMPLETE = "complete"
+    """Every feature in every milestone has been verified. Project
+    is shipped — operator may add follow-on milestones or call it
+    done."""
+
+
+@dataclass(frozen=True)
+class ProjectPhaseSnapshot:
+    """Derived view of where the project sits in the flow. The
+    dashboard renders ``label`` + ``next_action_hint``; downstream
+    automation may dispatch on ``phase``."""
+
+    phase: ProjectPhase
+    label: str
+    """One-line headline, e.g. ``DESIGN (M1 of 4 milestones)``."""
+    next_action_hint: str
+    """Operator-facing recommendation: which workflow to run next +
+    optionally the --milestone slug to scope it."""
+    requirements_count: int
+    milestones_count: int
+    designed_milestones_count: int
+    features_count: int
+
+
+def derive_project_phase(project_root: Path) -> ProjectPhaseSnapshot:
+    """Read ``project_root/.wonderland/`` and return a phase snapshot.
+
+    Heuristics — keep the phase derivation purely structural so the
+    dashboard never gets stuck waiting on a state file an agent
+    forgot to write:
+
+      - DISCOVERY: zero requirement files
+      - PLANNING: requirements exist, zero milestones
+      - DESIGN: any milestone has zero features sourcing stories
+        that realize its consumed requirements; recommend the
+        lowest-ordered such milestone
+      - IMPLEMENTATION: every milestone has at least one feature; no
+        special completion check (lifecycle states drive what's
+        next inside implementation)
+      - COMPLETE: every feature is in ``verified`` (read from
+        feature-states.jsonl)
+
+    Falls back to DISCOVERY when ``project_root`` doesn't have a
+    ``.wonderland/`` dir at all.
+    """
+    wland = project_root / ".wonderland"
+    req_dir = wland / "requirements"
+    milestone_dir = wland / "milestones"
+    story_dir = wland / "stories"
+    feature_dir = wland / "features"
+
+    def _count(d: Path, pattern: str) -> int:
+        if not d.is_dir():
+            return 0
+        return sum(1 for _ in d.glob(pattern))
+
+    req_count = _count(req_dir, "requirement-*.md")
+    milestone_count = _count(milestone_dir, "milestone-*.md")
+    feature_count = _count(feature_dir, "feature-*.md")
+
+    if req_count == 0:
+        return ProjectPhaseSnapshot(
+            phase=ProjectPhase.DISCOVERY,
+            label="DISCOVERY — no requirements yet",
+            next_action_hint=(
+                "Run the ``discovery`` workflow to interview the "
+                "team about personas, constraints, and scope."
+            ),
+            requirements_count=0,
+            milestones_count=0,
+            designed_milestones_count=0,
+            features_count=0,
+        )
+
+    if milestone_count == 0:
+        return ProjectPhaseSnapshot(
+            phase=ProjectPhase.PLANNING,
+            label=(
+                f"PLANNING — {req_count} requirements captured, "
+                "no milestones yet"
+            ),
+            next_action_hint=(
+                "Run the ``milestone-plan`` workflow to organize "
+                "the requirements into a 3-7 milestone sequence."
+            ),
+            requirements_count=req_count,
+            milestones_count=0,
+            designed_milestones_count=0,
+            features_count=feature_count,
+        )
+
+    # Per-milestone realization check — find the lowest-ordered
+    # milestone whose consumes_requirements aren't all realized by
+    # features. If every milestone is designed, fall through to
+    # implementation/complete checks.
+    next_undesigned_slug, next_undesigned_label, designed_count = (
+        _find_next_undesigned_milestone(project_root)
+    )
+    if next_undesigned_slug is not None:
+        label = (
+            f"DESIGN — {next_undesigned_label} "
+            f"({designed_count} of {milestone_count} designed)"
+        )
+        hint = (
+            f"Run ``tdd-design --milestone "
+            f"{next_undesigned_slug}`` to compose features "
+            f"realizing this milestone's requirements."
+        )
+        return ProjectPhaseSnapshot(
+            phase=ProjectPhase.DESIGN,
+            label=label,
+            next_action_hint=hint,
+            requirements_count=req_count,
+            milestones_count=milestone_count,
+            designed_milestones_count=designed_count,
+            features_count=feature_count,
+        )
+
+    # All milestones designed. Check if all features are verified.
+    all_verified = _all_features_verified(project_root)
+    if all_verified and feature_count > 0:
+        return ProjectPhaseSnapshot(
+            phase=ProjectPhase.COMPLETE,
+            label=(
+                f"COMPLETE — all {feature_count} features verified "
+                f"across {milestone_count} milestones"
+            ),
+            next_action_hint=(
+                "Project is shipped. Add a follow-on milestone via "
+                "``milestone-plan`` or call it done."
+            ),
+            requirements_count=req_count,
+            milestones_count=milestone_count,
+            designed_milestones_count=milestone_count,
+            features_count=feature_count,
+        )
+
+    return ProjectPhaseSnapshot(
+        phase=ProjectPhase.IMPLEMENTATION,
+        label=(
+            f"IMPLEMENTATION — {feature_count} features designed "
+            f"across {milestone_count} milestones"
+        ),
+        next_action_hint=(
+            "Queue features in the dashboard, then run "
+            "``tdd-implement`` to ship the work."
+        ),
+        requirements_count=req_count,
+        milestones_count=milestone_count,
+        designed_milestones_count=milestone_count,
+        features_count=feature_count,
+    )
+
+
+def _find_next_undesigned_milestone(
+    project_root: Path,
+) -> tuple[str | None, str, int]:
+    """Walk milestones in order, find the first that isn't realized
+    (i.e., has consumes_requirements with no story→feature chain).
+
+    Reuses ``wonderland.coverage`` rather than reimplementing the
+    chain walk. Returns ``(slug, label, designed_count)`` where
+    slug is None when every milestone is designed.
+    """
+    try:
+        from wonderland.coverage import (
+            run_coverage_check,
+        )
+    except Exception:  # noqa: BLE001
+        return None, "", 0
+
+    milestone_dir = project_root / ".wonderland" / "milestones"
+    if not milestone_dir.is_dir():
+        return None, "", 0
+
+    # Read each milestone's slug + order from disk; visit in order.
+    import re
+
+    entries: list[tuple[int, str, str]] = []
+    for path in milestone_dir.glob("milestone-*.md"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        slug_m = re.search(
+            r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
+        )
+        order_m = re.search(
+            r"^\*\*Order:\*\*\s*(\d+)", text, re.MULTILINE
+        )
+        title_m = re.match(r"##\s*(.+?)$", text, re.MULTILINE)
+        if not slug_m:
+            continue
+        slug = slug_m.group(1).strip()
+        order = int(order_m.group(1)) if order_m else 999
+        title = title_m.group(1).strip() if title_m else slug
+        entries.append((order, slug, title))
+
+    entries.sort()
+    designed = 0
+    for _order, slug, title in entries:
+        gap = run_coverage_check(
+            "milestone_realization",
+            project_root,
+            milestone_slug=slug,
+        )
+        if gap is None:
+            designed += 1
+            continue
+        # First undesigned wins.
+        return slug, title, designed
+
+    return None, "", designed
+
+
+def _all_features_verified(project_root: Path) -> bool:
+    """Read feature-states.jsonl + check every feature's last state
+    is ``verified``. When the file's missing, treat as 'not yet
+    complete' (zero verified features can't be COMPLETE)."""
+    states_path = project_root / ".wonderland" / "feature-states.jsonl"
+    if not states_path.is_file():
+        return False
+    try:
+        text = states_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    last_state: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            evt = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        slug = evt.get("feature_slug")
+        to_state = evt.get("to_state")
+        if slug and to_state:
+            last_state[slug] = to_state
+
+    if not last_state:
+        return False
+    return all(s == "verified" for s in last_state.values())
 
 
 def projects_registry_path() -> Path:

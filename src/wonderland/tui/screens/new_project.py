@@ -5,7 +5,8 @@ Form fields:
 
   - name (validated against the registry: non-empty, unique)
   - path (expanded + resolved; warns on bare-root vs non-bare detect)
-  - default workflow (Select drawn from list_workflows())
+  - prime directive (TextArea + demo-directive picker; the operator's
+    canonical project framing — feeds into every workflow run)
   - default skeleton (Select drawn from list_skeletons())
   - default budget (Input, dollar-validated)
 
@@ -14,8 +15,14 @@ On confirm:
   2. Register via wonderland.project.register_project()
   3. If a skeleton was selected AND the path is bare AND the operator
      ticked the 'Apply now' checkbox: apply_skeleton() to the path
-  4. Pop back to ProjectLibraryScreen with refresh + selection on the
-     new project (T79 dashboard will replace this in a later phase)
+  4. Push StartDiscoveryModal — recommends jumping straight into the
+     discovery workflow (P15 T-m8 UX: the flow is
+     discovery → milestone-plan → tdd-design → tdd-implement and
+     discovery is the natural first move).
+
+Workflow selection is per-RUN, not per-project (NewRunScreen), so
+this form doesn't ask for it. The prime directive replaces it as
+the load-bearing per-project decision.
 
 Layout follows project_tui_lazygit_principle: single-pane form
 (this is a registration step, not a navigation surface — full canvas
@@ -24,6 +31,7 @@ is appropriate). Tab/Enter advances through fields.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -33,14 +41,21 @@ from textual.screen import Screen
 from textual.widgets import (
     Button,
     Checkbox,
+    DataTable,
     Footer,
     Header,
     Input,
     Label,
     Select,
     Static,
+    TextArea,
 )
 
+from wonderland.directive import (
+    DirectivePreset,
+    list_directives,
+    load_directive,
+)
 from wonderland.project import (
     Project,
     list_projects,
@@ -53,12 +68,25 @@ from wonderland.skeleton import (
     load_skeleton,
     write_project_context_from_skeleton,
 )
-from wonderland.workflow import list_workflows
 
 
-class NewProjectScreen(Screen[Project | None]):
-    """Form for registering a new project. Dismisses with the
-    registered Project on success, None on cancel."""
+@dataclass(frozen=True)
+class NewProjectResult:
+    """Payload returned from NewProjectScreen on successful project
+    creation. Carries the newly-registered project plus the
+    operator's choice on the post-create discovery prompt — the
+    project_library handler launches the discovery workflow when
+    ``start_discovery`` is True, otherwise it just surfaces the
+    new project in the library."""
+
+    project: Project
+    start_discovery: bool
+
+
+class NewProjectScreen(Screen["NewProjectResult | None"]):
+    """Form for registering a new project. Dismisses with a
+    ``NewProjectResult`` (project + start_discovery flag) on
+    success, None on cancel."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=True),
@@ -68,7 +96,8 @@ class NewProjectScreen(Screen[Project | None]):
     _FORM_ORDER: tuple[str, ...] = (
         "name-input",
         "path-input",
-        "workflow-select",
+        "directive-preset-table",
+        "directive-composer",
         "skeleton-select",
         "apply-skeleton-checkbox",
         "budget-input",
@@ -86,6 +115,47 @@ class NewProjectScreen(Screen[Project | None]):
         # somewhere generic (~/.config, etc.) to clear the field.
         # Resolved + checked against the registry in on_mount.
         self._cwd_default: Path = Path.cwd().resolve()
+        # Cache of (name, preset) tuples in display order so the
+        # preset-table's row index → preset payload is a constant-
+        # time lookup in the row-select handler. None payload
+        # marks the "blank" pseudo-row at the top.
+        self._directive_presets: list[
+            tuple[str, "DirectivePreset | None"]
+        ] = []
+
+    def _populate_directive_presets(self) -> None:
+        """Fill the directive preset table with bundled directives in
+        the ``demo`` category. Same shape as NewRunScreen's preset
+        table, scoped to demos and without the per-project /
+        save-as-preset rows (this screen is for creating a project,
+        not running one). A blank pseudo-row at the top lets the
+        operator clear the composer for a from-scratch directive."""
+        try:
+            table = self.query_one("#directive-preset-table", DataTable)
+        except Exception:  # noqa: BLE001 — pre-mount race
+            return
+        table.clear(columns=True)
+        table.add_columns("Demo", "Title")
+
+        self._directive_presets = []
+
+        # Row 0: blank — clear the composer.
+        self._directive_presets.append(("", None))
+        table.add_row(
+            "[b]── blank ──[/b]",
+            "[dim]start with an empty composer[/dim]",
+        )
+
+        # Demo-category bundled presets.
+        for name in list_directives():
+            try:
+                preset = load_directive(name)
+            except Exception:  # noqa: BLE001
+                continue
+            if preset.normalized_category != "demo":
+                continue
+            self._directive_presets.append((name, preset))
+            table.add_row(name, preset.title)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -119,22 +189,43 @@ class NewProjectScreen(Screen[Project | None]):
                     )
 
                     yield Label(
-                        "[b]Initial workflow[/b] [dim](optional)[/dim]",
-                        id="workflow-label",
+                        "[b]Prime directive[/b] [dim](the project's "
+                        "canonical framing — every workflow run starts "
+                        "from this)[/dim]",
+                        id="directive-label",
                     )
-                    yield Select(
-                        [(w, w) for w in list_workflows()],
-                        id="workflow-select",
-                        allow_blank=True,
-                        prompt="(no preselection — pick per run)",
-                    )
+                    # Two-pane row mirroring NewRunScreen's directive
+                    # row, scoped to demo-category presets: left
+                    # picker, right composer. Selecting a row
+                    # populates the composer; the operator can edit
+                    # freely from there. Blank pseudo-row at the top
+                    # clears the composer for a from-scratch directive.
+                    with Horizontal(id="directive-row"):
+                        with Vertical(id="directive-preset-pane"):
+                            yield Static(
+                                "[b]Demos[/b] "
+                                "[dim](pick one to start)[/dim]",
+                                id="directive-preset-label",
+                            )
+                            yield DataTable(
+                                id="directive-preset-table",
+                                cursor_type="row",
+                            )
+                        with Vertical(id="directive-composer-pane"):
+                            yield Static(
+                                "[b]Directive[/b]",
+                                id="directive-composer-label",
+                            )
+                            yield TextArea(
+                                "",
+                                id="directive-composer",
+                                language=None,
+                            )
                     yield Static(
-                        "[dim]Workflow choice is per-run (TDD for "
-                        "features, smoke for sanity checks, etc.). "
-                        "This sets a starting hint; NewRunScreen "
-                        "auto-updates it to whatever you actually "
-                        "ran most recently.[/dim]",
-                        id="workflow-help",
+                        "[dim]Leave blank to set later — the "
+                        "discovery workflow will help you shape it "
+                        "from operator interviews.[/dim]",
+                        id="directive-help",
                     )
 
                     yield Label(
@@ -202,7 +293,26 @@ class NewProjectScreen(Screen[Project | None]):
             # Trigger the path-status feedback render manually since
             # programmatic .value = ... doesn't fire Input.Changed.
             self._render_path_status(str(self._cwd_default))
+        # Populate the directive preset table now that widgets are
+        # mounted (DataTable.add_row before mount doesn't render).
+        self._populate_directive_presets()
         self.query_one("#name-input", Input).focus()
+
+    def on_data_table_row_selected(
+        self, event: DataTable.RowSelected
+    ) -> None:
+        """Operator picked a directive preset — populate the composer
+        with the preset's body. Blank pseudo-row clears the composer.
+        Non-preset tables (none currently, but defensive) are
+        ignored."""
+        if event.data_table.id != "directive-preset-table":
+            return
+        idx = event.cursor_row
+        if idx < 0 or idx >= len(self._directive_presets):
+            return
+        _name, preset = self._directive_presets[idx]
+        composer = self.query_one("#directive-composer", TextArea)
+        composer.text = preset.body if preset is not None else ""
 
     # ------------------------------------------------------------------ #
     # Live path-status feedback
@@ -277,7 +387,9 @@ class NewProjectScreen(Screen[Project | None]):
     def action_submit(self) -> None:
         name = self.query_one("#name-input", Input).value.strip()
         path_str = self.query_one("#path-input", Input).value.strip()
-        workflow = self.query_one("#workflow-select", Select).value
+        directive_body = self.query_one(
+            "#directive-composer", TextArea
+        ).text.strip()
         skeleton_name = self.query_one("#skeleton-select", Select).value
         apply_now = self.query_one("#apply-skeleton-checkbox", Checkbox).value
         budget_str = self.query_one("#budget-input", Input).value.strip()
@@ -329,19 +441,22 @@ class NewProjectScreen(Screen[Project | None]):
         # Select.value can be a string, Select.BLANK, or Select.NULL
         # depending on Textual version + whether allow_blank=True. Only
         # accept str values; everything else means "no selection."
-        workflow_norm = workflow if isinstance(workflow, str) and workflow else None
         skeleton_norm = (
             skeleton_name if isinstance(skeleton_name, str) and skeleton_name else None
         )
+        # Prime directive: empty text means "set it later" (the
+        # discovery workflow will help shape it from operator
+        # interviews).
+        prime_norm = directive_body if directive_body else None
 
         # Build + register --------------------------------------------
         try:
             project = Project(
                 name=name,
                 root_path=resolved_path,
-                last_workflow=workflow_norm,
                 default_skeleton=skeleton_norm,
                 default_budget=budget,
+                prime_directive=prime_norm,
             )
             register_project(project)
         except Exception as exc:  # noqa: BLE001
@@ -397,7 +512,28 @@ class NewProjectScreen(Screen[Project | None]):
         else:
             self.notify(f"Project {name!r} registered.", timeout=3)
 
-        self.dismiss(project)
+        # P15 T-m8 UX — recommend jumping into the discovery
+        # workflow as the natural first move. The modal pushes
+        # above this screen + dismisses with True (yes) / False
+        # (later); callback dismisses NewProjectScreen with a
+        # NewProjectResult carrying the project + the choice.
+        from wonderland.tui.screens.start_discovery_modal import (
+            StartDiscoveryModal,
+        )
+
+        def _on_discovery_choice(
+            start_discovery: bool | None,
+        ) -> None:
+            self.dismiss(
+                NewProjectResult(
+                    project=project,
+                    start_discovery=bool(start_discovery),
+                )
+            )
+
+        self.app.push_screen(
+            StartDiscoveryModal(project.name), _on_discovery_choice
+        )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "create-button":

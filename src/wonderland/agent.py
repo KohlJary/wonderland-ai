@@ -45,7 +45,7 @@ from wonderland.llm import CachedBlock, Message, SystemPart
 from wonderland.parsing import ResponseParseError
 from wonderland.primer import FRAMEWORK_PRIMER
 from wonderland.telemetry import reset_current_thread_id, set_current_thread_id
-from wonderland.utterance import SpeechAct, Utterance
+from wonderland.utterance import Artifact, SpeechAct, Utterance
 
 if TYPE_CHECKING:
     from wonderland.caucus import Caucus
@@ -934,6 +934,15 @@ class WonderlandAgent:
                         utterance
                     ):
                         continue
+                    # P15 T-m6 stage-leak guardrail. When the meeting
+                    # declared allowed_decisions, strip artifacts whose
+                    # source speech_act isn't on the list + delete the
+                    # on-disk files those artifacts already wrote.
+                    # Suppression event surfaces in the live-watch UI
+                    # so the operator can see what was caught.
+                    utterance = self._apply_allowed_decisions_filter(
+                        utterance
+                    )
                     # Block 2c: INVITE handling. When the agent emits an
                     # INVITE addressed to specific other agents, add those
                     # agents to the thread's roster *before* publishing,
@@ -947,6 +956,151 @@ class WonderlandAgent:
             finally:
                 reset_current_thread_id(telemetry_token)
                 self._set_state(AgentState.IDLE)
+
+    def _apply_allowed_decisions_filter(
+        self, utterance: Utterance
+    ) -> Utterance:
+        """P15 T-m6 stage-leak guardrail. When the meeting on this
+        utterance's thread declared ``allowed_decisions``, drop the
+        artifacts whose source speech_act isn't on the list — and
+        delete the on-disk files those artifacts point at (registries
+        like RequirementRegistry, MilestoneRegistry, TicketRegistry,
+        StoryRegistry, etc. write to disk BEFORE the agent's
+        deliberate returns, so we can't prevent the write; we clean
+        up after).
+
+        The utterance ITSELF stays on the bus as a transcript record
+        — only its artifacts get stripped. Downstream meetings filter
+        on artifacts, so a stripped utterance acts as a no-op.
+
+        Returns the utterance unchanged when no filter applies; a
+        ``model_copy(update={"content": ...})`` with empty artifacts
+        when the filter caught a stage-leak.
+        """
+        from wonderland.workflow import (
+            get_active_disallowed_decisions,
+            get_thread_allowed_decisions,
+        )
+
+        if not utterance.content.artifacts:
+            return utterance
+
+        # Two filter layers compose:
+        #   1. Workflow-level kill-list: speech_acts that are
+        #      NEVER valid in this workflow (e.g., milestone_plan
+        #      during tdd-design). Stamped at run_workflow entry.
+        #   2. Meeting-level positive filter: speech_acts allowed
+        #      for THIS meeting only (e.g., milestone-plan's
+        #      [milestone_plan, concern, deference, silence]).
+        #
+        # Either filter stripping the utterance's artifacts is
+        # enough — both apply if both are set.
+        disallowed = get_active_disallowed_decisions()
+        speech_act_str = utterance.speech_act.value
+        if speech_act_str in disallowed:
+            reason = (
+                f"workflow disallowed_decisions = "
+                f"{sorted(disallowed)!r}; "
+                f"speech_act={speech_act_str!r} is forbidden in "
+                "this workflow"
+            )
+            for art in utterance.content.artifacts:
+                self._delete_artifact_file(art)
+                self._emit_suppressed_event(
+                    utterance=utterance,
+                    artifact_kind=art.kind,
+                    reason=reason,
+                )
+            return utterance.model_copy(
+                update={
+                    "content": utterance.content.model_copy(
+                        update={"artifacts": []}
+                    )
+                }
+            )
+
+        allowed = get_thread_allowed_decisions(utterance.thread_id)
+        if allowed is None:
+            return utterance
+        if speech_act_str in allowed:
+            return utterance
+
+        # Stage-leak detected. Walk the artifacts, attempt to delete
+        # each one's backing file (best-effort — if the artifact's
+        # payload doesn't carry a path, or the file is already gone,
+        # skip silently). The artifact kind + agent identity ride on
+        # the ArtifactSuppressed observer event so the live-watch
+        # surface can show what was caught.
+        reason = (
+            f"meeting allowed_decisions = {sorted(allowed)!r}; "
+            f"speech_act={utterance.speech_act.value!r} not on the list"
+        )
+        for art in utterance.content.artifacts:
+            self._delete_artifact_file(art)
+            self._emit_suppressed_event(
+                utterance=utterance,
+                artifact_kind=art.kind,
+                reason=reason,
+            )
+        return utterance.model_copy(
+            update={
+                "content": utterance.content.model_copy(
+                    update={"artifacts": []}
+                )
+            }
+        )
+
+    def _delete_artifact_file(self, artifact: Artifact) -> None:
+        """Best-effort delete of an artifact's on-disk file. Reads
+        ``artifact.payload['path']`` when present. Silent on every
+        failure path — this is cleanup, not the critical path."""
+        if not isinstance(artifact.payload, dict):
+            return
+        raw_path = artifact.payload.get("path")
+        if not raw_path:
+            return
+        try:
+            from pathlib import Path
+
+            Path(str(raw_path)).unlink()
+        except OSError:
+            pass
+
+    def _emit_suppressed_event(
+        self,
+        *,
+        utterance: Utterance,
+        artifact_kind: str,
+        reason: str,
+    ) -> None:
+        """Surface an ArtifactSuppressed event to the runner's event
+        bus so the live-watch UI can show the drop. Lazy import to
+        avoid the observer ↔ agent circular at module-load time."""
+        from datetime import datetime, timezone
+
+        from wonderland.observer.events import ArtifactSuppressed
+
+        # The runner installs a callback for ad-hoc events via
+        # ``self._suppressed_artifact_handler``; when nothing's wired
+        # the drop is silent (tests, unit-level constructions).
+        handler = getattr(
+            self, "_suppressed_artifact_handler", None
+        )
+        if handler is None:
+            return
+        try:
+            handler(
+                ArtifactSuppressed(
+                    timestamp=datetime.now(tz=timezone.utc),
+                    thread_id=utterance.thread_id,
+                    speech_act=utterance.speech_act.value,
+                    artifact_kind=artifact_kind,
+                    agent=self.identity.name,
+                    reason=reason,
+                )
+            )
+        except Exception:  # noqa: BLE001 — observability is non-critical
+            pass
 
     def _apply_invite_if_any(self, utterance: Utterance) -> None:
         """If ``utterance`` is an INVITE with addressed_to agents, add

@@ -280,6 +280,17 @@ class ProjectDashboardScreen(Screen[None]):
         # passes (see analysis 040 + roadmap 171b36e1) — the
         # substrate-side dedup hasn't landed yet.
         self._marked_ticket_slugs: set[str] = set()
+        # P15 T-m5 — currently-selected milestone in the milestones
+        # tree, or None when no milestone is selected (show all
+        # features). When set, the features pane filters to features
+        # whose sources cite a story realizing one of this
+        # milestone's consumes_requirements (via T-m8b chain).
+        self._selected_milestone_slug: str | None = None
+        # Cached set of feature slugs that "belong to" the active
+        # milestone via the realization chain. Recomputed when
+        # milestone selection changes; None means "no scope active —
+        # show all features".
+        self._milestone_feature_scope: set[str] | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -289,20 +300,21 @@ class ProjectDashboardScreen(Screen[None]):
                 f"[dim]{self.project.root_path}[/dim]",
                 id="dashboard-header",
             )
-            # Actions pane (T92) — all P12 actions always visible so
-            # the operator's mental model of what's possible doesn't
-            # depend on lifecycle state. The state-aware part is
-            # PRIORITY: the highest-leverage action gets variant=
-            # primary (visually emphasized); secondary actions stay
-            # default. Buttons whose target state has zero features
-            # get disabled (greyed out) but stay visible — operator
-            # sees "Implement 0 queued" and understands they need to
-            # queue something first.
-            #
-            # Priority order (T92):
-            #   verify ready_for_review > implement queued >
-            #   design (always available; promoted when nothing else
-            #   is actionable)
+            # P15 T-m8 UX — lifecycle phase + next-action hint.
+            # Derived from disk every refresh so the operator
+            # immediately sees what the project needs next without
+            # interpreting feature-table state. The Static is
+            # filled in by _refresh_phase_badge so unit tests +
+            # later mounts can re-derive without re-composing.
+            yield Static(
+                "",
+                id="dashboard-phase",
+            )
+            # Actions pane (T92) — quick-launch surface always
+            # visible. Contextual CTAs inside the panes (T-m5) layer
+            # on top: those guide phase-specific next-step actions
+            # (discovery / milestone-plan / design); these stay for
+            # ad-hoc operator-driven launches.
             with Horizontal(id="dashboard-actions"):
                 yield Button(
                     "▶ Design features",
@@ -322,30 +334,83 @@ class ProjectDashboardScreen(Screen[None]):
                     id="action-custom-run",
                 )
 
-            # Content row: Runs column (left) + Features section
-            # (right). Runs is now always visible — preparation for
-            # background runs the operator can leave going while
-            # navigating other views.
-            with Horizontal(id="content-row"):
-                # Runs column: list (top) + detail (below). Slim
-                # column — the operator scans recent runs and drills
-                # in via the detail pane; the meaty per-feature work
-                # happens in the Features section to the right.
-                with Vertical(id="runs-column"):
-                    yield Static("[b]Runs[/b]", id="runs-list-label")
-                    yield DataTable(id="runs-table", cursor_type="row")
-                    yield Static(
-                        "[b]Run detail[/b]", id="runs-detail-label"
-                    )
-                    with VerticalScroll(id="runs-detail-scroll"):
+            # Top row: Milestones tree (left) + Features (right).
+            # P15 T-m5: milestones become the primary navigation
+            # surface; selecting a milestone filters the features
+            # pane to features whose stories realize that
+            # milestone's consumes_requirements. Empty-state CTAs
+            # inside each pane drive the operator through the flow
+            # (discovery → milestone-plan → tdd-design → tdd-implement).
+            with Horizontal(id="top-row"):
+                # Milestones pane: tree + empty-state CTA. The tree
+                # shows one node per milestone (collapsible to its
+                # consumes_requirements). When no requirements exist,
+                # the pane shows a big "Run discovery" button instead.
+                # When requirements exist but no milestones, "Run
+                # milestone-plan". When milestones exist but
+                # decomposable requirements are unassigned, a smaller
+                # "Some requirements unplanned" hint sits above the
+                # tree.
+                # Milestones row: list (left) + detail (right) —
+                # mirrors the Features row structure so the operator's
+                # eye doesn't have to retrain when moving between
+                # them. List = tree of milestones + collapsible
+                # requirements + phase-aware CTA. Detail = highlighted
+                # milestone's body, with the "Design this milestone"
+                # button anchored at the bottom of the detail pane
+                # so the read order is select → review → act.
+                with Horizontal(id="milestones-row"):
+                    with Vertical(id="milestones-list-pane"):
                         yield Static(
-                            "[dim](no run selected)[/dim]",
-                            id="runs-detail",
+                            "[b]Milestones[/b]",
+                            id="milestones-label",
+                        )
+                        yield Static(
+                            "",
+                            id="milestones-orphan-hint",
+                        )
+                        yield Tree(
+                            "Milestones",
+                            id="milestones-tree",
+                        )
+                        # Empty-state CTA — populated by
+                        # _refresh_milestones_cta when no
+                        # requirements or no milestones exist.
+                        # Hidden otherwise.
+                        yield Button(
+                            "",
+                            id="milestones-empty-cta",
+                            variant="primary",
+                        )
+                    with Vertical(id="milestones-detail-pane"):
+                        yield Static(
+                            "[b]Milestone detail[/b]",
+                            id="milestones-detail-label",
+                        )
+                        with VerticalScroll(
+                            id="milestones-detail-scroll"
+                        ):
+                            yield Static(
+                                "[dim](no milestone selected)[/dim]",
+                                id="milestones-detail",
+                            )
+                        # P15 T-m5 — Design CTA at the bottom of
+                        # the milestone detail pane. Hidden by
+                        # default; surfaced by
+                        # _refresh_milestone_design_cta when the
+                        # highlighted milestone has zero realizing
+                        # features. Click launches tdd-design
+                        # --milestone <slug>.
+                        yield Button(
+                            "",
+                            id="milestone-design-cta",
+                            variant="primary",
                         )
                 # Features primary surface — left list (with state
                 # filter chips), right detail (dossier + per-feature
-                # actions). This is the operator's main attention
-                # surface in P12.
+                # actions). The list narrows to the selected
+                # milestone's features when one is picked in the
+                # Milestones tree.
                 with Horizontal(id="features-row"):
                     with Vertical(id="features-list-pane"):
                         yield Static(
@@ -448,12 +513,36 @@ class ProjectDashboardScreen(Screen[None]):
                                 variant="success",
                             )
 
+            # Bottom row: Runs list + detail. Sits below the
+            # Milestones/Features row so the operator's primary
+            # navigation surface is up top + run history is the
+            # reference layer below. Always visible — preparation
+            # for background runs the operator can leave going
+            # while navigating other views.
+            with Horizontal(id="runs-row"):
+                with Vertical(id="runs-list-pane"):
+                    yield Static(
+                        "[b]Runs[/b]", id="runs-list-label"
+                    )
+                    yield DataTable(
+                        id="runs-table", cursor_type="row"
+                    )
+                with Vertical(id="runs-detail-pane"):
+                    yield Static(
+                        "[b]Run detail[/b]", id="runs-detail-label"
+                    )
+                    with VerticalScroll(id="runs-detail-scroll"):
+                        yield Static(
+                            "[dim](no run selected)[/dim]",
+                            id="runs-detail",
+                        )
+
             # Drill-downs — investigation surfaces. Take less screen
             # real estate than the Features section; operator opens
             # them with 1/2/3 keybinds when investigating "why did
             # the team make this decision?" types of questions. Runs
             # is no longer a tab — it has its own always-visible
-            # column above.
+            # row above.
             yield Static(
                 "[dim]Drill-downs · 1=Artifacts  2=Files  "
                 "3=Metrics[/dim]",
@@ -812,7 +901,30 @@ class ProjectDashboardScreen(Screen[None]):
         """Tree cursor moved → update the detail pane to match the
         highlighted node. Features render their dossier; tickets
         render the ticket markdown plus a header naming the parent
-        feature so the operator keeps context."""
+        feature so the operator keeps context. Milestone nodes
+        filter the features pane to the selected milestone's
+        realization chain."""
+        # P15 T-m5 — milestone-tree highlight dispatch. Two
+        # selectable kinds:
+        #   - milestone: select it (filters features pane via
+        #     realization chain) + render its body in the detail
+        #     pane.
+        #   - requirement: render the requirement's body in the
+        #     detail pane WITHOUT changing milestone scope. Lets
+        #     the operator drill into a requirement without losing
+        #     the milestone filter on the features pane.
+        # The cross-cutting parent node is informational only —
+        # no-op on highlight.
+        if event.node.tree.id == "milestones-tree":
+            data = event.node.data
+            if data is None:
+                return
+            kind = data.get("kind")
+            if kind == "milestone":
+                self._select_milestone(data.get("slug"))
+            elif kind == "requirement":
+                self._render_requirement_detail(data.get("slug"))
+            return
         if event.node.tree.id != "features-tree":
             return
         data = event.node.data
@@ -1525,6 +1637,467 @@ class ProjectDashboardScreen(Screen[None]):
 
         self.app.push_screen(NewRunScreen(project=self.project))
 
+    # ------------------------------------------------------------------ #
+    # Milestones tree (P15 T-m5)
+    # ------------------------------------------------------------------ #
+
+    def _populate_milestones(self) -> None:
+        """Build the milestones tree from disk: one parent node per
+        milestone (ordered by Order field), children = each
+        consumes_requirement slug. Adds a synthetic "Cross-cutting"
+        node at the bottom listing requirements whose kind is
+        exempt from milestone assignment (persona / situation /
+        out_of_scope / deal_breaker) — those inform every milestone
+        but don't belong to any one. Refreshes the empty-state CTA +
+        the orphan-requirements hint."""
+        try:
+            tree = self.query_one("#milestones-tree", Tree)
+        except Exception:  # noqa: BLE001 — pre-mount
+            return
+        tree.clear()
+        tree.show_root = False
+
+        milestones = self._load_milestones()
+        feature_counts = self._compute_per_milestone_feature_counts(
+            milestones
+        )
+        for entry in milestones:
+            req_count = len(entry["consumes"])
+            feat_count = feature_counts.get(entry["slug"], 0)
+            label = (
+                f"[b]{entry['title']}[/b]  "
+                f"[dim]{req_count} reqs · {feat_count} features[/dim]"
+            )
+            node = tree.root.add(
+                label,
+                data={
+                    "kind": "milestone",
+                    "slug": entry["slug"],
+                    "title": entry["title"],
+                },
+                expand=False,
+            )
+            for req_slug in entry["consumes"]:
+                node.add_leaf(
+                    f"[dim]·[/dim]  {req_slug}",
+                    data={"kind": "requirement", "slug": req_slug},
+                )
+
+        # Cross-cutting requirements — persona/situation/etc. kinds
+        # that are exempt from milestone assignment (they inform
+        # every milestone). Surface them as their own collapsible
+        # node so the operator sees the full corpus accounted for
+        # rather than wondering why N total requirements maps to
+        # fewer milestone-assigned reqs. Skipped when there's no
+        # requirements/ dir at all.
+        cross_cutting = self._load_cross_cutting_requirements()
+        if cross_cutting:
+            cc_node = tree.root.add(
+                f"[dim]Cross-cutting[/dim]  "
+                f"[dim]{len(cross_cutting)} reqs · (context, no "
+                f"milestone)[/dim]",
+                data={"kind": "cross_cutting"},
+                expand=False,
+            )
+            for req in cross_cutting:
+                cc_node.add_leaf(
+                    f"[dim]·[/dim]  [{req['kind']}] {req['slug']}",
+                    data={
+                        "kind": "requirement",
+                        "slug": req["slug"],
+                    },
+                )
+
+        self._refresh_milestones_cta(milestones)
+
+    def _load_cross_cutting_requirements(self) -> list[dict]:
+        """Read every requirement file + return a list of dicts for
+        those whose kind is in the non-decomposable exempt set
+        (persona / situation / out_of_scope / deal_breaker). These
+        are cross-cutting context — they apply to every milestone
+        but don't belong to any one. Sorted by kind then slug for
+        stable display."""
+        import re
+
+        from wonderland.coverage import (
+            _NON_DECOMPOSABLE_REQUIREMENT_KINDS,
+            _parse_requirement_kind,
+        )
+
+        req_dir = (
+            self.project.root_path / ".wonderland" / "requirements"
+        )
+        if not req_dir.is_dir():
+            return []
+        out: list[dict] = []
+        filename_re = re.compile(r"requirement-(\d+)-(.+)\.md")
+        for path in req_dir.glob("requirement-*.md"):
+            m = filename_re.match(path.name)
+            if not m:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            kind = _parse_requirement_kind(text)
+            if kind is None:
+                continue
+            if kind not in _NON_DECOMPOSABLE_REQUIREMENT_KINDS:
+                continue
+            out.append(
+                {
+                    "slug": m.group(2),
+                    "kind": kind,
+                    "number": int(m.group(1)),
+                }
+            )
+        out.sort(key=lambda r: (r["kind"], r["slug"]))
+        return out
+
+    def _load_milestones(self) -> list[dict]:
+        """Read every milestone file + return a list of dicts with
+        ``slug``, ``title``, ``order``, ``consumes`` in canonical
+        order. Empty list when no milestones exist."""
+        import re
+
+        milestone_dir = (
+            self.project.root_path / ".wonderland" / "milestones"
+        )
+        if not milestone_dir.is_dir():
+            return []
+        from wonderland.coverage import _parse_milestone_consumes
+
+        entries: list[dict] = []
+        for path in milestone_dir.glob("milestone-*.md"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            slug_m = re.search(
+                r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
+            )
+            order_m = re.search(
+                r"^\*\*Order:\*\*\s*(\d+)", text, re.MULTILINE
+            )
+            title_m = re.match(r"##\s*(.+?)$", text, re.MULTILINE)
+            if not slug_m:
+                continue
+            entries.append(
+                {
+                    "slug": slug_m.group(1).strip(),
+                    "title": (
+                        title_m.group(1).strip() if title_m else slug_m.group(1)
+                    ),
+                    "order": int(order_m.group(1)) if order_m else 999,
+                    "consumes": _parse_milestone_consumes(text),
+                }
+            )
+        entries.sort(key=lambda e: (e["order"], e["slug"]))
+        return entries
+
+    def _compute_per_milestone_feature_counts(
+        self, milestones: list[dict]
+    ) -> dict[str, int]:
+        """For each milestone, count features whose sources cite a
+        story realizing any of its consumes_requirements. Uses the
+        same chain walk as the T-m8b coverage check."""
+        counts: dict[str, int] = {}
+        if not milestones:
+            return counts
+        for entry in milestones:
+            scope = self._milestone_to_feature_slugs(entry["slug"])
+            counts[entry["slug"]] = len(scope)
+        return counts
+
+    def _milestone_to_feature_slugs(self, milestone_slug: str) -> set[str]:
+        """Walk milestone.consumes_requirements → stories realizing
+        each → features sourcing those stories. Returns the set of
+        feature slugs that belong to this milestone via the chain.
+        Mirrors compute_unrealized_milestone_requirements' walk but
+        returns feature slugs instead of unrealized requirements."""
+        import re
+
+        from wonderland.coverage import (
+            _parse_milestone_consumes,
+            _parse_story_realizes,
+            _parse_feature_sources,
+        )
+
+        project_root = self.project.root_path
+        milestone_dir = project_root / ".wonderland" / "milestones"
+        if not milestone_dir.is_dir():
+            return set()
+        consumes: list[str] = []
+        for path in milestone_dir.glob("milestone-*.md"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            slug_m = re.search(
+                r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
+            )
+            if slug_m and slug_m.group(1).strip() == milestone_slug:
+                consumes = _parse_milestone_consumes(text)
+                break
+        if not consumes:
+            return set()
+
+        # req_slug → set[story_slug] map
+        story_root = project_root / ".wonderland" / "stories"
+        story_filename_re = re.compile(r"story-(\d+)-(.+)\.md")
+        req_to_stories: dict[str, set[str]] = {}
+        if story_root.is_dir():
+            for p in story_root.glob("story-*.md"):
+                m = story_filename_re.match(p.name)
+                if not m:
+                    continue
+                story_slug = m.group(2)
+                try:
+                    text = p.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                for r in _parse_story_realizes(text):
+                    req_to_stories.setdefault(r, set()).add(story_slug)
+
+        story_scope: set[str] = set()
+        for r in consumes:
+            story_scope.update(req_to_stories.get(r, set()))
+        if not story_scope:
+            return set()
+
+        # feature_slug → set[story_slug] from feature sources
+        feature_root = project_root / ".wonderland" / "features"
+        feature_filename_re = re.compile(r"feature-(\d+)-(.+)\.md")
+        result: set[str] = set()
+        if feature_root.is_dir():
+            for p in feature_root.glob("feature-*.md"):
+                m = feature_filename_re.match(p.name)
+                if not m:
+                    continue
+                feature_slug = m.group(2)
+                try:
+                    text = p.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                sources = _parse_feature_sources(text)
+                if any(s in story_scope for s in sources):
+                    result.add(feature_slug)
+        return result
+
+    def _refresh_milestones_cta(
+        self, milestones: list[dict]
+    ) -> None:
+        """Drive the empty-state CTA button + orphan-requirements
+        hint based on derived project phase. The button text + id-
+        based dispatch (handled in on_button_pressed via
+        ``milestones-empty-cta``) routes to the right NewRunScreen
+        pre-fill (discovery / milestone-plan / nothing)."""
+        try:
+            from wonderland.project import (
+                ProjectPhase,
+                derive_project_phase,
+            )
+            from wonderland.coverage import (
+                compute_orphan_requirements,
+            )
+
+            cta = self.query_one("#milestones-empty-cta", Button)
+            tree = self.query_one("#milestones-tree", Tree)
+            hint = self.query_one(
+                "#milestones-orphan-hint", Static
+            )
+        except Exception:  # noqa: BLE001 — pre-mount
+            return
+
+        snap = derive_project_phase(self.project.root_path)
+
+        # Default: tree visible, CTA + hint hidden.
+        tree.display = True
+        cta.display = False
+        hint.update("")
+        hint.display = False
+
+        if snap.phase is ProjectPhase.DISCOVERY:
+            tree.display = False
+            cta.display = True
+            cta.label = "▶ Run discovery to capture requirements"
+            self._cta_action = "discovery"
+            return
+        if snap.phase is ProjectPhase.PLANNING:
+            tree.display = False
+            cta.display = True
+            cta.label = (
+                f"▶ Run milestone-plan "
+                f"({snap.requirements_count} requirements ready)"
+            )
+            self._cta_action = "milestone-plan"
+            return
+
+        # Milestones exist — but check for orphan decomposable
+        # requirements + surface the hint above the tree.
+        gap = compute_orphan_requirements(self.project.root_path)
+        if gap is not None:
+            count = len(gap.items)
+            hint.update(
+                f"[yellow]⚠ {count} requirement(s) unassigned to "
+                f"any milestone — consider re-running "
+                f"milestone-plan.[/yellow]"
+            )
+            hint.display = True
+        self._cta_action = None
+
+    def _select_milestone(self, slug: str | None) -> None:
+        """Set the active milestone scope + refresh the detail pane
+        + features pane. Idempotent re-selection of the same slug
+        clears the scope (toggle). When ``slug`` is None or
+        unknown, scope is cleared and features pane shows
+        everything."""
+        if not slug or slug == self._selected_milestone_slug:
+            self._selected_milestone_slug = None
+            self._milestone_feature_scope = None
+        else:
+            self._selected_milestone_slug = slug
+            self._milestone_feature_scope = (
+                self._milestone_to_feature_slugs(slug)
+            )
+        self._refresh_milestone_detail()
+        self._populate_features()
+
+    def _refresh_milestone_detail(self) -> None:
+        """Update the milestone detail pane + Design CTA button to
+        match the currently-selected milestone. When no milestone
+        is selected, the pane shows a hint + the CTA is hidden.
+        When a milestone has zero realizing features, the CTA
+        offers to launch tdd-design --milestone <slug>."""
+        try:
+            detail = self.query_one("#milestones-detail", Static)
+            cta = self.query_one("#milestone-design-cta", Button)
+        except Exception:  # noqa: BLE001 — pre-mount
+            return
+        slug = self._selected_milestone_slug
+        if slug is None:
+            detail.update("[dim](no milestone selected)[/dim]")
+            cta.display = False
+            cta.label = ""
+            return
+        # Read the milestone's body from disk for the detail pane.
+        body = self._read_milestone_body(slug)
+        if body is None:
+            detail.update(
+                f"[red]Milestone ``{slug}`` not found on disk.[/red]"
+            )
+            cta.display = False
+            return
+        scope_count = (
+            len(self._milestone_feature_scope)
+            if self._milestone_feature_scope is not None
+            else 0
+        )
+        header = (
+            f"[b]{slug}[/b]   "
+            f"[dim]{scope_count} realizing feature(s)[/dim]\n\n"
+        )
+        detail.update(header + body)
+        # Design CTA visible when this milestone has zero features
+        # realizing its requirements (the operator's next-step
+        # action). Hidden otherwise — the milestone is already
+        # designed; further work happens via the Features pane.
+        if scope_count == 0:
+            cta.display = True
+            cta.label = f"▶ Design milestone: {slug}"
+        else:
+            cta.display = False
+            cta.label = ""
+
+    def _read_milestone_body(self, slug: str) -> str | None:
+        """Look up a milestone's full markdown body by slug. Returns
+        None when the milestone isn't found on disk."""
+        import re
+
+        milestone_dir = (
+            self.project.root_path / ".wonderland" / "milestones"
+        )
+        if not milestone_dir.is_dir():
+            return None
+        for path in milestone_dir.glob("milestone-*.md"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            slug_m = re.search(
+                r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
+            )
+            if slug_m and slug_m.group(1).strip() == slug:
+                return text
+        return None
+
+    def _render_requirement_detail(self, req_slug: str | None) -> None:
+        """Render a requirement's markdown body in the milestone
+        detail pane. Triggered when the operator highlights a
+        requirement leaf in the milestones tree (under a milestone
+        parent OR under the cross-cutting node). The milestone
+        scope on the features pane is preserved — drilling into a
+        requirement is informational, not navigational. The Design
+        CTA hides since it's milestone-shaped, not requirement-
+        shaped."""
+        import re
+
+        try:
+            detail = self.query_one("#milestones-detail", Static)
+            cta = self.query_one("#milestone-design-cta", Button)
+        except Exception:  # noqa: BLE001 — pre-mount
+            return
+        if not req_slug:
+            return
+        req_dir = (
+            self.project.root_path / ".wonderland" / "requirements"
+        )
+        if not req_dir.is_dir():
+            detail.update(
+                f"[red]No requirements directory — can't render "
+                f"``{req_slug}``.[/red]"
+            )
+            cta.display = False
+            return
+        # Filename pattern: requirement-NNN-<slug>.md
+        target = None
+        for path in req_dir.glob(f"requirement-*-{req_slug}.md"):
+            target = path
+            break
+        if target is None:
+            # Fallback: scan + match by slug field in case the
+            # filename doesn't include the slug exactly.
+            for path in req_dir.glob("requirement-*.md"):
+                try:
+                    text = path.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                slug_m = re.search(
+                    r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
+                )
+                if slug_m and slug_m.group(1).strip() == req_slug:
+                    target = path
+                    break
+        if target is None:
+            detail.update(
+                f"[yellow]Requirement ``{req_slug}`` not found on "
+                f"disk.[/yellow]"
+            )
+            cta.display = False
+            return
+        try:
+            body = target.read_text(encoding="utf-8")
+        except OSError as exc:
+            detail.update(f"[red]Read failed: {exc}[/red]")
+            cta.display = False
+            return
+        header = f"[b]Requirement[/b] · [dim]{req_slug}[/dim]\n\n"
+        detail.update(header + body)
+        # CTA is milestone-shaped — hide when drilled into a
+        # requirement. Reappears when the operator highlights a
+        # milestone again.
+        cta.display = False
+
     def _populate_features(self) -> None:
         tree = self.query_one("#features-tree", Tree)
         tree.clear()
@@ -1534,9 +2107,17 @@ class ProjectDashboardScreen(Screen[None]):
         # changes so button state (counts, primary variant, disabled
         # flags) tracks reality.
         self._refresh_action_buttons()
+        # P15 T-m5 — apply both filters: lifecycle state (chips) AND
+        # active milestone scope (from milestones-tree selection).
+        # Both must accept the feature for it to show. Scope filter
+        # is a no-op when no milestone is selected.
         visible = [
             r for r in self._features
-            if self._filter is None or r.state == self._filter
+            if (self._filter is None or r.state == self._filter)
+            and (
+                self._milestone_feature_scope is None
+                or r.slug in self._milestone_feature_scope
+            )
         ]
         if not visible:
             self._render_features_empty_state()
@@ -1671,11 +2252,29 @@ class ProjectDashboardScreen(Screen[None]):
 
     def _render_features_empty_state(self) -> None:
         detail = self.query_one("#features-detail", Static)
+        # P15 T-m5 — when a milestone is selected + has zero
+        # features, surface a big CTA in the detail pane that
+        # launches tdd-design pre-scoped to the milestone. This is
+        # the design-time entry point: operator picks a milestone,
+        # sees "no features yet", clicks the CTA, and lands on
+        # NewRunScreen with the right workflow + --milestone slug.
+        if self._selected_milestone_slug is not None:
+            detail.update(
+                f"[b yellow]Milestone "
+                f"``{self._selected_milestone_slug}`` has no features "
+                f"designed yet.[/b yellow]\n\n"
+                f"[dim]Use the [b]Design milestone[/b] button at the "
+                f"bottom of the Milestone detail pane on the left to "
+                f"launch a tdd-design run scoped to this milestone — "
+                f"Rabbit will compose features realizing its consumed "
+                f"requirements.[/dim]"
+            )
+            return
         if not self._features:
             detail.update(
                 "[b yellow]No features yet for this project.[/b yellow]\n\n"
-                "Run [b]tdd-design[/b] (or [b]tdd-serial-phased[/b] for the "
-                "all-in-one) and Rabbit will produce features in M2.\n\n"
+                "Run [b]tdd-design[/b] and Rabbit will produce features "
+                "in M2.\n\n"
                 "[dim]After at least one design run completes, the features "
                 "will surface here with state badges showing where each one "
                 "is in the lifecycle.[/dim]"
@@ -1751,15 +2350,24 @@ class ProjectDashboardScreen(Screen[None]):
     # ------------------------------------------------------------------ #
 
     def on_mount(self) -> None:
+        self._populate_milestones()
         self._populate_features()
         self._populate_runs()
         self._populate_artifacts()
         self._populate_metrics()
-        # Land focus on the features tree — primary attention surface.
+        self._refresh_phase_badge()
+        self._refresh_milestone_detail()
+        # Land focus on the milestones tree — primary navigation
+        # surface in the T-m5 layout (drives which features the
+        # right pane shows). Fall back to features-tree if milestones
+        # aren't mounted yet (race during first render).
         try:
-            self.query_one("#features-tree", Tree).focus()
+            self.query_one("#milestones-tree", Tree).focus()
         except Exception:  # noqa: BLE001
-            pass
+            try:
+                self.query_one("#features-tree", Tree).focus()
+            except Exception:  # noqa: BLE001
+                pass
 
     def on_screen_resume(self) -> None:
         # Re-populate when the dashboard becomes the top screen again
@@ -1767,10 +2375,29 @@ class ProjectDashboardScreen(Screen[None]):
         # the runs list both depend on disk state mutated by the run we
         # just left, so without this the user has to manually click a
         # filter chip or refresh to see updates.
+        self._populate_milestones()
         self._populate_features()
         self._populate_runs()
         self._populate_artifacts()
         self._populate_metrics()
+        self._refresh_phase_badge()
+        self._refresh_milestone_detail()
+
+    def _refresh_phase_badge(self) -> None:
+        """P15 T-m8 UX — re-derive the project's lifecycle phase
+        from disk + update the dashboard-phase Static. Silent on
+        any read error; an empty badge is acceptable degradation."""
+        try:
+            from wonderland.project import derive_project_phase
+
+            snapshot = derive_project_phase(self.project.root_path)
+            badge = self.query_one("#dashboard-phase", Static)
+            badge.update(
+                f"[b]Phase:[/b] {snapshot.label}  ·  "
+                f"[dim]{snapshot.next_action_hint}[/dim]"
+            )
+        except Exception:  # noqa: BLE001 — non-critical
+            pass
 
     # ------------------------------------------------------------------ #
     # Actions
@@ -1788,9 +2415,47 @@ class ProjectDashboardScreen(Screen[None]):
 
         self.app.push_screen(NewRunScreen(project=self.project))
 
+    def _launch_workflow(
+        self, workflow_name: str, *, milestone: str | None
+    ) -> None:
+        """P15 T-m5 — push NewRunScreen pre-filled with the named
+        workflow + optional --milestone scope. Used by the
+        milestones-pane CTA + the features-pane design CTA.
+        Operator still confirms the launch on NewRunScreen; this
+        just teleports them there with the right defaults."""
+        from wonderland.tui.screens.new_run import NewRunScreen
+
+        self.app.push_screen(
+            NewRunScreen(
+                project=self.project,
+                default_workflow=workflow_name,
+                default_milestone=milestone,
+            )
+        )
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
         if bid is None:
+            return
+        # P15 T-m5 — milestones-pane empty-state CTA dispatch.
+        # ``_cta_action`` is set by _refresh_milestones_cta based on
+        # the project's phase: discovery → launch discovery,
+        # planning → launch milestone-plan.
+        if bid == "milestones-empty-cta":
+            action = getattr(self, "_cta_action", None)
+            if action == "discovery":
+                self._launch_workflow("discovery", milestone=None)
+            elif action == "milestone-plan":
+                self._launch_workflow(
+                    "milestone-plan", milestone=None
+                )
+            return
+        # P15 T-m5 — milestone-detail Design CTA. Visible only when
+        # a milestone is selected + has zero realizing features.
+        if bid == "milestone-design-cta":
+            slug = self._selected_milestone_slug
+            if slug:
+                self._launch_workflow("tdd-design", milestone=slug)
             return
         # T92 actions pane — state-aware dispatch.
         if bid == "action-design":
