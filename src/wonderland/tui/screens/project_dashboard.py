@@ -1730,7 +1730,10 @@ class ProjectDashboardScreen(Screen[None]):
         if not req_dir.is_dir():
             return []
         out: list[dict] = []
-        filename_re = re.compile(r"requirement-(\d+)-(.+)\.md")
+        # T-g3: filename id-part is short_guid (new) or legacy number.
+        filename_re = re.compile(
+            r"requirement-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>.+)\.md"
+        )
         for path in req_dir.glob("requirement-*.md"):
             m = filename_re.match(path.name)
             if not m:
@@ -1744,11 +1747,12 @@ class ProjectDashboardScreen(Screen[None]):
                 continue
             if kind not in _NON_DECOMPOSABLE_REQUIREMENT_KINDS:
                 continue
+            id_part = m.group("id")
             out.append(
                 {
-                    "slug": m.group(2),
+                    "slug": m.group("slug"),
                     "kind": kind,
-                    "number": int(m.group(1)),
+                    "number": int(id_part) if id_part.isdigit() else 0,
                 }
             )
         out.sort(key=lambda r: (r["kind"], r["slug"]))
@@ -1842,16 +1846,19 @@ class ProjectDashboardScreen(Screen[None]):
         if not consumes:
             return set()
 
-        # req_slug → set[story_slug] map
+        # req_slug → set[story_slug] map. T-g3: filename id-part
+        # is short_guid (new) or legacy number.
         story_root = project_root / ".wonderland" / "stories"
-        story_filename_re = re.compile(r"story-(\d+)-(.+)\.md")
+        story_filename_re = re.compile(
+            r"story-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+        )
         req_to_stories: dict[str, set[str]] = {}
         if story_root.is_dir():
             for p in story_root.glob("story-*.md"):
                 m = story_filename_re.match(p.name)
                 if not m:
                     continue
-                story_slug = m.group(2)
+                story_slug = m.group(1)
                 try:
                     text = p.read_text(encoding="utf-8")
                 except OSError:
@@ -1865,16 +1872,19 @@ class ProjectDashboardScreen(Screen[None]):
         if not story_scope:
             return set()
 
-        # feature_slug → set[story_slug] from feature sources
+        # feature_slug → set[story_slug] from feature sources.
+        # T-g3: filename id-part is short_guid (new) or legacy number.
         feature_root = project_root / ".wonderland" / "features"
-        feature_filename_re = re.compile(r"feature-(\d+)-(.+)\.md")
+        feature_filename_re = re.compile(
+            r"feature-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+        )
         result: set[str] = set()
         if feature_root.is_dir():
             for p in feature_root.glob("feature-*.md"):
                 m = feature_filename_re.match(p.name)
                 if not m:
                     continue
-                feature_slug = m.group(2)
+                feature_slug = m.group(1)
                 try:
                     text = p.read_text(encoding="utf-8")
                 except OSError:

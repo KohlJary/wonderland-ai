@@ -41,10 +41,18 @@ from pydantic import BaseModel, Field, model_validator
 from wonderland.adr import slugify
 from wonderland.interview import Confidence
 
+from wonderland.artifact_guid import new_artifact_guid, short_guid
+
 MILESTONES_DIRNAME = "milestones"
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy order number (pre-P18). Order is parsed from
+# the markdown header now; the filename's id slot is identity, not
+# sequence.
 _FILENAME_PATTERN = re.compile(
-    r"^milestone-(\d+)-([a-z0-9-]+)\.md$"
+    r"^milestone-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
 )
+_ORDER_FROM_H2 = re.compile(r"^##\s*Milestone\s+(\d+)\s*:", re.MULTILINE)
 
 
 class MilestoneStatus(StrEnum):
@@ -78,6 +86,12 @@ class MilestonePayload(BaseModel):
     lens; the substrate writes each via ``MilestoneRegistry.write``,
     which dedups by slug. Same slug = update; new slug = append.
     """
+
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable Milestone identity. Re-emit with same guid to
+    amend (the natural milestone-replan move); coining a new guid
+    creates a new milestone. The pre-existing slug field is still
+    load-bearing for human readability + back-compat dedup."""
 
     slug: str = Field(
         min_length=1,
@@ -178,6 +192,7 @@ class MilestonePayload(BaseModel):
 
 @dataclass(frozen=True)
 class MilestoneRecord:
+    guid: str
     slug: str
     order: int
     name: str
@@ -199,6 +214,7 @@ def render_milestone(payload: MilestonePayload) -> str:
     lines: list[str] = [
         f"## Milestone {payload.order:02d}: {payload.name}",
         "",
+        f"**GUID:** {payload.guid}",
         f"**Slug:** {payload.slug}",
         f"**Order:** {payload.order}",
         f"**Deferred:** {'true' if payload.deferred else 'false'}",
@@ -273,6 +289,15 @@ class MilestoneRegistry:
         records.sort(key=lambda r: (r.order, r.slug))
         return records
 
+    def find_by_guid(self, guid: str) -> MilestoneRecord | None:
+        """P18 T-g2 — primary identity lookup."""
+        if not guid:
+            return None
+        for record in self.list_milestones():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_slug(self, slug: str) -> MilestoneRecord | None:
         for record in self.list_milestones():
             if record.slug == slug:
@@ -310,22 +335,29 @@ class MilestoneRegistry:
             else MilestonePayload.model_validate(payload)
         )
 
-        # Existing milestone with this slug? Replace it.
-        existing = self.find_by_slug(validated.slug)
+        # T-g2: guid-first lookup; slug fallback for back-compat
+        # (milestones predate guid; existing milestones on disk match
+        # by slug). On a guid hit the slug can drift — the payload's
+        # slug wins, the on-disk file is renamed.
+        existing = self.find_by_guid(validated.guid)
+        if existing is None:
+            existing = self.find_by_slug(validated.slug)
+
+        if existing is not None and existing.guid:
+            validated = validated.model_copy(update={"guid": existing.guid})
+
+        # T-g3: filename embeds short_guid for substrate identity.
+        # Order moves into the H2 header — reordering no longer
+        # requires file rename. Slug rename still triggers file
+        # rename (slug is part of the filename for browsability).
+        new_path = self._path_for_guid(validated.guid, validated.slug)
         if existing is not None and existing.path.is_file():
-            # Remove the old file if the order changed (filename
-            # follows order, so we'd otherwise leave a stale copy).
-            new_path = self._path_for(
-                validated.order, validated.slug
-            )
             if existing.path != new_path:
                 try:
                     existing.path.unlink()
                 except OSError:
                     pass
-            target = new_path
-        else:
-            target = self._path_for(validated.order, validated.slug)
+        target = new_path
 
         self._root.mkdir(parents=True, exist_ok=True)
         target.write_text(
@@ -333,6 +365,7 @@ class MilestoneRegistry:
         )
 
         return MilestoneRecord(
+            guid=validated.guid,
             slug=validated.slug,
             order=validated.order,
             name=validated.name,
@@ -415,21 +448,30 @@ class MilestoneRegistry:
     # ------------------------------------------------------------------ #
 
     def _path_for(self, order: int, slug: str) -> Path:
+        """Legacy filename — kept for back-compat with pre-T-g3 callers.
+        New writes go through ``_path_for_guid``."""
         return self._root / f"milestone-{order:02d}-{slug}.md"
+
+    def _path_for_guid(self, guid: str, slug: str) -> Path:
+        """T-g3 filename: short_guid embedded for substrate identity."""
+        return self._root / f"milestone-{short_guid(guid)}-{slug}.md"
 
     @staticmethod
     def _record_from_path(path: Path) -> MilestoneRecord | None:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        order = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         name, deferred, confidence = (
             MilestoneRegistry._fields_from_file(
                 path, fallback_name=slug
             )
         )
+        guid = MilestoneRegistry._guid_from_file(path)
+        order = MilestoneRegistry._order_from_file(path, id_part)
         return MilestoneRecord(
+            guid=guid,
             slug=slug,
             order=order,
             name=name,
@@ -437,6 +479,29 @@ class MilestoneRegistry:
             confidence=confidence,
             path=path,
         )
+
+    @staticmethod
+    def _order_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy milestone filenames carried order in the id
+        slot (zero-padded 2-digit). New-shape files keep order only
+        in the H2 header. Filename's id slot is identity, not order."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _ORDER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _fields_from_file(

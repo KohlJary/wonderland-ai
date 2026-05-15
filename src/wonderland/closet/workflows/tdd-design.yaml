@@ -153,6 +153,13 @@ meetings:
     phases:
       - name: stories
         max_rotations: 3
+        # P16 belt-and-suspenders backup: substrate extends rotation
+        # budget until at least 3 stories ship. Validation2 pilots
+        # showed M1 can deadlock even with the explicit lead-assignment
+        # framing block; this guarantees rotation budget extends rather
+        # than exiting empty. Caps via coverage_max_extra_rotations
+        # (default 2) so a truly stuck meeting still terminates.
+        coverage_check: minimum_stories
 
   # ─────────────────────────────────────────────────────────────────
   # M2 — Features composed from stories. Rabbit's job, with Alice
@@ -195,7 +202,16 @@ meetings:
           that story.
         - ``tickets`` — leave as an empty list; M3 will populate
         - ``tier`` (v1 / fast-follow / post-launch)
-        - ``sources`` — story slugs this feature realizes
+        - ``sources`` — story citations this feature realizes. Each
+          entry is either a slug (legacy), a full 26-char GUID, or
+          ``"<guid>:<slug>"`` (P18 canonical form — guid is the
+          substrate identity, slug is a human-readable continuity
+          hint). Slug-only continues to work but is back-compat;
+          prefer guid-prefixed when you have the source story's
+          guid in context (it appears on the bus + in markdown
+          ``**GUID:**`` lines). A guid that doesn't resolve to an
+          actual on-disk artifact is a phantom citation; the
+          substrate strips the artifact.
 
       Aim for 3–6 features. Multiple stories can converge on one
       feature when they describe the same capability from different
@@ -326,6 +342,24 @@ meetings:
                     # independent — feature A's tickets and feature B's
                     # never reference each other's payloads.
     meeting_budget: 0.30
+    # Drop Alice from foundation-feature iterations. Validation3
+    # pilots showed Alice consistently intervening on foundation
+    # features (kind=foundation, developer/operator/installer
+    # personas) at M3 with persona-grounding concerns, even
+    # though the feature's persona was already settled at M2 and
+    # the framing-prepend exempts foundation personas from the
+    # seeded-whitelist. Her pattern-match instinct at M3 is to
+    # question whether Operator/Developer/Installer count as
+    # "real" personas — answer: yes, for foundation work — but
+    # the question alone makes Rabbit hesitate and the iteration
+    # ships zero tickets. Substrate-enforced: foundation features
+    # decompose with Rabbit alone; Alice still buzzes in via
+    # §III if she sees something concrete worth raising.
+    per_item_roster_filter:
+      field: kind
+      map:
+        capability: [alice, white_rabbit]
+        foundation: [white_rabbit]
     convenor_directive: |
       **Rabbit, decompose this feature into tickets.** The feature
       in your context is a user-facing capability; your job is to
@@ -365,14 +399,18 @@ meetings:
           materially; merging defeats the optimization.
         - ``estimate`` (your honest read; the Tweedles will adjust)
         - ``description`` — what shipping this ticket means
-        - ``sources`` — **REQUIRED**: the parent feature's slug must
-          be the FIRST entry in this list. The substrate uses this
-          link to know which tickets belong to which feature when
-          tdd-implement iterates per-ticket. You may add additional
-          source slugs (other features the ticket touches, story
-          slugs the ticket realizes), but the parent feature comes
-          first. Without this, the substrate can't tell which
-          tickets to implement when the operator queues a feature.
+        - ``sources`` — **REQUIRED**: the parent feature's citation
+          must be the FIRST entry in this list. The substrate uses
+          this link to know which tickets belong to which feature
+          when tdd-implement iterates per-ticket. Cite the parent
+          feature by slug (legacy), full GUID, or ``"<guid>:<slug>"``
+          (P18 canonical, preferred — you'll see the parent's
+          ``**GUID:**`` line in the convener directive's existing-
+          features block). You may add additional source citations
+          (other features the ticket touches, stories the ticket
+          realizes), but the parent feature comes first. Without
+          this, the substrate can't tell which tickets to implement
+          when the operator queues a feature.
         - ``acceptance`` — observable conditions of done
 
       Aim for 1–4 tickets per feature. A feature with 0 tickets is
@@ -484,10 +522,37 @@ meetings:
       Same for tickets that should drop entirely without
       replacement (genuine duplicates Rabbit didn't re-emit).
 
-      Verify before deleting: a ticket whose slug appears as a
-      ``Sources:`` entry on a still-surviving sibling is fair game.
-      A ticket whose acceptance criteria a sibling doesn't actually
-      absorb is NOT — push back as a concern instead of pruning.
+      **PREFER `retract` OVER `delete_file` FOR TICKETS.** The
+      substrate has a first-class `retract` decision that names
+      specific target_slugs, removes them from bus + disk, and logs
+      the action in the transcript. Use that. `delete_file` is the
+      raw escape hatch — reserve it for orphaned files (e.g. a
+      ticket whose markdown exists but never made it to the bus
+      registry). The validation4 pilot deleted EVERY ticket via
+      aggressive `delete_file` calls including the freshly-merged
+      consolidations. The retract path is safer because it's
+      scoped to slugs you can name in writing — if you can't say
+      "I am removing ticket-NNN because it duplicates ticket-MMM,"
+      you shouldn't be deleting it.
+
+      **Hard rule: never delete more tickets than you have explicit
+      evidence to retract.** A duplicate is two tickets covering the
+      same acceptance criteria with the same stack-span. "Adjacent
+      scope" or "could be combined" is NOT duplication; raise that
+      as a `concern` so the next design pass addresses it cleanly.
+      Better to leave 6 tickets standing for a feature than to
+      delete a real one alongside a duplicate.
+
+      Verify before retracting / deleting: a ticket whose slug
+      appears as a ``Sources:`` entry on a still-surviving sibling
+      is fair game. A ticket whose acceptance criteria a sibling
+      doesn't actually absorb is NOT — push back as a concern
+      instead of pruning.
+
+      **If the meeting ends with the consolidated ticket count at
+      zero, you've over-pruned.** Better outcome: ship the review
+      describing the redundancy + retract only the specific dupes
+      you can name. Leave the originals when in doubt.
 
       **Aim for 3-7 tickets per feature after consolidation.** A
       feature with 8+ tickets after M3.5 is probably actually two

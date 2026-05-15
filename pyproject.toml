@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wonderland-ai"
-version = "0.6.0"
+version = "0.7.0"
 description = "An identity-native multi-agent system that runs the full software development lifecycle."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -62,6 +62,18 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wonderland"]
+
+[tool.hatch.build.targets.sdist]
+# Operator-local pilot scratch trees don't belong on PyPi. The
+# wheel target is already scoped to src/wonderland; the sdist
+# would otherwise include the whole repo (including projects/ and
+# runs/ when they exist locally), so we exclude them explicitly.
+exclude = [
+    "projects/",
+    "runs/",
+    "drafts/",
+    ".wonderland/",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -447,4 +447,42 @@ meetings:
         max_rotations: 2
         team_groupings: [[caterpillar, tweedledee, tweedledum]]
         exit_condition_artifact: review
+
+  # ─────────────────────────────────────────────────────────────────
+  # M9 — Verify. Substrate-only check; no agents convene. Fires
+  # ``pytest --collect-only`` against the project to catch
+  # structural bugs that pass Caterpillar's M8 review (import-time
+  # FastAPI errors, missing ``Depends(get_db)``, syntax slips that
+  # didn't surface in code review).
+  #
+  # In the pipelined runner this fires once per feature lane —
+  # right after that feature's M8 — so failures get attributed to
+  # the feature whose tickets just shipped. On failure: synthesizes
+  # a system review on disk + routes through the existing
+  # _route_blocking_review path, which queues follow-up tickets
+  # against the same feature. Feature stays out of
+  # ready_for_review until those tickets are worked, so the next
+  # implementation run picks them up.
+  #
+  # Skipped paths (no pyproject.toml, no pytest, no tests
+  # collected) all emit informational events with outcome=COMPLETE
+  # — projects that haven't set up tests yet shouldn't be punished
+  # with auto-tickets they can't act on.
+  # ─────────────────────────────────────────────────────────────────
+  - id: verify
+    label: M9
+    name: Verify
+    goal: |
+      run the project's own test suite + frontend build to surface
+      structural failures the per-feature review can't catch
+    kind: verify
+    # List of checks, run in declaration order. Skipped checks
+    # degrade silently — frontend-less skeletons (python-cli,
+    # python-tui, python-fastapi without React) skip ``npm_build``
+    # without firing the substrate; backend-less skeletons (pure
+    # vite SPA) skip ``pytest_collects``.
+    build_check:
+      - pytest_collects
+      - npm_build
+
 category: implementation

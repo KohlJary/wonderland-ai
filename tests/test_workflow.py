@@ -607,6 +607,10 @@ class TestBundledWorkflowIntegrity:
                 f"workflow {wf.name!r} has no meetings"
             )
         for m in wf.meetings[1:]:
+            # Verify-kind meetings have no agents and no
+            # convenor_directive; their work is the build_check.
+            if m.kind == "verify":
+                continue
             assert m.convenor_directive.strip(), (
                 f"meeting {m.id!r} has empty convenor_directive — only the "
                 "entry meeting should be empty (it gets the user input)"
@@ -614,6 +618,11 @@ class TestBundledWorkflowIntegrity:
 
     def test_every_meeting_has_a_budget(self, wf):
         for m in wf.meetings:
+            # Verify-kind meetings don't burn LLM budget — they run
+            # a registered substrate check (pytest, etc.), not agent
+            # rotations. No budget needed.
+            if m.kind == "verify":
+                continue
             assert m.meeting_budget is not None, (
                 f"meeting {m.id!r} missing meeting_budget"
             )

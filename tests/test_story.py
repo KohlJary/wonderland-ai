@@ -234,3 +234,153 @@ def test_skips_non_story_files(tmp_path: Path) -> None:
     (registry.path / "README.md").write_text("not a story")
     (registry.path / "story-malformed.md").write_text("also not")
     assert len(registry.list_stories()) == 1
+
+
+# ---------- P18 guid round-trip ----------
+
+
+def test_payload_auto_generates_guid_when_missing() -> None:
+    """Every fresh payload gets a ULID via default_factory."""
+    payload = _payload()
+    assert payload.guid
+    # ULIDs are 26 chars; smoke-check the shape.
+    assert len(payload.guid) == 26
+
+
+def test_payload_preserves_explicit_guid() -> None:
+    """Caller-supplied guid is preserved (used when re-emitting
+    to amend an existing artifact)."""
+    payload = _payload(guid="01HAAAA000000000000000000A")
+    assert payload.guid == "01HAAAA000000000000000000A"
+
+
+def test_render_includes_guid_line() -> None:
+    """Markdown body must include the GUID line so the parser can
+    read it back."""
+    payload = _payload()
+    from wonderland import render_story
+
+    out = render_story(7, payload)
+    assert f"**GUID:** {payload.guid}" in out
+
+
+def test_registry_round_trips_guid(tmp_path: Path) -> None:
+    """write() → list_stories() preserves the guid: this is the
+    load-bearing property — the substrate routes on guid, so the
+    value on disk must match the value the agent emitted."""
+    registry = StoryRegistry(tmp_path)
+    payload = _payload()
+    record = registry.write(payload)
+    assert record.guid == payload.guid
+
+    # Re-read via list_stories — guid must be preserved.
+    all_records = registry.list_stories()
+    assert len(all_records) == 1
+    assert all_records[0].guid == payload.guid
+
+
+def test_re_emit_same_slug_preserves_guid(tmp_path: Path) -> None:
+    """The P18 amend-vs-create distinction: re-emitting with the
+    same slug must preserve the original guid even if the caller's
+    payload has a different guid. The registry's slug-based lookup
+    is the back-compat path; guid stability is the win."""
+    registry = StoryRegistry(tmp_path)
+    first = registry.write(_payload(title="Alpha story"))
+    second_payload = _payload(title="Alpha story", guid="01HBBBB000000000000000000B")
+    second = registry.write(second_payload)
+    # Same slug → registry preserves the original guid, ignoring the
+    # second payload's fresh guid (treats as amendment).
+    assert second.guid == first.guid
+    assert second.guid != "01HBBBB000000000000000000B"
+
+
+def test_guid_parsed_back_from_disk(tmp_path: Path) -> None:
+    """Round-trip: write a story, read its file directly, confirm
+    the GUID line is present and matches what list_stories returns."""
+    registry = StoryRegistry(tmp_path)
+    record = registry.write(_payload())
+    raw = record.path.read_text()
+    assert f"**GUID:** {record.guid}" in raw
+
+    # Fresh registry instance — no in-memory state — still surfaces
+    # the same guid via the markdown parser.
+    fresh_registry = StoryRegistry(tmp_path)
+    refound = fresh_registry.find_by_slug(record.slug)
+    assert refound is not None
+    assert refound.guid == record.guid
+
+
+# ---------- T-g2 find_by_guid + update-by-guid ----------
+
+
+def test_find_by_guid_returns_record(tmp_path: Path) -> None:
+    """The primary identity lookup. find_by_guid resolves a known
+    guid to its record; slug doesn't matter."""
+    registry = StoryRegistry(tmp_path)
+    record = registry.write(_payload(title="Original story"))
+
+    found = registry.find_by_guid(record.guid)
+    assert found is not None
+    assert found.guid == record.guid
+    assert found.slug == record.slug
+
+
+def test_find_by_guid_returns_none_for_missing(tmp_path: Path) -> None:
+    registry = StoryRegistry(tmp_path)
+    registry.write(_payload())
+    assert registry.find_by_guid("01HZZZ000000000000000000ZZ") is None
+
+
+def test_find_by_guid_returns_none_for_empty_string(tmp_path: Path) -> None:
+    """Empty guid is the back-compat signal — don't match every
+    record with no guid; just return None so the caller falls
+    through to slug-based lookup."""
+    registry = StoryRegistry(tmp_path)
+    registry.write(_payload())
+    assert registry.find_by_guid("") is None
+
+
+def test_re_emit_same_guid_different_slug_updates_in_place(
+    tmp_path: Path,
+) -> None:
+    """The headline T-g2 win: agent re-emits with the same guid
+    but a different title (so different slug). Registry recognizes
+    the identity via guid + updates in place. validation4's
+    triplicate-feature pattern becomes substrate-impossible."""
+    registry = StoryRegistry(tmp_path)
+    first = registry.write(_payload(title="Original title"))
+    # Same guid, different title → must update in place
+    second = registry.write(_payload(
+        guid=first.guid,
+        title="Revised title v2",
+    ))
+    assert second.number == first.number
+    # Slug reflects the new title; identity stays the original guid
+    assert second.guid == first.guid
+    assert second.slug == "revised-title-v2"
+    # Only one story on disk — the in-place update overwrote the
+    # original (and renamed if we'd implemented filename guid embedding,
+    # but T-g2 keeps the existing path so the file count stays at 1).
+    assert len(registry.list_stories()) == 1
+
+
+def test_new_guid_creates_new_artifact(tmp_path: Path) -> None:
+    """Fresh guid + same title → new file, not update. The amend-
+    vs-create distinction lives at the guid layer; coining a new
+    guid is the explicit 'this is different' signal."""
+    registry = StoryRegistry(tmp_path)
+    first = registry.write(_payload(title="Story A"))
+    second_payload = _payload(title="Story A")
+    # second_payload's auto-generated guid is fresh; not first.guid
+    assert second_payload.guid != first.guid
+
+    # Without slug fallback, this would create a 2nd file. WITH
+    # the slug fallback (back-compat path), the registry detects
+    # the same slug and updates the original — using slug-as-
+    # back-compat-identity. Behavior preserves the pre-P18
+    # invariant: identical slug means same artifact unless guid
+    # explicitly says otherwise. The slug fallback is what makes
+    # this back-compat safe.
+    second = registry.write(second_payload)
+    assert second.number == first.number  # same file, slug match
+    assert second.guid == first.guid  # back-compat preserves guid

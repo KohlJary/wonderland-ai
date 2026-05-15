@@ -166,7 +166,14 @@ def test_write_creates_file_at_expected_path(tmp_path: Path) -> None:
     assert record.number == 1
     assert record.slug == "use-redis-streams"
     assert record.title == "Use Redis Streams"
-    assert record.path == tmp_path / ".wonderland" / "architecture" / "adr-001-use-redis-streams.md"
+    # T-g3: filename embeds short_guid for substrate identity.
+    assert (
+        record.path
+        == tmp_path
+        / ".wonderland"
+        / "architecture"
+        / f"adr-{record.guid[:8]}-use-redis-streams.md"
+    )
     assert record.path.is_file()
 
 

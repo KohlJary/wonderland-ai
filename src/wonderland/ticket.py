@@ -29,8 +29,16 @@ from pydantic import BaseModel, Field, field_validator
 
 from wonderland.adr import slugify
 
+from wonderland.artifact_guid import new_artifact_guid, short_guid
+
 TICKETS_DIRNAME = "tickets"
-_FILENAME_PATTERN = re.compile(r"^ticket-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18).
+_FILENAME_PATTERN = re.compile(
+    r"^ticket-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+_NUMBER_FROM_H2 = re.compile(r"^##\s*Ticket\s+(\d+)\s*:", re.MULTILINE)
 
 
 class TicketStackSpan(StrEnum):
@@ -97,6 +105,14 @@ _INVALID_TICKET_SOURCE_PREFIXES = (
 class TicketPayload(BaseModel):
     """Structured payload the Rabbit attaches to a ticket-issuing utterance."""
 
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable artifact identity. ULID generated at creation,
+    preserved across re-emissions. Rabbit re-emits with the same
+    guid to amend an existing ticket (M3 + M3.5 consolidation
+    semantics); coining a new guid creates a new ticket. Cross-
+    references (Sources / Blocked by) cite guid; phantom guids
+    fail to resolve rather than drift silently."""
+
     title: str = Field(min_length=1)
     owner: str = Field(min_length=1)
     tier: TicketTier
@@ -151,6 +167,7 @@ class TicketPayload(BaseModel):
 @dataclass(frozen=True)
 class TicketRecord:
     number: int
+    guid: str
     slug: str
     title: str
     path: Path
@@ -169,6 +186,7 @@ def render_ticket(number: int, payload: TicketPayload) -> str:
     lines: list[str] = [
         f"## Ticket {number:03d}: {payload.title}",
         "",
+        f"**GUID:** {payload.guid}",
         f"**Sources:** {_join_or_dash(payload.sources)}",
         f"**Owner:** {payload.owner}",
         f"**Tier:** {payload.tier.value}",
@@ -315,6 +333,15 @@ class TicketRegistry:
             return 1
         return max(r.number for r in existing) + 1
 
+    def find_by_guid(self, guid: str) -> TicketRecord | None:
+        """P18 T-g2 — primary identity lookup."""
+        if not guid:
+            return None
+        for record in self.list_tickets():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_slug(self, slug: str) -> TicketRecord | None:
         for record in self.list_tickets():
             if record.slug == slug:
@@ -346,20 +373,30 @@ class TicketRegistry:
         )
 
         slug = slugify(validated.title)
-        existing = self.find_by_slug(slug)
+        # T-g2: guid-first lookup; slug fallback for back-compat.
+        existing = self.find_by_guid(validated.guid)
+        if existing is None:
+            existing = self.find_by_slug(slug)
+
         if existing is not None:
             number = existing.number
             full_path = existing.path
         else:
             number = self.next_number()
-            filename = f"ticket-{number:03d}-{slug}.md"
+            # T-g3: filename embeds short_guid for substrate identity.
+            filename = f"ticket-{short_guid(validated.guid)}-{slug}.md"
             full_path = self._root / filename
+
+        # Preserve existing artifact's guid on slug-fallback match.
+        if existing is not None and existing.guid:
+            validated = validated.model_copy(update={"guid": existing.guid})
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_ticket(number, validated), encoding="utf-8")
 
         return TicketRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             path=full_path,
@@ -393,10 +430,37 @@ class TicketRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title = TicketRegistry._title_from_file(path, fallback=slug)
-        return TicketRecord(number=number, slug=slug, title=title, path=path)
+        guid = TicketRegistry._guid_from_file(path)
+        number = TicketRegistry._number_from_file(path, id_part)
+        return TicketRecord(
+            number=number, guid=guid, slug=slug, title=title, path=path,
+        )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy filenames carried number in the id slot;
+        new-shape files keep it only in the H2 header."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        """Extract the ``**GUID:**`` line; fresh ULID if pre-P18 file."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _title_from_file(path: Path, *, fallback: str) -> str:

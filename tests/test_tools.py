@@ -240,7 +240,9 @@ def test_tool_definitions_returns_full_set() -> None:
     metadata. See analysis 016 followup. run_tests added in analysis
     028 followup so M5 Tweedles can iterate red→green properly.
     str_replace + insert added in T67 (P10) for token-cheap iterative
-    file authoring."""
+    file authoring. verify_imports added in P16 T-v5 — Caterpillar's
+    static-check tool for the bug class between code review and
+    test collection."""
     defs = Tools.tool_definitions()
     names = {d["name"] for d in defs}
     assert names == {
@@ -254,6 +256,7 @@ def test_tool_definitions_returns_full_set() -> None:
         "git_status",
         "git_diff",
         "run_tests",
+        "verify_imports",
     }
 
 
@@ -822,3 +825,90 @@ def test_diff_tools_appear_in_tool_definitions() -> None:
     names = {d["name"] for d in defs}
     assert "str_replace" in names
     assert "insert" in names
+
+
+# ---------- verify_imports (P16 T-v5) ----------
+
+
+def test_verify_imports_in_tool_definitions() -> None:
+    """Caterpillar can't call the tool unless it's registered in the
+    Anthropic schema."""
+    defs = Tools.tool_definitions()
+    names = {d["name"] for d in defs}
+    assert "verify_imports" in names
+
+
+def test_verify_imports_passes_on_clean_file(tmp_path: Path) -> None:
+    """A syntactically clean, fully-imported file should produce
+    an OK return value with no diagnostics."""
+    tools = Tools(tmp_path)
+    tools.write_file(
+        "clean.py",
+        "import os\n\ndef greet():\n    return os.environ.get('USER', 'anon')\n",
+    )
+    out = tools.verify_imports("clean.py")
+    assert out.startswith("OK:")
+
+
+def test_verify_imports_catches_undefined_name(tmp_path: Path) -> None:
+    """The canonical class of bug — referencing a name that isn't
+    defined or imported. Ruff's F821 (undefined-name) catches this."""
+    tools = Tools(tmp_path)
+    tools.write_file(
+        "bug.py",
+        "def use_it():\n    return some_undefined_function(42)\n",
+    )
+    out = tools.verify_imports("bug.py")
+    # Output should NOT start with OK + should name the undefined symbol.
+    assert not out.startswith("OK:")
+    assert "some_undefined_function" in out or "F821" in out
+
+
+def test_verify_imports_catches_syntax_error(tmp_path: Path) -> None:
+    """E9 family catches syntax / indentation errors that wouldn't
+    even import."""
+    tools = Tools(tmp_path)
+    tools.write_file(
+        "broken.py",
+        "def foo(:\n    return 1\n",  # invalid syntax
+    )
+    out = tools.verify_imports("broken.py")
+    assert not out.startswith("OK:")
+
+
+def test_verify_imports_skips_frontend_files(tmp_path: Path) -> None:
+    """Frontend files (.ts/.tsx/.js/.jsx) need full-project tsc
+    context that a single-file static check can't provide. Return
+    a skipped marker pointing at npm_build instead of erroring."""
+    tools = Tools(tmp_path)
+    tools.write_file(
+        "App.tsx",
+        "export default function App() { return null; }\n",
+    )
+    out = tools.verify_imports("App.tsx")
+    assert "skipped" in out.lower()
+    assert "npm_build" in out
+
+
+def test_verify_imports_rejects_unknown_extensions(tmp_path: Path) -> None:
+    """Markdown / config files are out of scope — the operator should
+    get a clear ToolError rather than a meaningless ruff invocation."""
+    tools = Tools(tmp_path)
+    tools.write_file("notes.md", "# header\n")
+    with pytest.raises(ToolError, match="only supports .py"):
+        tools.verify_imports("notes.md")
+
+
+def test_verify_imports_rejects_missing_file(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    with pytest.raises(ToolError, match="not found"):
+        tools.verify_imports("does/not/exist.py")
+
+
+def test_verify_imports_dispatch_via_execute(tmp_path: Path) -> None:
+    """The execute() path needs the tool wired into the dispatch
+    table; without that, the LLM's tool_use blocks become no-ops."""
+    tools = Tools(tmp_path)
+    tools.write_file("hi.py", "x = 1\n")
+    out = tools.execute("verify_imports", {"path": "hi.py"})
+    assert out.startswith("OK:")

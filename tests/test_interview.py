@@ -306,7 +306,8 @@ def test_registry_writes_numbered_file(tmp_path: Path) -> None:
     reg = RequirementRegistry(tmp_path)
     record = reg.write(_req())
     assert record.number == 1
-    assert record.path.name.startswith("requirement-001-")
+    # T-g3: filename embeds short_guid for substrate identity.
+    assert record.path.name.startswith(f"requirement-{record.guid[:8]}-")
     assert record.path.exists()
 
 

@@ -453,6 +453,22 @@ Two decision modes are decomposition-shaped:
   from M1 stories: if you can't name a persona this feature serves,
   the grouping isn't really a feature, it's a bag of tickets.
 
+  **Foundation features ground in foundation personas.** When M1's
+  stories carry developer / operator / installer / sysadmin
+  personas (the foundation lane shipped by Caterpillar), the
+  features you compose from them ground in THOSE personas, not in
+  the seeded user-personas. Ship `kind: foundation` and name the
+  developer/operator/installer that the plumbing serves. Don't
+  reject a foundation story for "missing persona grounding"
+  because its persona isn't Marcus — the foundation lane uses a
+  different persona convention and the framing prepend's
+  "Foundation personas are exempt" paragraph names exactly this.
+  If you're about to ship a `concern` saying "this story has no
+  persona I recognize," check first whether it's a foundation
+  story (look at the persona — does it sound like a developer/
+  operator/installer/sysadmin?) and if so, compose the foundation
+  feature instead of concerning.
+
 **`question_to_operator` — escalate to the human operator.** Use
 when the team needs a decision only the operator can make: a
 schema-vs-directive conflict you can't resolve, scope ambiguity
@@ -729,6 +745,13 @@ class WhiteRabbit(WonderlandAgent):
                         "title": record.title,
                         "path": str(record.path),
                         "stack_span": payload.stack_span.value,
+                        # kind is load-bearing for M3's
+                        # per_item_roster_filter — without it the
+                        # foundation/capability discriminator in
+                        # the bus payload is None, the filter
+                        # never narrows, and Alice stays in
+                        # foundation-feature iterations.
+                        "kind": payload.kind.value,
                         "tickets": list(payload.tickets),
                     },
                 )

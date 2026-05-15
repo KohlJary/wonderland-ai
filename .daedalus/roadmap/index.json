@@ -1225,11 +1225,251 @@
     {
       "id": "7ce72b6c-a5f2-4c51-b71b-e084ca9b2692",
       "title": "Substrate-recognized exempt-per-decision for non-decomposable requirements",
-      "description": "Surfaced during the P15 T-m8a pilot — the discovery2 corpus contains a 'scope'-kind requirement ('no-hard-deadline-on-v1-team-prioritizes-depth-over-speed') that's process-meta and shouldn't decompose into a milestone. Today the coverage check flags it as an orphan and the closed-loop nudges Rabbit forever (or until rotation cap). Rabbit needs a substrate-recognized way to mark a requirement as 'cross-cutting / exempt-by-decision' that the coverage helper honors, without coining a fake milestone to satisfy the check. Two candidate shapes: (a) new SpeechAct.EXEMPT_REQUIREMENT that ships an artifact with target_slug + reason; substrate adds the slug to an exempt set; coverage check honors. (b) Allow a milestone to carry an 'exempts:' list separate from 'consumes:'. (a) is cleaner since exemption is orthogonal to milestone composition. Pair with the existing retract primitive — both are corrections to substrate state.",
+      "description": "Surfaced during the P15 T-m8a pilot \u2014 the discovery2 corpus contains a 'scope'-kind requirement ('no-hard-deadline-on-v1-team-prioritizes-depth-over-speed') that's process-meta and shouldn't decompose into a milestone. Today the coverage check flags it as an orphan and the closed-loop nudges Rabbit forever (or until rotation cap). Rabbit needs a substrate-recognized way to mark a requirement as 'cross-cutting / exempt-by-decision' that the coverage helper honors, without coining a fake milestone to satisfy the check. Two candidate shapes: (a) new SpeechAct.EXEMPT_REQUIREMENT that ships an artifact with target_slug + reason; substrate adds the slug to an exempt set; coverage check honors. (b) Allow a milestone to carry an 'exempts:' list separate from 'consumes:'. (a) is cleaner since exemption is orthogonal to milestone composition. Pair with the existing retract primitive \u2014 both are corrections to substrate state.",
       "priority": "P2",
       "item_type": "feature",
       "status": "backlog",
       "created_at": "2026-05-14T21:06:07.250495",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "ade6dc59-6578-4492-9e07-f05a66fce3ca",
+      "title": "In-loop fix \u2192 ticket synthesis fallback for verification findings",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T02:27:51.170706",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "7ce31846-26d9-43e8-866d-e20c8335d09e",
+      "title": "Return-to-previous-meeting recovery primitive \u2014 auto-reentry on empty seeds",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T09:31:43.677866",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "3a158ebe-80d7-4859-860e-c7d0892c3f97",
+      "title": "Scope-fence for operator answers \u2014 diagnostic on novel noun-phrase mid-run",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T09:47:09.562885",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "2deb9142-310c-4f73-b373-f46485194a19",
+      "title": "Distinguish question vs question_to_operator routing \u2014 operator only on explicit ask",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T09:47:09.647188",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "91130678-2381-4e69-914c-087e4f984039",
+      "title": "Substrate-side episodic memory gate \u2014 drop recall hits whose slugs no longer exist on disk",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T09:47:09.727118",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "8407f42b-f51b-4529-8db2-37fa8337eb08",
+      "title": "T-l1: LLMClient protocol refactor \u2014 extract to ABC, keep AnthropicLLMClient as concrete impl, no behavior change",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:05.994038",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "403560e5-5a3e-4e49-9c78-42418d59f2f1",
+      "title": "T-l2: OpenAICompatLLMClient \u2014 basic completion against any OpenAI-compatible HTTP endpoint (ollama / vLLM / LM Studio / llama.cpp / OpenAI / Together / Groq)",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:06.076281",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "3b49e953-cd40-4c1d-ac74-ea17f34a58e4",
+      "title": "T-l3: Tool-use translation layer \u2014 OpenAI function-calling format, retry-tolerant parsing for flaky small-model output",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:06.158170",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "71dc0b23-e76f-4348-aa87-6951c813bfb8",
+      "title": "T-l4: Per-agent model selection \u2014 Runner config dict + CLI flag, defaults all-Anthropic for back-compat",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:06.242014",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "7c017698-a234-490a-9a85-be4204064172",
+      "title": "T-l5: Telemetry adapter \u2014 zero-cost local calls, per-provider cost tables, budget logic handles free model cleanly",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:06.323633",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "5d65a498-261d-4186-82ff-6d4bac5cbf93",
+      "title": "T-l6: CLI + TUI surface \u2014 --model flag, per-agent picker in new-run-screen with presets (All Premium / Senior Premium / All Local)",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:06.404129",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "24d52587-f7ed-47cf-85af-2dbaf026c4f7",
+      "title": "T-l7: Local pilot smoke \u2014 hello-endpoint against Llama 3.2 via ollama, catalogue failure modes vs Haiku baseline",
+      "description": "",
+      "priority": "P1",
+      "item_type": "chore",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:06.486596",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "b091edf2-a6d5-4898-a82a-b9f90f80d913",
+      "title": "T-l8: Documentation \u2014 README section on bring-your-own-model, config reference, cost comparison table grounded in pilot results",
+      "description": "",
+      "priority": "P2",
+      "item_type": "chore",
+      "status": "backlog",
+      "created_at": "2026-05-15T10:35:06.570228",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "a381f1e5-d068-479a-a911-1d4fe0b0c0b8",
+      "title": "Substrate guard: M3.5 consolidation can't leave a feature with zero tickets \u2014 abort or rollback if it would",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T12:59:10.670688",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "a56e4328-10f4-4a5e-937d-3374a2a985e1",
+      "title": "Feature-level slug-stability: White Rabbit M2 needs near-duplicate-check mirror of Alice's M1 procedure \u2014 validation4 shipped 9 features that were 3 triplicated",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:07:44.160021",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "8700635b-abbb-4cf6-a4c4-e4a50530e731",
+      "title": "T-g1: Add guid field to all artifact payloads (Story/Feature/Ticket/ADR/Ruling/Review/ContractNote/Milestone/Requirement) \u2014 ULID default-factory",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:03.833236",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "30877dbb-3604-44ed-a8a4-6943b940cece",
+      "title": "T-g2: Registries dedup by guid, lookup by guid, slug becomes display-only \u2014 every registry's write/find_by/* surface",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:03.921325",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "c7b0572e-39e0-418b-b24f-6ce56bfe13e1",
+      "title": "T-g3: Filename convention: <kind>-<guid_short>-<slug>.md \u2014 GUID for identity stability, slug for human browsing",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:04.006348",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "d32a1647-3a46-4acd-9e21-6533bab5274c",
+      "title": "T-g4: Bus artifact payload carries both guid + slug; cross-refs (Sources/Realizes/Blocked-by) use guid:slug syntax",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:04.093454",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "24e77531-7059-4afb-86ea-399537a09021",
+      "title": "T-g5: Source-resolution check matches GUID first, errors on unresolvable \u2014 phantom citations become impossible",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:04.180699",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "1d760d07-0f64-4bb1-965c-45fd44677258",
+      "title": "T-g6: Agent protocols teach guid semantics \u2014 cite GUID when amending existing artifact; coin new GUID for fresh",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:04.263624",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "022e5742-8943-4962-b2da-c6e7aa15906e",
+      "title": "T-g7: Dashboard + render layer surface display slug + title; GUIDs flow underneath",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:04.346777",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "f915ac91-caf0-4d14-a0c7-f03a2eaad7c2",
+      "title": "T-g8: Back-compat shim \u2014 existing slug-only references resolve via slug\u2192guid lookup at runtime so prior pilots keep working",
+      "description": "",
+      "priority": "P2",
+      "item_type": "chore",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:04.432954",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "ed330512-7220-470f-9786-f91f4f9f8d6b",
+      "title": "T-g9: Pilot validation \u2014 fresh end-to-end on a demo directive; confirm phantom-slug and slug-drift classes of bug are now impossible",
+      "description": "",
+      "priority": "P1",
+      "item_type": "chore",
+      "status": "backlog",
+      "created_at": "2026-05-15T13:09:04.517575",
       "created_by": "daedalus"
     }
   ],

@@ -36,8 +36,16 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from wonderland.adr import slugify
 
+from wonderland.artifact_guid import new_artifact_guid, short_guid
+
 REVIEWS_DIRNAME = "reviews"
-_FILENAME_PATTERN = re.compile(r"^review-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18).
+_FILENAME_PATTERN = re.compile(
+    r"^review-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+_NUMBER_FROM_H2 = re.compile(r"^##\s*Review\s+(\d+)\s*:", re.MULTILINE)
 
 
 class ReviewSeverity(StrEnum):
@@ -114,6 +122,11 @@ class ReviewPayload(BaseModel):
       to agree at the top.
     """
 
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable Review identity. Caterpillar re-emits with same
+    guid to update an existing review (e.g. after seeing the
+    author's fix); coining a new guid creates a new review."""
+
     title: str = Field(min_length=1)
     """Short human-readable summary, e.g. ``"Payment refund handler"``.
     Becomes the slug when persisted."""
@@ -166,6 +179,7 @@ class ReviewPayload(BaseModel):
 @dataclass(frozen=True)
 class ReviewRecord:
     number: int
+    guid: str
     slug: str
     title: str
     verdict: ReviewVerdict
@@ -185,6 +199,7 @@ def render_review(number: int, payload: ReviewPayload) -> str:
     lines: list[str] = [
         f"## Review {number:03d}: {payload.title}",
         "",
+        f"**GUID:** {payload.guid}",
         f"**Files reviewed:** {', '.join(payload.target_files)}",
         f"**Verdict:** {payload.verdict.value}",
         "",
@@ -268,6 +283,15 @@ class ReviewRegistry:
             return 1
         return max(r.number for r in existing) + 1
 
+    def find_by_guid(self, guid: str) -> ReviewRecord | None:
+        """P18 T-g2 — primary identity lookup."""
+        if not guid:
+            return None
+        for record in self.list_reviews():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_slug(self, slug: str) -> ReviewRecord | None:
         for record in self.list_reviews():
             if record.slug == slug:
@@ -289,16 +313,27 @@ class ReviewRegistry:
             payload if isinstance(payload, ReviewPayload) else ReviewPayload.model_validate(payload)
         )
 
-        number = self.next_number()
         slug = slugify(validated.title)
-        filename = f"review-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        # T-g2: guid-first lookup. Review doesn't have update-by-slug
+        # (each review is a discrete event by default), but
+        # update-by-guid is the right semantic when Caterpillar
+        # explicitly amends a prior review by re-emitting its guid.
+        existing = self.find_by_guid(validated.guid)
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            # T-g3: filename embeds short_guid for substrate identity.
+            filename = f"review-{short_guid(validated.guid)}-{slug}.md"
+            full_path = self._root / filename
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_review(number, validated), encoding="utf-8")
 
         return ReviewRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             verdict=validated.verdict,
@@ -315,19 +350,44 @@ class ReviewRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title, verdict, target_files = ReviewRegistry._read_header(
             path, fallback_title=slug
         )
+        guid = ReviewRegistry._guid_from_file(path)
+        number = ReviewRegistry._number_from_file(path, id_part)
         return ReviewRecord(
             number=number,
+            guid=guid,
             slug=slug,
             title=title,
             verdict=verdict,
             target_files=target_files,
             path=path,
         )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy filenames carried number in the id slot;
+        new-shape files keep it only in the H2 header."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _read_header(

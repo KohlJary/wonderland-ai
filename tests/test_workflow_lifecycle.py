@@ -964,3 +964,821 @@ class TestParallelPerItem:
             "tickets within a feature run in true pipeline — that's "
             "the whole point of two-level"
         )
+
+
+# --- Review-verdict routing lifecycle gate (post-validation pilot fix) ---
+
+
+class TestFeatureInImplementationStateGate:
+    """The bug from projects/validation pilot: tdd-design's
+    consolidation meeting (per_item=feature) emitted a review
+    artifact with verdict=request-changes calling out duplicate
+    decompositions. The substrate's _route_blocking_review fired,
+    back-filled fresh tickets to in_progress, then marked them done,
+    mid-design. The fix: gate review-verdict routing on feature
+    lifecycle state — only fire when the feature is in queued /
+    in_progress / ready_for_review (i.e. actually being implemented).
+    Design-stage features (proposed / in_design / designed) skip the
+    routing entirely."""
+
+    def test_returns_false_when_no_state_record(self, tmp_path: Path) -> None:
+        from wonderland.workflow import _feature_in_implementation_state
+
+        # No feature-states.jsonl at all → no state → no routing.
+        assert (
+            _feature_in_implementation_state(tmp_path, "any-feature")
+            is False
+        )
+
+    def test_returns_false_for_design_states(self, tmp_path: Path) -> None:
+        """proposed, in_design, designed → not implementation. The
+        canonical projects/validation bug was a design-state feature
+        triggering implementation routing."""
+        from wonderland.feature_lifecycle import back_fill_state
+        from wonderland.workflow import _feature_in_implementation_state
+
+        for state in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+        ):
+            slug = f"f-{state.value}"
+            back_fill_state(tmp_path, slug, state, notes="seed")
+            assert (
+                _feature_in_implementation_state(tmp_path, slug) is False
+            ), f"state {state.value} should NOT trigger routing"
+
+    def test_returns_true_for_implementation_states(
+        self, tmp_path: Path
+    ) -> None:
+        """queued, in_progress, ready_for_review → routing fires.
+        These are the lifecycle states where Caterpillar's M8 review
+        verdicts legitimately mean 'mark tickets done + synthesize
+        follow-ups'."""
+        from wonderland.feature_lifecycle import back_fill_state
+        from wonderland.workflow import _feature_in_implementation_state
+
+        for state in (
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+            FeatureState.READY_FOR_REVIEW,
+        ):
+            slug = f"f-{state.value}"
+            back_fill_state(tmp_path, slug, state, notes="seed")
+            assert (
+                _feature_in_implementation_state(tmp_path, slug) is True
+            ), f"state {state.value} should trigger routing"
+
+    def test_returns_false_for_terminal_states(self, tmp_path: Path) -> None:
+        """verified, rejected → past implementation, no routing."""
+        from wonderland.feature_lifecycle import back_fill_state
+        from wonderland.workflow import _feature_in_implementation_state
+
+        for state in (FeatureState.VERIFIED, FeatureState.REJECTED):
+            slug = f"f-{state.value}"
+            back_fill_state(tmp_path, slug, state, notes="seed")
+            assert (
+                _feature_in_implementation_state(tmp_path, slug) is False
+            )
+
+
+def _ticket_utterance(
+    slug: str, title: str, sources: list[str]
+):
+    """Synthesize a ticket-emitting utterance for the attribution
+    helper to scan. Mirrors the shape Rabbit emits at M3."""
+    from wonderland.utterance import (
+        AgentIdentity,
+        Artifact,
+        SpeechAct,
+        Utterance,
+        UtteranceContent,
+    )
+
+    return Utterance(
+        thread_id="decomposition",
+        speaker=AgentIdentity(name="white_rabbit", constitution_version="0.1"),
+        addressed_to="caucus",
+        speech_act=SpeechAct.TICKET,
+        content=UtteranceContent(
+            body=f"Ticket: {slug}",
+            artifacts=[
+                Artifact(
+                    kind="ticket",
+                    payload={
+                        "slug": slug,
+                        "title": title,
+                        "sources": list(sources),
+                    },
+                ),
+            ],
+        ),
+    )
+
+
+class TestTicketSourceAttribution:
+    """The validation3 pilot revealed Rabbit's M3 ticket emissions
+    drift across iterations — early iterations cite the feature
+    slug correctly; later ones cite invented ``story-*`` slugs
+    that don't resolve. Dashboard attribution breaks silently. The
+    substrate auto-injects the iteration's feature slug as the
+    first source — substrate-enforced rather than directive-
+    dependent."""
+
+    def _setup_ticket_on_disk(
+        self, tmp_path: Path, slug: str, sources: list[str]
+    ) -> Path:
+        """Write a minimal ticket markdown with a Sources line."""
+        from wonderland.ticket import (
+            TicketPayload,
+            TicketRegistry,
+            TicketStackSpan,
+            TicketTier,
+        )
+
+        reg = TicketRegistry(tmp_path)
+        record = reg.write(TicketPayload(
+            title=slug,
+            description="d",
+            owner="tweedledee",
+            tier=TicketTier.V1,
+            stack_span=TicketStackSpan.BACKEND,
+            estimate="1d",
+            acceptance=["a"],
+            sources=sources or ["seed-feature"],
+        ))
+        return record.path
+
+    def test_no_op_when_meeting_not_per_item_feature(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.workflow import (
+            Meeting,
+            _attribute_ticket_sources_to_iteration_feature,
+        )
+
+        meeting = Meeting(
+            id="m7", label="M7", goal="g",
+            roster=["tweedledee"], per_item="ticket",
+        )
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[
+                _ticket_utterance("t1", "T1", ["something"]),
+            ],
+            current_item_slug="some-ticket-slug",
+        )
+        tickets_dir = tmp_path / ".wonderland" / "tickets"
+        assert not tickets_dir.exists() or not any(
+            tickets_dir.glob("ticket-*.md")
+        )
+
+    def test_no_op_when_no_current_item_slug(self, tmp_path: Path) -> None:
+        from wonderland.workflow import (
+            Meeting,
+            _attribute_ticket_sources_to_iteration_feature,
+        )
+
+        meeting = Meeting(
+            id="m3", label="M3", goal="g",
+            roster=["white_rabbit"], per_item="feature",
+        )
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[
+                _ticket_utterance("t1", "T1", ["something"]),
+            ],
+            current_item_slug=None,
+        )
+
+    def test_injects_feature_slug_when_missing_from_sources(
+        self, tmp_path: Path
+    ) -> None:
+        """The canonical validation3 case: ticket on disk cites
+        only a phantom ``story-foo`` slug; the helper prepends the
+        iteration's feature slug to both the bus payload and the
+        on-disk Sources line."""
+        from wonderland.workflow import (
+            Meeting,
+            _attribute_ticket_sources_to_iteration_feature,
+        )
+
+        path = self._setup_ticket_on_disk(
+            tmp_path,
+            slug="backend-user-registration",
+            sources=["story-user-registration"],
+        )
+        utterance = _ticket_utterance(
+            "backend-user-registration",
+            "Backend user registration",
+            ["story-user-registration"],
+        )
+
+        meeting = Meeting(
+            id="decomposition", label="M3", goal="g",
+            roster=["white_rabbit"], per_item="feature",
+        )
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[utterance],
+            current_item_slug="user-registration-and-login",
+        )
+
+        text = path.read_text(encoding="utf-8")
+        sources_line = next(
+            line for line in text.splitlines()
+            if line.startswith("**Sources:**")
+        )
+        assert sources_line.startswith(
+            "**Sources:** user-registration-and-login, "
+        )
+        assert "story-user-registration" in sources_line
+
+        payload = utterance.content.artifacts[0].payload
+        assert payload["sources"] == [
+            "user-registration-and-login",
+            "story-user-registration",
+        ]
+
+    def test_no_op_when_feature_slug_already_in_sources(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.workflow import (
+            Meeting,
+            _attribute_ticket_sources_to_iteration_feature,
+        )
+
+        path = self._setup_ticket_on_disk(
+            tmp_path,
+            slug="page-crud",
+            sources=["create-and-manage-pages-with-url-slugs", "page-storage"],
+        )
+        original = path.read_text(encoding="utf-8")
+
+        meeting = Meeting(
+            id="decomposition", label="M3", goal="g",
+            roster=["white_rabbit"], per_item="feature",
+        )
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[
+                _ticket_utterance(
+                    "page-crud", "Page CRUD",
+                    ["create-and-manage-pages-with-url-slugs", "page-storage"],
+                ),
+            ],
+            current_item_slug="create-and-manage-pages-with-url-slugs",
+        )
+        assert path.read_text(encoding="utf-8") == original
+
+    def test_handles_empty_sources_list(self, tmp_path: Path) -> None:
+        """A ticket emitted with no sources gets the feature slug as
+        its single source (edge case but covers it explicitly)."""
+        from wonderland.workflow import (
+            Meeting,
+            _attribute_ticket_sources_to_iteration_feature,
+        )
+
+        utterance = _ticket_utterance("orphan-ticket", "Orphan", [])
+        meeting = Meeting(
+            id="decomposition", label="M3", goal="g",
+            roster=["white_rabbit"], per_item="feature",
+        )
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[utterance],
+            current_item_slug="parent-feature",
+        )
+        assert utterance.content.artifacts[0].payload["sources"] == [
+            "parent-feature"
+        ]
+
+    def test_thread_id_scopes_attribution_to_iteration(
+        self, tmp_path: Path
+    ) -> None:
+        """The validation4 pilot's defining failure: M3 parallel
+        iterations share the global capture-slice, so each
+        iteration's new_utterances contained sibling iterations'
+        tickets too. The function attributed every iteration's
+        feature slug to every ticket on the slice — final state
+        had every ticket citing every feature.
+
+        Fix: thread_id parameter scopes new_utterances to the
+        iteration's own thread. Tickets emitted on other threads
+        are filtered out before attribution touches them."""
+        from wonderland.workflow import (
+            Meeting,
+            _attribute_ticket_sources_to_iteration_feature,
+        )
+
+        # Seed two tickets, one per "iteration". Registry slugifies
+        # titles → lowercase slugs; match the slug we'll look up.
+        self._setup_ticket_on_disk(
+            tmp_path, slug="ticket-from-iter-a",
+            sources=["story-a"],
+        )
+        self._setup_ticket_on_disk(
+            tmp_path, slug="ticket-from-iter-b",
+            sources=["story-b"],
+        )
+
+        utt_a = _ticket_utterance(
+            "ticket-from-iter-a", "T-A", ["story-a"],
+        )
+        utt_a = utt_a.model_copy(update={"thread_id": "decomposition-feature-a"})
+        utt_b = _ticket_utterance(
+            "ticket-from-iter-b", "T-B", ["story-b"],
+        )
+        utt_b = utt_b.model_copy(update={"thread_id": "decomposition-feature-b"})
+
+        meeting = Meeting(
+            id="decomposition", label="M3", goal="g",
+            roster=["white_rabbit"], per_item="feature",
+        )
+
+        # Iteration A completes — scope to thread A. Should only
+        # touch ticket-from-iter-a, leave ticket-from-iter-b alone.
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[utt_a, utt_b],  # global slice has both
+            current_item_slug="feature-a",
+            thread_id="decomposition-feature-a",
+        )
+
+        tickets_dir = tmp_path / ".wonderland" / "tickets"
+        a_text = next(tickets_dir.glob("*ticket-from-iter-a.md")).read_text()
+        b_text = next(tickets_dir.glob("*ticket-from-iter-b.md")).read_text()
+
+        # A got the feature slug prepended.
+        assert "feature-a, story-a" in a_text
+        # B was left alone — no cross-iteration contamination.
+        assert "feature-a" not in b_text
+        assert "story-b" in b_text
+
+    def test_skips_non_ticket_artifacts(self, tmp_path: Path) -> None:
+        """Feature / ADR / contract-note artifacts on the same bus
+        shouldn't be touched — only tickets get source-attribution."""
+        from wonderland.workflow import (
+            Meeting,
+            _attribute_ticket_sources_to_iteration_feature,
+        )
+
+        feature_utterance = _feature_utterance("some-feature", "Some feature")
+        meeting = Meeting(
+            id="decomposition", label="M3", goal="g",
+            roster=["white_rabbit"], per_item="feature",
+        )
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[feature_utterance],
+            current_item_slug="parent-feature",
+        )
+        payload = feature_utterance.content.artifacts[0].payload
+        assert "sources" not in payload or payload.get("sources") == []
+
+
+class TestMilestonePlanSnapshot:
+    """T-g9 follow-up — snapshot semantics for milestone_plan.
+
+    Validation5 pilot: agents converged from m3-routine-generation
+    to m3-equipment-and-routine across rotations, but the original
+    m3-routine-generation file stayed on disk because the substrate
+    treated milestone_plan as additive. The fix: at meeting end,
+    each speaker's most-recent milestone_plan defines their claim;
+    files outside the union of claims get deleted.
+    """
+
+    def _milestone_utterance(
+        self,
+        speaker: str,
+        slugs: list[str],
+    ):
+        from wonderland.utterance import (
+            AgentIdentity,
+            Artifact,
+            SpeechAct,
+            Utterance,
+            UtteranceContent,
+        )
+
+        return Utterance(
+            thread_id="planning",
+            speaker=AgentIdentity(
+                name=speaker, constitution_version="0.1"
+            ),
+            addressed_to="caucus",
+            speech_act=SpeechAct.MILESTONE_PLAN,
+            content=UtteranceContent(
+                body="plan",
+                artifacts=[
+                    Artifact(kind="milestone", payload={"slug": s})
+                    for s in slugs
+                ],
+            ),
+        )
+
+    def _seed_milestone_files(
+        self, tmp_path: Path, slugs: list[str]
+    ) -> None:
+        ms_dir = tmp_path / ".wonderland" / "milestones"
+        ms_dir.mkdir(parents=True, exist_ok=True)
+        for i, slug in enumerate(slugs, start=1):
+            (ms_dir / f"milestone-{i:02d}-{slug}.md").write_text(
+                f"## Milestone {i:02d}: {slug}\n\n"
+                f"**Slug:** {slug}\n"
+                f"**Order:** {i}\n"
+                f"**Deferred:** false\n"
+                f"**Confidence:** operator_stated\n\n"
+                "**Goal:**\n\nx\n",
+                encoding="utf-8",
+            )
+
+    def test_deletes_milestone_dropped_by_sole_emitter(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(
+            tmp_path, ["m1-foo", "m2-bar", "m3-old-name"]
+        )
+        # Single speaker emits twice; second emission drops m3-old.
+        utterances = [
+            self._milestone_utterance(
+                "alice", ["m1-foo", "m2-bar", "m3-old-name"]
+            ),
+            self._milestone_utterance(
+                "alice", ["m1-foo", "m2-bar", "m3-new-name"]
+            ),
+        ]
+        # Seed the file for m3-new-name too (the agent's write path
+        # would have created it; we're just testing the snapshot).
+        self._seed_milestone_files(
+            tmp_path, ["m1-foo", "m2-bar", "m3-new-name"]
+        )
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+        )
+        assert "m3-old-name" in deleted
+        assert "m3-new-name" not in deleted
+        files = sorted(
+            p.name for p in (tmp_path / ".wonderland" / "milestones").iterdir()
+        )
+        assert not any("m3-old-name" in f for f in files)
+        assert any("m3-new-name" in f for f in files)
+
+    def test_preserves_milestones_in_active_set(
+        self, tmp_path: Path
+    ) -> None:
+        """When the union of speakers' latest claims includes a
+        slug, it stays — even if an earlier emission dropped it
+        but a later emission re-added it."""
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(
+            tmp_path, ["m1-foo", "m2-bar"]
+        )
+        utterances = [
+            self._milestone_utterance("alice", ["m1-foo"]),
+            self._milestone_utterance("alice", ["m1-foo", "m2-bar"]),
+        ]
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+        )
+        assert deleted == []
+
+    def test_union_across_speakers_protects_claimed_milestones(
+        self, tmp_path: Path
+    ) -> None:
+        """alice's plan has m1+m2; rabbit's plan has m3. Union is
+        {m1, m2, m3}; nothing gets deleted. Multi-agent collaboration
+        preserves each agent's last-stated claims."""
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(tmp_path, ["m1-foo", "m2-bar", "m3-baz"])
+        utterances = [
+            self._milestone_utterance("alice", ["m1-foo", "m2-bar"]),
+            self._milestone_utterance("white_rabbit", ["m3-baz"]),
+        ]
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+        )
+        assert deleted == []
+
+    def test_validation5_two_m3_consolidation_pattern(
+        self, tmp_path: Path
+    ) -> None:
+        """The exact validation5 case: two agents converge from one
+        M3 slug to a different M3 slug across rotations. The
+        abandoned slug gets deleted; the new slug survives."""
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(
+            tmp_path,
+            [
+                "m1-marcus-logs-his-first-session",
+                "m2-marcus-feels-progress-unfold",
+                "m3-routine-generation-from-equipment",
+                "m3-equipment-and-routine-generation",
+            ],
+        )
+        utterances = [
+            self._milestone_utterance(
+                "alice",
+                [
+                    "m1-marcus-logs-his-first-session",
+                    "m2-marcus-feels-progress-unfold",
+                    "m3-routine-generation-from-equipment",
+                ],
+            ),
+            self._milestone_utterance(
+                "white_rabbit",
+                [
+                    "m1-marcus-logs-his-first-session",
+                    "m2-marcus-feels-progress-unfold",
+                    "m3-routine-generation-from-equipment",
+                    "m3-equipment-and-routine-generation",
+                ],
+            ),
+            self._milestone_utterance(
+                "alice",
+                [
+                    "m1-marcus-logs-his-first-session",
+                    "m2-marcus-feels-progress-unfold",
+                    "m3-equipment-and-routine-generation",
+                ],
+            ),
+            self._milestone_utterance(
+                "white_rabbit",
+                [
+                    "m1-marcus-logs-his-first-session",
+                    "m2-marcus-feels-progress-unfold",
+                    "m3-equipment-and-routine-generation",
+                ],
+            ),
+        ]
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+        )
+        assert deleted == ["m3-routine-generation-from-equipment"]
+
+    def test_no_op_when_no_milestone_plan_utterances(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(tmp_path, ["m1-foo"])
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[],
+        )
+        assert deleted == []
+        # m1-foo should still be on disk.
+        files = list(
+            (tmp_path / ".wonderland" / "milestones").iterdir()
+        )
+        assert len(files) == 1
+
+
+class TestRetractScopeGuard:
+    """Validation5 follow-up: ticket retract is scoped to the current
+    iteration. Out-of-scope retracts get rejected so an agent in
+    iteration A can't accidentally delete artifacts owned by
+    iteration B.
+    """
+
+    def _seed_ticket(
+        self,
+        tmp_path: Path,
+        slug: str,
+        sources: list[str],
+    ) -> Path:
+        tickets_dir = tmp_path / ".wonderland" / "tickets"
+        tickets_dir.mkdir(parents=True, exist_ok=True)
+        path = tickets_dir / f"ticket-01ABCDEF-{slug}.md"
+        path.write_text(
+            f"## Ticket 001: {slug}\n\n"
+            f"**GUID:** 01ABCDEFGHJKMNPQRSTVWXYZ12\n"
+            f"**Slug:** {slug}\n"
+            f"**Sources:** {', '.join(sources)}\n"
+            f"**Owner:** white_rabbit\n"
+            f"**Tier:** v1\n"
+            f"**Estimate:** 0.5d\n\n"
+            f"**Description:**\n\nx\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def _retract_utterance(
+        self,
+        speaker: str,
+        thread_id: str,
+        target_slug: str,
+    ):
+        from wonderland.utterance import (
+            AgentIdentity,
+            Artifact,
+            SpeechAct,
+            Utterance,
+            UtteranceContent,
+        )
+
+        return Utterance(
+            thread_id=thread_id,
+            speaker=AgentIdentity(
+                name=speaker, constitution_version="0.1"
+            ),
+            addressed_to="caucus",
+            speech_act=SpeechAct.RETRACT,
+            content=UtteranceContent(
+                body="",
+                artifacts=[
+                    Artifact(
+                        kind="retraction",
+                        payload={
+                            "target_kind": "ticket",
+                            "target_slug": target_slug,
+                            "reason": "out of scope",
+                        },
+                    )
+                ],
+            ),
+        )
+
+    def test_rejects_retract_when_ticket_sources_omit_iteration(
+        self, tmp_path: Path
+    ) -> None:
+        """Validation5 repro: Caterpillar in iteration `feature-a`
+        tries to retract a ticket whose sources point to `feature-b`.
+        Substrate refuses; ticket file stays on disk."""
+        from wonderland.workflow import _apply_retraction_for_utterance
+
+        path = self._seed_ticket(
+            tmp_path,
+            slug="t-belongs-to-b",
+            sources=["feature-b"],
+        )
+        utt = self._retract_utterance(
+            speaker="caterpillar",
+            thread_id="consolidation-feature-a",
+            target_slug="t-belongs-to-b",
+        )
+        records = _apply_retraction_for_utterance(
+            runner=_runner_with_root(tmp_path),
+            utterance=utt,
+            current_item_slug="feature-a",
+        )
+        assert records == []
+        assert path.is_file()
+
+    def test_allows_retract_when_ticket_sources_include_iteration(
+        self, tmp_path: Path
+    ) -> None:
+        """In-scope retract still works: Caterpillar can clean up a
+        ticket that legitimately belongs to his iteration."""
+        from wonderland.workflow import _apply_retraction_for_utterance
+
+        path = self._seed_ticket(
+            tmp_path,
+            slug="t-belongs-to-a",
+            sources=["feature-a"],
+        )
+        utt = self._retract_utterance(
+            speaker="caterpillar",
+            thread_id="consolidation-feature-a",
+            target_slug="t-belongs-to-a",
+        )
+        records = _apply_retraction_for_utterance(
+            runner=_runner_with_root(tmp_path),
+            utterance=utt,
+            current_item_slug="feature-a",
+        )
+        assert len(records) == 1
+        assert not path.exists()
+
+    def test_no_scope_means_no_guard(self, tmp_path: Path) -> None:
+        """When current_item_slug is None (non-per_item meetings),
+        retract works unscoped — back-compat for milestone-plan
+        and other non-iterated meetings."""
+        from wonderland.workflow import _apply_retraction_for_utterance
+
+        path = self._seed_ticket(
+            tmp_path,
+            slug="t-anywhere",
+            sources=["whatever"],
+        )
+        utt = self._retract_utterance(
+            speaker="caterpillar",
+            thread_id="planning",
+            target_slug="t-anywhere",
+        )
+        records = _apply_retraction_for_utterance(
+            runner=_runner_with_root(tmp_path),
+            utterance=utt,
+            current_item_slug=None,
+        )
+        assert len(records) == 1
+        assert not path.exists()
+
+    def test_resolves_guid_prefixed_source_citation(
+        self, tmp_path: Path
+    ) -> None:
+        """T-g5 guid:slug citations resolve correctly during scope
+        check. Ticket sourced to ``feature-guid:feature-a`` passes
+        scope when current_item_slug is ``feature-a``."""
+        from wonderland.workflow import _apply_retraction_for_utterance
+
+        path = self._seed_ticket(
+            tmp_path,
+            slug="t-guid-source",
+            sources=["01ABCDEFGHJKMNPQRSTVWXYZ99:feature-a"],
+        )
+        utt = self._retract_utterance(
+            speaker="caterpillar",
+            thread_id="consolidation-feature-a",
+            target_slug="t-guid-source",
+        )
+        records = _apply_retraction_for_utterance(
+            runner=_runner_with_root(tmp_path),
+            utterance=utt,
+            current_item_slug="feature-a",
+        )
+        assert len(records) == 1
+        assert not path.exists()
+
+
+class TestSourceResolves:
+    """T-g5 — source citation resolves to guid, slug, or guid:slug."""
+
+    def test_resolves_legacy_slug_citation(self) -> None:
+        from wonderland.workflow import _source_resolves
+
+        slugs = {"my-story"}
+        guids: set[str] = set()
+        assert _source_resolves("my-story", slugs, guids) is True
+
+    def test_resolves_full_guid_citation(self) -> None:
+        from wonderland.workflow import _source_resolves
+
+        guid = "01H8AB12CD34EF56GH78JK90MN"  # 26-char ULID-shaped
+        slugs: set[str] = set()
+        guids = {guid}
+        assert _source_resolves(guid, slugs, guids) is True
+
+    def test_resolves_guid_colon_slug_citation(self) -> None:
+        from wonderland.workflow import _source_resolves
+
+        guid = "01H8AB12CD34EF56GH78JK90MN"
+        slugs = {"my-story"}
+        guids = {guid}
+        assert _source_resolves(f"{guid}:my-story", slugs, guids) is True
+
+    def test_rejects_phantom_guid(self) -> None:
+        from wonderland.workflow import _source_resolves
+
+        slugs: set[str] = set()
+        guids: set[str] = set()
+        assert (
+            _source_resolves(
+                "01H8AB12CD34EF56GH78JK90MN", slugs, guids
+            )
+            is False
+        )
+
+    def test_rejects_phantom_slug(self) -> None:
+        from wonderland.workflow import _source_resolves
+
+        slugs = {"real-slug"}
+        guids: set[str] = set()
+        assert _source_resolves("phantom-slug", slugs, guids) is False
+
+    def test_falls_back_to_slug_tail_when_guid_unresolved(self) -> None:
+        """When guid prefix doesn't resolve but slug tail does — the
+        operator may have hand-edited a file's guid, so accept the
+        slug as evidence the citation is still meaningful."""
+        from wonderland.workflow import _source_resolves
+
+        slugs = {"my-story"}
+        guids: set[str] = set()
+        # Guid is invented; slug tail resolves.
+        assert (
+            _source_resolves(
+                "01PHANTOMPHANTOMPHANTOMPHA:my-story", slugs, guids
+            )
+            is True
+        )
+
+    def test_rejects_empty_source(self) -> None:
+        from wonderland.workflow import _source_resolves
+
+        assert _source_resolves("", set(), set()) is False

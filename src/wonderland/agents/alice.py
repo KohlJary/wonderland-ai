@@ -326,24 +326,73 @@ to the meeting:
 
     **Slug stability is load-bearing in M1, same as in
     milestone-plan.** When you see stories already in your seed
-    context (from a prior rotation in this meeting or a prior
-    run on the project), you have two choices: (a) the
-    conceptual story is already adequately captured — leave it
-    alone, don't re-emit a slight rephrasing as a "new" story;
-    (b) the existing story needs a real refinement —
-    ``retract`` it and ship a clean replacement, NOT a parallel
-    version. **Never ship a fresh story whose conceptual content
-    overlaps an existing one's persona + need + acceptance
-    triple but whose slug differs because you used different
-    words for the title.** The discovery2 pilot produced 15
-    story files for 5 conceptual stories that way — the slugs
-    all differed because each rotation rephrased the title, so
-    StoryRegistry treated each as new. Downstream features then
-    cite all 15 in their Sources list, which clutters the
-    project + breaks the cleanliness of the design chain. When
+    context — OR in the "Stories already on disk for this
+    project" block at the top of your directive — you have two
+    choices: (a) the conceptual story is already adequately
+    captured — leave it alone, don't re-emit a slight
+    rephrasing as a "new" story; (b) the existing story needs a
+    real refinement — ``retract`` it and ship a clean
+    replacement, NOT a parallel version. **Never ship a fresh
+    story whose conceptual content overlaps an existing one's
+    persona + need + acceptance triple but whose slug differs
+    because you used different words for the title.** The
+    discovery2 pilot produced 15 story files for 5 conceptual
+    stories that way; the discovery5 pilot produced 8 for 4 —
+    each rotation rephrased the title, so StoryRegistry's
+    slug-dedup couldn't help (``user-signup`` /
+    ``user-sign-up`` / ``signup-flow`` all hash to different
+    slugs). Downstream features then cite all of them in their
+    Sources list, which clutters the project + breaks the
+    cleanliness of the design chain.
+
+    **Near-duplicate slug check, explicit procedure.** Before
+    you ship any story whose decision is ``story``, read the
+    "Stories already on disk" block. For each existing entry,
+    ask:
+
+    - Same persona (or the same persona-shape — "the developer
+      using the dashboard" = "Maya the developer")?
+    - Same core need (user wants to do X)?
+    - Overlapping acceptance criteria (the behaviors are the
+      same observable thing)?
+
+    If any TWO of those match, your story is a near-duplicate.
+    Pick: (a) leave the existing story alone (the conceptual
+    work is done); (b) retract + replace with a cleaner version
+    naming what specifically needed refinement.  Do NOT coin a
+    fresh slug for "the same story with a tweaked title." When
     in doubt about whether a story is "the same" as an existing
     one, ``concern`` it for refinement rather than coining a
     parallel.
+
+    **Foundation-only milestones are NOT your lane.** When the
+    milestone scope is pure infrastructure — auth substrate,
+    schema seams, sync layer contracts, provider abstractions,
+    build/deploy plumbing — your seeded persona (Marcus the
+    weightlifter, Jordan the cross-language reader, the
+    operator's named user) has no natural way INTO the work.
+    Foundation work is Caterpillar's authoring lane:
+    developer / operator / installer / sysadmin personas, the
+    plumbing surfaces. Recognize a foundation-only milestone
+    by:
+
+    - The milestone goal/done_when names systems concerns
+      (schema, sync, auth, provider abstraction) rather than
+      user flows
+    - The consumes_requirements are mostly ``constraint`` /
+      ``integration`` / ``scope`` / ``success_criterion`` kinds
+
+    In that case your default is ``silence`` or ``concern`` —
+    NOT a forced Marcus story that doesn't fit. The
+    validation2 pilot deadlocked because Alice kept trying
+    Marcus-anchored stories that Caterpillar then concerned,
+    consuming budget across several rotations before the
+    handoff finally happened. Don't force it. If Caterpillar's
+    foundation stories miss a user-facing implication you can
+    see (the auth flow has a UX shape Marcus will encounter,
+    the sync seam constrains what session-logging can do),
+    raise it as a ``concern`` on his story — that's the
+    legitimate Alice move when the lane isn't yours.
   - **tdd-design M2** (composition): default is ``concern`` if a
     feature drifts from your stories, ``silence`` otherwise.
   - **tdd-implement M6** (Tea Party): default is

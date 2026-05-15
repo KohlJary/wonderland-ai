@@ -105,7 +105,10 @@ def test_write_creates_file_and_returns_record(tmp_path: Path) -> None:
     record = reg.write(_payload())
     assert record.number == 1
     assert record.slug == "translation-message-envelope"
-    assert record.path.name == "contract-note-001-translation-message-envelope.md"
+    # T-g3: filename embeds short_guid for substrate identity.
+    assert record.path.name == (
+        f"contract-note-{record.guid[:8]}-translation-message-envelope.md"
+    )
     assert record.path.is_file()
     assert record.state is ContractNoteState.PROPOSED
 

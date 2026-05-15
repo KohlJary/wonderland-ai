@@ -225,7 +225,12 @@ meetings:
         - observable done_when conditions (concrete enough to
           check)
         - **rich** list of consumes_requirements (requirement
-          slugs scoped to this milestone — see Coverage below)
+          citations scoped to this milestone — see Coverage below).
+          Each citation is a slug (legacy), full GUID, or
+          ``"<guid>:<slug>"`` (P18 canonical — guid resolves first).
+          You'll see the requirement's guid on the bus + in its
+          markdown ``**GUID:**`` line; prefer guid-prefixed
+          citations when available.
 
       **Each milestone should ship a *coherent thing* —
       operator-observable, not just internal architectural

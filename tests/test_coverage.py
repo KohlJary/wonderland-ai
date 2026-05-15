@@ -367,3 +367,68 @@ class TestMilestoneRealization:
             "milestone_realization", tmp_path, milestone_slug="m1"
         )
         assert gap is None
+
+
+# ---------- minimum_stories check (P16 — M1 deadlock backup) ----------
+
+
+class TestMinimumStoriesCheck:
+    """The validation2 pilots showed M1 can deadlock with zero or
+    one stories shipped even with the explicit lead-assignment
+    framing block. minimum_stories is the substrate's belt-and-
+    suspenders guarantee: rotation budget extends until at least
+    3 stories ship (or extra-rotations cap exhausts)."""
+
+    def test_no_stories_dir_returns_gap(self, tmp_path: Path) -> None:
+        """Fresh project, M1 hasn't shipped anything yet — gap
+        with count=0 in the summary."""
+        gap = run_coverage_check("minimum_stories", tmp_path)
+        assert gap is not None
+        assert gap.check_name == "minimum_stories"
+        assert gap.gap_kind == "insufficient_stories"
+        assert "0 story" in gap.summary
+
+    def test_empty_stories_dir_returns_gap(self, tmp_path: Path) -> None:
+        """Directory exists but no story files — same gap shape."""
+        (tmp_path / ".wonderland" / "stories").mkdir(parents=True)
+        gap = run_coverage_check("minimum_stories", tmp_path)
+        assert gap is not None
+        assert "0 story" in gap.summary
+
+    def test_one_story_returns_gap_with_count(self, tmp_path: Path) -> None:
+        """Below threshold — gap summary names the count so agents
+        see how many more are needed before next rotation fires."""
+        _write_story(tmp_path, 1, "only-story", realizes=[])
+        gap = run_coverage_check("minimum_stories", tmp_path)
+        assert gap is not None
+        assert "1 story" in gap.summary
+        assert "2 more" in gap.summary
+
+    def test_two_stories_still_below_threshold(self, tmp_path: Path) -> None:
+        _write_story(tmp_path, 1, "story-a", realizes=[])
+        _write_story(tmp_path, 2, "story-b", realizes=[])
+        gap = run_coverage_check("minimum_stories", tmp_path)
+        assert gap is not None
+        assert "1 more" in gap.summary
+
+    def test_exactly_three_stories_closes_gap(self, tmp_path: Path) -> None:
+        for i, slug in enumerate(["a", "b", "c"], start=1):
+            _write_story(tmp_path, i, f"story-{slug}", realizes=[])
+        gap = run_coverage_check("minimum_stories", tmp_path)
+        assert gap is None
+
+    def test_more_than_three_stories_no_gap(self, tmp_path: Path) -> None:
+        """The check is a floor, not a ceiling."""
+        for i, slug in enumerate(["a", "b", "c", "d", "e"], start=1):
+            _write_story(tmp_path, i, f"story-{slug}", realizes=[])
+        gap = run_coverage_check("minimum_stories", tmp_path)
+        assert gap is None
+
+    def test_gap_summary_names_lead_handoff(self, tmp_path: Path) -> None:
+        """The substrate's nudge cites the M1 LEAD framing block so
+        whichever agent's the lead picks up the directive cleanly —
+        not a generic 'someone ship more' nudge."""
+        gap = run_coverage_check("minimum_stories", tmp_path)
+        assert gap is not None
+        assert "M1 LEAD" in gap.summary
+        assert "decision: story" in gap.summary

@@ -1,0 +1,31 @@
+name: markdown-notes
+title: Markdown notes — single-page SPA with localStorage persistence
+description: |
+  First pure-frontend demo (react-vite skeleton without a backend).
+  Tests what the team does when there's no server-side: no auth,
+  no API, no Tweedledum work to speak of — does Rabbit lean on
+  Tweedledee alone, or invent a phantom backend feature? Inverse
+  of url-shortener's "no frontend" trap. Also exercises the M9
+  npm_build path under real load (TypeScript errors on a single-
+  page app will fail the build) while pytest_collects skips
+  cleanly (no Python project). Foundation work: state-shape
+  decisions (what's in a note, how tags index, how the search
+  filter works), keyboard shortcut wiring, localStorage migration
+  if the shape changes. Queen has light surface — privacy of
+  localStorage data is the main angle (anyone with browser
+  access sees your notes). Watch for: scope creep toward "sync
+  across devices" — the directive is explicit about no backend.
+body: |
+  Build a personal markdown note-taking app that runs entirely in
+  the browser. Single user, no auth, no server, single device. I
+  create notes (title + markdown body + tags), edit them in a
+  two-pane layout (list on left, editor on right), search filters
+  by title + body + tags. Notes persist in localStorage and
+  survive page reloads. Keyboard shortcuts: Ctrl+N new note,
+  Ctrl+S save, Ctrl+K open search, Ctrl+/ toggle preview mode.
+  Export all notes as a zip download on demand for backup. No
+  cross-device sync; this is a single-machine tool.
+suggested_workflow: tdd-design
+suggested_skeleton: react-vite
+tags: [pure-frontend, localstorage, no-backend, no-llm, keyboard-shortcuts]
+category: demo

@@ -216,58 +216,76 @@
     {
       "id": "p15-milestones",
       "title": "Milestones: sequential ordering above features",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [],
       "notes": "Adds the layer between requirements and features. Three-agent planning meeting (Rabbit + Cat + Alice) groups requirements into ordered milestones; tdd-design runs scoped to a milestone; dashboard surfaces milestone progression as the operator's primary attention surface. Cross-run continuity: re-running milestone-plan after a follow-up discovery reads the existing plan + new requirements and amends or appends as makes sense (registry updates by slug match). Status derived from features-belonging-to-milestone (no separate lifecycle log in v1)."
+    },
+    {
+      "id": "p17-local-inference",
+      "title": "Local inference: bring-your-own-model",
+      "status": "planned",
+      "roadmapItems": [
+        "8407f42b,403560e5,3b49e953,71dc0b23,7c017698,5d65a498,24d52587,b091edf2"
+      ],
+      "notes": "Add OpenAI-compatible model provider support (ollama, vLLM, LM Studio, llama.cpp, plus actual OpenAI / Together / Groq) alongside the Anthropic backend. Per-agent model selection so senior agents (Caterpillar, Cheshire Cat) run on premium while executors (Tweedles, Hatter) run on cheap local. Operator can run the substrate without an Anthropic key, accepting degraded performance. Sequencing: T-l1 unblocks everything (must be first); T-l2 \u2192 T-l3 is the OpenAI-compat adapter critical path; T-l4 + T-l5 parallelize once T-l1 lands; T-l6 sits on T-l4; T-l7 (pilot) sits on T-l2+l3+l4 landing; T-l8 (docs) reflects T-l7 findings. The hard part is quality cliff not architecture \u2014 Llama 3.2 3B vs Haiku 4.5 at constitutional adherence, JSON output reliability, tool-use reliability, multi-step reasoning. Phase exit: a pilot of hello-endpoint against Llama 3.2 via ollama produces an artifact, failure modes catalogued for a follow-up phase. Deferred to future work: prompt-cache equivalence beyond provider defaults; degraded-mode workflow variants (depend on T-l7 findings)."
+    },
+    {
+      "id": "p18-guid-identity",
+      "title": "GUID-everywhere: stable artifact identity",
+      "status": "in_progress",
+      "roadmapItems": [
+        "8700635b,30877dbb,c7b0572e,d32a1647,24e77531,1d760d07,022e5742,f915ac91,ed330512"
+      ],
+      "notes": "Replace slug-as-identity with GUID-as-identity across every artifact registry. Slug becomes cosmetic (human readability, dashboard display); GUID becomes load-bearing (routing, dedup, cross-references, source resolution). The slug-as-identity model has been the root cause of the entire failure-mode family we've been patching all night: phantom-slug citations (Rabbit inventing slugs that don't resolve), slug drift across rotations (same concept, near-duplicate slugs all hashed differently), attribution drift (tickets citing story-X that doesn't exist), feature-level near-duplicates (9 features for 3 concepts because each iteration coined slightly different slugs). Constitutional tightening at the agent layer is a band-aid; substrate-level identity stability is the durable fix. Sequencing: T-g1 (payload field) unblocks everything; T-g2 (registry layer) + T-g3 (filenames) are critical-path; T-g4 (bus + cross-refs) + T-g5 (source resolution) ship together once registries are GUID-aware; T-g6 (agent protocols) teaches the team to use GUIDs; T-g7 (UI) is the last consumer to update; T-g8 (back-compat) lets prior pilots keep working without manual migration; T-g9 closes the loop with a fresh end-to-end pilot. ~1-2 days focused work. Expected outcome: phantom-slug and slug-drift classes of bug become substrate-impossible; semantic-duplication (9 features for 3 concepts) remains a constitutional discipline problem but loses the substrate's contribution to making it worse."
     }
   ],
   "activePhase": {
-    "id": "p15-milestones",
-    "title": "Milestones: sequential ordering above features",
-    "started": "2026-05-14",
-    "goal": "Land the Milestone abstraction end-to-end: substrate + registry with update-by-slug semantics, three-agent milestone_plan decision mode, milestone-plan.yaml workflow with cross-run continuity (existing milestones seeded into the next planning pass), tdd-design --milestone <slug> filtering, dashboard milestone surfacing. Output: an operator runs discovery, then milestone-plan, then iterates tdd-design milestone-by-milestone with the team scoped to that milestone's requirements. Re-running discovery + milestone-plan after the initial cut amends the existing plan rather than starting from scratch.",
-    "sequencing": "T-m1 (substrate) \u2192 T-m2 (agent decision mode) \u2192 T-m3 (workflow YAML + planning meeting) is the critical path. T-m4 (tdd-design --milestone integration) + T-m5 (dashboard surfacing) parallelize after T-m3 lands. Status is derived from features-belonging-to-milestone \u2014 no separate milestone_lifecycle log in v1; (a) and (b) from the design conversation deferred until the implicit-status approach hits a real limit.",
+    "id": "p18-guid-identity",
+    "title": "GUID-everywhere: stable artifact identity",
+    "started": "2026-05-15",
+    "goal": "Replace slug-as-identity with GUID-as-identity across every artifact registry. Phantom citations, slug drift, near-duplicate emissions, and attribution drift become substrate-impossible rather than constitutional-discipline problems. Phase exit: a fresh end-to-end pilot ships artifacts whose cross-references are unambiguous and whose re-emissions amend cleanly.",
+    "sequencing": "T-g1 (payload guid field) unblocks everything. T-g2 (registry dedup by guid) + T-g3 (filename convention) ship together once payloads have the field. T-g4 (bus payload carries guid + slug) + T-g5 (source resolution matches guid first) ship together once registries are guid-aware. T-g6 (agent protocols teach guid semantics) is the constitutional layer. T-g7 (dashboard + render UI) is the last consumer to update. T-g8 (back-compat shim for prior pilots) parallelizes with T-g7. T-g9 (pilot validation) closes the loop.",
     "tasks": [
       {
-        "id": "T-m1",
-        "title": "Milestone substrate",
-        "status": "done",
-        "details": "wonderland/milestone.py: Milestone, MilestoneStatus enum (proposed/in_progress/done/deferred \u2014 DERIVED from features, not lifecycle-tracked), MilestonePayload, MilestoneRegistry with update-by-slug semantics (re-write of same slug overwrites prior file), render_milestone markdown. Tests cover round-trip + update-vs-append behavior.",
-        "resolution": "Substrate landed at src/wonderland/milestone.py with 33 unit tests passing. Shipped: MilestonePayload (slug-pattern validator, duplicate-requirement check), MilestoneRegistry with update-by-slug semantics (overwrite + rename-on-order-shift) for cross-run continuity, MilestoneStatus enum + derive_status() folding feature states + deferred flag, render_milestone markdown. Top-level wonderland namespace exposes Milestone as an alias for MilestonePayload (mirrors Story/Ticket pattern)."
-      },
-      {
-        "id": "T-m2",
-        "title": "Three agents pick up milestone_plan decision",
-        "status": "done",
-        "details": "Alice / Cat / Rabbit gain milestone_plan decision mode + milestones: list[MilestonePayload] field on the response. Each emits the plan from their lens: Alice grounds in persona-shipped value, Cat checks architectural ordering / dependencies, Rabbit owns the order + done-criteria. Additive \u2014 existing decisions unchanged. New _record_milestones method per agent + RequirementRegistry-style artifact emission.",
-        "resolution": "Alice / Cat / Rabbit each pick up milestone_plan decision mode + milestones field + milestone_registry param + _record_milestones method. SpeechAct.MILESTONE_PLAN added. Runner wires MilestoneRegistry into all three. Each agent has a distinct lens in the output protocol (Alice persona-anchored, Cat architectural, Rabbit canonical-order owner). 169 tests passing."
-      },
-      {
-        "id": "T-m3",
-        "title": "milestone-plan.yaml workflow + planning meeting",
-        "status": "done",
-        "details": "closet/workflows/milestone-plan.yaml: single meeting 'planning' with roster [white_rabbit, cheshire_cat, alice]. Phased shape \u2014 discussion phase + commit phase, both with exit_condition_artifact: milestone. Seeds: requirements + existing milestones from disk (cross-run continuity). Category: planning. Operator runs this after discovery; re-runs after follow-up discovery to extend the plan.",
-        "resolution": "milestone-plan.yaml authored at closet/workflows/milestone-plan.yaml. Single meeting (P1 The Caucus on the Map) with roster [white_rabbit, cheshire_cat, alice], phased shape (discussion 3 rotations + commit 2 rotations, both exit_condition_artifact: milestone). Seeds: project_context + requirement + milestone for cross-run continuity. Category: planning, budget $1.50. Side-fix on seeds_fallback: both 'requirement' and 'milestone' kinds were missing from the loader dispatch (P14 gap); both wired now via RequirementRegistry + MilestoneRegistry with a new _RegistryRecordAdapter. 174 tests passing."
-      },
-      {
-        "id": "T-m4",
-        "title": "tdd-design seeds from milestone",
-        "status": "done",
-        "details": "Add --milestone <slug> to launch_background_run + cli_run_bg argparse + NewRunScreen as an optional input. tdd-design's M1+ seed filtering: when --milestone is set, filter requirements to milestone.consumed_requirements list; supplemental framing on M1's convenor_directive includes milestone.goal + milestone.done_criteria. Without --milestone: legacy behavior (all requirements visible). Same plumbing for tdd-implement so an operator can scope implementation to a milestone.",
-        "resolution": "Shipped --milestone <slug> wire-up end-to-end. cli_run_bg.py --milestone flag \u2192 LiveRunHandle(milestone_slug=...) \u2192 run_workflow(milestone_slug=...) \u2192 _resolve_milestone_scope reads MilestoneRegistry, parses goal + done_when + consumes_requirements out of the markdown, builds a _MilestoneScope dataclass, stores it module-level via set_active_milestone_scope. resolve_seeds reads the scope and, for any binding pulling requirement-kind artifacts, narrows to the consumed slug list (drops off-scope utterances; slices kept utterances so on-scope requirements + non-requirement artifacts pass through, off-scope requirements drop out). Entry meeting's convenor_directive gets the milestone framing (name, slug, goal, done-when bullets) prepended so M1+ read the scope first thing. tdd-design.yaml M1 now binds the requirement kind so discovery output flows in. T-i7 (tdd-design seeds from requirements) was absorbed by this task \u2014 the requirement seeds + scope filter ship together. TUI picker deferred to T-m5 (Dashboard surfacing). 8 new tests in test_workflow.py (TestResolveSeedsMilestoneScope + TestParseMilestoneBody), full test_workflow + test_allowed_decisions + test_milestone suites green."
-      },
-      {
-        "id": "T-m5",
-        "title": "Dashboard surfacing of milestones",
+        "id": "T-g1",
+        "title": "Add guid field to all artifact payloads + render/parse round-trip",
         "status": "pending",
-        "details": "Features tree in ProjectDashboardScreen groups by milestone (top-level nodes = milestones, child nodes = features that belong to each via the milestone's consumed_requirements \u2192 features-sourcing-those-requirements derivation). New 'Milestones' status pane shows ordered list with derived status (proposed if no features queued, in_progress if any feature is in_progress, done if all features verified, deferred if marked so in YAML). Dashboard's primary action becomes 'Run design for <next milestone>' rather than 'Run design'."
+        "details": "Every payload (Story/Feature/Ticket/ADR/Ruling/Review/ContractNote/Milestone/Requirement/TestScenario/Implementation) gets a guid: str field with default_factory=ulid_new. Markdown render emits **GUID:** <ulid>. Parser reads it back; absence triggers back-fill from filename or freshly generated. Pydantic accepts both paths so existing tests don't break."
       },
       {
-        "id": "T-m6",
-        "title": "Substrate-level meeting allowed_decisions guardrail",
+        "id": "T-g2",
+        "title": "Registries dedup by guid",
         "status": "done",
-        "details": "Add allowed_decisions: list[str] field to Meeting in workflow.py. When set, _run_one_meeting drops artifacts shipped from decisions outside the list (with a warning logged). Belt-and-suspenders against agent stage-leak \u2014 e.g., Rabbit shipping tickets in a milestone-plan meeting despite the convenor_directive explicitly forbidding them. Surface dropped artifacts in the live-watch UI so the operator knows something was suppressed. Constitution-respecting (per don't-lightly-change-constitutions memory): the directive remains primary, this just prevents bad output from reaching disk when the directive isn't enough.",
-        "resolution": "Meeting.allowed_decisions field + module-level thread registry in workflow.py + WonderlandAgent._apply_allowed_decisions_filter on the publish path + ArtifactSuppressed observer event + milestone-plan.yaml wired with the allowed list. Filter deletes on-disk files (best-effort, tolerates missing) + strips artifacts via model_copy; utterance stays as transcript record. _run_one_meeting wraps dispatch in try/finally around set/clear; body split to _run_one_meeting_inner for cleanness. Runner integration of the suppression event hook deferred \u2014 filter works without it. 16 new tests in test_allowed_decisions.py; 417 passing across affected suites."
+        "details": "All 12 artifact registries now expose find_by_guid() + write() looks up existing by guid first, slug fallback for back-compat. Story canonical (fe0b44e); batch of 11 (694be3a). 422 registry tests pass. Validation4's 9-features-for-3-concepts pattern is now substrate-impossible \u2014 agents re-emitting with same guid update in place.",
+        "resolution": "Shipped in commits fe0b44e + 694be3a. Slug-as-identity is dead; guid-as-identity is the registry primary key with slug-fallback for legacy files."
+      },
+      {
+        "id": "T-g3",
+        "title": "Filename convention",
+        "status": "done",
+        "details": "Every registry filename now <kind>-<short_guid>-<slug>.md. Numbers no longer in filename \u2014 display only in H2 header. Legacy + new shapes both readable via regex alternation.",
+        "resolution": "Shipped in commit af2091b. 12 registries + coverage.py + workflow.py + project_dashboard.py all migrated. Identity ambiguity (race conditions on number allocation, near-duplicate slug fresh-number-allocation) eliminated. 479 registry+consumer tests pass."
+      },
+      {
+        "id": "T-g4",
+        "title": "Bus carries guid+slug",
+        "status": "done",
+        "details": "Payload model already includes guid (T-g1); bus picks it up automatically.",
+        "resolution": "Shipped in commit fb2cbd8 (bundled with T-g5). Bus payload protocol unchanged \u2014 guid comes through via the Pydantic payload model field."
+      },
+      {
+        "id": "T-g5",
+        "title": "Source resolution prefers guid",
+        "status": "done",
+        "details": "Resolver accepts guid, slug, or guid:slug. Phantom guids now substrate-detectable.",
+        "resolution": "Shipped in commit fb2cbd8. 7 unit tests for the resolver branches."
+      },
+      {
+        "id": "T-g6",
+        "title": "Agent protocols teach guid semantics",
+        "status": "done",
+        "details": "Workflow YAMLs updated to mention guid/slug/guid:slug citation forms for sources + consumes_requirements. Constitutions untouched.",
+        "resolution": "Shipped in 6d183f8. Additive protocol guidance \u2014 legacy slug citations still work, guid prefix preferred when agents have it."
       }
     ],
     "deferred": []

@@ -169,14 +169,16 @@ def compute_orphan_requirements(project_root: Path) -> CoverageGap | None:
         return None
 
     # Collect decomposable requirement slugs by reading each file's
-    # Kind line. Filename pattern: requirement-NNN-<slug>.md
+    # Kind line. T-g3 filename: requirement-<short_guid|legacy>-<slug>.md
     decomposable: set[str] = set()
-    filename_re = re.compile(r"requirement-(\d+)-(.+)\.md")
+    filename_re = re.compile(
+        r"requirement-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
     for path in req_root.glob("requirement-*.md"):
         m = filename_re.match(path.name)
         if not m:
             continue
-        slug = m.group(2)
+        slug = m.group(1)
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
@@ -290,8 +292,11 @@ def compute_unrealized_milestone_requirements(
         # Read each requirement's kind by slug; treat missing as
         # decomposable so unknown shapes still surface to the operator.
         req_kinds: dict[str, str] = {}
+        req_filename_re = re.compile(
+            r"requirement-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+        )
         for path in req_root.glob("requirement-*.md"):
-            m = re.match(r"requirement-(\d+)-(.+)\.md", path.name)
+            m = req_filename_re.match(path.name)
             if not m:
                 continue
             try:
@@ -300,7 +305,7 @@ def compute_unrealized_milestone_requirements(
                 continue
             kind = _parse_requirement_kind(text)
             if kind is not None:
-                req_kinds[m.group(2)] = kind
+                req_kinds[m.group(1)] = kind
         for slug in milestone_consumes:
             kind = req_kinds.get(slug)
             if kind is not None and kind in _NON_DECOMPOSABLE_REQUIREMENT_KINDS:
@@ -316,13 +321,15 @@ def compute_unrealized_milestone_requirements(
     # realizes_requirements section + filename slug.
     story_root = project_root / ".wonderland" / "stories"
     req_to_stories: dict[str, set[str]] = {}
-    story_filename_re = re.compile(r"story-(\d+)-(.+)\.md")
+    story_filename_re = re.compile(
+        r"story-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
     if story_root.is_dir():
         for path in story_root.glob("story-*.md"):
             m = story_filename_re.match(path.name)
             if not m:
                 continue
-            story_slug = m.group(2)
+            story_slug = m.group(1)
             try:
                 text = path.read_text(encoding="utf-8")
             except OSError:
@@ -382,9 +389,57 @@ def compute_unrealized_milestone_requirements(
 CheckFn = Callable[..., "CoverageGap | None"]
 
 
+_MINIMUM_STORIES_THRESHOLD = 3
+
+
+def compute_minimum_stories_gap(project_root: Path) -> CoverageGap | None:
+    """Did M1 ship at least ``_MINIMUM_STORIES_THRESHOLD`` stories?
+
+    Returns ``None`` when the floor is met (coverage complete);
+    a ``CoverageGap`` with a count-based summary otherwise. The
+    substrate's coverage-routing reads the summary as a nudge and
+    extends rotation budget until either the floor's met or the
+    extra-rotations cap exhausts.
+
+    validation2 M1 deadlock motivation: three consecutive runs
+    exited with 0 or 1 stories despite a foundation milestone
+    needing 3-6. Constitutional + framing fixes were necessary but
+    not sufficient; this is the substrate-side guarantee that M1
+    rotation extends until the floor's met.
+    """
+    story_root = project_root / ".wonderland" / "stories"
+    count = 0
+    if story_root.is_dir():
+        count = sum(
+            1 for p in story_root.glob("story-*.md")
+            if p.is_file()
+        )
+    if count >= _MINIMUM_STORIES_THRESHOLD:
+        return None
+    summary = (
+        f"M1 coverage gap: {count} story/stories shipped; minimum "
+        f"is {_MINIMUM_STORIES_THRESHOLD}. The agent named in the "
+        f"M1 LEAD framing block (Caterpillar for foundation "
+        f"milestones, Alice for capability) must ship "
+        f"``decision: story`` with at least "
+        f"{_MINIMUM_STORIES_THRESHOLD - count} more "
+        f"stor{'y' if (_MINIMUM_STORIES_THRESHOLD - count) == 1 else 'ies'} "
+        f"this rotation. Don't ask the operator clarifying "
+        f"questions; the scope is in the milestone's "
+        f"consumes_requirements + done_when."
+    )
+    return CoverageGap(
+        check_name="minimum_stories",
+        gap_kind="insufficient_stories",
+        items=(),
+        summary=summary,
+    )
+
+
 _CHECK_REGISTRY: dict[str, CheckFn] = {
     "requirement_coverage": compute_orphan_requirements,
     "milestone_realization": compute_unrealized_milestone_requirements,
+    "minimum_stories": compute_minimum_stories_gap,
 }
 
 

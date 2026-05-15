@@ -229,7 +229,11 @@ def test_registry_writes_to_features_dir(tmp_path: Path) -> None:
     assert record.path.parent == tmp_path / ".wonderland" / "features"
     assert record.path.is_file()
     assert record.number == 1
-    assert record.path.name.startswith("feature-001-")
+    # T-g3: filename embeds short_guid (first 8 chars of ULID),
+    # not the legacy zero-padded number. Number lives in the H2
+    # header for display.
+    assert record.path.name.startswith(f"feature-{record.guid[:8]}-")
+    assert record.path.name.endswith(".md")
 
 
 def test_registry_numbers_increment(tmp_path: Path) -> None:

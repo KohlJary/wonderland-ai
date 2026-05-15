@@ -41,8 +41,16 @@ from pydantic import BaseModel, Field, field_validator
 
 from wonderland.adr import slugify
 
+from wonderland.artifact_guid import new_artifact_guid, short_guid
+
 CONTRACT_NOTES_DIRNAME = "contract-notes"
-_FILENAME_PATTERN = re.compile(r"^contract-note-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18).
+_FILENAME_PATTERN = re.compile(
+    r"^contract-note-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+_NUMBER_FROM_H2 = re.compile(r"^##\s*Contract Note\s+(\d+)\s*:", re.MULTILINE)
 
 
 class ContractNoteState(StrEnum):
@@ -94,6 +102,11 @@ class ContractNotePayload(BaseModel):
       agreed, what got escalated, what got deferred and why.
       Populated when state moves to a terminal state.
     """
+
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable ContractNote identity. Tweedles re-emit with
+    same guid to update a negotiation in flight; coining a new
+    guid creates a new contract note."""
 
     title: str = Field(min_length=1)
     proposed_change: str = ""
@@ -161,6 +174,7 @@ class ContractNotePayload(BaseModel):
 @dataclass(frozen=True)
 class ContractNoteRecord:
     number: int
+    guid: str
     slug: str
     title: str
     state: ContractNoteState
@@ -182,6 +196,7 @@ def render_contract_note(number: int, payload: ContractNotePayload) -> str:
     lines: list[str] = [
         f"## Contract Note {number:03d}: {payload.title}",
         "",
+        f"**GUID:** {payload.guid}",
         f"**State:** {payload.state.value}",
         f"**Contract Version:** {payload.contract_version or '(unlocked)'}",
         "",
@@ -279,6 +294,15 @@ class ContractNoteRegistry:
             return 1
         return max(r.number for r in existing) + 1
 
+    def find_by_guid(self, guid: str) -> ContractNoteRecord | None:
+        """P18 T-g2 — primary identity lookup."""
+        if not guid:
+            return None
+        for record in self.list_contract_notes():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_slug(self, slug: str) -> ContractNoteRecord | None:
         for record in self.list_contract_notes():
             if record.slug == slug:
@@ -314,16 +338,31 @@ class ContractNoteRegistry:
             else ContractNotePayload.model_validate(payload)
         )
 
-        number = self.next_number()
         slug = slugify(validated.title)
-        filename = f"contract-note-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        # T-g2: guid-first lookup; slug fallback (ContractNote already
+        # supports slug-based mutation via update()).
+        existing = self.find_by_guid(validated.guid)
+        if existing is None:
+            existing = self.find_by_slug(slug)
+
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            # T-g3: filename embeds short_guid for substrate identity.
+            filename = f"contract-note-{short_guid(validated.guid)}-{slug}.md"
+            full_path = self._root / filename
+
+        if existing is not None and existing.guid:
+            validated = validated.model_copy(update={"guid": existing.guid})
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_contract_note(number, validated), encoding="utf-8")
 
         return ContractNoteRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             state=validated.state,
@@ -373,6 +412,7 @@ class ContractNoteRegistry:
 
         return ContractNoteRecord(
             number=record.number,
+            guid=updated.guid,
             slug=record.slug,
             title=updated.title,
             state=updated.state,
@@ -389,19 +429,44 @@ class ContractNoteRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title, state, contract_version = ContractNoteRegistry._read_header(
             path, fallback_title=slug
         )
+        guid = ContractNoteRegistry._guid_from_file(path)
+        number = ContractNoteRegistry._number_from_file(path, id_part)
         return ContractNoteRecord(
             number=number,
+            guid=guid,
             slug=slug,
             title=title,
             state=state,
             contract_version=contract_version,
             path=path,
         )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy filenames carried number in the id slot;
+        new-shape files keep it only in the H2 header."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _read_header(path: Path, *, fallback_title: str) -> tuple[str, ContractNoteState, str]:
@@ -440,6 +505,8 @@ def _parse_payload(path: Path, fallback_title: str) -> ContractNotePayload:
     state = ContractNoteState.PROPOSED
     contract_version = ""
     source = ""
+    guid_match = _GUID_PATTERN.search(text)
+    guid = guid_match.group(1) if guid_match else new_artifact_guid()
     sections: dict[str, list[str]] = {}
     current_section: str | None = None
 
@@ -491,6 +558,7 @@ def _parse_payload(path: Path, fallback_title: str) -> ContractNotePayload:
         return "\n".join(sections.get(name, [])).strip()
 
     return ContractNotePayload(
+        guid=guid,
         title=title,
         current_shape=_join("current_shape") or "(missing)",
         proposed_change=_join("proposed_change") or "(missing)",

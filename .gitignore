@@ -41,3 +41,12 @@ uv.lock.bak
 # Local drafts (showcase skeletons, scratch notes) — kept out of the
 # repo until the underlying work justifies publishing them.
 drafts/
+
+# Local pilot scratch — projects/ and runs/ are operator-local
+# experiment trees that accumulate as the substrate is iterated on.
+# They aren't part of the package and shouldn't bloat git or PyPi.
+# When a pilot's artifacts inform the README or an analysis, copy
+# the relevant slice to analyses/data/<analysis-id>/ instead of
+# tracking the live experiment tree.
+projects/
+runs/

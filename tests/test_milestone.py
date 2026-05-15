@@ -153,7 +153,8 @@ def test_render_marks_deferred_when_flag_set() -> None:
 def test_registry_writes_numbered_file(tmp_path: Path) -> None:
     reg = MilestoneRegistry(tmp_path)
     record = reg.write(_payload())
-    assert record.path.name == "milestone-01-foundation.md"
+    # T-g3: filename embeds short_guid for substrate identity.
+    assert record.path.name == f"milestone-{record.guid[:8]}-foundation.md"
     assert record.path.exists()
 
 
@@ -181,18 +182,23 @@ def test_registry_update_by_slug_overwrites_in_place(
     assert records[0].name == "Revised name"
 
 
-def test_registry_update_with_order_change_renames_file(
+def test_registry_update_with_order_change_does_not_rename_file(
     tmp_path: Path,
 ) -> None:
-    """When ``order`` shifts on an update, the old filename should
-    be removed and the new one created. Without this, the
-    sorted-listing-as-sequence invariant breaks."""
+    """T-g3: filename embeds short_guid, not order. Reordering
+    updates the on-disk order in the H2 header without changing
+    the filename — guid is identity, order is display."""
     reg = MilestoneRegistry(tmp_path)
-    reg.write(_payload(slug="foundation", order=1))
-    assert (tmp_path / ".wonderland" / "milestones" / "milestone-01-foundation.md").exists()
-    reg.write(_payload(slug="foundation", order=3))
+    initial = reg.write(_payload(slug="foundation", order=1))
+    assert initial.path.exists()
+    updated = reg.write(
+        _payload(slug="foundation", order=3, guid=initial.guid),
+    )
+    # Same file (guid-stable identity), order has shifted in record.
+    assert updated.path == initial.path
+    assert updated.order == 3
     files = sorted(p.name for p in reg.path.iterdir())
-    assert files == ["milestone-03-foundation.md"]
+    assert files == [f"milestone-{initial.guid[:8]}-foundation.md"]
 
 
 def test_registry_find_by_slug(tmp_path: Path) -> None:

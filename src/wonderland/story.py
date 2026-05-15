@@ -22,9 +22,18 @@ from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
 
 from wonderland.adr import slugify
+from wonderland.artifact_guid import new_artifact_guid, short_guid
 
 STORIES_DIRNAME = "stories"
-_FILENAME_PATTERN = re.compile(r"^story-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18). The regex captures both
+# shapes so the registry can read mixed-vintage directories without
+# a migration step.
+_FILENAME_PATTERN = re.compile(
+    r"^story-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+_NUMBER_FROM_H2 = re.compile(r"^##\s*Story\s+(\d+)\s*:", re.MULTILINE)
 
 
 class StoryTier(StrEnum):
@@ -48,6 +57,15 @@ class StoryPayload(BaseModel):
       when she can't fully articulate it. Stories without flags are
       suspect (per §V).
     """
+
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable artifact identity. ULID generated at creation
+    and preserved across re-emissions (Alice re-emits with the
+    same guid to amend an existing story; coining a new guid
+    creates a new story). The substrate routes on guid; slug is
+    cosmetic. Cross-references (feature.sources, ticket sources,
+    milestone.consumes_requirements) cite guid; phantom guids
+    are caught immediately rather than drifting silently."""
 
     title: str = Field(min_length=1)
     persona: str = Field(min_length=1)
@@ -99,6 +117,7 @@ class StoryPayload(BaseModel):
 @dataclass(frozen=True)
 class StoryRecord:
     number: int
+    guid: str
     slug: str
     title: str
     path: Path
@@ -115,6 +134,8 @@ def render_story(number: int, payload: StoryPayload) -> str:
     """
     lines: list[str] = [
         f"## Story {number:03d}: {payload.title}",
+        "",
+        f"**GUID:** {payload.guid}",
         "",
         f"**Persona:** {payload.persona.rstrip()}",
         "",
@@ -194,6 +215,19 @@ class StoryRegistry:
                 return record
         return None
 
+    def find_by_guid(self, guid: str) -> StoryRecord | None:
+        """P18 — look up a story by its stable artifact guid. Primary
+        lookup path; slug-based lookup is the back-compat fallback
+        for re-emissions that don't thread the guid through. Returns
+        None when no record matches (caller should treat as
+        "create fresh artifact" signal)."""
+        if not guid:
+            return None
+        for record in self.list_stories():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_number(self, number: int) -> StoryRecord | None:
         for record in self.list_stories():
             if record.number == number:
@@ -222,23 +256,40 @@ class StoryRegistry:
         )
 
         slug = slugify(validated.title)
-        # Update-by-slug: if a story with this slug already exists,
-        # overwrite it in place (preserving its number). Otherwise
-        # allocate the next number + create a fresh file.
-        existing = self.find_by_slug(slug)
+        # T-g2: identity-by-guid. Look up by guid first; fall back
+        # to slug for back-compat with re-emissions that haven't
+        # learned to thread the guid through (pre-T-g6 agents +
+        # legacy bus payloads). Once T-g6 ships, the slug fallback
+        # becomes vestigial — agents cite guid directly and the
+        # registry no longer needs to guess.
+        existing = self.find_by_guid(validated.guid)
+        if existing is None:
+            existing = self.find_by_slug(slug)
+
         if existing is not None:
             number = existing.number
             full_path = existing.path
         else:
             number = self.next_number()
-            filename = f"story-{number:03d}-{slug}.md"
+            # T-g3: filename embeds short_guid for identity disambig.
+            # Number remains in the H2 header for display, but the
+            # filename no longer encodes substrate identity.
+            filename = f"story-{short_guid(validated.guid)}-{slug}.md"
             full_path = self._root / filename
+
+        # Preserve existing artifact's guid on slug-fallback match
+        # so re-emissions don't generate fresh identity. (When the
+        # primary guid-lookup matched, validated.guid IS existing.guid
+        # already; this assignment is a no-op there.)
+        if existing is not None and existing.guid:
+            validated = validated.model_copy(update={"guid": existing.guid})
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_story(number, validated), encoding="utf-8")
 
         return StoryRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             path=full_path,
@@ -253,10 +304,51 @@ class StoryRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title = StoryRegistry._title_from_file(path, fallback=slug)
-        return StoryRecord(number=number, slug=slug, title=title, path=path)
+        guid = StoryRegistry._guid_from_file(path)
+        number = StoryRegistry._number_from_file(path, id_part)
+        return StoryRecord(
+            number=number, guid=guid, slug=slug, title=title, path=path,
+        )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """Resolve the display number for a story file.
+
+        Legacy filenames carried the number in the id slot
+        (``story-003-foo.md``); the new T-g3 shape carries the
+        short_guid there and keeps the number only in the H2 header.
+        For mixed-vintage directories, prefer the filename when it's
+        numeric (avoids re-reading file contents for the common
+        case) and fall back to parsing the H2 header for new-shape
+        files. Numbers are display-only post-T-g3 — guid is the
+        substrate identity."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        """Extract the **GUID:** line value from the markdown. Returns
+        a fresh ULID when the file predates the P18 guid-everywhere
+        rollout — operator can re-emit through the registry to
+        persist a stable guid; back-compat path doesn't write
+        through on read."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        if m:
+            return m.group(1)
+        return new_artifact_guid()
 
     @staticmethod
     def _title_from_file(path: Path, *, fallback: str) -> str:

@@ -1,0 +1,32 @@
+name: habit-tracker
+title: Habit tracker with streaks, heatmaps, and weekly review
+description: |
+  Fullstack with deliberate NO-LLM framing — the directive is in
+  squathero's genre lane (personal motivation product, gamified
+  feedback) but with zero LLM hook. Tests whether the team
+  manufactures an unnecessary LLM feature ("AI-suggested next
+  habit", "AI-generated motivation messages") when the directive
+  doesn't ask for one — a real failure mode where the substrate's
+  own LLM dependence leaks into product decisions. If the team
+  ships an LLM feature here, that's the leak worth catching.
+  Foundation-shape: time-series data model (habit_completions
+  table indexed by user + date), streak-calculation logic, the
+  daily-quest derivation. Watch for: gamification scope sprawl
+  (XP / quests / badges / leaderboards / level-ups), same risk
+  as squathero — but here grounded against time-series math
+  rather than LLM-generated content, so the failure modes diverge.
+body: |
+  Build a personal habit tracker. I create habits — each is daily,
+  weekly, or N-times-per-week. I check them off as I do them, and
+  see streaks + completion rates over time. The weekly review
+  screen shows the last 7 days at a glance: which habits I hit,
+  which I missed, current streaks. The thing should make me want
+  to come back daily: streaks shown prominently, monthly heatmap
+  visualization of completions, today's incomplete habits
+  highlighted at the top of the page. Multi-user with email +
+  password auth so a small group of friends can each have their
+  own tracker on the same instance.
+suggested_workflow: tdd-design
+suggested_skeleton: fullstack-fastapi-react
+tags: [fullstack, no-llm, gamification, time-series, multi-user]
+category: demo

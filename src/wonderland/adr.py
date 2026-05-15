@@ -36,8 +36,17 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
+from wonderland.artifact_guid import new_artifact_guid, short_guid
+
 ADR_DIRNAME = "architecture"
-_FILENAME_PATTERN = re.compile(r"^adr-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18).
+_FILENAME_PATTERN = re.compile(
+    r"^adr-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+# ADR uses ``# ADR-NNN: Title`` (single hash, dash separator).
+_NUMBER_FROM_H1 = re.compile(r"^#\s*ADR-(\d+)\s*:", re.MULTILINE)
 _SLUG_NORMALIZE = re.compile(r"[^a-z0-9]+")
 
 
@@ -55,6 +64,12 @@ class ADRPayload(BaseModel):
     tradeoffs list — explicitly required to have at least one
     substantive entry.
     """
+
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable ADR identity. Re-emit with same guid to amend
+    (e.g. Cat updates a decision); coining a new guid creates a new
+    ADR. ``superseded_by`` should also migrate to guid-based
+    references in T-g4."""
 
     title: str = Field(min_length=1)
     context: str = Field(min_length=1)
@@ -76,6 +91,7 @@ class ADRPayload(BaseModel):
 @dataclass(frozen=True)
 class ADRRecord:
     number: int
+    guid: str
     slug: str
     title: str
     path: Path
@@ -94,6 +110,8 @@ def render_adr(number: int, payload: ADRPayload) -> str:
     """Render an ADRPayload as the markdown that will land on disk."""
     lines: list[str] = [
         f"# ADR-{number:03d}: {payload.title}",
+        "",
+        f"**GUID:** {payload.guid}",
         "",
         "## Context",
         "",
@@ -158,6 +176,15 @@ class ADRRegistry:
             return 1
         return max(r.number for r in existing) + 1
 
+    def find_by_guid(self, guid: str) -> ADRRecord | None:
+        """P18 T-g2 — primary identity lookup."""
+        if not guid:
+            return None
+        for record in self.list_adrs():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_slug(self, slug: str) -> ADRRecord | None:
         for record in self.list_adrs():
             if record.slug == slug:
@@ -186,23 +213,30 @@ class ADRRegistry:
         )
 
         slug = slugify(validated.title)
-        # P15 follow-up: update-by-slug semantics. Re-emit with the
-        # same slug overwrites in place; new slug appends with the
-        # next available number. Mirrors MilestoneRegistry.write.
-        existing = self.find_by_slug(slug)
+        # T-g2: guid-first lookup; slug fallback for back-compat.
+        existing = self.find_by_guid(validated.guid)
+        if existing is None:
+            existing = self.find_by_slug(slug)
+
         if existing is not None:
             number = existing.number
             full_path = existing.path
         else:
             number = self.next_number()
-            filename = f"adr-{number:03d}-{slug}.md"
+            # T-g3: filename embeds short_guid for substrate identity.
+            filename = f"adr-{short_guid(validated.guid)}-{slug}.md"
             full_path = self._root / filename
+
+        # Preserve existing artifact's guid on slug-fallback match.
+        if existing is not None and existing.guid:
+            validated = validated.model_copy(update={"guid": existing.guid})
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_adr(number, validated), encoding="utf-8")
 
         return ADRRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             path=full_path,
@@ -217,10 +251,36 @@ class ADRRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title = ADRRegistry._title_from_file(path, fallback=slug)
-        return ADRRecord(number=number, slug=slug, title=title, path=path)
+        guid = ADRRegistry._guid_from_file(path)
+        number = ADRRegistry._number_from_file(path, id_part)
+        return ADRRecord(
+            number=number, guid=guid, slug=slug, title=title, path=path,
+        )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy filenames carried number in the id slot;
+        new-shape files keep it only in the H1 header."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H1.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _title_from_file(path: Path, *, fallback: str) -> str:

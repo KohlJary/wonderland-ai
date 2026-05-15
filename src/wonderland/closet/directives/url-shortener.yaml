@@ -1,0 +1,30 @@
+name: url-shortener
+title: URL shortener with per-link click analytics — backend-only
+description: |
+  First pure-backend demo (python-fastapi skeleton without the
+  React side). Tests what the team does when there's no frontend
+  context — does Rabbit invent UI features that aren't asked for,
+  or does he respect the "API only" boundary in the directive?
+  Also a clean test of M9's npm_build skip path: the skeleton has
+  no package.json, so the frontend check should degrade silently
+  while pytest_collects exercises the auth + analytics + redirect
+  logic. Foundation work: API-key issuance + rate limiting + the
+  analytics aggregation layer are all candidates for Caterpillar-
+  authored stories. Queen-relevant: rate-limit policy on
+  shortening, abuse policy on visiting (don't become a malware
+  redirector), API-key rotation. No LLM involvement at all — the
+  team should NOT smuggle in "AI-suggested vanity slugs" or
+  similar; if they do, that's scope creep worth catching.
+body: |
+  Build a URL-shortening service as an API only — no frontend, no
+  web UI. Any client can POST a long URL with an API key and get
+  back a short slug. Visiting the short URL redirects to the
+  original. The owner of an API key can hit a stats endpoint per
+  short URL and see total clicks, clicks-by-day for the last 30
+  days, and user-agent family breakdown (browser / mobile / bot).
+  Expect this to be consumed by a separate frontend later; document
+  the API as if a team in another room will integrate with it.
+suggested_workflow: tdd-design
+suggested_skeleton: python-fastapi
+tags: [pure-backend, api, analytics, no-llm]
+category: demo

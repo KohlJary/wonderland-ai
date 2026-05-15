@@ -293,7 +293,13 @@ def test_write_creates_file_at_expected_path(tmp_path: Path) -> None:
     assert record.number == 1
     assert record.slug == "implement-health-endpoint"
     assert record.title == "Implement /health endpoint"
-    expected = tmp_path / ".wonderland" / "tickets" / "ticket-001-implement-health-endpoint.md"
+    # T-g3: filename embeds short_guid for substrate identity.
+    expected = (
+        tmp_path
+        / ".wonderland"
+        / "tickets"
+        / f"ticket-{record.guid[:8]}-implement-health-endpoint.md"
+    )
     assert record.path == expected
     assert record.path.is_file()
 

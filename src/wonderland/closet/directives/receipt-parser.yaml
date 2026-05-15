@@ -1,0 +1,31 @@
+name: receipt-parser
+title: Receipt parser — CLI that turns photographed receipts into expense ledger entries
+description: |
+  First CLI-shaped demo directive (python-cli skeleton). Stresses
+  three substrate edges that the fullstack demos don't: (a) a
+  command surface designed for argparse/click rather than HTTP
+  routes — different scoping for "what does an interaction look
+  like"; (b) filesystem-watching or file-arg handling as the
+  primary input modality, with no browser to lean on for UX; (c)
+  LLM-as-feature where the LLM call is the deliverable's core
+  loop, not a side feature. Watch for: whether Cat picks a
+  reasonable abstraction layer between the CLI surface and the LLM
+  call (an abstract Parser class swappable between OpenAI vision
+  and a fallback OCR path), and whether Queen rules on what
+  receipts-data sensitivity means for credential/data handling
+  (PII in receipts is real). Foundation-shape: the LLM provider
+  abstraction + the SQLite ledger schema + the file watcher are
+  all infrastructure work Caterpillar should author stories for.
+body: |
+  I want a command-line tool that turns photographed receipts into
+  an expense ledger. Drop a .jpg/.png in a watched folder (or pass
+  one as an arg), and the tool uses an LLM with vision to extract
+  merchant + date + line items + total + tax, then appends an entry
+  to a local SQLite ledger. I should be able to query the ledger
+  from the CLI too — "how much did I spend at coffee shops in
+  March", "show last 5 entries", "total by category for Q1". Pure
+  CLI, no web UI; runs locally on my laptop.
+suggested_workflow: tdd-design
+suggested_skeleton: python-cli
+tags: [llm-integration, cli, filesystem, sqlite]
+category: demo

@@ -47,9 +47,16 @@ from pathlib import Path
 from pydantic import BaseModel, Field, model_validator
 
 from wonderland.adr import slugify
+from wonderland.artifact_guid import new_artifact_guid, short_guid
 
 REQUIREMENTS_DIRNAME = "requirements"
-_FILENAME_PATTERN = re.compile(r"^requirement-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18).
+_FILENAME_PATTERN = re.compile(
+    r"^requirement-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+_NUMBER_FROM_H2 = re.compile(r"^##\s*Requirement\s+(\d+)\s*:", re.MULTILINE)
 
 # Disk-mediated bridge filenames. Both files live under the run dir
 # (.wonderland/runs/<run_id>/) alongside pending_question.json from
@@ -308,6 +315,14 @@ class RequirementPayload(BaseModel):
     ``persona`` + one ``situation`` requirement) at the
     interviewer's discretion."""
 
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable Requirement identity. Interviewer re-emits with
+    same guid to update an existing requirement; new guid creates
+    new. Cross-references (story.realizes_requirements,
+    milestone.consumes_requirements) cite guid; phantom slug
+    references become substrate-detectable rather than silent
+    drift."""
+
     title: str = Field(min_length=1)
     """Short specific title — the requirement summarized in a phrase.
     'Maya: end-of-day translation triage' beats 'persona 1'."""
@@ -348,6 +363,7 @@ class RequirementPayload(BaseModel):
 @dataclass(frozen=True)
 class RequirementRecord:
     number: int
+    guid: str
     slug: str
     title: str
     kind: RequirementKind
@@ -379,6 +395,7 @@ def render_requirement(
     lines: list[str] = [
         f"## Requirement {number:03d}: {payload.title}",
         "",
+        f"**GUID:** {payload.guid}",
         f"**Slug:** {slug}",
         f"**Kind:** {payload.kind.value}",
         f"**Confidence:** {payload.confidence.value}",
@@ -467,6 +484,15 @@ class RequirementRegistry:
             return 1
         return max(r.number for r in existing) + 1
 
+    def find_by_guid(self, guid: str) -> RequirementRecord | None:
+        """P18 T-g2 — primary identity lookup."""
+        if not guid:
+            return None
+        for record in self.list_requirements():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_slug(self, slug: str) -> RequirementRecord | None:
         for record in self.list_requirements():
             if record.slug == slug:
@@ -493,16 +519,32 @@ class RequirementRegistry:
             if isinstance(payload, RequirementPayload)
             else RequirementPayload.model_validate(payload)
         )
-        number = self.next_number()
+
         slug = slugify(validated.title)
-        filename = f"requirement-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        # T-g2: guid-first lookup; slug fallback for back-compat.
+        existing = self.find_by_guid(validated.guid)
+        if existing is None:
+            existing = self.find_by_slug(slug)
+
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            # T-g3: filename embeds short_guid for substrate identity.
+            filename = f"requirement-{short_guid(validated.guid)}-{slug}.md"
+            full_path = self._root / filename
+
+        if existing is not None and existing.guid:
+            validated = validated.model_copy(update={"guid": existing.guid})
+
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(
             render_requirement(number, validated), encoding="utf-8"
         )
         return RequirementRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             kind=validated.kind,
@@ -519,21 +561,46 @@ class RequirementRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title, kind, confidence = (
             RequirementRegistry._fields_from_file(
                 path, fallback_title=slug
             )
         )
+        guid = RequirementRegistry._guid_from_file(path)
+        number = RequirementRegistry._number_from_file(path, id_part)
         return RequirementRecord(
             number=number,
+            guid=guid,
             slug=slug,
             title=title,
             kind=kind,
             confidence=confidence,
             path=path,
         )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy filenames carried number in the id slot;
+        new-shape files keep it only in the H2 header."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _fields_from_file(

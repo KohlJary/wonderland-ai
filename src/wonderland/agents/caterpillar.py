@@ -225,6 +225,15 @@ class CaterpillarResponse(BaseModel):
                 "(target_kind, target_slug, reason) of an artifact you are "
                 "removing from this run's deliverables."
             )
+        if self.decision == "story" and not self.stories:
+            raise ValueError(
+                "CaterpillarResponse: decision='story' requires at least one "
+                "entry in `stories`. Declaring the decision without shipping "
+                "the payload was the validation2 pilot's deadlock shape — "
+                "agent kept saying 'I will author' without actually authoring. "
+                "Choose `silence` or `concern` if you don't have a story to "
+                "ship; choose `story` only when the stories[] payload is real."
+            )
 
 
 _OUTPUT_PROTOCOL = """\
@@ -358,6 +367,35 @@ At meetings other than M1, `story` is rare — use it when you
 notice during a review that a missing plumbing story was the
 upstream cause of the bug you're flagging.
 
+**Foundation-only milestones invert your ratio.** When the
+milestone scope is pure infrastructure — auth substrate, schema
+seams, sync layer contracts, provider abstractions, build/deploy
+plumbing — Alice has no Marcus-shaped persona to anchor against
+and her natural M1 move is `silence` or `concern`. **You become
+the primary author** in that context, not the secondary one.
+Recognize a foundation-only milestone by:
+
+  - The milestone goal/done_when names systems concerns
+    (schema, sync, auth, provider abstraction) rather than user
+    flows ("Marcus logs a session", "operator sees progress")
+  - The consumes_requirements are mostly ``constraint`` /
+    ``integration`` / ``scope`` / ``success_criterion`` kinds
+    rather than user-facing needs
+  - The seeded personas, when traced into the milestone scope,
+    point at developer / operator / installer / sysadmin
+    surfaces
+
+In that case ship 3–6 foundation stories yourself with
+developer/operator/installer personas — DO NOT wait for Alice
+to author and then concern her work. The validation2 pilot
+showed this deadlock: Alice tried Marcus stories that didn't
+fit, you ``concern``ed them, she retried, repeat. Recovery
+took several rotations and consumed budget that should have
+shipped the foundation stories directly. The lane is yours;
+take it. Alice will support you with `concern` when your
+foundation story has a user-facing implication she sees you
+missing.
+
 **`retract` — remove an off-scope artifact already on disk.** The
 substrate gave you this primitive in P15 T-m7 because `concern`
 names a violation without correcting it — and once a story or
@@ -469,6 +507,21 @@ not by consulting separate metadata.
   exist that the change might affect.
 - **`grep`**: when you suspect duplication or drift, search for
   the relevant symbol or contract version across the tree.
+- **`verify_imports`** (Python only): static check for the class
+  of bug that lives BETWEEN code review and test execution — a
+  Pydantic shadow field, a misnamed decorator (`@app.get` instead
+  of `@router.get`), a missing import that yields `NameError` at
+  runtime, a forward reference that doesn't resolve. Run this
+  against any single Python file whose import or framework usage
+  you suspect — the test scenarios can't catch what pytest's
+  collection phase blows up on. When a Python file has nontrivial
+  decorator or dependency wiring (FastAPI routes, Pydantic models
+  with forward refs, SQLAlchemy declarative models), call this
+  proactively as part of cross-ticket coherence — it's cheap and
+  the failure mode it surfaces is the one Caterpillar's §VIII
+  static blindspot reliably misses. Frontend files
+  (`.ts`/`.tsx`/`.js`/`.jsx`) get a pointer to the M9
+  `npm_build` check instead; don't try to verify those here.
 
 A finding that names a specific file and line is sharper than a
 finding that names a pattern. Quote the code; cite the diff.
@@ -632,6 +685,15 @@ class Caterpillar(WonderlandAgent):
                 )
                 continue
             record = self._review_registry.write(payload)
+            # P15 follow-up — include the structured findings in the
+            # bus artifact even when a registry is wired. The
+            # post-meeting routing
+            # (``_route_blocking_review`` →
+            # ``_synthesize_followup_ticket_from_finding``) reads
+            # findings off this payload; the discovery5 pilot showed
+            # the previous thin payload (path-only) silently
+            # zeroed the synthesis loop. Findings dicts are a few
+            # KB per review at most — well within the bus budget.
             artifacts.append(
                 Artifact(
                     kind="review",
@@ -642,6 +704,10 @@ class Caterpillar(WonderlandAgent):
                         "verdict": record.verdict.value,
                         "target_files": list(record.target_files),
                         "path": str(record.path),
+                        "findings": [
+                            f.model_dump(mode="json")
+                            for f in payload.findings
+                        ],
                     },
                 )
             )

@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import shutil
 import sys
 import time
 from collections.abc import Callable
@@ -694,6 +695,96 @@ class Tools:
 
         return _format_pytest_output(result.stdout, result.stderr, result.returncode)
 
+    def verify_imports(self, path: str, *, timeout_seconds: float = 15.0) -> str:
+        """Static-check a single file for import + name-resolution bugs.
+
+        The class of bug this catches lives BETWEEN code review and
+        test execution: a Pydantic shadow field, a misnamed decorator,
+        a missing import that yields ``NameError`` at runtime. M8
+        review (reading code) reliably misses these; pytest catches
+        them at collection — but only AFTER the team has already
+        shipped. ``verify_imports`` lets Caterpillar run the check
+        DURING review against a specific file, surfacing the bug
+        before it lands.
+
+        Implementation: invokes ruff with the pyflakes (F) + syntax
+        (E9) rule families. Each diagnostic is one line in the output;
+        on a clean file, returns ``OK: <path> passes static checks``.
+        Non-Python files (``.ts``, ``.tsx``, ``.js``, ``.jsx``) get a
+        pointer to npm_build instead — single-file frontend static
+        checks aren't supported by this tool (tsc needs the full
+        project context).
+
+        ``path`` is sandboxed to the project root.
+        ``timeout_seconds`` is a hard cap so a stuck ruff invocation
+        doesn't block the review.
+        """
+        full = self._resolve(path)
+        if not full.exists():
+            raise ToolError(f"file not found: {path}")
+        if not full.is_file():
+            raise ToolError(f"not a file: {path}")
+        suffix = full.suffix.lower()
+        if suffix in (".ts", ".tsx", ".js", ".jsx"):
+            return (
+                f"verify_imports skipped for {path} — frontend "
+                f"static checks need the full project context "
+                f"(tsc / vite). Use the M9 ``npm_build`` check "
+                f"for these files."
+            )
+        if suffix != ".py":
+            raise ToolError(
+                f"verify_imports only supports .py files (got "
+                f"{suffix!r}). For frontend code rely on the M9 "
+                f"npm_build verification."
+            )
+        ruff_bin = (
+            shutil.which("ruff")
+            or str(Path(sys.executable).parent / "ruff")
+        )
+        if not Path(ruff_bin).exists():
+            raise ToolError(
+                "ruff binary not found — verify_imports needs ruff "
+                "on PATH or installed in the active Python "
+                "environment. (Wonderland ships ruff as a dev "
+                "dependency; this should always be available.)"
+            )
+        cmd = [
+            ruff_bin, "check",
+            "--select", "F,E9",
+            "--no-fix",
+            "--output-format", "concise",
+            "--force-exclude",
+            str(full),
+        ]
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ToolError(
+                f"verify_imports timed out after {timeout_seconds}s "
+                f"on {path}"
+            ) from exc
+        if proc.returncode == 0:
+            return f"OK: {path} passes static checks (pyflakes + syntax)."
+        # Ruff exits non-zero when issues are found OR when it errors.
+        # Either way, surface stdout (the diagnostics) + stderr (any
+        # tool error) so the LLM gets the full picture.
+        diagnostics = (proc.stdout or "").strip()
+        errors = (proc.stderr or "").strip()
+        # Trim to keep the bus payload sane.
+        out = diagnostics if diagnostics else "(no diagnostics in stdout)"
+        if errors and errors != diagnostics:
+            out = f"{out}\n--- stderr ---\n{errors}"
+        if len(out) > MAX_TEST_OUTPUT_BYTES:
+            out = out[:MAX_TEST_OUTPUT_BYTES] + "\n[truncated]"
+        return f"verify_imports findings for {path}:\n{out}"
+
     def git_diff(self, path: str | None = None) -> str:
         """Show the diff of working-tree changes against HEAD.
 
@@ -1024,6 +1115,40 @@ class Tools:
                     "required": [],
                 },
             },
+            {
+                "name": "verify_imports",
+                "description": (
+                    "Run a static import + name-resolution check on a "
+                    "single Python file (pyflakes + syntax via ruff). "
+                    "Catches the class of bug that lives BETWEEN code "
+                    "review and test execution: a Pydantic shadow "
+                    "field, a misnamed decorator (``@app.get`` instead "
+                    "of ``@router.get``), a missing import that yields "
+                    "``NameError`` at runtime, a forward reference "
+                    "that doesn't resolve. M8 reviews reading code "
+                    "reliably miss these; pytest catches them at "
+                    "collection — but only after the team has "
+                    "shipped. Run this DURING review to surface the "
+                    "bug before the next implementation pass. Returns "
+                    "either ``OK: <path> passes static checks`` or a "
+                    "list of diagnostics with file:line context. "
+                    "Frontend files (.ts/.tsx/.js/.jsx) are skipped — "
+                    "use the M9 ``npm_build`` check for those."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": (
+                                "Path (relative to project root) of the "
+                                ".py file to check."
+                            ),
+                        },
+                    },
+                    "required": ["path"],
+                },
+            },
         ]
 
     def execute(
@@ -1098,6 +1223,8 @@ class Tools:
                         "timeout_seconds", DEFAULT_TEST_TIMEOUT_SECONDS
                     ),
                 )
+            elif tool_name == "verify_imports":
+                result_str = self.verify_imports(tool_input["path"])
             else:
                 raise ToolError(f"unknown tool: {tool_name}")
             return result_str

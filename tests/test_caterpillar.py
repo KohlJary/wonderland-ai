@@ -324,6 +324,44 @@ def test_parse_rejects_review_decision_with_no_reviews() -> None:
         parse_caterpillar_response('{"decision": "review", "body": "...", "reviews": []}')
 
 
+def test_parse_rejects_story_decision_with_empty_stories() -> None:
+    """validation2 pilot deadlock — agent declared decision='story'
+    without populating the stories[] payload, repeatedly. Validator
+    now requires the payload to actually exist when the decision
+    says so."""
+    with pytest.raises(CaterpillarResponseParseError):
+        parse_caterpillar_response(
+            '{"decision": "story", "body": "I will author foundation stories", "stories": []}'
+        )
+
+
+def test_parse_accepts_story_decision_with_payload() -> None:
+    """Happy path: decision='story' with a real StoryPayload entry
+    parses cleanly. Tests that the validator gate isn't accidentally
+    rejecting valid story emissions."""
+    payload = {
+        "decision": "story",
+        "stories": [{
+            "title": "Maya the developer runs the dashboard with mock data",
+            "persona": "Maya the developer onboarding to the codebase",
+            "situation": "First time setup; no external API keys yet.",
+            "need": "As Maya, I want to run the dashboard with OBOL_MOCK=1 so I can exercise UX without setting up Plaid.",
+            "acceptance": [
+                "OBOL_MOCK=1 yields seeded mock data on dashboard load",
+                "real Plaid path bypassed cleanly under mock",
+            ],
+            "tier": "core",
+            "confusion_flags": ["seed data scope undefined for sandbox vs production fixtures"],
+        }],
+    }
+    response = parse_caterpillar_response(
+        f"```json\n{json.dumps(payload)}\n```"
+    )
+    assert response.decision == "story"
+    assert len(response.stories) == 1
+    assert response.stories[0].persona.startswith("Maya")
+
+
 def test_parse_rejects_accept_with_no_approvals() -> None:
     """Schema validation propagates: accept requires substantive approvals."""
     payload = {
@@ -445,6 +483,40 @@ async def test_deliberate_persists_review_when_registry_present(tmp_path: Path) 
     reviews_dir = tmp_path / ".wonderland" / "reviews"
     files = sorted(reviews_dir.glob("review-*.md"))
     assert len(files) == 1
+
+
+async def test_persisted_review_artifact_carries_findings(tmp_path: Path) -> None:
+    """P15 follow-up — even when the review is persisted to a
+    registry (and the bus payload could in principle stay thin),
+    the artifact's findings list must be inline so the post-
+    meeting routing (``_route_blocking_review`` →
+    ``_synthesize_followup_ticket_from_finding``) can iterate over
+    them. The discovery5 pilot showed the bus payload omitting
+    findings → zero synthesized tickets → reviews disappearing
+    into the wind. This test pins findings inline going forward."""
+    payload = {
+        "decision": "review",
+        "body": "Reviewing the refund handler.",
+        "reviews": [_review_dict()],
+    }
+    llm = _mock_llm(f"```json\n{json.dumps(payload)}\n```")
+    cat = await _caterpillar(tmp_path, llm=llm, with_registry=True)
+    ctx = Context(constitution=cat.identity.constitution_text, triggers=(_u(),))
+
+    utterance = await cat.deliberate(ctx)
+    assert utterance is not None
+    artifact = utterance.content.artifacts[0]
+    assert artifact.kind == "review"
+    # Findings must travel with the artifact even when the file
+    # is on disk — the auto-ticket synthesis reads from the bus
+    # payload, not from disk.
+    assert isinstance(artifact.payload.get("findings"), list)
+    assert len(artifact.payload["findings"]) >= 1
+    finding = artifact.payload["findings"][0]
+    assert "severity" in finding
+    assert "title" in finding
+    assert "concern" in finding
+    assert "request" in finding
 
 
 async def test_deliberate_includes_protocol_in_system_prompt(tmp_path: Path) -> None:

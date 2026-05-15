@@ -31,8 +31,16 @@ from pydantic import BaseModel, Field, field_validator
 
 from wonderland.adr import slugify
 
+from wonderland.artifact_guid import new_artifact_guid, short_guid
+
 RULINGS_DIRNAME = "rulings"
-_FILENAME_PATTERN = re.compile(r"^ruling-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18).
+_FILENAME_PATTERN = re.compile(
+    r"^ruling-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+_NUMBER_FROM_H2 = re.compile(r"^##\s*Ruling\s+(\d+)\s*:", re.MULTILINE)
 
 
 class RulingSeverity(StrEnum):
@@ -97,6 +105,11 @@ class RulingPayload(BaseModel):
       audit_reference: optional context fields.
     """
 
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable Ruling identity. Queen re-emits with same guid
+    to amend an existing ruling; coining a new guid creates a new
+    ruling. Slug remains cosmetic."""
+
     title: str = Field(min_length=1)
     severity: RulingSeverity
     domain: RulingDomain
@@ -156,6 +169,7 @@ class RulingPayload(BaseModel):
 @dataclass(frozen=True)
 class RulingRecord:
     number: int
+    guid: str
     slug: str
     title: str
     severity: RulingSeverity
@@ -175,6 +189,7 @@ def render_ruling(number: int, payload: RulingPayload) -> str:
     lines: list[str] = [
         f"## Ruling {number:03d}: {payload.title}",
         "",
+        f"**GUID:** {payload.guid}",
         f"**Severity:** {payload.severity.value}",
         f"**Domain:** {payload.domain.value}",
     ]
@@ -268,6 +283,15 @@ class RulingRegistry:
             return 1
         return max(r.number for r in existing) + 1
 
+    def find_by_guid(self, guid: str) -> RulingRecord | None:
+        """P18 T-g2 — primary identity lookup."""
+        if not guid:
+            return None
+        for record in self.list_rulings():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_slug(self, slug: str) -> RulingRecord | None:
         for record in self.list_rulings():
             if record.slug == slug:
@@ -289,16 +313,28 @@ class RulingRegistry:
             payload if isinstance(payload, RulingPayload) else RulingPayload.model_validate(payload)
         )
 
-        number = self.next_number()
         slug = slugify(validated.title)
-        filename = f"ruling-{number:03d}-{slug}.md"
-        full_path = self._root / filename
+        # T-g2: guid-first lookup; new identity allocates next number.
+        # Ruling doesn't have update-by-slug (Queen treats each
+        # ruling as a discrete event), but update-by-guid is the
+        # right semantic when she explicitly amends a prior ruling
+        # by re-emitting its guid.
+        existing = self.find_by_guid(validated.guid)
+        if existing is not None:
+            number = existing.number
+            full_path = existing.path
+        else:
+            number = self.next_number()
+            # T-g3: filename embeds short_guid for substrate identity.
+            filename = f"ruling-{short_guid(validated.guid)}-{slug}.md"
+            full_path = self._root / filename
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_ruling(number, validated), encoding="utf-8")
 
         return RulingRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             severity=validated.severity,
@@ -315,17 +351,42 @@ class RulingRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title, severity, domain = RulingRegistry._read_header(path, fallback_title=slug)
+        guid = RulingRegistry._guid_from_file(path)
+        number = RulingRegistry._number_from_file(path, id_part)
         return RulingRecord(
             number=number,
+            guid=guid,
             slug=slug,
             title=title,
             severity=severity,
             domain=domain,
             path=path,
         )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy filenames carried number in the id slot;
+        new-shape files keep it only in the H2 header."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _read_header(

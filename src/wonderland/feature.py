@@ -32,8 +32,16 @@ from pydantic import BaseModel, Field
 from wonderland.adr import slugify
 from wonderland.ticket import TicketTier
 
+from wonderland.artifact_guid import new_artifact_guid, short_guid
+
 FEATURES_DIRNAME = "features"
-_FILENAME_PATTERN = re.compile(r"^feature-(\d+)-([a-z0-9-]+)\.md$")
+# T-g3: filename's id-part is either an 8-char ULID prefix (new) or
+# a 1-4 digit legacy number (pre-P18).
+_FILENAME_PATTERN = re.compile(
+    r"^feature-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>[a-z0-9-]+)\.md$"
+)
+_GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
+_NUMBER_FROM_H2 = re.compile(r"^##\s*Feature\s+(\d+)\s*:", re.MULTILINE)
 
 
 class StackSpan(StrEnum):
@@ -76,6 +84,14 @@ class FeatureKind(StrEnum):
 
 class FeaturePayload(BaseModel):
     """Structured payload Rabbit attaches to a feature-issuing utterance."""
+
+    guid: str = Field(default_factory=new_artifact_guid)
+    """P18 — stable artifact identity. ULID generated at creation,
+    preserved across re-emissions. Rabbit re-emits with the same
+    guid to amend an existing feature; coining a new guid creates
+    a new feature. Substrate routes on guid; slug is cosmetic.
+    Validation4 pilot's 9-features-for-3-concepts was exactly the
+    case this primitive eliminates."""
 
     title: str = Field(min_length=1)
     description: str = Field(
@@ -135,6 +151,7 @@ class FeaturePayload(BaseModel):
 @dataclass(frozen=True)
 class FeatureRecord:
     number: int
+    guid: str
     slug: str
     title: str
     path: Path
@@ -148,6 +165,7 @@ def render_feature(number: int, payload: FeaturePayload) -> str:
     lines: list[str] = [
         f"## Feature {number:03d}: {payload.title}",
         "",
+        f"**GUID:** {payload.guid}",
         f"**Kind:** {payload.kind.value}",
         f"**Sources:** {_join_or_dash(payload.sources)}",
         f"**Personas:** {_join_or_dash(payload.personas)}",
@@ -216,6 +234,17 @@ class FeatureRegistry:
                 return record
         return None
 
+    def find_by_guid(self, guid: str) -> FeatureRecord | None:
+        """P18 T-g2 — primary identity lookup. Returns None for
+        empty/unknown guid so callers fall through to slug-based
+        back-compat."""
+        if not guid:
+            return None
+        for record in self.list_features():
+            if record.guid == guid:
+                return record
+        return None
+
     def find_by_number(self, number: int) -> FeatureRecord | None:
         for record in self.list_features():
             if record.number == number:
@@ -236,20 +265,30 @@ class FeatureRegistry:
         )
 
         slug = slugify(validated.title)
-        existing = self.find_by_slug(slug)
+        # T-g2: guid-first lookup; slug fallback for back-compat.
+        existing = self.find_by_guid(validated.guid)
+        if existing is None:
+            existing = self.find_by_slug(slug)
+
         if existing is not None:
             number = existing.number
             full_path = existing.path
         else:
             number = self.next_number()
-            filename = f"feature-{number:03d}-{slug}.md"
+            # T-g3: filename embeds short_guid for substrate identity.
+            filename = f"feature-{short_guid(validated.guid)}-{slug}.md"
             full_path = self._root / filename
+
+        # Preserve existing artifact's guid on slug-fallback match.
+        if existing is not None and existing.guid:
+            validated = validated.model_copy(update={"guid": existing.guid})
 
         self._root.mkdir(parents=True, exist_ok=True)
         full_path.write_text(render_feature(number, validated), encoding="utf-8")
 
         return FeatureRecord(
             number=number,
+            guid=validated.guid,
             slug=slug,
             title=validated.title,
             path=full_path,
@@ -260,10 +299,37 @@ class FeatureRegistry:
         match = _FILENAME_PATTERN.match(path.name)
         if not match:
             return None
-        number = int(match.group(1))
-        slug = match.group(2)
+        id_part = match.group("id")
+        slug = match.group("slug")
         title = FeatureRegistry._title_from_file(path, fallback=slug)
-        return FeatureRecord(number=number, slug=slug, title=title, path=path)
+        guid = FeatureRegistry._guid_from_file(path)
+        number = FeatureRegistry._number_from_file(path, id_part)
+        return FeatureRecord(
+            number=number, guid=guid, slug=slug, title=title, path=path,
+        )
+
+    @staticmethod
+    def _number_from_file(path: Path, id_part: str) -> int:
+        """T-g3 — legacy filenames carried number in the id slot;
+        new-shape files keep it only in the H2 header."""
+        if id_part.isdigit():
+            return int(id_part)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return 0
+        m = _NUMBER_FROM_H2.search(text)
+        return int(m.group(1)) if m else 0
+
+    @staticmethod
+    def _guid_from_file(path: Path) -> str:
+        """Extract the ``**GUID:**`` line; fresh ULID if pre-P18 file."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return new_artifact_guid()
+        m = _GUID_PATTERN.search(text)
+        return m.group(1) if m else new_artifact_guid()
 
     @staticmethod
     def _title_from_file(path: Path, *, fallback: str) -> str:

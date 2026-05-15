@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -288,7 +289,13 @@ class Meeting(BaseModel):
     )
     goal: str = Field(description="One-line statement of what the meeting produces.")
     roster: list[str] = Field(
-        description="Agent names invited. Dodo is added automatically by the runner."
+        default_factory=list,
+        description=(
+            "Agent names invited. Dodo is added automatically by the "
+            "runner. Required for regular meetings (validated below); "
+            "must be empty when ``kind == 'verify'`` since verify "
+            "meetings don't convene agents."
+        ),
     )
     convenor_directive: str = Field(
         default="",
@@ -388,6 +395,46 @@ class Meeting(BaseModel):
             "natural revision pass + one safety net."
         ),
     )
+    kind: str = Field(
+        default="regular",
+        description=(
+            "P16 T-v2 — meeting kind discriminator. ``regular`` "
+            "(default) is the normal deliberation-with-agents path. "
+            "``verify`` is a substrate-only check meeting: no agent "
+            "convening, no deliberation, just runs the named "
+            "``build_check`` against the project and emits a "
+            "structured result. Used by tdd-implement's M9 to run "
+            "pytest after Caterpillar's M8 review. Verify meetings "
+            "must have an empty roster + empty phases list + a "
+            "non-None ``build_check`` name."
+        ),
+    )
+    build_check: str | list[str] | None = Field(
+        default=None,
+        description=(
+            "P16 T-v2 — name(s) of registered verification checks "
+            "(see ``wonderland.verification._CHECK_REGISTRY``). Only "
+            "valid when ``kind == 'verify'``; required in that case. "
+            "Accepts a single name (e.g. ``pytest_collects``) or a "
+            "list (e.g. ``[pytest_collects, npm_build]``) so one "
+            "verify meeting can fire multiple checks in declaration "
+            "order. Each check's findings get unioned into the "
+            "synthesized review; skipped checks degrade silently "
+            "(frontend check skips on backend-only projects, etc.)."
+        ),
+    )
+
+    @field_validator("build_check", mode="before")
+    @classmethod
+    def _normalize_build_check(cls, v: Any) -> Any:
+        """Allow either a single string or a list — internally we
+        normalize to a list so the runtime has one shape to handle.
+        ``None`` stays None for the kind='regular' path."""
+        if v is None:
+            return v
+        if isinstance(v, str):
+            return [v]
+        return v
     allowed_decisions: list[str] | None = Field(
         default=None,
         description=(
@@ -537,6 +584,51 @@ class Meeting(BaseModel):
         return self.model_copy(
             update={"roster": new_roster, "phases": new_phases}
         )
+
+    @model_validator(mode="after")
+    def _validate_kind(self) -> "Meeting":
+        """Validate the kind discriminator (P16 T-v2).
+
+        ``regular`` (default): roster required (substrate convenes
+        agents); build_check must not be set.
+
+        ``verify``: roster + phases must be empty (no agents, no
+        rotation); build_check required (it's what the meeting does)."""
+        if self.kind not in ("regular", "verify"):
+            raise ValueError(
+                f"meeting {self.id!r}: kind must be 'regular' or "
+                f"'verify' (got {self.kind!r})"
+            )
+        if self.kind == "verify":
+            if not self.build_check:
+                raise ValueError(
+                    f"meeting {self.id!r}: kind='verify' requires "
+                    "build_check to name a registered check"
+                )
+            if self.roster:
+                raise ValueError(
+                    f"meeting {self.id!r}: kind='verify' meetings "
+                    "must have an empty roster — they don't convene "
+                    "agents"
+                )
+            if self.phases:
+                raise ValueError(
+                    f"meeting {self.id!r}: kind='verify' meetings "
+                    "must have no phases — they're a single check, "
+                    "not a rotation"
+                )
+        else:
+            if self.build_check:
+                raise ValueError(
+                    f"meeting {self.id!r}: build_check is only valid "
+                    "when kind='verify'"
+                )
+            if not self.roster:
+                raise ValueError(
+                    f"meeting {self.id!r}: kind='regular' requires "
+                    "a non-empty roster"
+                )
+        return self
 
     @model_validator(mode="after")
     def _validate_team_groupings_cover_roster(self) -> "Meeting":
@@ -1637,6 +1729,27 @@ class MeetingEndEvent:
     iteration_label: str | None = None
 
 
+@dataclass
+class BuildCheckEvent:
+    """Emitted by ``_run_verify_meeting`` when a ``kind='verify'``
+    meeting fires its build_check. Carries the structured
+    VerificationResult so the operator sees what happened —
+    especially important for the skipped path where no artifact
+    lands on disk.
+
+    ``review_slug`` is populated when the check failed AND a system
+    review was successfully synthesized (i.e. there was a feature to
+    attach it to). Skipped + ok checks have ``review_slug=None``.
+    """
+
+    check_name: str
+    ok: bool
+    skipped: bool
+    skip_reason: str
+    findings_count: int
+    review_slug: str | None = None
+
+
 # Type alias for the union of events the workflow runner yields.
 # The full union (including RunnerEvent from runner.py) is documented
 # but we keep the runtime annotation as `Any` to avoid the runner
@@ -2037,6 +2150,16 @@ async def _run_lane(
         meeting = meetings[i]
         meeting_directive = directive if is_first_meeting else None
         is_first_meeting = False
+
+        # P16 T-v2 — verify-kind meetings bypass the agent-convening
+        # path. In a pipelined lane, this fires once per outer item
+        # (e.g. once per feature in tdd-implement) so each lane gets
+        # its own build_check pass with natural per-item attribution.
+        if meeting.kind == "verify":
+            async for event in _run_verify_meeting(meeting, runner):
+                yield event
+            i += 1
+            continue
 
         # Outer-level meeting: runs once for this lane's outer item.
         if meeting.per_item is None or meeting.per_item == outer_kind:
@@ -2543,7 +2666,10 @@ def _format_seeded_personas_block(runner: "Runner | None") -> str:
     if not req_dir.is_dir():
         return ""
     titles: list[str] = []
-    filename_re = re.compile(r"requirement-(\d+)-(.+)\.md")
+    # T-g3: filename id-part is short_guid (new) or legacy number.
+    filename_re = re.compile(
+        r"requirement-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
     for path in sorted(req_dir.glob("requirement-*.md")):
         m = filename_re.match(path.name)
         if not m:
@@ -2577,6 +2703,288 @@ def _format_seeded_personas_block(runner: "Runner | None") -> str:
     )
 
 
+def _classify_milestone_shape(
+    scope: "_MilestoneScope", runner: "Runner | None"
+) -> str:
+    """Classify a milestone as foundation-shape vs capability-shape
+    based on the requirement kinds it consumes.
+
+    Returns:
+      - ``"foundation"`` — most consumes are constraint / integration
+        / scope / success_criterion. M1 should be Caterpillar-led;
+        Alice's seeded user-persona doesn't naturally anchor here.
+      - ``"capability"`` — at least one consumes is a situation /
+        persona kind (Alice's natural lane).
+      - ``"mixed"`` — both shapes present; let the normal Alice-led
+        flow run but Caterpillar still ships foundation stories.
+
+    Defaults to ``"mixed"`` when we can't resolve requirement kinds
+    (no project_root, no requirements dir, parse errors). Mixed is
+    the safe fallback — keeps the existing default Alice-led
+    behavior for runs where classification fails.
+    """
+    if runner is None:
+        return "mixed"
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return "mixed"
+    req_dir = project_root / ".wonderland" / "requirements"
+    if not req_dir.is_dir() or not scope.consumes:
+        return "mixed"
+
+    import re
+
+    foundation_kinds = {
+        "constraint", "integration", "scope", "success_criterion",
+        "deal_breaker", "out_of_scope",
+    }
+    capability_kinds = {"situation", "persona"}
+
+    foundation_count = 0
+    capability_count = 0
+    # T-g3: filename id-part is short_guid (new) or legacy number.
+    filename_re = re.compile(
+        r"requirement-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
+    kind_line_re = re.compile(r"^\*\*Kind:\*\*\s*(\S+)", re.MULTILINE)
+    for path in req_dir.glob("requirement-*.md"):
+        m = filename_re.match(path.name)
+        if not m or m.group(1) not in scope.consumes:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        km = kind_line_re.search(text)
+        if not km:
+            continue
+        kind = km.group(1).strip().lower()
+        if kind in foundation_kinds:
+            foundation_count += 1
+        elif kind in capability_kinds:
+            capability_count += 1
+
+    if capability_count > 0:
+        # Any user-facing requirement makes Alice's lane viable.
+        return "mixed" if foundation_count > 0 else "capability"
+    if foundation_count > 0:
+        return "foundation"
+    return "mixed"
+
+
+def _format_m1_lead_block(
+    scope: "_MilestoneScope", runner: "Runner | None"
+) -> str:
+    """Emit an explicit M1 lead-assignment block based on milestone
+    shape. The validation2 pilots showed constitutional guidance
+    alone wasn't strong enough — Alice kept asking questions and
+    Caterpillar kept deferring when the milestone was foundation-
+    shape. The fix: a per-meeting block at the TOP of the framing
+    naming who leads M1 and what their first move must be.
+
+    Capability + mixed shapes return empty (default Alice-led flow,
+    no explicit framing needed). Foundation shapes return a block
+    instructing Caterpillar to author 3-6 stories on his first
+    rotation, not ask the operator clarifying questions."""
+    shape = _classify_milestone_shape(scope, runner)
+    if shape != "foundation":
+        return ""
+    return (
+        f"**M1 LEAD: Caterpillar.** This milestone is foundation-"
+        f"shape — the consumes_requirements are infrastructure "
+        f"(constraint / integration / scope / success_criterion "
+        f"kinds), not user-facing situations. Alice's seeded user-"
+        f"personas don't anchor here.\n"
+        f"\n"
+        f"**Caterpillar — your first move in M1 must be "
+        f"``decision: story`` with 3-6 stories in the payload, "
+        f"NOT ``question`` or ``silence`` or ``deference``.** The "
+        f"scope is already in the milestone's consumes_requirements "
+        f"list + done_when criteria; you don't need to clarify it "
+        f"with the operator. Author the foundation stories directly "
+        f"with developer / operator / installer / sysadmin personas. "
+        f"Alice will support with ``concern`` if she spots a user-"
+        f"facing implication you missed.\n"
+        f"\n"
+        f"**Alice — your default in M1 here is ``silence`` "
+        f"(letting Caterpillar lead is the right move; don't ask "
+        f"clarifying questions before he authors). After he ships "
+        f"stories, your move is ``concern`` if any have user-facing "
+        f"implications worth flagging — otherwise stay silent.** "
+        f"The deadlock pattern this prevents: Alice asks for "
+        f"clarification, Caterpillar defers to her, neither "
+        f"authors, M1 exits empty.\n"
+        f"\n"
+        f"────────────────────────────────────────────────────\n"
+        f"\n"
+    )
+
+
+def _format_existing_stories_block(runner: "Runner | None") -> str:
+    """List the stories already on disk so M1 agents can see what
+    already exists before they emit fresh ones. Renders ``title +
+    slug + persona`` per story so the agent can pattern-match a
+    "this is the same shape as story X — alias it" before coining
+    a near-duplicate slug.
+
+    Returns empty string when no runner / no stories yet. Used to
+    plug the slug-stability gap the discovery5 pilot revealed:
+    Alice produced 8 stories for 4 concepts because near-duplicate
+    slugs (``user-signup`` vs ``user-sign-up`` vs ``signup-flow``)
+    all got fresh numbers from the registry. The framing prepend
+    now makes the existing slugs load-bearing context at the top
+    of every M1 rotation start."""
+    import re
+
+    if runner is None:
+        return ""
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return ""
+    story_dir = project_root / ".wonderland" / "stories"
+    if not story_dir.is_dir():
+        return ""
+    rows: list[str] = []
+    # T-g3: filename's id-part is either an 8-char ULID prefix (new)
+    # or a 1-4 digit legacy number (pre-P18).
+    filename_re = re.compile(
+        r"story-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
+    for path in sorted(story_dir.glob("story-*.md")):
+        m = filename_re.match(path.name)
+        if not m:
+            continue
+        slug = m.group(1)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        title_m = re.match(r"##\s*Story\s+\d+:\s*(.+?)$", text, re.MULTILINE)
+        persona_m = re.search(
+            r"^\*\*Persona:\*\*\s*(.+?)$", text, re.MULTILINE
+        )
+        title = title_m.group(1).strip() if title_m else "(untitled)"
+        persona = persona_m.group(1).strip() if persona_m else "(persona missing)"
+        # Truncate persona to a snippet — full persona blocks are
+        # multi-sentence; we want a one-line identifier here.
+        persona_short = persona.split(",")[0].strip()[:60]
+        rows.append(f"  - ``{slug}`` — {title} (persona: {persona_short})")
+    if not rows:
+        return ""
+    bullets = "\n".join(rows)
+    return (
+        f"**Stories already on disk for this project** (re-emit the "
+        f"same slug to amend, ``retract`` + replace for real "
+        f"refinements, leave alone when the concept is already "
+        f"captured — DO NOT ship a new story whose persona + need "
+        f"overlap an existing one's just because you'd phrase the "
+        f"title differently):\n"
+        f"{bullets}\n"
+        f"\n"
+    )
+
+
+def _format_existing_tickets_block(runner: "Runner | None") -> str:
+    """List the tickets already on disk so M3/M3.5 agents (Rabbit
+    decomposing, Caterpillar consolidating) can see what already
+    exists before emitting near-duplicates. Same shape as the
+    stories block, smaller per-row footprint (no need for persona
+    on tickets).
+
+    Returns empty string when no runner / no tickets yet. The
+    validation2 pilot revealed near-duplicate ticket drift identical
+    to the early stories pattern: 3 schema-init tickets, 2 auth-
+    endpoint tickets, etc. all surviving on disk despite a
+    consolidation review calling them out."""
+    import re
+
+    if runner is None:
+        return ""
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return ""
+    ticket_dir = project_root / ".wonderland" / "tickets"
+    if not ticket_dir.is_dir():
+        return ""
+    rows: list[str] = []
+    # T-g3: filename's id-part is either an 8-char ULID prefix (new)
+    # or a 1-4 digit legacy number (pre-P18).
+    filename_re = re.compile(
+        r"ticket-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
+    for path in sorted(ticket_dir.glob("ticket-*.md")):
+        m = filename_re.match(path.name)
+        if not m:
+            continue
+        slug = m.group(1)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        title_m = re.match(r"##\s*Ticket\s+\d+:\s*(.+?)$", text, re.MULTILINE)
+        title = title_m.group(1).strip() if title_m else "(untitled)"
+        rows.append(f"  - ``{slug}`` — {title}")
+    if not rows:
+        return ""
+    bullets = "\n".join(rows)
+    return (
+        f"**Tickets already on disk for this project** (re-emit the "
+        f"same slug to update, ``delete_file`` to prune duplicates, "
+        f"leave alone when the work is already captured — DO NOT "
+        f"ship a new ticket whose description duplicates an existing "
+        f"one's just because you'd word it differently):\n"
+        f"{bullets}\n"
+        f"\n"
+    )
+
+
+def _format_existing_rulings_block(runner: "Runner | None") -> str:
+    """List the rulings already on disk so Queen of Hearts can see
+    what's already adjudicated before re-emitting on the same
+    concern. Mirrors the validation2 pattern: 14 rulings with
+    near-duplicates (002+006 both on hash algorithms, 005+007 both
+    on user isolation, 003+008 both on admin bootstrap audit)."""
+    import re
+
+    if runner is None:
+        return ""
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return ""
+    ruling_dir = project_root / ".wonderland" / "rulings"
+    if not ruling_dir.is_dir():
+        return ""
+    rows: list[str] = []
+    # T-g3: filename's id-part is either an 8-char ULID prefix (new)
+    # or a 1-4 digit legacy number (pre-P18).
+    filename_re = re.compile(
+        r"ruling-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
+    for path in sorted(ruling_dir.glob("ruling-*.md")):
+        m = filename_re.match(path.name)
+        if not m:
+            continue
+        slug = m.group(1)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        title_m = re.match(r"##\s*Ruling\s+\d+:\s*(.+?)$", text, re.MULTILINE)
+        title = title_m.group(1).strip() if title_m else "(untitled)"
+        rows.append(f"  - ``{slug}`` — {title}")
+    if not rows:
+        return ""
+    bullets = "\n".join(rows)
+    return (
+        f"**Rulings already on disk for this project** (re-emit the "
+        f"same slug to amend, leave alone when the concern is "
+        f"already ruled — DO NOT ship a fresh ruling on the same "
+        f"concern just because you'd phrase the policy differently):\n"
+        f"{bullets}\n"
+        f"\n"
+    )
+
+
 def _prepend_milestone_framing(
     directive: str, scope: "_MilestoneScope", *, runner: "Runner | None" = None,
 ) -> str:
@@ -2585,10 +2993,17 @@ def _prepend_milestone_framing(
     directive below. The framing names the milestone, its goal, and
     its done-criteria so M1+ scope their work to it. When ``runner``
     is supplied, also lists the seeded persona slugs so agents have
-    an exhaustive whitelist for the anti-hallucination guard."""
+    an exhaustive whitelist for the anti-hallucination guard, plus
+    any stories / tickets / rulings already on disk so agents can
+    see what's already captured before coining a near-duplicate."""
     done_block = "\n".join(f"  - {d}" for d in scope.done_when)
+    m1_lead_block = _format_m1_lead_block(scope, runner)
     persona_block = _format_seeded_personas_block(runner)
+    existing_stories_block = _format_existing_stories_block(runner)
+    existing_tickets_block = _format_existing_tickets_block(runner)
+    existing_rulings_block = _format_existing_rulings_block(runner)
     framing = (
+        f"{m1_lead_block}"
         f"**Milestone scope: {scope.name}** (slug: ``{scope.slug}``).\n"
         f"\n"
         f"**Goal of this milestone:** {scope.goal}\n"
@@ -2603,10 +3018,13 @@ def _prepend_milestone_framing(
         f"milestone, leave it for that milestone's design pass.\n"
         f"\n"
         f"{persona_block}"
+        f"{existing_stories_block}"
+        f"{existing_tickets_block}"
+        f"{existing_rulings_block}"
         f"**PERSONA + DOMAIN DISCIPLINE (anti-hallucination guard).** "
-        f"Every persona you reference MUST be named in the seeded "
-        f"requirements + project_context. Every problem-domain "
-        f"reference (translation, payment processing, social "
+        f"Every USER-FACING persona you reference MUST be named in "
+        f"the seeded requirements + project_context. Every problem-"
+        f"domain reference (translation, payment processing, social "
         f"networking, healthcare workflows, etc.) MUST be evidenced "
         f"in the seeded material. Your constitutions carry example "
         f"personas — Maya the developer, Sarah the cross-language "
@@ -2615,14 +3033,30 @@ def _prepend_milestone_framing(
         f"the artifact *shape*, NOT permission to import them as "
         f"characters in this project. If you find yourself writing a "
         f"story / feature / ticket about Maya, Sarah, Akira, Jordan, "
-        f"or any persona not named in the seeds, stop: that's a "
-        f"constitutional-prior leak. Either ground the artifact in a "
-        f"seed-named persona, or ``retract`` it (Caterpillar + Alice "
-        f"both have this move) so it doesn't propagate. Same rule "
-        f"for problem domains: if this milestone is about onboarding "
-        f"+ equipment + experience-level and you start composing "
-        f"translation-bridge / cross-language / multi-locale "
-        f"features, that's the leak — walk it back.\n"
+        f"or any user-facing persona not named in the seeds, stop: "
+        f"that's a constitutional-prior leak. Either ground the "
+        f"artifact in a seed-named persona, or ``retract`` it "
+        f"(Caterpillar + Alice both have this move) so it doesn't "
+        f"propagate. Same rule for problem domains: if this milestone "
+        f"is about onboarding + equipment + experience-level and you "
+        f"start composing translation-bridge / cross-language / "
+        f"multi-locale features, that's the leak — walk it back.\n"
+        f"\n"
+        f"**Foundation personas are exempt** from the seeded-list "
+        f"whitelist above. Stories / features / tickets in a "
+        f"foundation lane carry developer / operator / installer / "
+        f"sysadmin / test-engineer personas — those are FRAMING for "
+        f"plumbing work, not user-facing characters. They aren't "
+        f"required to appear in the seeded personas block. A feature "
+        f"composing foundation stories grounds in those plumbing "
+        f"personas legitimately; the grounding-check applies to "
+        f"user-facing capability features only. The discriminator: "
+        f"if the persona could pass for a real END USER of the "
+        f"product, apply the seeded whitelist; if the persona is "
+        f"someone keeping the system running (a developer setting up "
+        f"locally, an operator handling deployment, an installer "
+        f"bootstrapping admin accounts), it's foundation framing and "
+        f"the whitelist doesn't apply.\n"
         f"\n"
         f"────────────────────────────────────────────────────\n"
     )
@@ -2664,6 +3098,16 @@ async def _run_workflow_serial(
 
     for meeting in workflow.meetings:
         is_entry = meeting is workflow.entry_meeting
+
+        # P16 T-v2 — verify-kind meetings bypass the agent-convening
+        # path entirely. The substrate fires the named build_check
+        # against the project, emits a BuildCheckEvent wrapped in
+        # MeetingStart/End events, synthesizes a system review +
+        # follow-up tickets on failure.
+        if meeting.kind == "verify":
+            async for event in _run_verify_meeting(meeting, runner):
+                yield event
+            continue
 
         if meeting.per_item is None:
             outcome = "RUNNING"
@@ -3192,6 +3636,7 @@ def _apply_retraction_for_utterance(
     *,
     runner: Runner,
     utterance: Utterance,
+    current_item_slug: str | None = None,
 ) -> list["_RetractionRecord"]:
     """P15 T-m7 — process retraction artifacts in a freshly emitted
     utterance. Walks the utterance's ``retraction`` artifacts; for
@@ -3204,6 +3649,17 @@ def _apply_retraction_for_utterance(
     auditable record of who removed what. Returns the list of
     successful retractions so the meeting loop can fan out
     ``ArtifactRetracted`` observer events.
+
+    **Scope guard (validation5 bug fix):** when ``current_item_slug``
+    is provided (per_item meetings), ticket retracts must reference
+    a ticket whose ``sources`` includes the current iteration's
+    item slug. The validation5 pilot had Caterpillar in
+    consolidation-multi-user-auth retract tickets sourced to
+    *other* features (developer-local-sqlite, test-environment) —
+    his intent was "out of scope for THIS iteration" but the
+    substrate took it as "delete from disk entirely," wiping the
+    other features' tickets. Out-of-scope retracts are rejected:
+    Caterpillar should raise a ``concern`` instead.
 
     Non-RETRACT utterances are a no-op. Missing files / unknown
     target_kinds / payload errors degrade silently — retraction is
@@ -3233,6 +3689,24 @@ def _apply_retraction_for_utterance(
         path = _resolve_retraction_target_path(
             project_root, target_kind, target_slug
         )
+
+        # Scope guard: in per_item meetings, only allow retracts on
+        # artifacts owned by the current iteration. Currently scoped
+        # to ticket retracts (the validation5 failure mode); features
+        # and milestones use different scoping semantics.
+        if (
+            current_item_slug is not None
+            and target_kind == "ticket"
+            and path is not None
+            and not _ticket_belongs_to_iteration(
+                path, current_item_slug
+            )
+        ):
+            # Refuse silently — agent meant well but is reaching
+            # outside their iteration. The utterance stays in the
+            # transcript as an audit trail of the attempt.
+            continue
+
         if path is not None:
             try:
                 path.unlink()
@@ -3250,6 +3724,37 @@ def _apply_retraction_for_utterance(
             )
         )
     return records
+
+
+def _ticket_belongs_to_iteration(
+    ticket_path: Path, iteration_slug: str
+) -> bool:
+    """Read a ticket file's ``**Sources:**`` line and return True
+    iff ``iteration_slug`` (or a ``<guid>:<slug>`` form ending in it)
+    appears in the sources list. Used by retract scope-guard."""
+    try:
+        text = ticket_path.read_text(encoding="utf-8")
+    except OSError:
+        # Unreadable file — treat as out-of-scope, refusing the
+        # retract. Safer than silently deleting based on unverified
+        # ownership.
+        return False
+    m = re.search(r"^\*\*Sources:\*\*\s*(.+?)$", text, re.MULTILINE)
+    if not m:
+        # No sources line — pre-T-g3 file or hand-edited markdown.
+        # Allow retract (back-compat) rather than refuse.
+        return True
+    raw_sources = [
+        s.strip() for s in m.group(1).split(",") if s.strip()
+    ]
+    for source in raw_sources:
+        # source can be "slug", "guid", or "guid:slug" — extract
+        # the tail (after the colon, if present) to match against
+        # iteration_slug.
+        tail = source.split(":", 1)[-1].strip()
+        if tail == iteration_slug or source == iteration_slug:
+            return True
+    return False
 
 
 @dataclass
@@ -3374,13 +3879,18 @@ def _apply_source_resolution_for_utterance(
     # the project's current artifact count).
     import re
 
-    story_slugs = _collect_disk_slugs(
+    # T-g3 + T-g5: filename id-part is short_guid (new) or legacy
+    # number. Source resolution checks guid first (primary identity
+    # post-P18), slug second (back-compat). A source citing a guid
+    # that doesn't resolve is a phantom — the substrate's job to
+    # catch + strip.
+    story_slugs, story_guids = _collect_disk_slugs_and_guids(
         project_root / ".wonderland" / "stories",
-        re.compile(r"story-(\d+)-(.+)\.md"),
+        kind="story",
     )
-    feature_slugs = _collect_disk_slugs(
+    feature_slugs, feature_guids = _collect_disk_slugs_and_guids(
         project_root / ".wonderland" / "features",
-        re.compile(r"feature-(\d+)-(.+)\.md"),
+        kind="feature",
     )
 
     for art in utterance.content.artifacts:
@@ -3395,13 +3905,16 @@ def _apply_source_resolution_for_utterance(
         # Ticket sources may resolve to features OR stories.
         # Feature sources resolve to stories only.
         if art.kind == "ticket":
-            valid_pool = feature_slugs | story_slugs
+            valid_slugs = feature_slugs | story_slugs
+            valid_guids = feature_guids | story_guids
         else:
-            valid_pool = story_slugs
+            valid_slugs = story_slugs
+            valid_guids = story_guids
 
         unresolved = [
             s for s in sources
-            if isinstance(s, str) and s and s not in valid_pool
+            if isinstance(s, str) and s
+            and not _source_resolves(s, valid_slugs, valid_guids)
         ]
         if not unresolved:
             continue
@@ -3426,16 +3939,100 @@ def _collect_disk_slugs(
     directory: Path, filename_re,
 ) -> set[str]:
     """Read filenames in ``directory`` matching ``filename_re`` and
-    return the slug component (capture group 2). Empty set when
-    the directory doesn't exist or has no matching files."""
+    return the slug component (capture group 1 with T-g3, capture
+    group 2 with legacy callers — both supported via try-fallback).
+    Empty set when the directory doesn't exist or has no matching
+    files."""
     if not directory.is_dir():
         return set()
     out: set[str] = set()
     for path in directory.glob("*.md"):
         m = filename_re.match(path.name)
         if m:
-            out.add(m.group(2))
+            # T-g3: filename_re typically has one capture group (slug).
+            # Legacy callers may pass a 2-group regex; fall back to
+            # the last group as the slug-by-convention.
+            groups = m.groups()
+            if groups:
+                out.add(groups[-1])
     return out
+
+
+_T_G5_FILENAME_RE_BY_KIND = {
+    "story": re.compile(
+        r"story-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>.+)\.md"
+    ),
+    "feature": re.compile(
+        r"feature-(?P<id>[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(?P<slug>.+)\.md"
+    ),
+}
+_T_G5_GUID_LINE_RE = re.compile(
+    r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})", re.MULTILINE
+)
+
+
+def _collect_disk_slugs_and_guids(
+    directory: Path, *, kind: str,
+) -> tuple[set[str], set[str]]:
+    """T-g5 — read both slug + full GUID from every artifact file in
+    ``directory``. Returns ``(slugs, guids)``. Used by the source-
+    resolver to accept either citation form."""
+    if not directory.is_dir():
+        return set(), set()
+    filename_re = _T_G5_FILENAME_RE_BY_KIND.get(kind)
+    if filename_re is None:
+        return set(), set()
+    slugs: set[str] = set()
+    guids: set[str] = set()
+    for path in directory.glob("*.md"):
+        m = filename_re.match(path.name)
+        if not m:
+            continue
+        slugs.add(m.group("slug"))
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        gm = _T_G5_GUID_LINE_RE.search(text)
+        if gm:
+            guids.add(gm.group(1))
+    return slugs, guids
+
+
+def _source_resolves(
+    source: str, valid_slugs: set[str], valid_guids: set[str],
+) -> bool:
+    """T-g5 — does this source citation resolve to an artifact on
+    disk?
+
+    Accepts three citation forms:
+      - ``"<guid>"`` — full 26-char ULID; matches the artifact's
+        GUID directly.
+      - ``"<guid>:<slug>"`` — guid-primary, slug-hint pair (the
+        post-T-g4 canonical form). GUID is load-bearing; slug is
+        cosmetic continuity.
+      - ``"<slug>"`` — legacy slug-only (pre-P18). Matches an
+        artifact's slug on disk.
+
+    Returns True if any of those resolves. False otherwise (phantom
+    citation; substrate strips the artifact + its on-disk file).
+    """
+    if not source:
+        return False
+    # Split off the guid-prefix portion if present.
+    head = source.split(":", 1)[0]
+    if len(head) == 26 and head in valid_guids:
+        return True
+    if source in valid_slugs:
+        return True
+    # Fall back to checking the post-colon slug portion when the
+    # source is "<guid>:<slug>" — slug resolves even if the guid
+    # didn't (operator edited the file, etc).
+    if ":" in source:
+        tail = source.split(":", 1)[1]
+        if tail in valid_slugs:
+            return True
+    return False
 
 
 def _apply_emission_transition_for_utterance(
@@ -3501,6 +4098,35 @@ def _apply_emission_transition_for_utterance(
             # Re-running the workflow on a project past this point
             # shouldn't fail.
             pass
+
+
+def _feature_in_implementation_state(
+    project_root: Path, feature_slug: str
+) -> bool:
+    """Is this feature in a state where review-verdict routing makes
+    sense? True iff the feature has reached queued / in_progress /
+    ready_for_review — the post-design, mid/end-implementation slice
+    of the lifecycle. Design-stage features (proposed / in_design /
+    designed) return False; that's what gates Caterpillar's design-
+    time review utterances from firing the implementation routing.
+
+    Returns False on lookup failures (no project_root, broken state
+    file, feature missing) so the routing degrades safely — better
+    to skip a legitimate route than to mis-route a design utterance
+    into ticket-state churn."""
+    try:
+        from wonderland.feature_lifecycle import FeatureState, get_state
+
+        state = get_state(project_root, feature_slug)
+    except Exception:  # noqa: BLE001
+        return False
+    if state is None:
+        return False
+    return state in {
+        FeatureState.QUEUED,
+        FeatureState.IN_PROGRESS,
+        FeatureState.READY_FOR_REVIEW,
+    }
 
 
 def _find_blocking_review(
@@ -3842,6 +4468,528 @@ def _route_blocking_review(
             continue
 
 
+# ---------------------------------------------------------------------- #
+# P16 T-v2 — build_check hook
+# ---------------------------------------------------------------------- #
+
+
+def _pick_feature_for_build_check_attribution(
+    project_root: Path,
+) -> str | None:
+    """Pick which feature should receive build_check follow-up
+    tickets when the workflow's verification check fails.
+
+    Strategy: prefer features in the "implementation just finished"
+    states (READY_FOR_REVIEW or IN_PROGRESS) since those are the
+    most-recently-touched features. Falls back to QUEUED, then any
+    feature on disk. Returns None when there are no features at all
+    (verification fired against a project with no features — likely
+    a non-tdd-implement workflow misconfigured to run the check).
+
+    Within a state bucket, picks the highest-numbered feature (most
+    recent on disk). Tickets land on one feature; the operator can
+    move them to other features manually if the failure spans
+    multiple. The "one place to look" tradeoff is intentional for
+    V1 — V2 would parse pytest output for file paths and per-
+    feature attribute by source mapping.
+    """
+    from wonderland.feature import FeatureRegistry
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        get_state,
+    )
+
+    reg = FeatureRegistry(project_root)
+    records = reg.list_features()
+    if not records:
+        return None
+
+    # State → priority for the "pick the most recently active" sort.
+    preferred_states = [
+        FeatureState.READY_FOR_REVIEW,
+        FeatureState.IN_PROGRESS,
+        FeatureState.QUEUED,
+    ]
+    for state in preferred_states:
+        candidates = [
+            r for r in records
+            if get_state(project_root, r.slug) == state
+        ]
+        if candidates:
+            # Highest number = most recently written.
+            return max(candidates, key=lambda r: r.number).slug
+
+    # No feature in an active state — fall through to "any feature."
+    return max(records, key=lambda r: r.number).slug
+
+
+def _synthesize_build_check_review(
+    *,
+    project_root: Path,
+    check_name: str,
+    findings: tuple,  # tuple[VerificationFinding, ...]
+    feature_slug: str,
+) -> str | None:
+    """Write a ReviewRecord to disk capturing the build_check
+    failures, then return the review slug. ``findings`` arrive as
+    VerificationFinding tuples; this lifts them into ReviewFinding
+    shape and persists via ReviewRegistry.
+
+    Returns None on registry-write failure (which would be unusual —
+    disk pressure or a slug collision). The substrate treats None as
+    "no review persisted; skip ticket synthesis" and the build_check
+    event still fires informationally.
+    """
+    from wonderland.review import (
+        ReviewFinding,
+        ReviewPayload,
+        ReviewRegistry,
+        ReviewSeverity,
+        ReviewVerdict,
+    )
+
+    review_findings: list[ReviewFinding] = []
+    for f in findings:
+        # Map verification severity (always "block" today) to the
+        # ReviewSeverity enum. Use a default location/quote/read
+        # when the verification finding doesn't supply them; the
+        # ReviewFinding schema requires non-empty values.
+        location = f.location or "(test runner did not report a file:line)"
+        quote = (
+            f.request[:200].strip()
+            or "(verification check did not capture an offending quote)"
+        )
+        read = (
+            f"The verification runner ``{check_name}`` reports that "
+            f"the implementation in this state cannot run cleanly."
+        )
+        try:
+            severity = ReviewSeverity(f.severity)
+        except ValueError:
+            severity = ReviewSeverity.BLOCK
+        review_findings.append(
+            ReviewFinding(
+                severity=severity,
+                title=f.title,
+                location=location,
+                quote=quote,
+                read=read,
+                concern=f.concern,
+                request=f.request,
+            )
+        )
+
+    title = f"Build check ({check_name}) failed"
+    target_files = sorted(
+        {
+            f.location.split(":")[0]
+            for f in findings
+            if f.location and ":" in f.location
+        }
+    )
+    if not target_files:
+        # ReviewPayload requires non-empty target_files; supply a
+        # sentinel pointer to the run's verification scope.
+        target_files = ["(verification: pytest collection)"]
+
+    payload = ReviewPayload(
+        title=title,
+        target_files=target_files,
+        verdict=ReviewVerdict.REQUEST_CHANGES,
+        findings=review_findings,
+    )
+
+    try:
+        registry = ReviewRegistry(project_root)
+        record = registry.write(payload)
+        return record.slug
+    except Exception:  # noqa: BLE001 — review write is best-effort
+        return None
+
+
+async def _run_verify_meeting(
+    meeting: "Meeting",
+    runner: "Runner",
+) -> AsyncIterator[Any]:
+    """Execute a ``kind='verify'`` meeting. No agents convene; the
+    substrate runs the meeting's ``build_check`` against the project,
+    emits a structured BuildCheckEvent, and synthesizes a system
+    review + follow-up tickets on failure.
+
+    Wraps the check in MeetingStart/End events so the timeline /
+    dashboard renders verify meetings the same shape as regular
+    ones. ``outcome`` mirrors the regular-meeting vocabulary:
+
+      - COMPLETE: check passed (ok=True) OR skipped (no test infra)
+      - REQUEST_CHANGES: check failed; review synthesized, tickets
+        queued (when a feature was available to attach them to)
+
+    Skipped paths (no project_root, unknown check name, no pytest,
+    no pyproject) all degrade to outcome=COMPLETE with the BuildCheck
+    event carrying skipped=True — informational only, no artifacts.
+    """
+    import time
+
+    from wonderland.verification import run_verification_check
+
+    start = time.monotonic()
+
+    yield MeetingStartEvent(
+        meeting=meeting,
+        seeds=[],
+        thread_id=meeting.id,
+    )
+
+    project_root = getattr(runner, "project_root", None)
+    # Normalize: validator coerces single str → list[str], so we
+    # always have a list here. Empty / None still possible if the
+    # meeting was constructed in code without going through the
+    # validator (defensive).
+    check_names: list[str] = list(meeting.build_check or [])
+    if project_root is None or not check_names:
+        yield BuildCheckEvent(
+            check_name=check_names[0] if check_names else "(none)",
+            ok=False,
+            skipped=True,
+            skip_reason=(
+                "No project_root on runner — verification cannot fire."
+                if project_root is None
+                else "No build_check declared on meeting."
+            ),
+            findings_count=0,
+            review_slug=None,
+        )
+        yield MeetingEndEvent(
+            meeting=meeting,
+            outcome="COMPLETE",
+            elapsed_s=time.monotonic() - start,
+            calls_delta=0,
+            cost_delta=0.0,
+            artifact_kinds={},
+            thread_id=meeting.id,
+        )
+        return
+
+    # Run every declared check; collect findings + emit one event
+    # per check so the timeline reflects each one's outcome.
+    all_findings: list = []  # list[VerificationFinding]
+    any_failed = False
+    for check_name in check_names:
+        result = run_verification_check(check_name, project_root)
+        if result is None:
+            # Unknown check name — emit a skipped event so the typo
+            # doesn't disappear silently.
+            yield BuildCheckEvent(
+                check_name=check_name,
+                ok=False,
+                skipped=True,
+                skip_reason=(
+                    f"Unknown build_check name {check_name!r} — fix "
+                    "the workflow YAML or register the check."
+                ),
+                findings_count=0,
+                review_slug=None,
+            )
+            continue
+        if result.ok is False and result.skipped is False:
+            any_failed = True
+            all_findings.extend(result.findings)
+        # Per-check event (no review_slug yet — synthesis happens
+        # after all checks run, so all findings end up in one review).
+        yield BuildCheckEvent(
+            check_name=result.check_name,
+            ok=result.ok,
+            skipped=result.skipped,
+            skip_reason=result.skip_reason,
+            findings_count=len(result.findings),
+            review_slug=None,
+        )
+
+    review_slug: str | None = None
+    artifact_kinds: dict[str, int] = {}
+    if any_failed and all_findings:
+        feature_slug = _pick_feature_for_build_check_attribution(
+            project_root
+        )
+        if feature_slug is not None:
+            # Use the meeting id as the "check_name" for the
+            # synthesized review since it covers multiple checks now.
+            review_slug = _synthesize_build_check_review(
+                project_root=project_root,
+                check_name=meeting.id,
+                findings=tuple(all_findings),
+                feature_slug=feature_slug,
+            )
+            if review_slug is not None:
+                artifact_kinds["review"] = 1
+                review_payload_dict = {
+                    "slug": review_slug,
+                    "title": f"Build check ({meeting.id}) failed",
+                    "verdict": "request-changes",
+                    "findings": [
+                        {
+                            "severity": f.severity,
+                            "title": f.title,
+                            "location": f.location,
+                            "concern": f.concern,
+                            "request": f.request,
+                        }
+                        for f in all_findings
+                    ],
+                }
+                _route_blocking_review(
+                    project_root,
+                    feature_slug=feature_slug,
+                    review_payload=review_payload_dict,
+                    actor="wonderland-substrate",
+                    meeting_id=meeting.id,
+                )
+                # Re-emit a final event carrying the review_slug so
+                # consumers can link to the synthesized review.
+                yield BuildCheckEvent(
+                    check_name=meeting.id,
+                    ok=False,
+                    skipped=False,
+                    skip_reason="",
+                    findings_count=len(all_findings),
+                    review_slug=review_slug,
+                )
+
+    outcome = "REQUEST_CHANGES" if any_failed else "COMPLETE"
+    yield MeetingEndEvent(
+        meeting=meeting,
+        outcome=outcome,
+        elapsed_s=time.monotonic() - start,
+        calls_delta=0,
+        cost_delta=0.0,
+        artifact_kinds=artifact_kinds,
+        thread_id=meeting.id,
+    )
+
+
+def _attribute_ticket_sources_to_iteration_feature(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    new_utterances: list[Utterance],
+    current_item_slug: str | None,
+    thread_id: str | None = None,
+) -> None:
+    """For ticket artifacts emitted during a per_item=feature
+    iteration, ensure the iteration's feature slug appears in the
+    ticket's ``sources`` list (and the on-disk file's
+    ``**Sources:**`` line). Rabbit's M3 ticket emissions
+    consistently drift across iterations — early iterations cite
+    the feature slug correctly, later iterations cite invented
+    ``story-*`` slugs that don't resolve to anything on disk.
+
+    The dashboard's "tickets for this feature" query matches
+    ``feature.slug`` against ``ticket.sources``, so phantom-slug
+    citations break attribution silently — the validation3 pilot
+    showed 3 of 4 features rendering as "0 tickets" when the
+    tickets actually existed but cited ghosts.
+
+    This auto-injection is the substrate-side guarantee. The
+    feature slug becomes the first source; whatever Rabbit cited
+    alongside (real stories, phantom stories, coverage gaps)
+    survives as later entries. Same shape as
+    ``transition_iteration_to`` — what the directive can't reliably
+    control, the substrate enforces.
+
+    Only fires on ``per_item == "feature"`` meetings. No-op for
+    feature-emitting meetings (M2, where ticket sources don't yet
+    matter), per_item=ticket meetings, or per_item=None
+    meetings."""
+    import re
+    import sys
+
+    def _log(msg: str) -> None:
+        # stderr is captured by run-bg into runs/<id>/log so the
+        # operator can see attribution decisions post-hoc.
+        sys.stderr.write(f"[attribute_ticket_sources] {msg}\n")
+        sys.stderr.flush()
+
+    if meeting.per_item != "feature":
+        _log(
+            f"skip: meeting.per_item={meeting.per_item!r} (need 'feature') "
+            f"meeting.id={meeting.id!r}"
+        )
+        return
+    if not current_item_slug:
+        _log(f"skip: no current_item_slug for meeting={meeting.id!r}")
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        _log(f"skip: runner has no project_root attr; meeting={meeting.id!r}")
+        return
+
+    from wonderland.ticket import TicketRegistry
+
+    registry = TicketRegistry(project_root)
+    sources_re = re.compile(r"^(\*\*Sources:\*\*\s*)(.+?)$", re.MULTILINE)
+
+    # Parallel-iteration leak fix (validation4 pilot): when M3 runs
+    # features in parallel, ``new_utterances`` captures the global
+    # capture-slice between iteration start + end — which includes
+    # SIBLING iterations' tickets, not just this one's. Without
+    # thread-scoping, this function ends up attributing every
+    # parallel iteration's tickets to the current iteration's
+    # feature slug, then the next iteration does the same with
+    # ITS feature slug, and the final state has every ticket
+    # citing every feature. Scope to the iteration's thread_id so
+    # we only touch tickets emitted on the right thread.
+    if thread_id is not None:
+        scoped = [u for u in new_utterances if u.thread_id == thread_id]
+    else:
+        scoped = list(new_utterances)
+
+    _log(
+        f"fired: meeting={meeting.id!r} feature_slug={current_item_slug!r} "
+        f"thread_id={thread_id!r} utterances={len(new_utterances)} "
+        f"scoped={len(scoped)}"
+    )
+
+    for u in scoped:
+        for artifact in u.content.artifacts:
+            if artifact.kind != "ticket":
+                continue
+            payload = artifact.payload
+            if not isinstance(payload, dict):
+                continue
+            slug = payload.get("slug")
+            if not slug or not isinstance(slug, str):
+                continue
+            sources = payload.get("sources", []) or []
+            if not isinstance(sources, list):
+                sources = []
+            if current_item_slug in sources:
+                _log(f"  ticket={slug!r}: feature already in bus sources")
+                continue
+
+            # Mutate the bus artifact's payload so downstream
+            # meetings in the same run see the corrected sources.
+            new_sources = [current_item_slug] + [
+                s for s in sources if isinstance(s, str)
+            ]
+            payload["sources"] = new_sources
+
+            # Rewrite the **Sources:** line on disk so the
+            # dashboard's feature-to-ticket query matches.
+            record = registry.find_by_slug(slug)
+            if record is None:
+                _log(
+                    f"  ticket={slug!r}: bus payload found but no on-disk "
+                    f"record via find_by_slug — skipping file rewrite"
+                )
+                continue
+            try:
+                text = record.path.read_text(encoding="utf-8")
+            except OSError as exc:
+                _log(f"  ticket={slug!r}: read_text failed: {exc}")
+                continue
+            m = sources_re.search(text)
+            if not m:
+                _log(
+                    f"  ticket={slug!r}: no **Sources:** line matched in "
+                    f"file {record.path.name}"
+                )
+                continue
+            existing = [
+                s.strip() for s in m.group(2).split(",") if s.strip()
+            ]
+            if current_item_slug in existing:
+                _log(
+                    f"  ticket={slug!r}: feature already in on-disk sources"
+                )
+                continue
+            updated_list = [current_item_slug] + existing
+            new_line = m.group(1) + ", ".join(updated_list)
+            new_text = text[: m.start()] + new_line + text[m.end():]
+            try:
+                record.path.write_text(new_text, encoding="utf-8")
+                _log(
+                    f"  ticket={slug!r}: wrote sources={updated_list}"
+                )
+            except OSError as exc:
+                _log(f"  ticket={slug!r}: write_text failed: {exc}")
+                continue
+
+
+def _apply_milestone_plan_snapshot(
+    *,
+    runner: Runner,
+    new_utterances: list[Utterance],
+) -> list[str]:
+    """Snapshot semantics for ``milestone_plan`` utterances.
+
+    Agents reason about the milestone plan as a single list they ship
+    each rotation: "here's my view of the plan." Pre-this-fix, the
+    substrate wrote each milestone in that list to disk but never
+    deleted ones the agent had dropped between rotations, so a
+    consolidation pass (validation5: agents converged from
+    ``m3-routine-generation-from-equipment`` to
+    ``m3-equipment-and-routine-generation``) left both M3s on disk.
+
+    Snapshot rule:
+      - For each speaker, take their MOST RECENT ``milestone_plan``
+        utterance in this meeting.
+      - Compute the union of slugs across all speakers' most-recent
+        emissions — the "active claim set."
+      - Any milestone on disk whose slug is NOT in the active set was
+        abandoned by its author(s); delete the file.
+
+    Returns the list of deleted slugs (for logging / event surface).
+    No-op when no milestone_plan utterances are present in the meeting
+    or when the runner has no project_root.
+    """
+    from wonderland.utterance import SpeechAct
+
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return []
+
+    per_speaker_latest: dict[str, list[str]] = {}
+    for u in new_utterances:
+        if u.speech_act is not SpeechAct.MILESTONE_PLAN:
+            continue
+        speaker_name = u.speaker.name if u.speaker else None
+        if not speaker_name:
+            continue
+        slugs: list[str] = []
+        for art in u.content.artifacts:
+            if art.kind != "milestone":
+                continue
+            if not isinstance(art.payload, dict):
+                continue
+            slug = art.payload.get("slug")
+            if isinstance(slug, str) and slug:
+                slugs.append(slug)
+        # Last write per speaker wins — each milestone_plan is the
+        # agent's current full view of the plan.
+        per_speaker_latest[speaker_name] = slugs
+
+    if not per_speaker_latest:
+        return []
+
+    active: set[str] = set()
+    for slugs in per_speaker_latest.values():
+        active.update(slugs)
+
+    from wonderland.milestone import MilestoneRegistry
+
+    registry = MilestoneRegistry(project_root)
+    deleted: list[str] = []
+    for record in registry.list_milestones():
+        if record.slug in active:
+            continue
+        try:
+            record.path.unlink()
+            deleted.append(record.slug)
+        except OSError:
+            pass
+    return deleted
+
+
 def _apply_post_meeting_transitions(
     *,
     meeting: Meeting,
@@ -3970,12 +5118,31 @@ def _apply_post_meeting_transitions(
     # Review-verdict routing. Runs independently of
     # ``transition_iteration_to`` so M8 can drop its now-redundant
     # ``transition_iteration_to: ready_for_review`` (derivation
-    # handles the feature rollup once tickets are DONE). Fires when
-    # the meeting emitted a review artifact, regardless of per_item
-    # kind — practically that's only M8 (per_item: feature) today
-    # but the wiring doesn't care.
+    # handles the feature rollup once tickets are DONE).
+    #
+    # Gated on feature lifecycle state: only fires when the feature
+    # is in an IMPLEMENTATION state (queued / in_progress /
+    # ready_for_review). The earlier "any per_item=feature meeting
+    # that emits a review" gate was too broad — tdd-design's
+    # consolidation meeting is per_item=feature AND Caterpillar
+    # legitimately emits review artifacts there to call out
+    # duplicate decompositions. The bug surfaced in projects/
+    # validation: a request-changes review during design back-
+    # filled fresh tickets to in_progress, then immediately marked
+    # them done, mid-design. Implementation-stage routing in a
+    # design-stage meeting.
+    #
+    # The lifecycle gate makes the semantics right: routing fires
+    # iff the feature is actually being implemented. Design-stage
+    # features (proposed / in_design / designed) skip silently;
+    # Caterpillar's design-time concerns surface as ``concern`` or
+    # ``retract`` utterances which already have their own routing.
     if current_item_slug and meeting.per_item == "feature":
         feature_slug = current_item_slug
+        if not _feature_in_implementation_state(
+            project_root, feature_slug
+        ):
+            return
         blocking_review = _find_blocking_review(
             new_utterances, feature_slug
         )
@@ -4571,6 +5738,7 @@ async def _run_one_meeting_inner(
                     retractions = _apply_retraction_for_utterance(
                         runner=runner,
                         utterance=emitted,
+                        current_item_slug=current_item_slug,
                     )
                     for rec in retractions:
                         _emit_retracted_event(runner, rec)
@@ -4588,6 +5756,20 @@ async def _run_one_meeting_inner(
             ):
                 phased_new_utterances = (
                     capture.utterances[phased_artifact_count_before:]
+                )
+                # Ticket source attribution runs BEFORE transitions
+                # so the corrected sources are visible to any
+                # downstream substrate logic that reads them.
+                _attribute_ticket_sources_to_iteration_feature(
+                    meeting=meeting,
+                    runner=runner,
+                    new_utterances=phased_new_utterances,
+                    current_item_slug=current_item_slug,
+                    thread_id=thread_id,
+                )
+                _apply_milestone_plan_snapshot(
+                    runner=runner,
+                    new_utterances=phased_new_utterances,
                 )
                 _apply_post_meeting_transitions(
                     meeting=meeting,
@@ -4758,6 +5940,7 @@ async def _convene_one(
                 retractions = _apply_retraction_for_utterance(
                     runner=runner,
                     utterance=emitted,
+                    current_item_slug=current_item_slug,
                 )
                 for rec in retractions:
                     _emit_retracted_event(runner, rec)
@@ -4811,6 +5994,21 @@ async def _convene_one(
     # Failed meetings (BUDGET / TIMEOUT / ABORTED) leave feature state
     # untouched so the operator can see what shipped vs. didn't.
     if outcome == "COMPLETE":
+        # Ticket source attribution runs BEFORE transitions so the
+        # corrected sources are visible to any downstream substrate
+        # logic that reads them (e.g. _route_blocking_review's
+        # ticket → feature reverse-map).
+        _attribute_ticket_sources_to_iteration_feature(
+            meeting=meeting,
+            runner=runner,
+            new_utterances=new_utterances,
+            current_item_slug=current_item_slug,
+            thread_id=thread_id,
+        )
+        _apply_milestone_plan_snapshot(
+            runner=runner,
+            new_utterances=new_utterances,
+        )
         _apply_post_meeting_transitions(
             meeting=meeting,
             runner=runner,
