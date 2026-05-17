@@ -102,6 +102,17 @@ class ReviewFinding(BaseModel):
     """What is wrong, specifically, and why it matters."""
     request: str = Field(min_length=1)
     """What would resolve this — actionable, not vibes."""
+    test_coverage_required: bool = False
+    """Whether the synthesized follow-up ticket (if this finding gets
+    routed through ``_synthesize_followup_ticket_from_finding``) needs
+    a fresh test-scenario design pass before implementation. Defaults
+    to False — most findings restore code-correctness for paths whose
+    existing tests already cover the surface area, so adversarial
+    scenario design (tea-party / M6) adds little. Set True when the
+    fix introduces a behavior that no existing test covers and the
+    Mad Hatter's edge-case discipline would surface scenarios the
+    Tweedles wouldn't think of on their own. Caterpillar's judgment;
+    default-false keeps cost low on the common case."""
 
 
 class ReviewPayload(BaseModel):

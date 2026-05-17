@@ -70,6 +70,30 @@ class TicketStatus(StrEnum):
     DROPPED = "dropped"
 
 
+class TicketSource(StrEnum):
+    """Where a ticket came from. Drives default substrate routing —
+    chiefly the tea-party (M6) iteration filter, which excludes
+    review-synthesized tickets by default (the review's
+    location/quote/concern/request structure IS the spec; adversarial
+    test-scenario design adds little). Each ticket's
+    ``test_coverage_required`` field can override the default
+    on a per-ticket basis when an agent (or operator) has explicit
+    judgment about whether fresh test design is warranted."""
+
+    M3_DECOMPOSITION = "m3_decomposition"
+    """Fresh from Rabbit's M3 ticket decomposition. Default; goes
+    through full tea-party adversarial scenario design."""
+    REVIEW_SYNTHESIS = "review_synthesis"
+    """Synthesized by the substrate from a Caterpillar review
+    finding's request field. Skips tea-party by default — the review
+    IS the spec — unless ``test_coverage_required`` is explicitly
+    set True."""
+    OPERATOR = "operator"
+    """Filed manually by the operator (e.g., via the dashboard ticket
+    creation UI). Goes through tea-party by default; operator can
+    override per-ticket."""
+
+
 class TicketDependencies(BaseModel):
     """Three flavors of dependency, per Rabbit §V."""
 
@@ -162,6 +186,24 @@ class TicketPayload(BaseModel):
     stack_span: "TicketStackSpan" = Field(
         default_factory=lambda: TicketStackSpan.FULL_STACK,
     )
+    source: "TicketSource" = Field(
+        default_factory=lambda: TicketSource.M3_DECOMPOSITION,
+    )
+    """Origin of this ticket. Drives substrate routing decisions like
+    "does this ticket need tea-party adversarial test design?"
+    Defaults to ``m3_decomposition`` (Rabbit's normal flow); set
+    automatically to ``review_synthesis`` when the substrate creates
+    a follow-up ticket from a Caterpillar review finding."""
+    test_coverage_required: bool | None = None
+    """Operator/agent override for the tea-party (M6) iteration
+    filter. ``None`` means "use source-based default" — tickets from
+    ``m3_decomposition`` go through tea-party; tickets from
+    ``review_synthesis`` skip it (the review IS the spec). Explicit
+    ``True`` forces inclusion (Caterpillar can mark a review finding
+    as needing fresh test design when the fix introduces uncovered
+    behavior); explicit ``False`` forces exclusion (operator-filed
+    tickets that are perfectly clear and don't need adversarial
+    scenario design)."""
 
 
 @dataclass(frozen=True)
