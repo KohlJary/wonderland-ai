@@ -1,0 +1,96 @@
+name: notebook
+title: Personal markdown notebook — fullstack demo, paper-MVP-ready
+description: |
+  The reference MVP directive for the Wonderland paper. Designed for
+  reproducibility: a reader who clones the repo, sets an API key,
+  runs ``wonderland init`` + ``wonderland run`` against this
+  directive, and waits ~$30-50 of pilot spend should end up with a
+  working full-stack app they can exercise in a browser in <5 minutes
+  of post-install verification time.
+
+  Single-user, no auth (skip the signup step to minimize verification
+  friction). Real engineering surface: backend persistence, markdown
+  parsing + sanitization, full-text search, tag-based filtering,
+  frontend SPA with real CRUD. The kind of thing Caterpillar's M8
+  review surfaces substantive findings on (XSS prevention, search
+  indexing strategy, tag normalization, schema choices) rather than
+  the thin surface of a TODO app or URL shortener.
+
+  Persona target: a developer or researcher who maintains a
+  personal knowledge base. Familiar enough that Alice's M1 stories
+  ground in real workflow (capture → tag → find later) without
+  requiring domain expertise the operator/reader doesn't share.
+
+  Why not multi-user: signup + login adds 30+ seconds to every
+  reader's verification path. Single-user keeps verification to
+  "load the URL, see the demo working." Multi-user is fast-follow,
+  not paper-MVP.
+
+  Why not Markdown-renders-server-side: client-side rendering is
+  simpler (one library, react-markdown or similar), demos better
+  (no round-trip latency on every edit), and shifts the surface
+  toward the frontend the reader is actually looking at. Backend
+  stores raw markdown; frontend renders.
+
+  Expected feature decomposition (rough sketch; agents will refine):
+    1. Foundation — SQLite + FastAPI + React skeleton, dev setup
+    2. Notes CRUD — create, edit, delete, list notes with title+body
+    3. Markdown rendering — client-side render, preview pane
+    4. Tags — tag-based filtering, tag normalization
+    5. Search — full-text across title + body + tags
+
+  Each feature should land in 3-6 tickets, $5-15 per feature in
+  implementation. Total MVP target: $30-60 across all features.
+body: |
+  Build a personal markdown notebook web app.
+
+  Single user, no authentication — the app loads ready to use.
+
+  Persona: a developer or researcher keeping a personal knowledge
+  base. They want to capture markdown notes, tag them for
+  organization, and find them later via search. Notes outlive
+  individual sessions; they persist across page reloads and across
+  server restarts.
+
+  Core capabilities:
+
+    - Create a note with a title and a markdown body. Tags are
+      optional, one or more per note.
+    - Edit and delete existing notes.
+    - List all notes, most-recently-edited first.
+    - Render markdown to HTML in a preview pane next to the
+      editor — code blocks, headers, lists, links, images,
+      blockquotes all work.
+    - Filter the note list by tag.
+    - Search across note titles, bodies, and tags. Substring match
+      is fine; the goal is finding a note you wrote last week, not
+      academic full-text search.
+
+  Stack constraints:
+
+    - Backend: Python + FastAPI + SQLite. SQLite as the persistence
+      layer so the reader doesn't need to run a separate database.
+    - Frontend: React + Vite + TypeScript. Client-side markdown
+      rendering (pick a lightweight library: react-markdown,
+      marked, or similar).
+    - Skeleton: fullstack-fastapi-react. Dev runs as two processes
+      (uvicorn + npm run dev) with Vite proxying API calls to the
+      backend.
+
+  Non-goals (explicit out-of-scope):
+
+    - No multi-user / authentication. The app is single-user.
+    - No real-time collaboration. Single device.
+    - No export/import beyond what SQLite gives you for free.
+    - No rich-text editor — markdown text area + preview is the UX.
+    - No mobile-specific UI; desktop browser is the target.
+
+  Success criteria: a developer can ``git clone``, follow the
+  README's "run the demo" steps, and have a working notebook in
+  their browser within five minutes. They can create a note, tag
+  it, find it via search, edit it, and see it persist after a
+  server restart.
+suggested_workflow: discovery
+suggested_skeleton: fullstack-fastapi-react
+tags: [fullstack, paper-demo, mvp, markdown, persistence]
+category: demo

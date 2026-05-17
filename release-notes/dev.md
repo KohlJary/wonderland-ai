@@ -12,6 +12,14 @@ The Live Call feed in `LiveRunScreen` was reading `runner.telemetry.entries` dir
 
 Replaced with an event-driven implementation: the dispatcher's `AgentActed` events now feed the table directly. Works for both in-process and subprocess runs since event streams are the common interface. Per-call rows show `time · agent · phase` (cost-per-call isn't on `AgentActed`; the per-agent rollup still lands in the status bar via `AgentTelemetryDelta`). Past events get buffered (capped at 200) so meeting-selection changes can replay historical activity for the newly-focused thread instead of leaving the operator staring at residue from the prior filter.
 
+### New directive: ``notebook`` — paper-MVP-ready fullstack demo
+
+Reference directive for the Wonderland paper's reproducible MVP. Single-user markdown notebook with SQLite persistence, FastAPI backend, React + Vite frontend, client-side markdown rendering, tags, search. Designed so a paper reader can clone the repo, run the demo, and verify a working app in <5 minutes of post-install time — no signup, no user data input required.
+
+Differentiated from the existing ``markdown-notes`` directive (which is the pure-frontend, no-backend stress-test variant) — ``notebook`` exercises the full discovery → milestone → tdd-design → tdd-implement pipeline and produces a reviewable full-stack artifact.
+
+Target economics: 5 features × ~$5-15 = $30-60 total MVP spend. The reference cost point we'll cite in the paper.
+
 ### Fix: review-synthesized tickets weren't getting marked done after their iteration
 
 Validation5 surfaced a ticket-state drift: 4 review-synthesized follow-up tickets shipped through implementation cleanly (Tweedles worked the threads, Caterpillar reviewed the result) but their lifecycle stayed stuck at ``queued`` instead of progressing to ``done``. Inflated the operator-visible queue count and broke cost-per-feature attribution math.
