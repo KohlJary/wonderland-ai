@@ -2,6 +2,12 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+### Active-milestone block prepended to non-entry meetings
+
+Only the entry meeting (M1) got the full milestone framing via ``_prepend_milestone_framing``; M2–M5 saw the requirement set and the inherited memory, but not the milestone's own ``goal`` + ``done_when``. Mvp-demo surfaced the symptom: subsequent design phases were quietly absorbing concerns that belonged to a future milestone, because the agents had no visible criterion for "is this in scope for *this* milestone."
+
+Fix: ``_convene_one`` now prepends a compact ``**Active milestone:** … **Done when:** …`` block to every non-entry meeting's convener directive when ``get_active_milestone_scope()`` returns non-None. Each meeting's roster sees the active milestone's name + slug + goal + done-when bullets right before its own directive, with an instruction to flag out-of-scope work as a concern instead of absorbing it. Cheap (a few hundred tokens per meeting), and the substrate already tracks the scope via the contextvar so no plumbing change.
+
 ### TUI: Queue action available on in_progress tickets
 
 Validation5 surfaced a stuck-ticket pattern — synthesized follow-up tickets that didn't close cleanly on their implementation pass got marooned in `in_progress`. The dashboard's only action was "Mark done," which would lie about their state. The state machine already permitted `in_progress → queued` (the un-abort path in `ticket_lifecycle.LEGAL_TRANSITIONS`); the UI just wasn't exposing it. Operator can now re-queue a stuck ticket for the next implementation pass without having to fake its completion first.

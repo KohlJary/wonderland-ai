@@ -6033,6 +6033,35 @@ async def _convene_one(
     else:
         convenor_directive = meeting.convenor_directive
 
+    # _prepend_milestone_framing only fires for the entry meeting via
+    # _resolve_milestone_scope; non-entry meetings see no active-
+    # milestone signal, so done_when criteria stay invisible to
+    # M2/M3/M4/M5 and scope creep can leak in unflagged. Inject a
+    # tight scope block (name + goal + done_when) at the head of
+    # every non-entry meeting's directive when a scope is active.
+    if directive is None:
+        scope = get_active_milestone_scope()
+        if scope is not None:
+            done_lines = "\n".join(
+                f"  - {d}" for d in scope.done_when
+            )
+            milestone_block = (
+                f"**Active milestone: {scope.name}** "
+                f"(slug: ``{scope.slug}``)\n"
+                f"\n"
+                f"**Goal:** {scope.goal}\n"
+                f"\n"
+                f"**Done when:**\n{done_lines}\n"
+                f"\n"
+                f"Stay scoped to these done-criteria. Any work "
+                f"outside them is scope creep for a future "
+                f"milestone — flag as a concern rather than "
+                f"absorbing.\n"
+                f"\n"
+                f"───────────────────────────────────────\n\n"
+            )
+            convenor_directive = milestone_block + convenor_directive
+
     # Surface the meeting label, name, and iteration metadata to the
     # team. Iteration label puts the current feature's title into the
     # context window so the agents anchor on it.
