@@ -4276,6 +4276,27 @@ def _complete_tickets_on_accept_review(
     ]
     for ticket_slug in feature_tickets:
         state = get_ticket_state(project_root, ticket_slug)
+        # queued → in_progress fast-forward, same pattern as the
+        # request-changes path. Tickets that were worked in this
+        # iteration but never had their queue → in_progress
+        # transition fire still get marked done on accept.
+        if state == TicketState.QUEUED:
+            try:
+                ticket_transition(
+                    project_root,
+                    ticket_slug,
+                    TicketState.IN_PROGRESS,
+                    by=actor,
+                    notes=(
+                        f"Auto-transition from {meeting_id!r} on "
+                        f"accept verdict ({review_slug!r}); ticket "
+                        "was worked in this iteration but queue → "
+                        "in_progress hadn't fired yet."
+                    ),
+                )
+                state = TicketState.IN_PROGRESS
+            except TicketIllegal:
+                continue
         if state != TicketState.IN_PROGRESS:
             continue
         try:
@@ -4480,6 +4501,33 @@ def _route_blocking_review(
                 )
                 state = TicketState.IN_PROGRESS
             except Exception:  # noqa: BLE001
+                continue
+        # Tickets that were queued for this iteration (review-
+        # synthesized follow-ups, operator-queued retries) get a
+        # queued → in_progress transition before the done mark.
+        # Without this, they get stuck in queued — the implementation
+        # pass works them but the auto-complete loop's "must be
+        # IN_PROGRESS" guard skips the done transition. Validation5
+        # surfaced this: 4 review-synthesized tickets shipped through
+        # the implementation phase but the lifecycle stuck at queued,
+        # inflating the operator-visible "queued" count + breaking
+        # cost-per-feature attribution.
+        if state == TicketState.QUEUED:
+            try:
+                ticket_transition(
+                    project_root,
+                    ticket_slug,
+                    TicketState.IN_PROGRESS,
+                    by=actor,
+                    notes=(
+                        f"Auto-transition from {meeting_id!r} on "
+                        f"request-changes verdict ({review_slug!r}); "
+                        "ticket was worked in this iteration but "
+                        "queue → in_progress hadn't fired yet."
+                    ),
+                )
+                state = TicketState.IN_PROGRESS
+            except TicketIllegal:
                 continue
         if state != TicketState.IN_PROGRESS:
             continue

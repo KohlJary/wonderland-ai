@@ -12,6 +12,14 @@ The Live Call feed in `LiveRunScreen` was reading `runner.telemetry.entries` dir
 
 Replaced with an event-driven implementation: the dispatcher's `AgentActed` events now feed the table directly. Works for both in-process and subprocess runs since event streams are the common interface. Per-call rows show `time · agent · phase` (cost-per-call isn't on `AgentActed`; the per-agent rollup still lands in the status bar via `AgentTelemetryDelta`). Past events get buffered (capped at 200) so meeting-selection changes can replay historical activity for the newly-focused thread instead of leaving the operator staring at residue from the prior filter.
 
+### Fix: review-synthesized tickets weren't getting marked done after their iteration
+
+Validation5 surfaced a ticket-state drift: 4 review-synthesized follow-up tickets shipped through implementation cleanly (Tweedles worked the threads, Caterpillar reviewed the result) but their lifecycle stayed stuck at ``queued`` instead of progressing to ``done``. Inflated the operator-visible queue count and broke cost-per-feature attribution math.
+
+Root cause: ``_route_blocking_review`` and ``auto_complete_iteration_tickets_on_accept`` both have an auto-complete loop that marks worked tickets done — but the loop's guard required ``state == TicketState.IN_PROGRESS``. Tickets that were queued for the iteration but never had their ``queue → in_progress`` transition fire hit the guard and got skipped.
+
+Fix: both auto-complete paths now fast-forward ``queued → in_progress`` before the done mark when they encounter a queued ticket. Same back-fill pattern that already handled ``None → in_progress``; extended to cover the queued case.
+
 ### tdd-decompose workflow + dashboard "Decompose tickets" button
 
 New workflow for the partial-design-rerun use case: features that
