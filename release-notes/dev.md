@@ -12,6 +12,18 @@ The Live Call feed in `LiveRunScreen` was reading `runner.telemetry.entries` dir
 
 Replaced with an event-driven implementation: the dispatcher's `AgentActed` events now feed the table directly. Works for both in-process and subprocess runs since event streams are the common interface. Per-call rows show `time · agent · phase` (cost-per-call isn't on `AgentActed`; the per-agent rollup still lands in the status bar via `AgentTelemetryDelta`). Past events get buffered (capped at 200) so meeting-selection changes can replay historical activity for the newly-focused thread instead of leaving the operator staring at residue from the prior filter.
 
+### M9 verify adds pytest_passes alongside pytest_collects
+
+Three-tier verification now runs at end of each feature lane:
+pytest_collects (do the tests import?) → pytest_passes (do they pass?) → npm_build (frontend TypeScript + Vite build).
+
+Validation5 feature 2 surfaced the empirical motivation: Caterpillar's M8 review verdict was clean accept on code that didn't actually run. Three runtime bugs the static review couldn't see:
+1. Schema drift — `Session` model declared `synced_at`; live SQLite DB had stale schema; every endpoint returned 500 with `OperationalError: no such column`.
+2. Contract drift — test expects `synced_at` set on online create, impl returns None.
+3. Datetime tz mismatch — `server_updated_at >= client_updated_at` raised `TypeError: can't compare offset-naive and offset-aware datetimes` at runtime.
+
+All three would have synthesized follow-up tickets if `pytest_passes` had been in the M9 chain. Now it is. Next implementation pass picks up the bugs as queued tickets via the existing `_route_blocking_review` path.
+
 ### Tea-party skips review-synthesized tickets by default
 
 Cost optimization for the review-loop iterations. Review-synthesized tickets (the ones the substrate creates from Caterpillar's M8 findings) come with a complete spec built in — `location` + `quote` + `read` + `concern` + `request` — so the adversarial test-scenario design pass (tea-party / M6) was adding ~$0.50/ticket of overhead for what's structurally a code-correctness restoration on already-tested paths.

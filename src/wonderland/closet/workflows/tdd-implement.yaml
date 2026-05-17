@@ -510,7 +510,22 @@ meetings:
     # without firing the substrate; backend-less skeletons (pure
     # vite SPA) skip ``pytest_collects``.
     build_check:
+      # Three-tier verification, ordered cheapest → most expensive:
+      # 1. pytest_collects: do the tests import? Catches structural
+      #    bugs (missing imports, Pydantic shadow fields, malformed
+      #    decorators) for ~30s of cost.
+      # 2. pytest_passes: do the tests pass? Catches runtime bugs
+      #    Caterpillar's static review can't surface — schema
+      #    drift between SQLAlchemy model and live DB, datetime
+      #    tz mismatches, contract drift between test expectations
+      #    and implementation. Validation5 feature 2 surfaced
+      #    three such bugs Caterpillar accepted as correct but
+      #    failed pytest execution; this check closes the gap.
+      # 3. npm_build: frontend TypeScript + Vite build. Catches
+      #    the orphan-component shape from analysis 040 + any TS
+      #    errors the per-file review missed.
       - pytest_collects
+      - pytest_passes
       - npm_build
 
 category: implementation
