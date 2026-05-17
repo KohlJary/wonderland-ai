@@ -374,6 +374,28 @@ class Meeting(BaseModel):
             "tea-party even though its source is review_synthesis."
         ),
     )
+    primary_speaker: str | None = Field(
+        default=None,
+        description=(
+            "When set, the substrate designates this roster member "
+            "as the meeting's primary author for snapshot-shaped "
+            "decisions. Currently load-bearing only for "
+            "``milestone_plan``: the snapshot semantic "
+            "(_apply_milestone_plan_snapshot) uses ONLY the primary "
+            "speaker's most-recent milestone_plan claims, ignoring "
+            "other speakers' parallel emissions. Other speakers can "
+            "still ship concerns/observations/questions in-meeting; "
+            "their milestone_plan emissions stay in the transcript "
+            "as audit but the resulting milestones get snapshot-"
+            "cleaned at meeting end. Mvp-demo pilot surfaced this "
+            "need: Alice's persona-anchored milestone track and "
+            "Rabbit's technical-layer milestone track survived in "
+            "parallel (different slugs at same orders), producing "
+            "9 milestones for 5 conceptual positions. None means "
+            "no restriction — every roster member's emissions get "
+            "snapshotted as in the original semantic."
+        ),
+    )
     transition_emitted_to: str | None = Field(
         default=None,
         description=(
@@ -5042,6 +5064,7 @@ def _apply_milestone_plan_snapshot(
     *,
     runner: Runner,
     new_utterances: list[Utterance],
+    primary_speaker: str | None = None,
 ) -> list[str]:
     """Snapshot semantics for ``milestone_plan`` utterances.
 
@@ -5053,13 +5076,28 @@ def _apply_milestone_plan_snapshot(
     ``m3-routine-generation-from-equipment`` to
     ``m3-equipment-and-routine-generation``) left both M3s on disk.
 
-    Snapshot rule:
+    Snapshot rule (default — ``primary_speaker is None``):
       - For each speaker, take their MOST RECENT ``milestone_plan``
         utterance in this meeting.
       - Compute the union of slugs across all speakers' most-recent
         emissions — the "active claim set."
-      - Any milestone on disk whose slug is NOT in the active set was
-        abandoned by its author(s); delete the file.
+      - Any milestone on disk whose slug is NOT in the active set
+        was abandoned by its author(s); delete the file.
+
+    Primary-speaker mode (``primary_speaker`` set, e.g.
+    ``"white_rabbit"``):
+      - Only the primary speaker's most-recent milestone_plan
+        contributes to the active set. Other speakers' milestone_plan
+        emissions are ignored at snapshot time — their milestone
+        files on disk get cleaned up by the next snapshot pass that
+        runs (they don't enter the active set).
+      - Mvp-demo surfaced the need: Alice's persona-anchored
+        milestones and Rabbit's technical-layer milestones both
+        survived in parallel at the same orders, producing 9
+        milestones for 5 conceptual positions. The directive change
+        alone (telling Alice/Cat not to emit milestone_plan) was
+        considered insufficient — substrate enforcement is the
+        load-bearing fix because directive guidance is advisory.
 
     Returns the list of deleted slugs (for logging / event surface).
     No-op when no milestone_plan utterances are present in the meeting
@@ -5093,6 +5131,24 @@ def _apply_milestone_plan_snapshot(
 
     if not per_speaker_latest:
         return []
+
+    # Primary-speaker mode: filter to only the designated speaker.
+    # Non-primary speakers' milestone_plan emissions still landed on
+    # disk during the run (each emission writes via the agent's
+    # _record_milestones), but the snapshot here cleans up everything
+    # except the primary's active set.
+    if primary_speaker is not None:
+        per_speaker_latest = {
+            k: v
+            for k, v in per_speaker_latest.items()
+            if k == primary_speaker
+        }
+        if not per_speaker_latest:
+            # Primary speaker didn't emit any milestone_plan
+            # utterances. Leave on-disk milestones alone — there's
+            # no authoritative claim to compare against. Operator
+            # can re-run with the primary speaker actually engaging.
+            return []
 
     active: set[str] = set()
     for slugs in per_speaker_latest.values():
@@ -5893,6 +5949,7 @@ async def _run_one_meeting_inner(
                 _apply_milestone_plan_snapshot(
                     runner=runner,
                     new_utterances=phased_new_utterances,
+                    primary_speaker=meeting.primary_speaker,
                 )
                 _apply_post_meeting_transitions(
                     meeting=meeting,
@@ -6131,6 +6188,7 @@ async def _convene_one(
         _apply_milestone_plan_snapshot(
             runner=runner,
             new_utterances=new_utterances,
+            primary_speaker=meeting.primary_speaker,
         )
         _apply_post_meeting_transitions(
             meeting=meeting,

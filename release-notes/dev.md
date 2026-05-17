@@ -12,6 +12,34 @@ The Live Call feed in `LiveRunScreen` was reading `runner.telemetry.entries` dir
 
 Replaced with an event-driven implementation: the dispatcher's `AgentActed` events now feed the table directly. Works for both in-process and subprocess runs since event streams are the common interface. Per-call rows show `time · agent · phase` (cost-per-call isn't on `AgentActed`; the per-agent rollup still lands in the status bar via `AgentTelemetryDelta`). Past events get buffered (capped at 200) so meeting-selection changes can replay historical activity for the newly-focused thread instead of leaving the operator staring at residue from the prior filter.
 
+### Meeting.primary_speaker — single-author lead for snapshot decisions
+
+Substrate primitive for designating a single roster member as the
+primary author of a meeting's snapshot-shaped decisions. Currently
+load-bearing only for ``milestone_plan``: when a meeting sets
+``primary_speaker: white_rabbit``, the snapshot semantic uses ONLY
+Rabbit's most-recent milestone_plan claims. Other speakers' (Alice,
+Cat) milestone_plan emissions get snapshot-cleaned at meeting end.
+Their concerns / observations / questions still flow; only the
+primary decision is single-authored.
+
+Mvp-demo surfaced the need: Alice emitted 5 persona-anchored
+milestones (kohl-captures, kohl-discovers, ...); Rabbit emitted 4
+technical-layer milestones (persistence, api-surface, ...) at the
+same orders 2-5. Both survived the union-of-authors snapshot
+because the slugs differed. Disk ended up with 9 milestones for
+5 conceptual positions.
+
+Wired ``primary_speaker: white_rabbit`` into milestone-plan.yaml;
+convener directive teaches Alice + Cat to support via concern
+/ observation instead of emitting parallel milestone_plans. The
+substrate enforces; the directive prevents the waste.
+
+Same pattern available for any future workflow that wants
+snapshot-shaped single-author semantics. Probably not the right
+primitive for multi-author negotiation meetings (M3 / M5
+contract negotiation) where parallel emissions ARE the point.
+
 ### New directive: ``notebook`` — paper-MVP-ready fullstack demo
 
 Reference directive for the Wonderland paper's reproducible MVP. Single-user markdown notebook with SQLite persistence, FastAPI backend, React + Vite frontend, client-side markdown rendering, tags, search. Designed so a paper reader can clone the repo, run the demo, and verify a working app in <5 minutes of post-install time — no signup, no user data input required.

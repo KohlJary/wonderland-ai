@@ -1549,6 +1549,120 @@ class TestMilestonePlanSnapshot:
         )
         assert len(files) == 1
 
+    def test_primary_speaker_filters_to_one_authors_claims(
+        self, tmp_path: Path
+    ) -> None:
+        """Mvp-demo repro: Alice's persona-anchored track and
+        Rabbit's technical track both survived the default snapshot
+        (parallel slugs at same orders). With primary_speaker set
+        to white_rabbit, only Rabbit's claims define the active
+        set; Alice's milestones get snapshot-cleaned."""
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        # 5 alice milestones + 4 rabbit milestones, same orders 2-5.
+        self._seed_milestone_files(
+            tmp_path,
+            [
+                "m1-alice-foundation",
+                "m2-alice-discovery",
+                "m3-alice-edits",
+                "m4-alice-rendering",
+                "m5-alice-launch",
+                "m2-rabbit-persistence",
+                "m3-rabbit-api-surface",
+                "m4-rabbit-frontend",
+                "m5-rabbit-demo-shell",
+            ],
+        )
+        utterances = [
+            self._milestone_utterance(
+                "alice",
+                [
+                    "m1-alice-foundation",
+                    "m2-alice-discovery",
+                    "m3-alice-edits",
+                    "m4-alice-rendering",
+                    "m5-alice-launch",
+                ],
+            ),
+            self._milestone_utterance(
+                "white_rabbit",
+                [
+                    "m2-rabbit-persistence",
+                    "m3-rabbit-api-surface",
+                    "m4-rabbit-frontend",
+                    "m5-rabbit-demo-shell",
+                ],
+            ),
+        ]
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+            primary_speaker="white_rabbit",
+        )
+        # All 5 of Alice's milestones get cleaned; Rabbit's 4 survive.
+        assert sorted(deleted) == sorted(
+            [
+                "m1-alice-foundation",
+                "m2-alice-discovery",
+                "m3-alice-edits",
+                "m4-alice-rendering",
+                "m5-alice-launch",
+            ]
+        )
+
+    def test_primary_speaker_unset_uses_union_default(
+        self, tmp_path: Path
+    ) -> None:
+        """When primary_speaker is None (default), the original
+        union-of-authors-claims semantic applies — both speakers'
+        milestones survive."""
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(
+            tmp_path, ["m1-alice-foundation", "m1-rabbit-bootstrap"]
+        )
+        utterances = [
+            self._milestone_utterance(
+                "alice", ["m1-alice-foundation"]
+            ),
+            self._milestone_utterance(
+                "white_rabbit", ["m1-rabbit-bootstrap"]
+            ),
+        ]
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+            # primary_speaker omitted (None)
+        )
+        # Both survive — union semantic.
+        assert deleted == []
+
+    def test_primary_speaker_no_emission_is_no_op(
+        self, tmp_path: Path
+    ) -> None:
+        """When primary_speaker is set but the designated speaker
+        didn't emit any milestone_plan utterances, the snapshot
+        no-ops rather than deleting all on-disk milestones. Leaves
+        operator able to re-run with the primary actually engaging."""
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(
+            tmp_path, ["m1-alice-foundation"]
+        )
+        utterances = [
+            self._milestone_utterance(
+                "alice", ["m1-alice-foundation"]
+            ),
+            # white_rabbit didn't emit milestone_plan.
+        ]
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+            primary_speaker="white_rabbit",
+        )
+        assert deleted == []
+
 
 class TestRetractScopeGuard:
     """Validation5 follow-up: ticket retract is scoped to the current

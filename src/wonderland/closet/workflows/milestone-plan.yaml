@@ -72,6 +72,17 @@ meetings:
       compose the milestone plan from the requirement corpus —
       ordered, with done-criteria, scoped to consumed requirements
     roster: [white_rabbit, cheshire_cat, alice]
+    # Rabbit is the primary author for milestone_plan. Alice + Cat
+    # stay on the roster to support with concerns / observations /
+    # questions, but their milestone_plan emissions get cleaned up
+    # at snapshot time via _apply_milestone_plan_snapshot's
+    # primary-speaker filter. Mvp-demo pilot surfaced the need:
+    # Alice's persona-anchored milestones and Rabbit's technical-
+    # layer milestones both survived in parallel at the same orders
+    # (different slugs at same orders), producing 9 milestones for
+    # 5 conceptual positions. Single-author keeps the plan
+    # internally consistent.
+    primary_speaker: white_rabbit
     meeting_budget: 1.50
     # P15 T-m6 stage-leak guardrail. The convenor_directive below
     # tells agents what to ship; this list is the substrate-side
@@ -97,7 +108,20 @@ meetings:
     # questions" section. If the loop persists, T-m6 wants
     # expanding to utterance-level filtering.
     convenor_directive: |
-      **THE ONLY PRODUCTIVE OUTPUT OF THIS MEETING IS A
+      **Rabbit is the primary author for this meeting's
+      `milestone_plan`. Alice + Cat support with concerns,
+      observations, and questions — but do NOT emit
+      `milestone_plan` yourselves.** The substrate enforces this
+      via the meeting's `primary_speaker` field: any
+      `milestone_plan` emissions from non-primary speakers get
+      snapshot-cleaned at meeting end. You'll burn budget for no
+      result. Alice's role is to keep Rabbit's plan grounded in
+      persona-anchored user journeys; Cat's role is to flag
+      architectural seams Rabbit's plan implies. Both happen via
+      `concern` or `observation`, not via parallel `milestone_plan`
+      emissions.
+
+      **Rabbit — THE ONLY PRODUCTIVE OUTPUT OF THIS MEETING IS YOUR
       `milestone_plan` DECISION.** That's your assignment. Read
       the requirement corpus, compose an ordered plan, ship it
       as `milestone_plan` with the `milestones` field populated.
