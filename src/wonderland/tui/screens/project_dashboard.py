@@ -1066,6 +1066,15 @@ class ProjectDashboardScreen(Screen[None]):
             TicketState.PENDING,
             TicketState.ABORTED,
             TicketState.DONE,
+            # IN_PROGRESS → QUEUED is the "un-abort a stuck iteration"
+            # path in the state machine (ticket_lifecycle.LEGAL_TRANSITIONS).
+            # validation5 surfaced this gap: synthesized follow-up tickets
+            # got stuck in_progress when an implementation pass didn't
+            # close cleanly, and the UI offered no way to re-queue them
+            # short of marking done. Operator should be able to put the
+            # ticket back on the queue without having to lie about its
+            # state.
+            TicketState.IN_PROGRESS,
         )
         can_unqueue = state == TicketState.QUEUED
         can_mark_done = state == TicketState.IN_PROGRESS
