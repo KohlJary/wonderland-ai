@@ -229,6 +229,13 @@ class LiveRunScreen(Screen[None]):
         self._meeting_artifacts: dict[str, list[RunArtifact]] = {
             _ALL_MEETINGS: [],
         }
+        # Per-call aliveness buffer. AgentActed events get pushed
+        # here as they flow through the dispatcher; the buffer is
+        # capped to keep memory bounded over long runs. Used to
+        # repopulate the call-feed table on meeting-selection
+        # changes (lazygit-style filtering) so the operator sees
+        # historical activity for the newly-selected thread.
+        self._agent_acted_log: list["AgentActed"] = []
         # Currently-selected thread_id; drives transcript + artifact
         # pane content. Defaults to All-Meetings — the unfiltered
         # rolling-stream view that matches T46 behavior.
@@ -356,7 +363,17 @@ class LiveRunScreen(Screen[None]):
         # there's a visible per-call tick).
         cftable = self.query_one("#live-call-feed-table", DataTable)
         cftable.clear(columns=True)
-        cftable.add_columns("⚡ When · Agent · Cost")
+        # Driven by AgentActed events (event-stream-sourced) so the
+        # feed works for both in-process runs and subprocess runs.
+        # The prior implementation polled ``runner.telemetry.entries``,
+        # which is only populated for in-process runs — subprocess runs
+        # (the default path through ``wonderland run-bg``) have no
+        # ``_runner`` attribute on their handle and the feed stayed
+        # blank. Cost-per-call isn't available from AgentActed (only
+        # rolled up via AgentTelemetryDelta), so the column shows
+        # phase instead — the per-agent running cost still surfaces
+        # in the status bar.
+        cftable.add_columns("⚡ When · Agent · Phase")
         # Initialize files tree — populated on demand from
         # tool-calls.jsonl as write/edit/delete tools fire. Empty
         # state until the first tool call lands.
@@ -368,9 +385,8 @@ class LiveRunScreen(Screen[None]):
             "[dim](no utterance selected)[/dim]"
         )
         self._render_status_bar()
-        # Track call-feed cursor + files-touched so periodic refresh
-        # only adds new entries / nodes instead of redrawing.
-        self._call_feed_cursor: int = 0
+        # Track files-touched so periodic refresh only adds new
+        # nodes instead of redrawing.
         self._files_touched: dict[str, str] = {}  # path → indicator
         # Cache rendered file detail (Syntax objects + markup) so
         # repeated highlight events don't re-shell-out to git for
@@ -556,6 +572,13 @@ class LiveRunScreen(Screen[None]):
             ),
         ):
             self._handle_phase_event(event)
+            # Per-call aliveness feed: AgentActed events represent
+            # "an agent just took its turn" — exactly the granularity
+            # the live call feed wants. The feed works for both
+            # in-process and subprocess runs because event-stream is
+            # the common interface.
+            if isinstance(event, AgentActed):
+                self._append_to_call_feed(event)
 
         # Mark the chase strip alive on signal-of-life events. The
         # chase moves on a wall-clock timer (so motion continues
@@ -1178,51 +1201,99 @@ class LiveRunScreen(Screen[None]):
     # ------------------------------------------------------------------ #
 
     def _refresh_call_feed(self) -> None:
-        """Append any new LLM telemetry entries to the call feed.
+        """Legacy in-process call feed fallback.
 
-        Reads ``runner.telemetry.entries`` directly. Each entry is a
-        single LLM call; we add a row per entry past the cursor. The
-        feed is filtered to the currently-selected meeting (or shows
-        all entries when ``All meetings`` is selected) so the operator
+        Pre-event-driven implementation: polled
+        ``runner.telemetry.entries`` for per-call rows. Only worked
+        for in-process runs (handle has ``_runner``); subprocess runs
+        — the default ``wonderland run-bg`` path — have no in-memory
+        runner and the feed stayed blank.
+
+        Replaced by ``_append_to_call_feed`` which is driven by
+        ``AgentActed`` events through the dispatcher and works for
+        both run shapes. This method is retained as a no-op for
+        scheduler back-compat (the ``set_interval`` registration is
+        still there) until the next pass through the live-watch
+        screen cleans up the scheduler wiring."""
+        return
+
+    _AGENT_ACTED_LOG_CAP = 200
+
+    def _append_to_call_feed(self, event: "AgentActed") -> None:
+        """Append one row to the live call feed for an AgentActed
+        event. Filtered to the currently-selected meeting (or shown
+        unfiltered when ``All meetings`` is selected) so the operator
         gets a real-time aliveness signal scoped to whatever they're
         watching.
-        """
-        runner = (
-            getattr(self.handle, "_runner", None)
-            if self.handle is not None
-            else None
-        )
-        if runner is None or not hasattr(runner, "telemetry"):
+
+        Also pushes the event into ``_agent_acted_log`` so the feed
+        can repopulate with historical activity when the operator
+        switches meetings (lazygit-style filtering)."""
+        # Always buffer (regardless of filter) so the historical view
+        # works on selection changes.
+        self._agent_acted_log.append(event)
+        if len(self._agent_acted_log) > self._AGENT_ACTED_LOG_CAP:
+            del self._agent_acted_log[
+                : len(self._agent_acted_log) - self._AGENT_ACTED_LOG_CAP
+            ]
+        # Render only when the event matches the active filter.
+        active_thread = self._selected_thread_id
+        if (
+            active_thread
+            and active_thread != _ALL_MEETINGS
+            and event.meeting_thread_id != active_thread
+        ):
             return
-        entries = list(runner.telemetry.entries)
-        # No new entries since last tick — skip.
-        if len(entries) <= self._call_feed_cursor:
-            return
+        self._render_call_feed_row(event)
+
+    def _render_call_feed_row(self, event: "AgentActed") -> None:
+        """Render one AgentActed event as a row in the call-feed
+        table. Caps the table at 40 visible rows; older rows scroll
+        off."""
         try:
             table = self.query_one(
                 "#live-call-feed-table", DataTable
             )
         except Exception:  # noqa: BLE001
             return
-        # Determine the active filter (selected meeting's thread_id)
-        # so we only show calls relevant to the current focus.
-        active_thread = self._selected_thread_id
-        for entry in entries[self._call_feed_cursor :]:
-            self._call_feed_cursor += 1
-            if active_thread and entry.thread_id != active_thread:
-                continue
-            ts = entry.timestamp.strftime("%H:%M:%S") if entry.timestamp else "—"
-            cost_str = _fmt_cost(entry.cost)
-            table.add_row(
-                f"{ts}  [b]{entry.agent}[/b]  [dim]{cost_str}[/dim]"
-            )
-        # Cap the visible rows so the table doesn't grow unbounded
-        # over a long run. 40 is enough for a couple of rotations'
-        # worth of context; older calls scroll off.
+        ts = (
+            event.timestamp.strftime("%H:%M:%S")
+            if event.timestamp
+            else "—"
+        )
+        table.add_row(
+            f"{ts}  [b]{event.agent_id}[/b]  "
+            f"[dim]{event.phase_name}[/dim]"
+        )
         while table.row_count > 40:
-            table.remove_row(table.coordinate_to_cell_key((0, 0)).row_key)
+            table.remove_row(
+                table.coordinate_to_cell_key((0, 0)).row_key
+            )
         if table.row_count > 0:
             table.action_scroll_end()
+
+    def _repopulate_call_feed_for_selection(self) -> None:
+        """Clear the call-feed table and replay the buffered
+        AgentActed events that match the current meeting selection.
+        Called when the operator switches meetings — the new view's
+        historical activity gets shown instead of the previous
+        filter's residue."""
+        try:
+            table = self.query_one(
+                "#live-call-feed-table", DataTable
+            )
+        except Exception:  # noqa: BLE001
+            return
+        table.clear(columns=False)
+        active_thread = self._selected_thread_id
+        for event in self._agent_acted_log:
+            if (
+                active_thread
+                and active_thread != _ALL_MEETINGS
+                and event.meeting_thread_id != active_thread
+            ):
+                continue
+            self._render_call_feed_row(event)
 
     def _refresh_files_tab(self) -> None:
         """Build the Files tree from .wonderland/tool-calls.jsonl.
@@ -1659,17 +1730,13 @@ class LiveRunScreen(Screen[None]):
                 return
             self._selected_thread_id = new_selection
             self._refresh_panes_for_selection()
-            # Clear the call feed since it's filtered to the active
-            # meeting — old entries from the previous filter aren't
-            # relevant to the new selection.
-            try:
-                self.query_one(
-                    "#live-call-feed-table", DataTable
-                ).clear(columns=False)
-            except Exception:  # noqa: BLE001
-                pass
-            self._call_feed_cursor = 0
-            self._refresh_call_feed()
+            # Repopulate the call feed with buffered AgentActed
+            # events matching the new selection. _agent_acted_log
+            # keeps the last 200 events; replay surfaces historical
+            # activity for the newly-focused thread instead of
+            # leaving the operator staring at residue from the prior
+            # filter.
+            self._repopulate_call_feed_for_selection()
         elif tid == "transcript-table":
             row = event.cursor_row
             if row is None:
