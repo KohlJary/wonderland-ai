@@ -1481,6 +1481,16 @@
       "status": "backlog",
       "created_at": "2026-05-17T19:55:44.952999",
       "created_by": "daedalus"
+    },
+    {
+      "id": "33a6227a-a836-43b2-959a-2aef58e69e9f",
+      "title": "Feature-level implementation ordering + dependencies",
+      "description": "Features today are flat peers in the dashboard with no ordering signal or inter-feature dependency model. Operators have to infer the natural sequence (foundation \u2192 user-facing \u2192 cross-cutting \u2192 instrumentation) from feature names. Validation5 surfaced this: observability was the 3rd feature in the queue when it should logically be the 5th \u2014 it instruments code paths that don't exist yet for features 4 (auth) + 5 (sync). The operator footgun: queue features out of order, ship code that fails or fragments responsibility.\n\nPROPOSED ADDITIONS TO FeaturePayload:\n  - ``implementation_order: int | None`` \u2014 1-indexed sequence position. M2 assigns; dashboard sorts by it (None last). No substrate enforcement \u2014 operator can override.\n  - ``depends_on: list[str]`` \u2014 slugs of features this one structurally depends on. Dashboard disables Queue button until depends_on are verified (with override).\n\nWORKFLOW UPDATES:\n  - tdd-design.yaml M2 directive: teach Rabbit to assign implementation_order + depends_on during feature composition. Foundation features get order 1; user-facing capabilities ordered by dependency chain; cross-cutting infrastructure (observability, monitoring, etc.) gets the highest order with depends_on listing what they instrument.\n\nDASHBOARD UPDATES:\n  - Features pane sorts by implementation_order ascending.\n  - Queue button shows tooltip + disabled state when unmet depends_on exists.\n  - 'Queue anyway' override available for operators who explicitly want to defy the recommendation.\n\nPAPER RELEVANCE: gives a concrete example of where the substrate currently relies on operator implicit knowledge and what the substrate-side fix looks like. Worth its own short section on 'feature-graph as architecture' once shipped.\n\nDefer until post-MVP demo + paper. Don't block validation5 progress; ship as-designed. The existing flat-features UX is enough for a guided demo where the operator knows what to queue.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T20:46:16.603921",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

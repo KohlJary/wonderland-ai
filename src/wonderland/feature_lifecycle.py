@@ -117,6 +117,15 @@ LEGAL_TRANSITIONS: dict[FeatureState | None, frozenset[FeatureState]] = {
     }),
     FeatureState.DESIGNED: frozenset({
         FeatureState.QUEUED,
+        # Operator-driven: send back to design for re-decomposition.
+        # Validation5 surfaced this need — features 4 + 5 had 0
+        # tickets attributed (M3 slug drift left them undeployable)
+        # and the only way to generate tickets was to rerun design
+        # on those features. tdd-decompose.yaml workflow picks up
+        # features in in_design and iterates M3 over them; after
+        # decomposition M3 transitions them back to designed via
+        # transition_iteration_to.
+        FeatureState.IN_DESIGN,
         FeatureState.REJECTED,  # design-review rejection
     }),
     FeatureState.QUEUED: frozenset({

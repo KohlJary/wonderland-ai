@@ -12,6 +12,38 @@ The Live Call feed in `LiveRunScreen` was reading `runner.telemetry.entries` dir
 
 Replaced with an event-driven implementation: the dispatcher's `AgentActed` events now feed the table directly. Works for both in-process and subprocess runs since event streams are the common interface. Per-call rows show `time · agent · phase` (cost-per-call isn't on `AgentActed`; the per-agent rollup still lands in the status bar via `AgentTelemetryDelta`). Past events get buffered (capped at 200) so meeting-selection changes can replay historical activity for the newly-focused thread instead of leaving the operator staring at residue from the prior filter.
 
+### tdd-decompose workflow + dashboard "Decompose tickets" button
+
+New workflow for the partial-design-rerun use case: features that
+landed in ``designed`` state but with insufficient or wrong ticket
+sets. Validation5 surfaced the immediate need — features 4 + 5 had
+zero tickets attributed (M3 slug drift left the parent feature
+slugs out of the synthesized ticket sources), making them
+undeployable from the implementation queue.
+
+Three pieces ship together:
+
+- **New lifecycle transition**: ``FeatureState.DESIGNED → IN_DESIGN``
+  is now legal. The operator's "I want to redo this feature's
+  decomposition" move; was previously a dead-end (designed could
+  only go to queued or rejected).
+- **New workflow** ``tdd-decompose.yaml``: M3 (decomposition) +
+  M3.5 (consolidation) only, filtered on ``in_design``. Features
+  picked up from disk via seed-fallback; M3.5 transitions back to
+  ``designed`` so the operator can queue for implementation. Budget
+  defaults to $1.00 (typical decompose pass is $0.10-$0.30 per
+  feature).
+- **Dashboard button** "Decompose tickets" on ``designed`` features.
+  Transitions the feature back to ``in_design``; the operator then
+  runs ``tdd-decompose`` from the run-launcher. Mirrors the
+  Queue → tdd-implement UX pattern.
+
+Known limitation: re-decomposing a feature that already has tickets
+on disk will accumulate duplicates unless M3.5 actively consolidates
+them (which it can, but discipline-dependent). Long-term substrate
+fix is snapshot semantics for tickets, parallel to milestone_plan
+snapshot semantics in 0.7.0; tracked as roadmap follow-up.
+
 ### M9 verify adds pytest_passes alongside pytest_collects
 
 Three-tier verification now runs at end of each feature lane:

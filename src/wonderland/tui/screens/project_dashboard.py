@@ -464,6 +464,22 @@ class ProjectDashboardScreen(Screen[None]):
                                 "Un-queue",
                                 id="feature-action-unqueue",
                             )
+                            # designed → in_design transition for the
+                            # tdd-decompose workflow. Use case: feature
+                            # got designed but its ticket set is wrong
+                            # (zero tickets attributed, over-pruned in
+                            # M3.5, or operator inspects and wants a
+                            # redo). This button transitions the
+                            # feature back to in_design; the operator
+                            # then runs tdd-decompose, which iterates
+                            # M3+M3.5 over features in in_design and
+                            # transitions them back to designed with
+                            # fresh tickets.
+                            yield Button(
+                                "Decompose tickets",
+                                id="feature-action-decompose",
+                                variant="warning",
+                            )
                             # in_progress controls — escape hatches
                             # for features stuck mid-implementation.
                             # Mark Ready advances to ready_for_review
@@ -978,6 +994,12 @@ class ProjectDashboardScreen(Screen[None]):
         btns["unqueue"].display = state == FeatureState.QUEUED
         btns["mark_ready"].display = state == FeatureState.IN_PROGRESS
         btns["redesign"].display = state == FeatureState.IN_PROGRESS
+        # Decompose-tickets: visible on designed features. Transitions
+        # the feature back to in_design so tdd-decompose's M3+M3.5
+        # iteration filter (in_design) picks it up. Useful when the
+        # original design pass shipped a feature with 0 tickets (slug
+        # drift) or an unsatisfying ticket set.
+        btns["decompose"].display = state == FeatureState.DESIGNED
         btns["verify"].display = state == FeatureState.READY_FOR_REVIEW
         btns["reject"].display = state == FeatureState.READY_FOR_REVIEW
         # Hide per-ticket buttons when a feature is highlighted.
@@ -1004,6 +1026,9 @@ class ProjectDashboardScreen(Screen[None]):
                 ),
                 "redesign": self.query_one(
                     "#feature-action-redesign", Button
+                ),
+                "decompose": self.query_one(
+                    "#feature-action-decompose", Button
                 ),
                 "verify": self.query_one(
                     "#feature-action-verify", Button
@@ -1056,6 +1081,7 @@ class ProjectDashboardScreen(Screen[None]):
             "unqueue",
             "mark_ready",
             "redesign",
+            "decompose",
             "verify",
             "reject",
         ):
@@ -2818,6 +2844,42 @@ class ProjectDashboardScreen(Screen[None]):
                 f"Reverted {n} ticket(s) on {row.slug} to pending — "
                 f"re-run tdd-design or queue again."
             )
+            self.action_refresh()
+        elif button_id == "feature-action-decompose":
+            # designed → in_design transition for tdd-decompose.
+            # No ticket-state side effects (the existing tickets
+            # stay on disk; the operator either runs tdd-decompose
+            # to re-decompose, or manually retracts old tickets
+            # first if they want a clean slate). M3.5's consolidation
+            # in tdd-decompose handles merging/retracting redundant
+            # tickets cleanly.
+            from wonderland.feature_lifecycle import (
+                FeatureState as _FState,
+                IllegalTransitionError as _FIllegal,
+                transition as _ftransition,
+            )
+
+            try:
+                _ftransition(
+                    self.project.root_path,
+                    row.slug,
+                    _FState.IN_DESIGN,
+                    by="operator",
+                    notes=(
+                        f"Sent back to design for re-decomposition "
+                        f"via dashboard. Operator next runs "
+                        f"tdd-decompose to regenerate tickets."
+                    ),
+                )
+                self.notify(
+                    f"{row.slug}: designed → in_design. Run "
+                    f"tdd-decompose to regenerate tickets.",
+                )
+            except _FIllegal as exc:
+                self.notify(
+                    f"Cannot send {row.slug} back to design: {exc}",
+                    severity="error",
+                )
             self.action_refresh()
         elif button_id == "feature-action-verify":
             self._open_verify_modal("verify")

@@ -56,6 +56,19 @@ class TestFeatureStateEnum:
         assert FeatureState.QUEUED in legal
         assert FeatureState.REJECTED in legal
 
+    def test_designed_can_revert_to_in_design(self) -> None:
+        """Operator can send a feature back to in_design for
+        re-decomposition via the tdd-decompose workflow.
+        Validation5 surfaced this — features 4 + 5 had zero
+        tickets attributed (M3 slug drift) and needed a way to
+        regenerate tickets without rerunning the full design
+        pipeline. ``designed → in_design`` is the operator's
+        re-design trigger; tdd-decompose then iterates M3+M3.5
+        over features in in_design and transitions them back to
+        designed."""
+        legal = LEGAL_TRANSITIONS[FeatureState.DESIGNED]
+        assert FeatureState.IN_DESIGN in legal
+
     def test_queued_can_revert_to_designed(self) -> None:
         """Un-queue: operator changes mind before implementation
         starts. designed ⇄ queued is a 2-way edge."""

@@ -1,0 +1,238 @@
+name: tdd-decompose
+description: |
+  Decompose-phase atom of the TDD pipeline. Runs M3 (ticket decomposition)
+  + M3.5 (consolidation) on features that exist in lifecycle state
+  ``in_design`` — generating tickets for features that didn't get them
+  from the original design pass, or re-decomposing a feature whose
+  ticket set the operator wants to redo.
+
+  Use case 1: design ships a feature with no tickets (M3 slug drift,
+  the agent decomposed against a sibling feature's slug, etc.). The
+  operator wants to generate tickets without rerunning M1 (stories)
+  and M2 (features) — those are already settled and re-running them
+  would either be no-ops or risk duplicates.
+
+  Use case 2: operator inspects designed tickets and decides the
+  decomposition was wrong (too coarse, too fine, missing dependencies).
+  Send the feature back to design and run tdd-decompose to redo
+  M3 + M3.5 against a fresher context.
+
+  ## Operator UX
+
+  1. Find a feature in ``designed`` state that needs ticket work.
+  2. Click "Send back to design" — substrate transitions the feature
+     ``designed → in_design`` (legal transition added for this flow).
+  3. Run ``tdd-decompose`` (this workflow). M3 iterates over every
+     feature in ``in_design`` state, generates tickets, M3.5
+     consolidates them, and transitions back to ``designed``.
+  4. Feature is ready to queue for implementation.
+
+  ## What's NOT here
+
+  - M1 (stories) — already settled in the original design pass.
+  - M2 (features) — features exist; we're decomposing them, not
+    composing new ones.
+  - M4 / M5 (architecture, contracts) — these run during the
+    original design pass; cross-feature commitments persist.
+
+  ## Cost
+
+  Order-of-magnitude $0.10-$0.30 per feature decomposed. M3 + M3.5
+  combined are typically $0.02-$0.08 per feature based on prior
+  design-pass telemetry; the meeting_budget caps add safety.
+
+version: 1
+
+# Same speech-act gate as tdd-design — block decisions that belong
+# to other workflows. milestone_plan from validation4 pilots leaks
+# in mid-design and overwrites M1's consumes_requirements.
+disallowed_decisions:
+  - milestone_plan
+  - interview_questions
+  - interview_review
+
+defaults:
+  # Smaller budget than tdd-design ($3.00) because this workflow
+  # runs 2 meetings (M3 + M3.5) over a fixed feature set, not a
+  # full M1-M5 pipeline. Operator can override per-run.
+  budget_dollars: 1.00
+  quiescence_seconds: 180.0
+
+meetings:
+
+  # ─────────────────────────────────────────────────────────────────
+  # M3 — Tickets per feature. Same as tdd-design's M3 except:
+  #   - filter on ``in_design`` (not ``proposed``)
+  #   - no ``transition_iteration_to`` (feature stays in in_design
+  #     until M3.5 transitions to designed)
+  # ─────────────────────────────────────────────────────────────────
+  - id: decomposition
+    label: M3
+    name: The Rabbit's Errand
+    goal: decompose each feature into v1 tickets the Tweedles can pick up
+    roster: [alice, white_rabbit]
+    per_item: feature
+    iterate_only_in_states: [in_design]
+    parallel: true
+    meeting_budget: 0.30
+    # Same roster filter as tdd-design's M3: drop Alice from
+    # foundation-feature iterations (validation3 showed her
+    # persona-grounding instinct hangs M3 on foundation work).
+    per_item_roster_filter:
+      field: kind
+      map:
+        capability: [alice, white_rabbit]
+        foundation: [white_rabbit]
+    convenor_directive: |
+      **Rabbit, decompose this feature into tickets.** The feature
+      in your context is a user-facing capability; your job is to
+      name the implementation atoms that ship together to deliver it.
+
+      For each ticket, name:
+        - ``title`` — what the ticket is, in one short phrase
+        - ``owner`` — which Tweedle (tweedledee for frontend bias,
+          tweedledum for backend bias, or "either" for full-stack)
+        - ``tier`` (v1 / fast-follow / post-launch — usually
+          inherits from feature tier)
+        - ``stack_span`` — **REQUIRED**: one of ``frontend``,
+          ``backend``, or ``full-stack``. The substrate uses this
+          to scope M7 (implementation) to just the Tweedle whose
+          side the ticket touches. Be explicit and stingy: pick
+          ``frontend`` / ``backend`` whenever you can; reserve
+          ``full-stack`` for tickets that genuinely require both
+          sides to ship together as one unit.
+        - ``estimate`` (your honest read; the Tweedles will adjust)
+        - ``description`` — what shipping this ticket means
+        - ``sources`` — **REQUIRED**: the parent feature's citation
+          must be the FIRST entry in this list. Cite the parent
+          feature by slug, full GUID, or ``"<guid>:<slug>"`` (P18
+          canonical, preferred — you'll see the parent's
+          ``**GUID:**`` line in the convener directive's existing-
+          features block). Without this, the substrate can't tell
+          which tickets to implement when the operator queues a
+          feature.
+        - ``acceptance`` — observable conditions of done
+
+      Aim for 1–4 tickets per feature.
+
+      **You are running in the DECOMPOSE workflow, not the full
+      design pipeline.** Features already exist on disk; you're
+      generating tickets for them. Do NOT ship a ``feature``
+      decision in this meeting — features are settled. If you
+      see a feature whose scope feels wrong, raise a ``concern``
+      so the operator can address it in a separate design pass.
+
+      **Alice — same grounding role.** Defend the user-facing point
+      of the tickets. Push back when a ticket compresses a story
+      past user-recognition or drifts toward technical convenience.
+
+    seeds:
+      # All material comes from disk via seed-fallback since this
+      # workflow doesn't run M1 or M2 (no fresh stories or features
+      # on the bus). The substrate's seed-fallback reads each kind
+      # from the project's .wonderland/<kind>/ directories.
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [story]
+      - from: any
+        kinds: [feature]
+
+    # No transition_iteration_to here — feature stays in in_design
+    # for M3.5 to pick up. M3.5 transitions to designed at end.
+
+    phases:
+      - name: decompose
+        max_rotations: 2
+        exit_condition_artifact: ticket
+
+  # ─────────────────────────────────────────────────────────────────
+  # M3.5 — Consolidation. Identical to tdd-design's M3.5 except:
+  #   - adds transition_iteration_to: designed (end of pipeline,
+  #     feature transitions out of in_design back to designed
+  #     where the operator can queue it for implementation)
+  # ─────────────────────────────────────────────────────────────────
+  - id: consolidation
+    label: M3.5
+    name: A Caterpillar's Edit
+    goal: |
+      consolidate this feature's tickets — merge overlaps, prune
+      duplicates, and assign explicit blocked-by dependencies so
+      M7 can serialize implementations of dependent tickets
+    roster: [white_rabbit, caterpillar]
+    per_item: feature
+    iterate_only_in_states: [in_design]
+    parallel: true
+    meeting_budget: 0.30
+    convenor_directive: |
+      **Rabbit — ship ``ticket`` decisions only. Do NOT emit a
+      ``feature`` decision in this meeting.** This is the trap: the
+      iteration item IS a feature, but the meeting's job is
+      consolidating its TICKETS. Every emission you make in this
+      meeting is a ``ticket`` decision (or ``concern`` / ``silence``
+      / ``question_to_operator`` when something else applies).
+
+      M3 just decomposed this feature into tickets. Two failure
+      modes are common: over-decomposition (one capability sliced
+      into 8 micro-tickets that should be 3) and missing dependencies
+      (no explicit ``Blocked by:`` so M7 implementations race on
+      shared foundations). M3.5 fixes both per feature.
+
+      **What ``ticket`` emissions to make:**
+
+        - **Tickets you want to keep AS-IS** with no changes: don't
+          re-emit them. Just leave them alone.
+        - **Tickets you want to MERGE**: ship a new ``ticket``
+          decision with the merged content. Caterpillar retracts
+          the absorbed ones.
+        - **Tickets whose ``Blocked by:`` needs updating**: re-emit
+          the ticket with the existing slug + a fresh
+          ``dependencies.blocked_by`` list naming upstream slugs.
+
+      **Caterpillar — prefer ``retract`` over ``delete_file``** when
+      pruning. The substrate's retract primitive is slug-scoped,
+      auditable, and transcript-logged. Reserve ``delete_file`` for
+      truly orphaned files (markdown that never made it through the
+      registry).
+
+      **Hard rule: never delete more tickets than you have explicit
+      evidence to retract.** Better to leave 6 tickets standing for
+      a feature than to delete a real one alongside a duplicate.
+
+      **If the feature ends with zero tickets, you've over-pruned.**
+      Back off. Ship the review describing the redundancy + retract
+      only the specific dupes you can name.
+
+      **Aim for 3-7 tickets per feature after consolidation.**
+
+      **Silence is okay** if there's nothing to consolidate — a
+      feature with 3 well-scoped tickets and clean deps is fine
+      to leave untouched.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [feature]
+      # Tickets from the decomposition meeting in this lane (paired
+      # via lane-scoped seed binding). Same split as tdd-design's
+      # M3.5 — combining feature + ticket binding triggers the
+      # iteration-kind slice and drops M3's ticket-only emissions.
+      - from: decomposition
+        kinds: [ticket]
+      # Plus any pre-existing tickets from prior decomposition runs,
+      # so Rabbit can see what's already on disk (e.g., re-decomposing
+      # a feature with partial tickets).
+      - from: any
+        kinds: [ticket]
+
+    # Transitions the feature out of in_design back to designed
+    # at end of meeting — operator can then queue for implementation.
+    transition_iteration_to: designed
+
+    phases:
+      - name: consolidate
+        max_rotations: 2
+        exit_condition_artifact: ticket
+
+category: design

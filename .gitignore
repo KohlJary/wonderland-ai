@@ -31,8 +31,14 @@ uv.lock.bak
 .env.local
 *.key
 
-# Per-user Claude settings
+# Per-user Claude settings + ephemeral scheduling state
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Operator scratchpad — preload notes / loose prompts kept out of
+# the public repo. Personal-context file the operator shares with
+# Daedalus mid-session; not something other readers should see.
+TASKS.md
 
 # Per-project Wonderland state lives in target projects, not here —
 # but if anyone runs Wonderland against this repo as a sandbox:
