@@ -358,6 +358,22 @@ class Meeting(BaseModel):
             "over every candidate item (legacy behavior)."
         ),
     )
+    requires_test_design: bool = Field(
+        default=False,
+        description=(
+            "When True on a per_item=ticket meeting, the substrate "
+            "filters out tickets that don't need adversarial test "
+            "design — review-synthesized tickets (the Caterpillar's "
+            "finding IS already a spec), tickets explicitly marked "
+            "test_coverage_required=False. Tea-party (M6) sets this "
+            "true; downstream implementation + review meetings leave "
+            "it false (they iterate over all tickets regardless). "
+            "Caterpillar can override per-finding by setting "
+            "test_coverage_required=True on a review finding — that "
+            "specific synthesized ticket then passes through "
+            "tea-party even though its source is review_synthesis."
+        ),
+    )
     transition_emitted_to: str | None = Field(
         default=None,
         description=(
@@ -1765,6 +1781,7 @@ def _collect_per_item_items(
     runner: Runner,
     lane_outer_kind: str | None = None,
     lane_outer_slug: str | None = None,
+    requires_test_design: bool = False,
 ) -> list[dict[str, Any]]:
     """Collect items for a per_item iteration: bus → disk fallback →
     state filter → optional lane scoping.
@@ -1948,6 +1965,27 @@ def _collect_per_item_items(
         # Lane's outer kind matches the meeting's iteration kind —
         # the meeting runs once for THIS lane's outer item.
         items = [it for it in items if it.get("slug") == lane_outer_slug]
+
+    # When the meeting declares ``requires_test_design`` (tea-party /
+    # M6), filter tickets whose source + test_coverage_required
+    # combination says "skip adversarial scenario design." Default
+    # rule: review-synthesized tickets skip (the review's
+    # location/quote/concern/request IS the spec); m3-decomposition
+    # and operator tickets pass. The per-ticket
+    # ``test_coverage_required`` override (True/False) wins over the
+    # default when the ticket markdown declares it.
+    if (
+        requires_test_design
+        and item_kind == "ticket"
+        and project_root is not None
+        and items
+    ):
+        from wonderland.ticket import read_ticket_needs_test_design
+
+        items = [
+            it for it in items
+            if read_ticket_needs_test_design(project_root, it["slug"])
+        ]
 
     # For ticket items, attach blocked_by dependencies parsed from
     # each ticket's markdown so downstream code (Meeting.gates_on_
@@ -2428,6 +2466,31 @@ async def _run_inner_block(
 
         async def _gen():
             for meeting in block:
+                # Per-meeting test-design skip: when a meeting declares
+                # ``requires_test_design`` (tea-party / M6) but this
+                # ticket doesn't need adversarial scenario design
+                # (e.g., review-synthesized ticket; the review IS the
+                # spec), skip this meeting for this ticket. The
+                # completion event still fires so downstream lanes
+                # waiting on this meeting's completion don't hang.
+                if (
+                    meeting.requires_test_design
+                    and meeting.per_item == "ticket"
+                ):
+                    project_root = getattr(runner, "project_root", None)
+                    if project_root is not None:
+                        from wonderland.ticket import (
+                            read_ticket_needs_test_design,
+                        )
+
+                        if not read_ticket_needs_test_design(
+                            project_root, sub_slug
+                        ):
+                            completion_events[
+                                (sub_slug, meeting.id)
+                            ].set()
+                            continue
+
                 # Gate: wait for upstream lanes' SAME meeting to
                 # complete. Skip when meeting doesn't gate or this
                 # ticket has no deps.
@@ -4290,6 +4353,7 @@ def _synthesize_followup_ticket_from_finding(
     """
     from wonderland.ticket import (
         TicketPayload,
+        TicketSource,
         TicketStackSpan,
         TicketTier,
     )
@@ -4324,6 +4388,15 @@ def _synthesize_followup_ticket_from_finding(
         f"**Request:** {request.strip()}\n\n"
         f"**Location:** ``{location}``"
     )
+    # Thread Caterpillar's test_coverage_required judgment through
+    # to the synthesized ticket. Default False on the finding model
+    # means most fixes skip tea-party (the review IS the spec);
+    # explicit True forces tea-party inclusion for fixes that
+    # introduce uncovered behavior.
+    test_coverage_required_raw = finding.get("test_coverage_required")
+    test_coverage_required: bool | None = None
+    if isinstance(test_coverage_required_raw, bool):
+        test_coverage_required = test_coverage_required_raw
     return TicketPayload(
         title=title.strip(),
         owner=owner,
@@ -4333,6 +4406,8 @@ def _synthesize_followup_ticket_from_finding(
         description=description,
         sources=[parent_feature_slug, review_slug],
         acceptance=[request.strip()],
+        source=TicketSource.REVIEW_SYNTHESIS,
+        test_coverage_required=test_coverage_required,
     )
 
 

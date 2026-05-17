@@ -1471,6 +1471,16 @@
       "status": "backlog",
       "created_at": "2026-05-15T13:09:04.517575",
       "created_by": "daedalus"
+    },
+    {
+      "id": "81c16341-2f26-47cc-adf2-f582da456e45",
+      "title": "Revisionary design passes mid-milestone",
+      "description": "Substrate primitive for re-running design (tdd-design) over an existing project with corrective intent \u2014 for the case where a semantic gap surfaces mid-milestone and the design needs revision without wiping accumulated work.\n\nVALIDATION5 SURFACED: sessions were designed as duration-based generic time-tracking, but the persona (Marcus, weightlifting) actually needs weight + reps + sets per exercise. The data model assumption was wrong, but it's already encoded across:\n  - Feature 1's shipped schema/Pydantic models\n  - Features 2-5's designed scopes\n  - Contract Note 006 (session-http-contract-v1)\n  - 21+ done tickets\n\nThe fix needs a \"design revision pass\" that:\n  (a) reads existing artifacts as context (already supported via _format_existing_X_block framing)\n  (b) operates against a corrective directive (\"revise the session model to weightlifting semantics\")\n  (c) retracts stale features/tickets cleanly (THE GAP \u2014 features/tickets are additive; naive re-run produces duplicates)\n\nTWO PATHS:\n  1. DISCIPLINE: extend the corrective directive to be explicit about retract+replace. Brittle, relies on agent discipline.\n  2. SUBSTRATE: add a `revise_features: [slug, ...]` directive field that marks features stale. M2/M3 see them as \"do not preserve, replace or retract\" and substrate enforces removal at meeting end \u2014 analogous to milestone_plan snapshot semantics (P18/0.7.0) but operator-driven rather than emergent.\n\nSubstrate route is cleaner; needed for the design-iteration cycle real teams hit.\n\nALSO IMPLIES: cross-feature revision (data model change cascades through already-shipped feature 1 implementation + still-designed features 2-5). The full revision sequence:\n  1. Revisionary design pass \u2192 updated feature/ticket designs\n  2. Implementation re-pass \u2192 schema migration + Pydantic model update for already-shipped code\n  3. Forward implementation of remaining features against corrected model\n\nPAPER RELEVANCE: this is exactly the iteration cycle real teams hit and would be a strong differentiator vs one-shot agentic demos. Worth its own section once shipped.\n\nDefer until post-MVP demo + paper. Don't block validation5; ship as-designed first.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T19:55:44.952999",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

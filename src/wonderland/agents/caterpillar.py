@@ -285,7 +285,8 @@ The JSON must conform to this schema:
           "quote": "the offending text, pasted verbatim",
           "read": "your understanding of what this code does, in your own words",
           "concern": "what is wrong, specifically, and why it matters",
-          "request": "what would resolve this — actionable, not vibes"
+          "request": "what would resolve this — actionable, not vibes",
+          "test_coverage_required": false  // optional; default false. Set true when the fix introduces a behavior that no existing test covers and adversarial test-scenario design (tea-party / M6) would catch edge cases the implementer wouldn't think of (e.g., "add JWT validation," "implement retry with backoff"). The synthesized follow-up ticket inherits this flag — true → tea-party; false → skip tea-party (the finding IS the spec). Skip is the cheap default; opt in explicitly when fresh coverage is warranted.
         }
       ],
       "approvals": [

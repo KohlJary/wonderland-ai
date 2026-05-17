@@ -122,6 +122,17 @@ meetings:
     # Both states represent "feature is being worked on or about
     # to be"; both should pass.
     iterate_only_in_states: [queued, in_progress]
+    # Skip tea-party for tickets whose source/test-design markers
+    # say adversarial scenario design isn't warranted —
+    # review-synthesized tickets (the Caterpillar's
+    # location/quote/concern/request IS the spec), or any ticket
+    # explicitly marked `test_coverage_required: false`. Cost
+    # optimization that shaves ~$0.50/ticket on review-pass
+    # follow-ups. Caterpillar can override per-finding by setting
+    # `test_coverage_required: true` on a finding, which the
+    # synthesized ticket inherits — that ticket then passes through
+    # tea-party even though its source is review_synthesis.
+    requires_test_design: true
     meeting_budget: 0.50
     # Entry meeting — the runtime still relays the user's directive
     # at the top, but we layer an explicit convenor_directive on top
@@ -389,6 +400,23 @@ meetings:
       cite contracts. If budget runs out partway through, the
       cross-ticket check (#1) is the one that has to ship — it's
       the only review that catches contract drift between Tweedles.
+
+      **Per-finding ``test_coverage_required`` flag** — when you
+      file a finding, you can set ``test_coverage_required: true``
+      on it. The synthesized follow-up ticket inherits that flag.
+      Tickets with the flag pass through tea-party (M6 adversarial
+      test design); tickets without it skip tea-party because the
+      finding's location + quote + concern + request IS a complete
+      spec. Default is false — most findings are code-correctness
+      restorations for paths whose existing tests already cover the
+      surface area, so adversarial test design adds little. Set
+      true when the fix introduces a behavior that no existing test
+      covers and the Mad Hatter's edge-case discipline would
+      surface scenarios the Tweedles wouldn't think of on their
+      own (e.g., "add JWT validation," "implement conflict
+      resolution UX," "introduce retry logic with backoff"). The
+      cost difference is ~$0.50/ticket, so default-skip; explicit
+      opt-in for genuinely-new-behavior findings.
 
       **Tweedles — defend or revise.** If Caterpillar requests
       changes, the responsible Tweedle either revises in this

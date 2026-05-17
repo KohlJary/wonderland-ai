@@ -225,6 +225,12 @@ def render_ticket(number: int, payload: TicketPayload) -> str:
     reading the file sees what the Rabbit's constitution says a ticket
     should look like.
     """
+    if payload.test_coverage_required is True:
+        test_design_field = "required"
+    elif payload.test_coverage_required is False:
+        test_design_field = "skip"
+    else:
+        test_design_field = "default"
     lines: list[str] = [
         f"## Ticket {number:03d}: {payload.title}",
         "",
@@ -233,6 +239,8 @@ def render_ticket(number: int, payload: TicketPayload) -> str:
         f"**Owner:** {payload.owner}",
         f"**Tier:** {payload.tier.value}",
         f"**Stack span:** {payload.stack_span.value}",
+        f"**Source:** {payload.source.value}",
+        f"**Test design:** {test_design_field}",
         f"**Estimate:** {payload.estimate}",
         f"**Status:** {payload.status.value}",
         "",
@@ -301,10 +309,66 @@ _STACK_SPAN_RE = re.compile(
 )
 
 
+_SOURCE_RE = re.compile(
+    r"^\s*\*\*Source:\*\*\s*(\S+)\s*$",
+    re.MULTILINE,
+)
+
+
+_TEST_DESIGN_RE = re.compile(
+    r"^\s*\*\*Test design:\*\*\s*(\S+)\s*$",
+    re.MULTILINE,
+)
+
+
 _BLOCKED_BY_RE = re.compile(
     r"^\s*-\s*Blocked by:\s*(.+?)\s*$",
     re.MULTILINE,
 )
+
+
+def read_ticket_needs_test_design(
+    project_root: Path, slug: str
+) -> bool:
+    """Read the ticket's ``**Source:**`` + ``**Test design:**`` lines
+    and return True iff the ticket should pass through tea-party (M6
+    adversarial test-scenario design).
+
+    Default rule when ``**Test design:** default`` (or the field is
+    missing):
+      - ``m3_decomposition`` source → True (goes through tea-party)
+      - ``review_synthesis`` source → False (review IS the spec)
+      - ``operator`` source → True (operator-filed needs adversarial
+        scoping by default)
+
+    Explicit ``**Test design:** required`` → True (override).
+    Explicit ``**Test design:** skip`` → False (override).
+
+    Missing-file / unparseable: default True (preserve legacy
+    full-pass-through behaviour rather than silently skip)."""
+    record = TicketRegistry(project_root).find_by_slug(slug)
+    if record is None:
+        return True
+    try:
+        text = record.path.read_text(encoding="utf-8")
+    except OSError:
+        return True
+    test_design_match = _TEST_DESIGN_RE.search(text)
+    if test_design_match is not None:
+        raw = test_design_match.group(1).strip().lower()
+        if raw == "required":
+            return True
+        if raw == "skip":
+            return False
+        # raw == "default" falls through to source-based logic
+    source_match = _SOURCE_RE.search(text)
+    if source_match is None:
+        return True
+    source = source_match.group(1).strip().lower()
+    if source == TicketSource.REVIEW_SYNTHESIS.value:
+        return False
+    # m3_decomposition / operator / unknown → True (the safe default)
+    return True
 
 
 def read_ticket_blocked_by(

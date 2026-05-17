@@ -468,6 +468,122 @@ def test_delete_by_slug_doesnt_repack_numbering(tmp_path: Path) -> None:
     assert registry.next_number() == 4
 
 
+# ---------- TicketSource + test_coverage_required (tea-party skip) ----------
+
+
+class TestReadTicketNeedsTestDesign:
+    """Validation of the read_ticket_needs_test_design helper that
+    backs the tea-party (M6) iteration filter. Source-based default
+    + explicit override semantics."""
+
+    def test_m3_decomposition_default_passes(self, tmp_path: Path) -> None:
+        from wonderland.ticket import (
+            TicketSource,
+            read_ticket_needs_test_design,
+        )
+
+        reg = TicketRegistry(tmp_path)
+        reg.write(
+            TicketPayload(
+                title="Fresh from M3",
+                owner="tweedledee",
+                tier=TicketTier.V1,
+                estimate="1d",
+                description="x",
+                source=TicketSource.M3_DECOMPOSITION,
+            )
+        )
+        assert read_ticket_needs_test_design(tmp_path, "fresh-from-m3") is True
+
+    def test_review_synthesis_default_skips(self, tmp_path: Path) -> None:
+        from wonderland.ticket import (
+            TicketSource,
+            read_ticket_needs_test_design,
+        )
+
+        reg = TicketRegistry(tmp_path)
+        reg.write(
+            TicketPayload(
+                title="Fix the is_pending flag",
+                owner="tweedledee",
+                tier=TicketTier.V1,
+                estimate="0.5d",
+                description="x",
+                source=TicketSource.REVIEW_SYNTHESIS,
+            )
+        )
+        assert (
+            read_ticket_needs_test_design(tmp_path, "fix-the-is-pending-flag")
+            is False
+        )
+
+    def test_review_synthesis_with_override_passes(
+        self, tmp_path: Path
+    ) -> None:
+        """Caterpillar can mark a finding test_coverage_required=True
+        when the fix introduces uncovered behavior; the synthesized
+        ticket then passes tea-party even though its source is
+        review_synthesis."""
+        from wonderland.ticket import (
+            TicketSource,
+            read_ticket_needs_test_design,
+        )
+
+        reg = TicketRegistry(tmp_path)
+        reg.write(
+            TicketPayload(
+                title="Add JWT validation to auth",
+                owner="tweedledum",
+                tier=TicketTier.V1,
+                estimate="2d",
+                description="x",
+                source=TicketSource.REVIEW_SYNTHESIS,
+                test_coverage_required=True,
+            )
+        )
+        assert (
+            read_ticket_needs_test_design(
+                tmp_path, "add-jwt-validation-to-auth"
+            )
+            is True
+        )
+
+    def test_m3_decomposition_with_skip_override_skips(
+        self, tmp_path: Path
+    ) -> None:
+        """Operator can force-skip tea-party for a fresh ticket they
+        consider already well-spec'd."""
+        from wonderland.ticket import (
+            TicketSource,
+            read_ticket_needs_test_design,
+        )
+
+        reg = TicketRegistry(tmp_path)
+        reg.write(
+            TicketPayload(
+                title="Rename column",
+                owner="tweedledum",
+                tier=TicketTier.V1,
+                estimate="0.25d",
+                description="x",
+                source=TicketSource.M3_DECOMPOSITION,
+                test_coverage_required=False,
+            )
+        )
+        assert (
+            read_ticket_needs_test_design(tmp_path, "rename-column") is False
+        )
+
+    def test_missing_ticket_defaults_to_pass(self, tmp_path: Path) -> None:
+        """Missing-file / unparseable: default True (safer to over-
+        include than silently skip)."""
+        from wonderland.ticket import read_ticket_needs_test_design
+
+        assert (
+            read_ticket_needs_test_design(tmp_path, "nonexistent-slug") is True
+        )
+
+
 # ---------- helpers ----------
 
 

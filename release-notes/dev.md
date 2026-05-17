@@ -11,3 +11,18 @@ Validation5 surfaced a stuck-ticket pattern — synthesized follow-up tickets th
 The Live Call feed in `LiveRunScreen` was reading `runner.telemetry.entries` directly via `getattr(self.handle, "_runner", None)`. That only works for in-process runs — the default `wonderland run-bg` path uses `SubprocessRunHandle` which has no `_runner` attribute (the runner lives in a separate process), so the feed stayed blank for every real pilot.
 
 Replaced with an event-driven implementation: the dispatcher's `AgentActed` events now feed the table directly. Works for both in-process and subprocess runs since event streams are the common interface. Per-call rows show `time · agent · phase` (cost-per-call isn't on `AgentActed`; the per-agent rollup still lands in the status bar via `AgentTelemetryDelta`). Past events get buffered (capped at 200) so meeting-selection changes can replay historical activity for the newly-focused thread instead of leaving the operator staring at residue from the prior filter.
+
+### Tea-party skips review-synthesized tickets by default
+
+Cost optimization for the review-loop iterations. Review-synthesized tickets (the ones the substrate creates from Caterpillar's M8 findings) come with a complete spec built in — `location` + `quote` + `read` + `concern` + `request` — so the adversarial test-scenario design pass (tea-party / M6) was adding ~$0.50/ticket of overhead for what's structurally a code-correctness restoration on already-tested paths.
+
+Two new fields land:
+
+- `TicketPayload.source` (TicketSource enum: `m3_decomposition` | `review_synthesis` | `operator`). Default `m3_decomposition`. Auto-set to `review_synthesis` when the substrate synthesizes a follow-up ticket from a review finding.
+- `TicketPayload.test_coverage_required: bool | None`. Operator/agent override on the tea-party iteration filter. `None` (default) = use source-based default (`m3_decomposition` and `operator` pass through; `review_synthesis` skips). `True` forces tea-party inclusion; `False` forces skip.
+
+Plus `ReviewFinding.test_coverage_required: bool` (default false) so Caterpillar can mark a finding at review time as needing fresh test design — the synthesized ticket inherits the flag. Caterpillar's directive in `tdd-implement.yaml` M8 teaches when to set it (genuinely new behavior the existing tests don't cover, e.g. "add JWT validation," "implement retry with backoff").
+
+Tea-party gets a new `requires_test_design: true` field in `tdd-implement.yaml`; substrate filters per-ticket in `_run_inner_block` via the `read_ticket_needs_test_design` helper. Completion events still fire for skipped tickets so dependency-gated downstream lanes don't hang.
+
+Expected savings: ~$0.50/ticket per review pass × 2-5 follow-up tickets per pass × 2-3 review passes per feature × 5 features = ~$20-35 saved across a 5-feature MVP. 10-15% cost reduction.
