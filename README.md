@@ -8,17 +8,19 @@
 
 > ### ▶ See it in action
 >
-> [**Building a Geocities — a tour of how Wonderland works**](./SHOWCASE.md).
-> One vague directive. **$2.05.** 7 minutes 38 seconds. The team of
-> ten characters produced 1841 lines of code (auth, per-user pages,
-> Markdown rendering, GDPR-deletion path, session management) plus
-> 1253 lines of tests written *before* the implementation existed —
-> and the team's reviewer caught three real bugs in the result with
-> file paths and line numbers. The artifact tree is a v1 scaffold,
-> not a deployable; the framework's process is what shipped.
+> [**Mvp-demo2 — first end-to-end Tier 2 autonomous pilot**](./src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md).
+> A full-stack markdown notebook produced autonomously: discovery
+> → milestone-plan → 3 design+implement+verify cycles. **$83.78**
+> total spend, **5000 lines** of code (~3400 application + ~1600
+> test), **61 passing tests**, SQL-injection-safe handlers, custom
+> React hooks, modular components. The operator was a gate-approver
+> — pressed buttons at milestone-close gates, skipped a few
+> duplicate features, watched the team build. Zero killed runs,
+> zero hand-edited artifacts, one mid-pilot substrate fix.
 >
 > If you're trying to figure out what this project actually *is*,
-> start there.
+> start there. (For the earlier single-directive demo of one-shot
+> code generation, see [the Geocities pilot](./SHOWCASE.md).)
 
 Wonderland is a cast of agents — each named after an Alice-in-Wonderland
 character — that collaborate across the entire software production pipeline.
