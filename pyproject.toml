@@ -68,11 +68,15 @@ packages = ["src/wonderland"]
 # wheel target is already scoped to src/wonderland; the sdist
 # would otherwise include the whole repo (including projects/ and
 # runs/ when they exist locally), so we exclude them explicitly.
+# ``demo/`` is the showcase application built by mvp-demo2 — git-
+# tracked here for the paper but not part of the published package.
 exclude = [
     "projects/",
     "runs/",
     "drafts/",
     ".wonderland/",
+    "demo/",
+    "paper/",
 ]
 
 [tool.pytest.ini_options]
