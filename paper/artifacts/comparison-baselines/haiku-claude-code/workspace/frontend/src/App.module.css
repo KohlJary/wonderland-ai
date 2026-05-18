@@ -1,0 +1,288 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.header {
+  background-color: #2c3e50;
+  color: white;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 300px;
+  background-color: #f9f9f9;
+  border-right: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebarContent {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.newNoteBtn {
+  background-color: #28a745;
+  font-weight: bold;
+}
+
+.newNoteBtn:hover {
+  background-color: #218838;
+}
+
+.searchInput {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tagsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tagsSection h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.tagButton {
+  background-color: #e9ecef;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.tagButton:hover {
+  background-color: #dee2e6;
+}
+
+.tagButtonActive {
+  background-color: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.loading {
+  text-align: center;
+  color: #999;
+  padding: 20px;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: white;
+}
+
+.noSelection {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  font-size: 18px;
+}
+
+.noteView {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.noteHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 24px;
+  border-bottom: 1px solid #eee;
+}
+
+.noteHeader h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+}
+
+.noteMeta {
+  color: #999;
+  font-size: 13px;
+}
+
+.noteActions {
+  display: flex;
+  gap: 8px;
+}
+
+.deleteBtn {
+  background-color: #dc3545;
+}
+
+.deleteBtn:hover {
+  background-color: #c82333;
+}
+
+.noteTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 24px;
+  margin-top: 16px;
+}
+
+.noteTag {
+  background-color: #e7f3ff;
+  color: #0066cc;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.preview {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Markdown preview styles */
+:global(.preview h1) {
+  font-size: 2em;
+  margin: 0.67em 0;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 0.3em;
+}
+
+:global(.preview h2) {
+  font-size: 1.5em;
+  margin: 0.75em 0;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 0.3em;
+}
+
+:global(.preview h3) {
+  font-size: 1.17em;
+  margin: 0.83em 0;
+}
+
+:global(.preview h4) {
+  margin: 1em 0;
+}
+
+:global(.preview h5) {
+  margin: 1.17em 0;
+}
+
+:global(.preview h6) {
+  margin: 1.33em 0;
+}
+
+:global(.preview p) {
+  margin: 0.5em 0;
+  line-height: 1.6;
+}
+
+:global(.preview ul),
+:global(.preview ol) {
+  margin: 0.5em 0;
+  padding-left: 2em;
+}
+
+:global(.preview li) {
+  margin: 0.25em 0;
+}
+
+:global(.preview code) {
+  background-color: #f4f4f4;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+:global(.preview pre) {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+:global(.preview pre code) {
+  background-color: transparent;
+  padding: 0;
+}
+
+:global(.preview blockquote) {
+  border-left: 4px solid #ddd;
+  margin: 1em 0;
+  padding-left: 12px;
+  color: #666;
+}
+
+:global(.preview a) {
+  color: #007bff;
+  text-decoration: none;
+}
+
+:global(.preview a:hover) {
+  text-decoration: underline;
+}
+
+:global(.preview img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+:global(.preview table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+:global(.preview th),
+:global(.preview td) {
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+:global(.preview th) {
+  background-color: #f5f5f5;
+  font-weight: bold;
+}
+
+:global(.preview hr) {
+  border: none;
+  border-top: 2px solid #ddd;
+  margin: 1.5em 0;
+}

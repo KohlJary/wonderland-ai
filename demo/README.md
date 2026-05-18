@@ -1,85 +1,139 @@
-# Fullstack starter — FastAPI + SQLAlchemy + SQLite + React + Vite
+# demo/ — mvp-demo2 shipped artifact
 
-A working hello-world fullstack application. The backend serves
-`/health` and `/api/messages` (a placeholder echo endpoint); the
-frontend renders a one-message UI that fetches from the backend.
-The team's job is to build features on top of this — the stack,
-project layout, build config, and test framework are decided.
+A working full-stack markdown notebook app, **autonomously produced
+by Wonderland** running on Claude Haiku 4.5 across 3 milestones
+(data layer, search/tags, persistence + validation). $83.78 total
+pilot spend; operator participated as gate-approver + curator
+through the [Wonderland substrate](../README.md).
 
-## Layout
+This directory is the **reproducibility artifact** for the paper:
+clone the repo, follow the run instructions below, exercise the
+app in a browser. The shipped code lives here; the decision
+provenance lives in [`wonderland-trail/`](./wonderland-trail/).
+
+For the pilot narrative + cost breakdown + autonomous-pilot
+analysis, see:
+- [analysis 034 — autonomous pilot](../src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md)
+- [analysis 033 — cost breakdown](../src/wonderland/closet/analyses/033-mvp-demo2-cost-breakdown.md)
+
+## What got built
+
+A single-user personal markdown notebook web app — create notes,
+tag them, search across title + body + tags, render markdown in
+a preview pane, persist across server restarts. Per the
+[notebook directive](../src/wonderland/closet/directives/notebook.yaml).
 
 ```
-src/backend/
-  __init__.py
-  main.py             # FastAPI app + lifespan
-  db.py               # SQLAlchemy engine + sessionmaker
-  models.py           # Base + an example HelloMessage model
-  api/
-    __init__.py       # router aggregation
-    health.py         # /health
-    messages.py       # /api/messages — echo endpoint, replace
-                      #                  with real feature work
-frontend/
-  package.json
-  vite.config.ts
-  tsconfig.json
-  index.html
-  src/
-    main.tsx          # React entrypoint
-    App.tsx           # one-message UI demonstrating end-to-end fetch
-    api.ts            # fetch wrapper for backend calls
-tests/
-  __init__.py
-  test_health.py      # baseline test — /health responds
-  test_messages.py    # baseline test — POST /api/messages echoes
-pyproject.toml         # Python deps + pytest config
-.gitignore             # node_modules, __pycache__, *.db, dist/
+src/backend/                       backend (FastAPI + SQLAlchemy + SQLite)
+  main.py + db.py                  app entry + engine
+  models.py                        Note, Tag, AuditLog tables — incl
+                                   revision_id collision detection + state_hash
+                                   tamper detection + tz-aware datetime
+                                   normalization
+  api/health.py                    /health endpoint
+  api/notes.py                     8 endpoints: create/read/update/delete
+                                   notes, tag CRUD, full-text search with
+                                   LIKE-wildcard escape discipline +
+                                   _safe_ilike anti-bypass helper
+
+frontend/src/                      frontend (React + Vite + TypeScript)
+  main.tsx + App.tsx               entry + view routing (URL-pathname driven)
+  api.ts                           typed API client matching backend shapes
+  Editor.tsx + EditorLayout.tsx    main editor pane + preview layout
+  Preview.tsx                      markdown rendering, DOMPurified
+  Search.tsx                       search UI with tag filter + pagination
+  NoteList.tsx                     notes list view
+  TagInput.tsx                     tag chip input component
+  useBootNotes.ts                  custom hook: app boot + localStorage merge
+  useLocalStorageDebounce.ts       custom hook: debounced LS writes
+
+tests/                             61 tests, all passing
+  conftest.py                      in-memory SQLite per test, dep override
+  test_notes.py                    happy-path CRUD
+  test_notes_edge_cases.py         silent-wrongness + degradation scenarios
+  test_search.py                   search + pagination
+  test_search_wildcard_issues.py   LIKE-metachar escape regression tests
+  test_tag_scenarios.py            tag normalization + association edges
+  test_health.py                   /health smoke
 ```
 
-## What's intentionally NOT here
+**3,371 lines of application code + 1,577 lines of tests** (test:code
+ratio 0.47). Independent cold reviewer's verdict: *"competent,
+above-average code for an MVP."* See the
+[code quality analysis](../paper/artifacts/code-quality-mvp-demo2.md)
+for the full review.
 
-- Authentication / sessions. (If the project needs it, the team
-  builds it on top — see `python-fastapi-sqlite` or roll your own
-  against the existing `db.py`.)
-- Real domain models. `HelloMessage` is a placeholder showing the
-  SQLAlchemy + Pydantic + endpoint-handler pattern; the team
-  replaces it with the actual feature models.
-- Frontend routing, state management, styling. One component,
-  one fetch, one render. Add `react-router`, `zustand`, `tailwind`,
-  whatever — those are choices for the architecture phase.
-- Migrations. SQLite + `Base.metadata.create_all()` on startup is
-  fine for development; production deployment would add Alembic.
-- CI configuration. The pyproject.toml + package.json are
-  testable locally; CI is a separate concern.
-
-## How the team should approach it
-
-1. `read_file pyproject.toml` and `read_file package.json` to see
-   what's already installed.
-2. `read_file src/backend/api/messages.py` and
-   `read_file frontend/src/App.tsx` to see the existing pattern.
-3. Architectural decisions (Cat ADRs) should explain how the
-   feature *extends* this stack, not why a different stack would
-   be better.
-4. Tweedles `write_file` new feature files alongside the existing
-   ones (don't overwrite the placeholders unless they're literally
-   in the way).
-5. Caterpillar reviews `git_diff HEAD` — the diff is the team's
-   work, the seed is the baseline.
-
-## Running it (for human verification, NOT for the team)
+## Running the demo
 
 ```bash
-# Backend
-pip install -e .
-uvicorn src.backend.main:app --reload
-# → http://localhost:8000/health → {"status": "ok"}
-# → http://localhost:8000/docs   → Swagger UI
+# Backend (terminal 1)
+cd demo
+uv sync
+uv run uvicorn src.backend.main:app --reload --port 8000
 
-# Frontend
-cd frontend && npm install && npm run dev
-# → http://localhost:5173 — fetches /api/messages and renders
+# Frontend (terminal 2)
+cd demo/frontend
+npm install
+npm run dev
 ```
 
-The team doesn't run these — they just `read_file` and `write_file`.
-The runtime check is for humans verifying the seed works.
+Open `http://localhost:5173`. Create a note (title + markdown body).
+Add tags. Save. Refresh — the note persists. Search by substring in
+title or body. Filter by tag. Edit. Delete. Restart the server —
+everything's still there.
+
+```bash
+# Run the test suite
+cd demo
+uv run pytest tests/    # 61 tests, all passing
+```
+
+## The decision trail (`wonderland-trail/`)
+
+This is the load-bearing piece for paper readers: **the same Haiku
+4.5 model that wrote this code also produced 682 markdown artifacts
+documenting WHY each line exists** — requirements interviewed from
+the operator, milestone trajectory, user stories with persona
+grounding, features with story citations, tickets with explicit
+`Blocked by:` dependencies, architectural decision records with
+named tradeoffs, security rulings with threat citations, contract
+notes documenting frontend/backend seam negotiation, severity-tagged
+test scenarios, review verdicts with file:line citations, and the
+implementation artifacts mapping each commit back to the ticket it
+shipped.
+
+This is what a single-shot LLM (with or without tools) **cannot
+produce**. See [`wonderland-trail/README.md`](./wonderland-trail/README.md)
+for the structure + how to read it.
+
+## Reading order, if you're new
+
+1. **Run the app** (above) — see what shipped.
+2. **Open one file at random in `src/backend/api/notes.py`** —
+   note the inline contract references (`contract-note-01KRY0B8`),
+   the SQL escape helpers with anti-bypass docstrings, the
+   tz-aware datetime normalization.
+3. **Trace a decision back through the trail.** Pick a function
+   or file, find its ticket in
+   `wonderland-trail/tickets/`, then find the feature it
+   sources, then the story, then the requirement, then the
+   architectural ADR. Five hops; each artifact is human-readable
+   markdown.
+4. **Read the [code quality analysis](../paper/artifacts/code-quality-mvp-demo2.md)**
+   for an independent reviewer's verdict + the honest
+   limitations.
+
+## How this relates to the paper
+
+- The shipped code here is the artifact the paper's quality claims
+  reference.
+- The trail in `wonderland-trail/` is the artifact the paper's
+  *maintainability* claims reference — the decision provenance
+  that distinguishes Wonderland's output from a single-shot
+  agent's output.
+- The pilot that produced both ran on Claude Haiku 4.5 at
+  substrate version 0.8.0, cost $83.78, with the operator
+  participating as gate-approver (one mid-pilot substrate fix,
+  documented honestly as a Tier 2 violation).
+- See [`paper/`](../paper/) for the chapter source artifacts +
+  cost breakdown.

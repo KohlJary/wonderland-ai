@@ -1,0 +1,21 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "stop_reason": "max_tokens",
+  "elapsed_seconds": 36.42,
+  "directive": {
+    "name": "notebook",
+    "title": "Personal markdown notebook \u2014 fullstack demo, paper-MVP-ready",
+    "suggested_skeleton": "fullstack-fastapi-react"
+  },
+  "usage": {
+    "input_tokens": 700,
+    "output_tokens": 8192,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "cost_usd": 0.04166,
+  "max_tokens_requested": 8192,
+  "system_prompt_chars": 727,
+  "user_message_chars": 2103,
+  "output_chars": 25511
+}

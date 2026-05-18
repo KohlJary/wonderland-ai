@@ -47,6 +47,60 @@ The paper draws on several existing locations beyond `paper/`:
   for analysis.
 - Pilot run telemetry: `projects/mvp-demo2/.wonderland/telemetry/`
 
+**Substrate mechanics walkthrough**:
+- `artifacts/workflow-walkthrough.md` — per-meeting breakdown of every
+  major workflow (discovery, milestone-plan, tdd-design, tdd-implement):
+  roster, why each agent is on the roster, intent, phase semantics,
+  exit conditions, lifecycle transitions, substrate primitives. Source
+  material for the architecture chapter — covers the "how it actually
+  runs" half of the paper.
+- `artifacts/cast-walkthrough.md` — per-character breakdown of every
+  identity in the cast: role, characteristic move, what they ship,
+  declared failure mode (§VIII), persistence shape (§IX), and where
+  they appear across the four workflows. Source material for the cast
+  chapter — failure-modes-as-identity, the small-cast principle, guest
+  casts (Holmes / Watson), pair protocols.
+- `artifacts/code-quality-mvp-demo2.md` — quantitative metrics + pattern
+  receipts + independent cold-reviewer findings on the demo/ shipped
+  artifact. The credibility-making evidence for the quality argument.
+- `artifacts/evidence-chapter-source.md` — five-pillar synthesis of
+  paper-grade observations: quality-cost coupling, multi-lens
+  identity-anchored review, schema-as-safety, convergent self-repair
+  (with documented memory limit), constraints-improve-quality. Each
+  pillar with claim + mechanism + concrete pilot evidence + honest
+  scope. Explicitly excludes untested hypotheses.
+- `artifacts/thesis-chapter-source.md` — extends THESIS.md's canonical
+  5-corollary argument with mvp-demo2 evidence + a sixth corollary
+  (substrate constraint amplifies identity). Preserves the Sephirah/
+  Qlipha framing and the literary-lineage discipline. Pairs with the
+  evidence chapter as load path (architectural claim → corollaries →
+  pillars → artifacts).
+- `artifacts/methodology-chapter-source.md` — pilot-driven substrate
+  development with categorization-through-failure as the discipline.
+  The pilot → memory observation → substrate primitive → next pilot
+  loop, walked out. Autonomy tiers (Tier 1 observer / Tier 2
+  gate-approver / Tier 3 designer) as the maturity metric. Mid-pilot
+  substrate fixes as Tier 2 violations with intent. Operator-noticed
+  findings as research-grade signal alongside instrumented telemetry.
+- `artifacts/limitations-chapter-source.md` — four classes of
+  limitation (substrate gap / scope-bounded validation / sample-size
+  limit / missing rigor) with the honest counterweight to thesis +
+  evidence chapter claims. The b3f440c8-cluster theme
+  (prior-milestone-awareness at every layer). N=2, one directive
+  class, one model class. P7 generic-baseline eval still future work.
+  Untested hypotheses explicitly excluded from claims.
+- `artifacts/future-work-chapter-source.md` — forward-facing
+  counterweight to limitations: near-term substrate evolution
+  (cluster fixes, persona-anchoring, frontend test enforcement),
+  comparative experiments that close rigor loops (single-shot
+  Haiku/Sonnet baselines, P7 eval, design-all-first vs interleaved,
+  cross-model comparative pilots), cross-shape transferability
+  (different directive classes, model classes, atomic workflow
+  chaining), new cast capabilities (Holmes/Watson workflows, pair
+  protocols as primitive), architectural research questions (Tier
+  3 autonomy, self-hosting, long-running collaboration substrate),
+  identity engineering as research discipline beyond Wonderland.
+
 ## Paper outline (provisional)
 
 Not committed; subject to change.

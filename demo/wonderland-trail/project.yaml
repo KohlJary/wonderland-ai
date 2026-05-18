@@ -1,0 +1,8 @@
+name: mvp-demo2
+stack:
+  runtime: web
+  language: python+typescript
+  ui_framework: react
+  storage: sqlite
+  test_framework: pytest+vitest
+entry_point: src/backend/main.py
