@@ -220,3 +220,184 @@ async def test_concurrent_records_serialize_safely(tmp_path: Path) -> None:
     async with EpisodicStore(tmp_path, "cheshire_cat") as store:
         await asyncio.gather(*(store.record(_utterance(body=str(i))) for i in range(20)))
         assert await store.count() == 20
+
+
+# ---------- branching (T-a2) ----------
+
+
+async def test_default_branch_is_project(tmp_path: Path) -> None:
+    """Without any branch set, utterances default to PROJECT_BRANCH."""
+    from wonderland.memory.episodic import PROJECT_BRANCH, get_active_branch_id
+
+    assert get_active_branch_id() == PROJECT_BRANCH
+    async with EpisodicStore(tmp_path, "cheshire_cat") as store:
+        await store.record(_utterance(body="hi"))
+        # Query with explicit branch filter — should find it under project.
+        history = await store.query_by_thread("t", branches=[PROJECT_BRANCH])
+        assert len(history) == 1
+
+
+async def test_record_tags_active_branch(tmp_path: Path) -> None:
+    """When a branch is active, recorded utterances get tagged with it.
+    Default-no-filter reads still see them; project-only filter does not."""
+    from wonderland.memory.episodic import (
+        PROJECT_BRANCH,
+        set_active_branch_id,
+        reset_active_branch_id,
+    )
+
+    async with EpisodicStore(tmp_path, "cheshire_cat") as store:
+        await store.record(_utterance(body="project-level"))
+        token = set_active_branch_id("design:m1-foo")
+        try:
+            await store.record(_utterance(body="branch-tagged"))
+        finally:
+            reset_active_branch_id(token)
+
+        all_rows = await store.query_by_thread("t")
+        assert len(all_rows) == 2
+
+        project_only = await store.query_by_thread(
+            "t", branches=[PROJECT_BRANCH]
+        )
+        assert [u.content.body for u in project_only] == ["project-level"]
+
+        branch_only = await store.query_by_thread(
+            "t", branches=["design:m1-foo"]
+        )
+        assert [u.content.body for u in branch_only] == ["branch-tagged"]
+
+
+async def test_inheritance_chain_default_semantics() -> None:
+    """Project branch chain is just project. Other branches inherit project."""
+    from wonderland.memory.episodic import (
+        PROJECT_BRANCH,
+        inheritance_chain,
+    )
+
+    assert inheritance_chain(PROJECT_BRANCH) == [PROJECT_BRANCH]
+    assert inheritance_chain("design:m2-foo") == [PROJECT_BRANCH, "design:m2-foo"]
+    assert inheritance_chain("impl:m2-foo:feat:bar") == [
+        PROJECT_BRANCH, "impl:m2-foo:feat:bar",
+    ]
+
+
+async def test_inheritance_chain_reads_scoped_correctly(tmp_path: Path) -> None:
+    """An agent on design:m3 with inheritance_chain reads project + m3,
+    NOT m1 or m2 design branches (the wedge-bleed-prevention semantic)."""
+    from wonderland.memory.episodic import (
+        inheritance_chain,
+        set_active_branch_id,
+        reset_active_branch_id,
+    )
+
+    async with EpisodicStore(tmp_path, "cheshire_cat") as store:
+        # Write to project (operator / system)
+        await store.record(_utterance(body="project-summary"))
+        # Write to m1 design
+        token = set_active_branch_id("design:m1-foo")
+        try:
+            await store.record(_utterance(body="m1-deliberation"))
+        finally:
+            reset_active_branch_id(token)
+        # Write to m2 design (the wedge — must not bleed to m3)
+        token = set_active_branch_id("design:m2-bar")
+        try:
+            await store.record(_utterance(body="m2-wedge-noise"))
+        finally:
+            reset_active_branch_id(token)
+        # Write to m3 design
+        token = set_active_branch_id("design:m3-baz")
+        try:
+            await store.record(_utterance(body="m3-own-work"))
+        finally:
+            reset_active_branch_id(token)
+
+        # Agent on m3 reading via inheritance chain
+        m3_view = await store.query_by_thread(
+            "t", branches=inheritance_chain("design:m3-baz")
+        )
+        bodies = [u.content.body for u in m3_view]
+        # Sees project + m3, NOT m1 or m2
+        assert "project-summary" in bodies
+        assert "m3-own-work" in bodies
+        assert "m1-deliberation" not in bodies
+        assert "m2-wedge-noise" not in bodies
+
+
+async def test_contextvar_isolation_between_tasks(tmp_path: Path) -> None:
+    """ContextVar gives task-local semantics — concurrent tasks each see
+    their own active branch. Critical for pipeline-parallel impl runs."""
+    from wonderland.memory.episodic import (
+        get_active_branch_id,
+        set_active_branch_id,
+    )
+
+    captured: dict[str, str] = {}
+
+    async def worker(branch: str) -> None:
+        set_active_branch_id(branch)
+        await asyncio.sleep(0.01)  # give other tasks a chance to interleave
+        captured[branch] = get_active_branch_id()
+
+    await asyncio.gather(
+        worker("design:m1"),
+        worker("design:m2"),
+        worker("impl:m3:feat:x"),
+    )
+
+    assert captured == {
+        "design:m1": "design:m1",
+        "design:m2": "design:m2",
+        "impl:m3:feat:x": "impl:m3:feat:x",
+    }
+
+
+async def test_legacy_v1_data_migrates_to_project_branch(tmp_path: Path) -> None:
+    """A v1 SQLite database (no branch_id column) should migrate cleanly:
+    existing rows default to PROJECT_BRANCH, schema_meta bumps to v2."""
+    import aiosqlite
+    from wonderland.memory.episodic import PROJECT_BRANCH, SCHEMA_VERSION
+
+    # Hand-create a v1-shaped database
+    db_path = tmp_path / ".wonderland" / "memory" / "alice" / "episodic.sqlite"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.executescript("""
+            CREATE TABLE utterances (
+                id TEXT PRIMARY KEY,
+                thread_id TEXT NOT NULL,
+                parent_id TEXT,
+                speaker_name TEXT NOT NULL,
+                speaker_version TEXT NOT NULL,
+                speech_act TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO schema_meta VALUES ('version', '1');
+            INSERT INTO utterances VALUES (
+                'legacy-id', 't', NULL, 'alice', '0.1', 'proposal',
+                '2026-05-01T00:00:00+00:00', '{}'
+            );
+        """)
+        await conn.commit()
+
+    # Open via the new EpisodicStore — should migrate cleanly
+    async with EpisodicStore(tmp_path, "alice") as store:
+        # Schema version bumped to 2
+        conn = store._require_open()
+        async with conn.execute(
+            "SELECT value FROM schema_meta WHERE key = 'version'"
+        ) as cursor:
+            row = await cursor.fetchone()
+        assert row is not None
+        assert int(row[0]) == SCHEMA_VERSION
+
+        # Legacy row got branch_id = 'project' default
+        async with conn.execute(
+            "SELECT branch_id FROM utterances WHERE id = ?", ("legacy-id",)
+        ) as cursor:
+            row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == PROJECT_BRANCH

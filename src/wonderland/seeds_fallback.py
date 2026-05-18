@@ -59,9 +59,147 @@ def _load_stories(project_root: Path) -> list[Any]:
 
 
 def _load_features(project_root: Path) -> list[Any]:
+    """Load features from disk. When an active milestone scope is set,
+    filter to features whose primary milestone is the active one —
+    Rabbit composing for M3 doesn't need M1/M2's features in his
+    context (mvp-demo2 M3 design wedge: Rabbit debated prior-milestone
+    features instead of composing M3 features)."""
     from wonderland.feature import FeatureRegistry
 
-    return FeatureRegistry(project_root).list_features()
+    all_features = FeatureRegistry(project_root).list_features()
+
+    # Lazy-import to avoid circular dep at module load
+    try:
+        from wonderland.workflow import get_active_milestone_scope
+        scope = get_active_milestone_scope()
+    except Exception:  # noqa: BLE001
+        scope = None
+    if scope is None:
+        return all_features
+
+    # Filter via the primary-milestone-per-feature heuristic:
+    # strongest-overlap-wins (Jaccard similarity of feature.sources
+    # against milestone story-scope), ties on milestone order.
+    # Features whose primary is NOT the active scope get dropped
+    # from this seed pool. Unattributable features (no overlap with
+    # any milestone) stay in — defensive.
+    primary_map = _compute_primary_milestone_per_feature(project_root)
+    if not primary_map:
+        return all_features  # no attribution possible, don't filter
+
+    in_scope: list[Any] = []
+    for record in all_features:
+        primary = primary_map.get(record.slug)
+        if primary is None or primary == scope.slug:
+            in_scope.append(record)
+    return in_scope
+
+
+def _compute_primary_milestone_per_feature(
+    project_root: Path,
+) -> dict[str, str]:
+    """Mirror of the dashboard's primary-milestone attribution
+    (strongest source-set overlap, ties on milestone order).
+    Returns feature_slug → primary_milestone_slug. Empty dict when
+    project has no milestones or no features.
+
+    TODO: extract this + the dashboard's copy into a shared module
+    when there's time. For now duplicated to keep the seed-fallback
+    fix surgical.
+    """
+    import re
+    try:
+        from wonderland.coverage import (
+            _parse_milestone_consumes,
+            _parse_story_realizes,
+            _parse_feature_sources,
+        )
+    except Exception:  # noqa: BLE001
+        return {}
+
+    milestone_dir = project_root / ".wonderland" / "milestones"
+    if not milestone_dir.is_dir():
+        return {}
+
+    milestone_meta: list[tuple[str, int, list[str]]] = []
+    for path in milestone_dir.glob("milestone-*.md"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        slug_m = re.search(r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE)
+        order_m = re.search(r"^\*\*Order:\*\*\s*(\d+)", text, re.MULTILINE)
+        if not slug_m or not order_m:
+            continue
+        milestone_meta.append((
+            slug_m.group(1).strip(),
+            int(order_m.group(1)),
+            _parse_milestone_consumes(text),
+        ))
+    milestone_meta.sort(key=lambda x: (x[1], x[0]))
+    if not milestone_meta:
+        return {}
+
+    story_re = re.compile(
+        r"story-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
+    req_to_stories: dict[str, set[str]] = {}
+    story_root = project_root / ".wonderland" / "stories"
+    if story_root.is_dir():
+        for p in story_root.glob("story-*.md"):
+            m = story_re.match(p.name)
+            if not m:
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for r in _parse_story_realizes(text):
+                req_to_stories.setdefault(r, set()).add(m.group(1))
+
+    milestone_scope: dict[str, set[str]] = {}
+    for ms, _, consumes in milestone_meta:
+        scope_set: set[str] = set()
+        for r in consumes:
+            scope_set |= req_to_stories.get(r, set())
+        milestone_scope[ms] = scope_set
+
+    feat_re = re.compile(
+        r"feature-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
+    )
+    primary: dict[str, str] = {}
+    feature_root = project_root / ".wonderland" / "features"
+    if not feature_root.is_dir():
+        return primary
+    for p in feature_root.glob("feature-*.md"):
+        m = feat_re.match(p.name)
+        if not m:
+            continue
+        fslug = m.group(1)
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        raw_sources = _parse_feature_sources(text)
+        # T-g5: strip guid prefix
+        sources: set[str] = set()
+        for s in raw_sources:
+            sources.add(s.split(":", 1)[1] if ":" in s else s)
+        if not sources:
+            continue
+        best: tuple[int, int, str] | None = None
+        best_ms = ""
+        for ms, morder, _ in milestone_meta:
+            overlap = len(sources & milestone_scope[ms])
+            if overlap == 0:
+                continue
+            key = (-overlap, morder, ms)
+            if best is None or key < best:
+                best = key
+                best_ms = ms
+        if best is not None:
+            primary[fslug] = best_ms
+    return primary
 
 
 def _load_adrs(project_root: Path) -> list[Any]:

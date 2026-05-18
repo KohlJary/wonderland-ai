@@ -245,7 +245,7 @@ class TestMilestoneRealization:
         assert gap is None
 
     def test_full_realization_returns_none(self, tmp_path):
-        _write_req(tmp_path, 1, "req-a", "scope")
+        _write_req(tmp_path, 1, "req-a", "integration")
         _write_milestone(tmp_path, 1, "m1", consumes=["req-a"])
         _write_story(tmp_path, 1, "marcus-uses-a", realizes=["req-a"])
         _write_feature(
@@ -257,8 +257,8 @@ class TestMilestoneRealization:
         assert gap is None
 
     def test_unrealized_requirement_surfaces(self, tmp_path):
-        _write_req(tmp_path, 1, "req-a", "scope")
-        _write_req(tmp_path, 2, "req-b", "scope")
+        _write_req(tmp_path, 1, "req-a", "integration")
+        _write_req(tmp_path, 2, "req-b", "integration")
         _write_milestone(
             tmp_path, 1, "m1", consumes=["req-a", "req-b"]
         )
@@ -275,7 +275,7 @@ class TestMilestoneRealization:
     def test_story_without_feature_counts_as_unrealized(self, tmp_path):
         """Story alone isn't enough — M2's job is features, and the
         coverage gate is feature-level."""
-        _write_req(tmp_path, 1, "req-a", "scope")
+        _write_req(tmp_path, 1, "req-a", "integration")
         _write_milestone(tmp_path, 1, "m1", consumes=["req-a"])
         _write_story(tmp_path, 1, "story-a", realizes=["req-a"])
         # No feature sourcing story-a.
@@ -289,7 +289,7 @@ class TestMilestoneRealization:
         """A feature sourcing a story that doesn't realize the
         requirement leaves the requirement unrealized — the link is
         through realizes_requirements, not feature presence."""
-        _write_req(tmp_path, 1, "req-a", "scope")
+        _write_req(tmp_path, 1, "req-a", "integration")
         _write_milestone(tmp_path, 1, "m1", consumes=["req-a"])
         _write_story(tmp_path, 1, "unrelated-story", realizes=[])
         _write_feature(
@@ -304,7 +304,7 @@ class TestMilestoneRealization:
     def test_summary_truncates_long_lists(self, tmp_path):
         for i in range(8):
             slug = f"req-{i:02d}"
-            _write_req(tmp_path, i + 1, slug, "scope")
+            _write_req(tmp_path, i + 1, slug, "integration")
         _write_milestone(
             tmp_path, 1, "m1",
             consumes=[f"req-{i:02d}" for i in range(8)],
@@ -325,7 +325,7 @@ class TestMilestoneRealization:
         is named for its primary persona), M2 shouldn't have to
         ship a feature realizing a persona — those are context."""
         _write_req(tmp_path, 1, "marcus-persona", "persona")
-        _write_req(tmp_path, 2, "register-and-auth", "scope")
+        _write_req(tmp_path, 2, "register-and-auth", "integration")
         _write_milestone(
             tmp_path, 1, "m1",
             consumes=["marcus-persona", "register-and-auth"],
@@ -337,8 +337,8 @@ class TestMilestoneRealization:
         _write_feature(
             tmp_path, 1, "onboarding", sources=["marcus-registers"]
         )
-        # Persona consume isn't checked for realization; the scope
-        # requirement IS realized. Should report no gap.
+        # Persona consume isn't checked for realization; the
+        # success_criterion IS realized. Should report no gap.
         gap = run_coverage_check(
             "milestone_realization", tmp_path, milestone_slug="m1"
         )
@@ -347,7 +347,7 @@ class TestMilestoneRealization:
     def test_situation_and_out_of_scope_consumes_are_exempt(self, tmp_path):
         _write_req(tmp_path, 1, "marcus-bored", "situation")
         _write_req(tmp_path, 2, "social-deferred", "out_of_scope")
-        _write_req(tmp_path, 3, "register-and-auth", "scope")
+        _write_req(tmp_path, 3, "register-and-auth", "integration")
         _write_milestone(
             tmp_path, 1, "m1",
             consumes=[
@@ -363,6 +363,48 @@ class TestMilestoneRealization:
         _write_feature(
             tmp_path, 1, "onboarding", sources=["marcus-registers"]
         )
+        gap = run_coverage_check(
+            "milestone_realization", tmp_path, milestone_slug="m1"
+        )
+        assert gap is None
+
+    def test_scope_and_constraint_consumes_are_exempt_from_realization(
+        self, tmp_path
+    ):
+        """Mvp-demo regression: ``scope`` and ``constraint`` kinds
+        kept generating phantom coverage gaps. ``v1 has no auth``
+        (scope) and ``backend availability is hard`` (constraint)
+        are meta-statements about the system, not features to
+        build — they shouldn't be flagged as unrealized when
+        consumed by a milestone.
+
+        Stale-scope/constraint entries in milestones' consumes
+        wedged 22-rotation design loops in mvp-demo M2/M3 design
+        passes (agents correctly diagnosed the structural problem
+        but had no path forward)."""
+        _write_req(tmp_path, 1, "v1-no-auth", "scope")
+        _write_req(tmp_path, 2, "backend-availability", "constraint")
+        _write_req(tmp_path, 3, "v1-ships-when-clone-runs", "success_criterion")
+        _write_req(tmp_path, 4, "register-and-auth", "integration")
+        _write_milestone(
+            tmp_path, 1, "m1",
+            consumes=[
+                "v1-no-auth",
+                "backend-availability",
+                "v1-ships-when-clone-runs",
+                "register-and-auth",
+            ],
+        )
+        _write_story(
+            tmp_path, 1, "marcus-registers",
+            realizes=["register-and-auth"],
+        )
+        _write_feature(
+            tmp_path, 1, "onboarding", sources=["marcus-registers"]
+        )
+        # scope + constraint + success_criterion all exempt from
+        # realization check; only integration needs feature
+        # realization, and it has one. No gap should report.
         gap = run_coverage_check(
             "milestone_realization", tmp_path, milestone_slug="m1"
         )

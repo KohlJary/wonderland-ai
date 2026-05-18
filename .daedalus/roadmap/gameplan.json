@@ -232,60 +232,91 @@
     {
       "id": "p18-guid-identity",
       "title": "GUID-everywhere: stable artifact identity",
-      "status": "in_progress",
+      "status": "done",
       "roadmapItems": [
         "8700635b,30877dbb,c7b0572e,d32a1647,24e77531,1d760d07,022e5742,f915ac91,ed330512"
       ],
       "notes": "Replace slug-as-identity with GUID-as-identity across every artifact registry. Slug becomes cosmetic (human readability, dashboard display); GUID becomes load-bearing (routing, dedup, cross-references, source resolution). The slug-as-identity model has been the root cause of the entire failure-mode family we've been patching all night: phantom-slug citations (Rabbit inventing slugs that don't resolve), slug drift across rotations (same concept, near-duplicate slugs all hashed differently), attribution drift (tickets citing story-X that doesn't exist), feature-level near-duplicates (9 features for 3 concepts because each iteration coined slightly different slugs). Constitutional tightening at the agent layer is a band-aid; substrate-level identity stability is the durable fix. Sequencing: T-g1 (payload field) unblocks everything; T-g2 (registry layer) + T-g3 (filenames) are critical-path; T-g4 (bus + cross-refs) + T-g5 (source resolution) ship together once registries are GUID-aware; T-g6 (agent protocols) teaches the team to use GUIDs; T-g7 (UI) is the last consumer to update; T-g8 (back-compat) lets prior pilots keep working without manual migration; T-g9 closes the loop with a fresh end-to-end pilot. ~1-2 days focused work. Expected outcome: phantom-slug and slug-drift classes of bug become substrate-impossible; semantic-duplication (9 features for 3 concepts) remains a constitutional discipline problem but loses the substrate's contribution to making it worse."
+    },
+    {
+      "id": "p19-existing-projects",
+      "title": "Existing-project onramp: Holmes + Watson archaeology for codebases that already exist",
+      "status": "planned",
+      "roadmapItems": [
+        "9045d3c4",
+        "6030601b",
+        "2b405ec6"
+      ],
+      "notes": "Make Wonderland droppable into existing codebases. Today the substrate assumes greenfield (discovery interview \u2192 milestones \u2192 design \u2192 build from zero); this phase adds the onramp where the operator points Wonderland at a populated repo, agents derive structural understanding from the code, and the trajectory picks up at 'we're at milestone N, design N+1.' Phase exit: Wonderland-developing-Wonderland is the validation pilot \u2014 Wonderland-the-system designs and implements a Wonderland feature, with the diff and $ spend reported. Casting decision (resolved): Holmes is the archaeologist \u2014 the great detective plumbing the depths of an unknown codebase, deducing structure from fragmentary evidence (Holmes:codebase :: Sherlock:crime scene). Characteristic failure mode: over-confident deduction, narrative-fitting to messy code. Watson is the chronicler / operator-facing voice that translates Holmes's deductions into artifacts and questions the operator can act on (Watson:Holmes :: Alice:Rabbit). Incident + security framings (the original 2b405ec6 scoping) become fast-follow workflows that reuse the same constitutions. Sequencing: existing-state artifact kinds (existing_module / existing_capability / existing_pattern) land first to define the vocabulary; codebase exploration tools ship in parallel (file traversal, dependency probes, structural inspection beyond the current verify_imports); Holmes + Watson constitutions get authored alongside the archaeology decision mode + allowed_decisions guardrail; discovery-existing.yaml composes the above into a runnable workflow; current-state milestone seed lets the operator mark where the existing code sits on the trajectory; finally the self-developing pilot closes the loop."
+    },
+    {
+      "id": "p20-autonomous-pilot",
+      "title": "Tier 2 autonomous pilot: end-to-end Wonderland with operator as gate-approver only",
+      "status": "in_progress",
+      "roadmapItems": [
+        "08e60dd0",
+        "73690727",
+        "dc95169a",
+        "24d57b85",
+        "eb138e74",
+        "040f2f3f"
+      ],
+      "notes": "Validation goal: a fresh greenfield project completes end-to-end (discovery \u2192 milestone-plan \u2192 tdd-design \u00d7 N \u2192 tdd-implement \u00d7 N \u2192 working app) with operator participating ONLY as gate-approver \u2014 no hand-edits to artifacts, no killing wedged runs, no manual state cleanup. Paper-grade evidence: 'Wonderland produces a working app autonomously on Haiku-4.5 for $X in Y minutes.' Sequencing: M1-deletion bug (08e60dd0) is the highest-risk untraced data-loss path and must be fixed first; convergence-failure detection (73690727) and env-class verify routing (dc95169a) prevent the two highest-leverage wedge classes; cross-feature ticket consolidation (24d57b85) and milestone-vs-code coherence (eb138e74) are nice-to-haves that improve quality but aren't strictly required for the autonomous demonstration. Once the prerequisites land, fire 040f2f3f as the validation pilot. Phase exit: a Tier 2 pilot completes with the working-app artifact + total spend reported + the intervention-point measurement (where, if anywhere, operator action was needed)."
     }
   ],
   "activePhase": {
-    "id": "p18-guid-identity",
-    "title": "GUID-everywhere: stable artifact identity",
-    "started": "2026-05-15",
-    "goal": "Replace slug-as-identity with GUID-as-identity across every artifact registry. Phantom citations, slug drift, near-duplicate emissions, and attribution drift become substrate-impossible rather than constitutional-discipline problems. Phase exit: a fresh end-to-end pilot ships artifacts whose cross-references are unambiguous and whose re-emissions amend cleanly.",
-    "sequencing": "T-g1 (payload guid field) unblocks everything. T-g2 (registry dedup by guid) + T-g3 (filename convention) ship together once payloads have the field. T-g4 (bus payload carries guid + slug) + T-g5 (source resolution matches guid first) ship together once registries are guid-aware. T-g6 (agent protocols teach guid semantics) is the constitutional layer. T-g7 (dashboard + render UI) is the last consumer to update. T-g8 (back-compat shim for prior pilots) parallelizes with T-g7. T-g9 (pilot validation) closes the loop.",
+    "id": "p20-autonomous-pilot",
+    "title": "Tier 2 autonomous pilot: end-to-end Wonderland with operator as gate-approver only",
+    "started": "2026-05-18",
+    "goal": "Get Wonderland to Tier 2 autonomy: a fresh pilot completes end-to-end with operator participating ONLY as gate-approver. No hand-edits, no killing wedged runs, no manual cleanup. Paper-grade evidence: 'Wonderland produces a working app autonomously on Haiku-4.5 for $X in Y minutes.'",
+    "sequencing": "T-a1 (M1-deletion trace) first \u2014 highest-risk untraced data-loss path. T-a2 (branching memory) is the architectural heavy-lift but unblocks the whole class of memory-bleed wedges that required operator surgery in mvp-demo. T-a3 + T-a4 (convergence-failure + env-class routing) are smaller substrate primitives that prevent the next two highest-leverage wedge classes; can parallelize. T-a5 + T-a6 (cross-feature consolidation + milestone-vs-code coherence) are nice-to-haves that improve quality but aren't strictly required for the autonomous demonstration. T-a7 is the pilot itself \u2014 fires once T-a1 through T-a4 land.",
     "tasks": [
       {
-        "id": "T-g1",
-        "title": "Add guid field to all artifact payloads + render/parse round-trip",
+        "id": "T-a1",
+        "title": "Trace + fix M1 milestone deletion path",
+        "status": "in_progress",
+        "details": "08e60dd0 \u2014 Add tracing wrapper to MilestoneRegistry that logs every unlink with stack trace; reproduce M1 deletion in a fresh mvp-style pilot to capture the actual code path. Likely suspects: phased snapshot firing on a phase boundary we missed, retract handler unlinking on a non-ticket target_kind, MilestoneRegistry.write() rename path firing with payload-guid-matches-different-slug. Blocks T-a7 \u2014 recurring data loss is incompatible with Tier 2 autonomy."
+      },
+      {
+        "id": "T-a2",
+        "title": "Branch episodic memory at the design level",
+        "status": "done",
+        "details": "e2d44cac \u2014 supersedes c54056b7. Each milestone's design pass gets its own branch of episodic memory rooted at a clean snapshot (the project's 'milestone N-1 closed' summary). Implementation passes branch from their milestone's design branch, per-feature inside that. On milestone closed, Mock Turtle generates a 'milestone N summary' artifact at project-level layer \u2014 captures conclusions without deliberation. Future branches read the summary but never inherit per-milestone argument noise. Eliminates the operator-surgery class of failures entirely. Probably the single most leveraged item on this phase.",
+        "resolution": "Chunks A+B+C shipped: schema v2 + branch contextvar + runner wiring + consolidation orchestrator + Mock Turtle attribution + dashboard hook. 411 tests pass (11 new). Memory branches scope per-milestone; consolidation fires on last-feature-verified; design churn no longer cross-bleeds."
+      },
+      {
+        "id": "T-a3",
+        "title": "Convergence-failure detection",
+        "status": "done",
+        "details": "73690727 \u2014 Detect when the same finding-cluster recurs across N consecutive review passes on the same feature. Emit a 'spec_ambiguity' observation flagging the contract artifact(s) the findings cite, pause the implementation loop pending operator disambiguation. Stops cost-burn on convergence failures (mvp-demo F1 burned 5+ passes oscillating on DELETE shape) and gives the operator a clear signal where to intervene.",
+        "resolution": "Convergence-failure detection shipped: fingerprint = (file_loc_no_lines, normalized_concern). Detects when same fingerprint recurs in N consecutive review passes (default N=3). On detect, persists spec_ambiguity artifact at .wonderland/spec-ambiguity/, extracts cited contract/ADR references for operator attention. 10 tests, integrated into _route_blocking_review path. Build_check path opts out (auto_complete_in_flight_tickets=False sentinel)."
+      },
+      {
+        "id": "T-a4",
+        "title": "Env-class verify-failure routing",
+        "status": "done",
+        "details": "dc95169a \u2014 Detect environment-class verify failures (ModuleNotFoundError from missing pyproject deps, missing env vars, missing migrations, broken venv) and route to operator-attention instead of synthesizing implementation tickets the Tweedles can't honestly do. Stops the budget-burning loop where Tweedles correctly refuse env work and hit MEETING_BUDGET.",
+        "resolution": "Env-class verify-failure routing shipped: classifier with 7 patterns (ModuleNotFoundError, npm ERR, pytest cannot collect, etc.), partition + operator_attention artifact at .wonderland/operator-attention/, suggested commands (uv add, npm install). Build_check path wires through route_verify_findings \u2014 code-class findings still synthesize Tweedle tickets, env-class skip ticket synthesis and write artifact for operator. 12 tests; mvp-demo F2 wedge structurally prevented."
+      },
+      {
+        "id": "T-a5",
+        "title": "Cross-feature ticket consolidation (M3.75)",
+        "status": "done",
+        "details": "24d57b85 \u2014 After all per-feature M3.5 instances complete, run a cross-feature consolidation pass that identifies near-duplicate tickets across features (same source requirements, similar slugs, overlapping descriptions) and consolidates to one ticket under the most-fitting feature. Improves ticket quality but not strictly required for autonomy.",
+        "resolution": "Cross-feature ticket consolidation shipped as wonderland.cross_feature module. Detection: cluster tickets by upstream-source frozenset (excluding parent feature); flag clusters with >=2 distinct parent features. Best-home selection: Jaccard similarity between cluster's upstream sources and each candidate parent feature's sources, tie-break alphabetical slug for determinism. Apply: walk retracted tickets through lifecycle to ABORTED state, leave files on disk for forensics. 9 tests. Currently exposed as callable; tdd-design.yaml phase wiring for auto-fire is a small follow-up."
+      },
+      {
+        "id": "T-a6",
+        "title": "Milestone-vs-code coherence review",
         "status": "pending",
-        "details": "Every payload (Story/Feature/Ticket/ADR/Ruling/Review/ContractNote/Milestone/Requirement/TestScenario/Implementation) gets a guid: str field with default_factory=ulid_new. Markdown render emits **GUID:** <ulid>. Parser reads it back; absence triggers back-fill from filename or freshly generated. Pydantic accepts both paths so existing tests don't break."
+        "details": "eb138e74 \u2014 M8 review catches code-vs-ticket drift but not code-vs-milestone-spec drift. Add a 'milestone_satisfaction' build_check that diffs current code state against the active milestone's done_when bullets. Could run as part of M9 verify. Improves quality but not strictly required for autonomy."
       },
       {
-        "id": "T-g2",
-        "title": "Registries dedup by guid",
+        "id": "T-a7",
+        "title": "Tier 2 autonomous pilot \u2014 validation",
         "status": "done",
-        "details": "All 12 artifact registries now expose find_by_guid() + write() looks up existing by guid first, slug fallback for back-compat. Story canonical (fe0b44e); batch of 11 (694be3a). 422 registry tests pass. Validation4's 9-features-for-3-concepts pattern is now substrate-impossible \u2014 agents re-emitting with same guid update in place.",
-        "resolution": "Shipped in commits fe0b44e + 694be3a. Slug-as-identity is dead; guid-as-identity is the registry primary key with slug-fallback for legacy files."
-      },
-      {
-        "id": "T-g3",
-        "title": "Filename convention",
-        "status": "done",
-        "details": "Every registry filename now <kind>-<short_guid>-<slug>.md. Numbers no longer in filename \u2014 display only in H2 header. Legacy + new shapes both readable via regex alternation.",
-        "resolution": "Shipped in commit af2091b. 12 registries + coverage.py + workflow.py + project_dashboard.py all migrated. Identity ambiguity (race conditions on number allocation, near-duplicate slug fresh-number-allocation) eliminated. 479 registry+consumer tests pass."
-      },
-      {
-        "id": "T-g4",
-        "title": "Bus carries guid+slug",
-        "status": "done",
-        "details": "Payload model already includes guid (T-g1); bus picks it up automatically.",
-        "resolution": "Shipped in commit fb2cbd8 (bundled with T-g5). Bus payload protocol unchanged \u2014 guid comes through via the Pydantic payload model field."
-      },
-      {
-        "id": "T-g5",
-        "title": "Source resolution prefers guid",
-        "status": "done",
-        "details": "Resolver accepts guid, slug, or guid:slug. Phantom guids now substrate-detectable.",
-        "resolution": "Shipped in commit fb2cbd8. 7 unit tests for the resolver branches."
-      },
-      {
-        "id": "T-g6",
-        "title": "Agent protocols teach guid semantics",
-        "status": "done",
-        "details": "Workflow YAMLs updated to mention guid/slug/guid:slug citation forms for sources + consumes_requirements. Constitutions untouched.",
-        "resolution": "Shipped in 6d183f8. Additive protocol guidance \u2014 legacy slug citations still work, guid prefix preferred when agents have it."
+        "details": "040f2f3f \u2014 Fresh greenfield project, end-to-end (discovery \u2192 milestone-plan \u2192 tdd-design \u00d7 N \u2192 tdd-implement \u00d7 N \u2192 working demo) with operator participating only as gate-approver. No hand-edits to artifacts, no killing wedged runs, no manual cleanup. Phase exit: working-app artifact + total spend reported + the intervention-point measurement (where, if anywhere, operator action was needed). Fires once T-a1 through T-a4 land; T-a5 + T-a6 nice-to-haves can land before or after.",
+        "resolution": "Mvp-demo2 pilot completed end-to-end. Working full-stack notebook app shipped for $83.78 across 3 milestones. Operator participated primarily as gate-approver: skipped duplicate features at multiple points, ticket-level scope filtering on M3 megalith. One Tier 2 violation: mid-pilot substrate fix shipped (auto-directive synthesis + seed-fallback scoping). Zero killed runs, zero memory surgery, zero hand-edited artifacts. 7 substrate roadmap items surfaced for follow-up. Paper's Wright Brothers moment captured in project_first_tier2_pilot_completion.md."
       }
     ],
     "deferred": []

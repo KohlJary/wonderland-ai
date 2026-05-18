@@ -411,6 +411,99 @@ async def test_verify_meeting_synthesizes_review_and_tickets(
 
 
 @pytest.mark.asyncio
+async def test_verify_does_not_auto_complete_existing_feature_tickets(
+    tmp_path: Path,
+) -> None:
+    """Mvp-demo regression: when build_check (verify) fires after
+    M8 in the same run, M8 has already routed the iteration's
+    request-changes review and synthesized follow-up tickets in
+    QUEUED state. Build_check then calls _route_blocking_review
+    for its own pytest failure — and the auto-complete sweep
+    used to grab those freshly-queued M8 follow-ups and mark
+    them DONE within seconds of creation, before any pass worked
+    them.
+
+    Fix: build_check passes auto_complete_in_flight_tickets=False
+    so its routing only synthesizes the pytest follow-up ticket.
+    The M8 follow-ups stay QUEUED.
+    """
+    from wonderland.ticket import TicketPayload, TicketSource
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        back_fill_state,
+        get_state as get_ticket_state,
+        transition as ticket_transition,
+    )
+
+    reg = FeatureRegistry(tmp_path)
+    record = reg.write(FeaturePayload(
+        title="alpha feature", description="d",
+        stack_span=StackSpan.BACKEND, tier=TicketTier.V1, sources=["s"],
+    ))
+    _drive_to(
+        tmp_path, record.slug,
+        FeatureState.IN_DESIGN, FeatureState.DESIGNED,
+        FeatureState.QUEUED, FeatureState.IN_PROGRESS,
+        FeatureState.READY_FOR_REVIEW,
+    )
+
+    # Simulate M8's freshly-synthesized follow-up: review-source
+    # ticket attributed to this feature, in QUEUED state.
+    treg = TicketRegistry(tmp_path)
+    follow_up = treg.write(TicketPayload(
+        title="M8 follow-up — fix delete idempotence",
+        owner="tweedledum",
+        tier=TicketTier.V1,
+        stack_span=StackSpan.BACKEND,
+        estimate="tbd",
+        description="From M8 review finding",
+        sources=[record.slug, "m8-review-slug"],
+        acceptance=["fix it"],
+        source=TicketSource.REVIEW_SYNTHESIS,
+    ))
+    back_fill_state(
+        tmp_path, follow_up.slug,
+        TicketState.PENDING, notes="m8 synth",
+    )
+    ticket_transition(
+        tmp_path, follow_up.slug,
+        TicketState.QUEUED, by="m8", notes="m8 queue",
+    )
+
+    def failer(_root: Path) -> VerificationResult:
+        return VerificationResult(
+            check_name="fake_fail", ok=False, skipped=False,
+            findings=(
+                VerificationFinding(
+                    title="pytest failed",
+                    location="tests/test_x.py",
+                    concern="x", request="y",
+                    severity="block",
+                ),
+            ),
+        )
+    register_check("fake_fail", failer)
+
+    runner = _FakeRunner(project_root=tmp_path)
+    try:
+        async for _e in _run_verify_meeting(
+            _verify_meeting("fake_fail"), runner,
+        ):
+            pass
+    finally:
+        from wonderland.verification import _CHECK_REGISTRY
+        _CHECK_REGISTRY.pop("fake_fail", None)
+
+    # M8 follow-up should STILL be queued — verify must not have
+    # auto-completed it as a ghost completion.
+    assert get_ticket_state(tmp_path, follow_up.slug) == TicketState.QUEUED
+    # Verify's own follow-up DID get synthesized.
+    tickets = TicketRegistry(tmp_path).list_tickets()
+    titles = [t.title for t in tickets]
+    assert any("pytest failed" in t for t in titles)
+
+
+@pytest.mark.asyncio
 async def test_verify_meeting_emits_event_when_no_feature_to_attach(
     tmp_path: Path,
 ) -> None:

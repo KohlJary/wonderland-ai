@@ -401,22 +401,39 @@ meetings:
       cross-ticket check (#1) is the one that has to ship — it's
       the only review that catches contract drift between Tweedles.
 
-      **Per-finding ``test_coverage_required`` flag** — when you
-      file a finding, you can set ``test_coverage_required: true``
-      on it. The synthesized follow-up ticket inherits that flag.
-      Tickets with the flag pass through tea-party (M6 adversarial
-      test design); tickets without it skip tea-party because the
-      finding's location + quote + concern + request IS a complete
-      spec. Default is false — most findings are code-correctness
-      restorations for paths whose existing tests already cover the
-      surface area, so adversarial test design adds little. Set
-      true when the fix introduces a behavior that no existing test
-      covers and the Mad Hatter's edge-case discipline would
-      surface scenarios the Tweedles wouldn't think of on their
-      own (e.g., "add JWT validation," "implement conflict
-      resolution UX," "introduce retry logic with backoff"). The
-      cost difference is ~$0.50/ticket, so default-skip; explicit
-      opt-in for genuinely-new-behavior findings.
+      **Per-finding ``test_coverage_required`` flag — default
+      FALSE, and false is right for almost every finding you file.**
+
+      You usually don't set this flag at all. Leave it omitted (or
+      explicitly ``false``); the synthesized follow-up ticket
+      skips tea-party. The finding's location + quote + concern +
+      request IS the spec — Mad Hatter's adversarial scenario
+      design adds ~$0.50/ticket of overhead for findings whose fix
+      is already fully specified.
+
+      Set ``true`` only when the fix introduces a **brand-new
+      capability surface** that the team has never written a test
+      against, where edge-case enumeration genuinely needs a
+      tea-party — think feature-scale additions slipped through
+      review, not corrections to existing surfaces:
+
+        - ✅ true: "add JWT validation," "implement conflict
+          resolution UX," "introduce retry-with-backoff,"
+          "add multi-tenant request scoping"
+        - ❌ false (these are correction findings, not new
+          capabilities): schema drift, contract mismatch between
+          frontend/backend, wrong field name, missing null check,
+          tz-aware/naive datetime bug, off-by-one in pagination,
+          missing error-state handling, unhandled empty case,
+          forgotten input sanitization, typo, missing migration,
+          OperationalError-class bugs
+
+      Heuristic: if a Tweedle reading the finding could write a
+      test for the fix in one sitting without needing Mad Hatter's
+      adversarial discipline, it's false. If the fix is a new
+      feature surface that didn't exist before this review, it's
+      true. **In a typical review pass, 0–1 findings out of 5
+      should carry ``true``.** When in doubt, leave it false.
 
       **Tweedles — defend or revise.** If Caterpillar requests
       changes, the responsible Tweedle either revises in this

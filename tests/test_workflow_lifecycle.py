@@ -1663,6 +1663,36 @@ class TestMilestonePlanSnapshot:
         )
         assert deleted == []
 
+    def test_empty_emission_is_no_op_no_deletions(
+        self, tmp_path: Path
+    ) -> None:
+        """Mvp-demo regression: Rabbit emitted ``milestone_plan``
+        with an empty artifacts list during tdd-design M2 (he meant
+        to re-emit m1 with an expanded done_when but shipped no
+        artifact). The snapshot interpreted the empty list as
+        ``active = {}`` and started unlinking files.
+
+        Empty-active should no-op — abandonment is what the explicit
+        ``retract`` decision mode is for.
+        """
+        from wonderland.workflow import _apply_milestone_plan_snapshot
+
+        self._seed_milestone_files(
+            tmp_path, ["m1-foundation", "m2-feature"]
+        )
+        utterances = [
+            self._milestone_utterance("white_rabbit", []),
+        ]
+        deleted = _apply_milestone_plan_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utterances,
+        )
+        assert deleted == []
+        files = sorted(
+            (tmp_path / ".wonderland" / "milestones").iterdir()
+        )
+        assert len(files) == 2
+
 
 class TestRetractScopeGuard:
     """Validation5 follow-up: ticket retract is scoped to the current

@@ -44,6 +44,46 @@ from wonderland.interview import Confidence
 from wonderland.artifact_guid import new_artifact_guid, short_guid
 
 MILESTONES_DIRNAME = "milestones"
+
+
+# T-a1 instrumentation: log every milestone file unlink with a stack
+# trace so the next M1-deletion repro is debuggable. Mvp-demo lost
+# M1 twice via paths the snapshot guard + retract scope guard +
+# delete_by_slug audit didn't account for. This wrapper is the
+# stitch — any unlink from MilestoneRegistry shows up in
+# .wonderland/milestone-unlink.log with full attribution.
+def _log_milestone_unlink(
+    path: Path, *, reason: str, slug: str, **extras: object,
+) -> None:
+    """Write an attributed log line whenever a milestone file is
+    about to be unlinked. Includes a truncated stack trace so the
+    investigator can see who called. Best-effort — never raises."""
+    import sys
+    import traceback
+    from datetime import datetime, timezone
+
+    try:
+        project_root = path.parent.parent.parent  # milestones/file.md → project_root
+        log_path = project_root / ".wonderland" / "milestone-unlink.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        stack = "".join(traceback.format_stack()[-8:-1])  # skip our own frame
+        extras_str = " ".join(f"{k}={v!r}" for k, v in extras.items())
+        line = (
+            f"[{datetime.now(timezone.utc).isoformat()}] "
+            f"unlink reason={reason!r} slug={slug!r} path={path.name!r} "
+            f"{extras_str}\n"
+            f"{stack}\n"
+            f"---\n"
+        )
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(line)
+        # Also stderr for live visibility during runs
+        sys.stderr.write(
+            f"[milestone-unlink] reason={reason!r} slug={slug!r} "
+            f"path={path.name!r} {extras_str}\n"
+        )
+    except Exception:  # noqa: BLE001 — instrumentation must never break the runtime
+        pass
 _GUID_PATTERN = re.compile(r"^\*\*GUID:\*\*\s*([0-9A-HJKMNP-TV-Z]{26})\s*$", re.MULTILINE)
 # T-g3: filename's id-part is either an 8-char ULID prefix (new) or
 # a 1-4 digit legacy order number (pre-P18). Order is parsed from
@@ -353,6 +393,12 @@ class MilestoneRegistry:
         new_path = self._path_for_guid(validated.guid, validated.slug)
         if existing is not None and existing.path.is_file():
             if existing.path != new_path:
+                _log_milestone_unlink(
+                    existing.path,
+                    reason="write_rename",
+                    slug=existing.slug,
+                    new_path=str(new_path),
+                )
                 try:
                     existing.path.unlink()
                 except OSError:
@@ -382,6 +428,7 @@ class MilestoneRegistry:
         record = self.find_by_slug(slug)
         if record is None:
             return False
+        _log_milestone_unlink(record.path, reason="delete_by_slug", slug=slug)
         try:
             record.path.unlink()
         except OSError:

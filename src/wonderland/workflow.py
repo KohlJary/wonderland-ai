@@ -2615,10 +2615,36 @@ async def run_workflow(
     # prefix-merged with milestone framing when scope is active.
     scope = _resolve_milestone_scope(runner, milestone_slug)
     set_active_milestone_scope(scope)
+
+    # Auto-synthesize directive from milestone scope when operator
+    # left it blank (124b5858). The milestone framing block helps,
+    # but per-run signal of "this milestone is about X, NOT Y (Y is
+    # sibling milestones' job)" was missing — mvp-demo2 M2 design
+    # surfaced Alice drifting into M1-flavored stories without it.
+    # Auto-synthesis closes the gap with zero operator burden.
+    if scope is not None and not (directive or "").strip():
+        directive = _synthesize_milestone_directive(scope, runner)
+
     if scope is not None:
         directive = _prepend_milestone_framing(
             directive, scope, runner=runner
         )
+
+    # T-a2: branch episodic memory at the design level. Set the
+    # branch_id contextvar for the duration of this workflow so all
+    # utterances recorded land on the right branch. Project-level
+    # workflows (discovery, milestone-plan) stay on PROJECT_BRANCH;
+    # tdd-design + tdd-decompose with a milestone scope branch to
+    # design:<slug>; tdd-implement branches to impl:<slug>. Cleared
+    # in finally — restores prior context (default PROJECT_BRANCH).
+    from wonderland.memory.episodic import (
+        PROJECT_BRANCH,
+        reset_active_branch_id,
+        set_active_branch_id,
+    )
+
+    branch_id = _derive_branch_id(workflow.name, scope)
+    branch_token = set_active_branch_id(branch_id)
 
     # T-m7: retraction registry is per-run state — wipe on entry so a
     # prior run's retractions don't bleed in, wipe on exit so we don't
@@ -2639,17 +2665,99 @@ async def run_workflow(
                 workflow, runner, directive
             ):
                 yield event
-            return
-        async for event in _run_workflow_serial(
-            workflow=workflow,
-            runner=runner,
-            directive=directive,
-        ):
-            yield event
+        else:
+            async for event in _run_workflow_serial(
+                workflow=workflow,
+                runner=runner,
+                directive=directive,
+            ):
+                yield event
+
+        # T-a5: end-of-design cross-feature ticket consolidation.
+        # After M3 + M3.5 produce per-feature tickets, sweep for
+        # near-duplicates across features and auto-retract via
+        # ticket_lifecycle. Substrate-side dedup; no agent calls.
+        # Fires for design-shaped workflows only (the ones that
+        # produce tickets); other workflow names skip silently.
+        _maybe_fire_cross_feature_consolidation(workflow, runner)
     finally:
         set_active_milestone_scope(None)
+        reset_active_branch_id(branch_token)
         clear_retractions()
         clear_active_disallowed_decisions()
+
+
+def _maybe_fire_cross_feature_consolidation(
+    workflow: "Workflow", runner: "Runner",
+) -> None:
+    """T-a5 wiring — fires ``consolidate_cross_feature_duplicates`` at
+    end of design-shaped workflows. Safe no-op when no duplicates
+    exist or when the workflow isn't ticket-producing.
+
+    Best-effort: errors are caught + logged to stderr without
+    breaking the workflow's caller.
+    """
+    name = (workflow.name or "").lower()
+    if name not in ("tdd-design", "tdd-decompose"):
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    try:
+        from wonderland.cross_feature import (
+            consolidate_cross_feature_duplicates,
+        )
+        decisions = consolidate_cross_feature_duplicates(project_root)
+        if decisions:
+            import sys
+            n_aborted = sum(len(d.retracted_slugs) for d in decisions)
+            sys.stderr.write(
+                f"[cross-feature-consolidation] workflow={name!r} "
+                f"clusters={len(decisions)} aborted_tickets={n_aborted}\n"
+            )
+            for d in decisions:
+                sys.stderr.write(f"  {d.summary()}\n")
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        import sys
+        sys.stderr.write(
+            f"[cross-feature-consolidation] error: {exc}\n"
+        )
+
+
+def _derive_branch_id(
+    workflow_name: str, scope: "_MilestoneScope | None"
+) -> str:
+    """Compute the episodic-memory branch_id for a workflow run.
+
+    Rules (T-a2):
+      - No milestone scope → PROJECT_BRANCH. Project-shaped work
+        (discovery, milestone-plan, ad-hoc) all land at the root.
+      - Design-shaped workflow (tdd-design, tdd-decompose) +
+        milestone scope → ``design:<slug>``. Wedge churn from
+        design rotations stays scoped to its milestone, doesn't
+        bleed into siblings.
+      - Implementation workflow (tdd-implement) + milestone scope
+        → ``impl:<slug>``. Per-feature sub-branches are a future
+        refinement; for now all implementation passes for a
+        milestone share one branch.
+      - Anything else with a scope → ``run:<workflow>:<slug>`` —
+        defensible fallback that still scopes branching.
+
+    See ``.daedalus/design-memory-branching.md`` for the full
+    architectural rationale and Q1 (impl does NOT inherit design
+    branch memory).
+    """
+    from wonderland.memory.episodic import PROJECT_BRANCH
+
+    if scope is None:
+        return PROJECT_BRANCH
+    slug = scope.slug
+    name = (workflow_name or "").lower()
+    if name in ("tdd-design", "tdd-decompose"):
+        return f"design:{slug}"
+    if name == "tdd-implement":
+        return f"impl:{slug}"
+    return f"run:{name or 'unknown'}:{slug}"
 
 
 def _resolve_milestone_scope(
@@ -3070,6 +3178,173 @@ def _format_existing_rulings_block(runner: "Runner | None") -> str:
     )
 
 
+def _format_existing_code_block(runner: "Runner | None") -> str:
+    """List source files already in the project so design agents see
+    what's already shipped as IMPLEMENTATION CODE — not just
+    artifacts (stories / features / tickets), but actual files that
+    exist in the repo.
+
+    Mvp-demo M2 surfaced the failure mode: without this signal,
+    Caterpillar treated M2's design pass as if M1's work hadn't
+    landed and re-emitted backend stories for the schema + CRUD
+    endpoints that already shipped at src/backend/. The agents had
+    no substrate-level "this exists as code" cue; the existing
+    stories / features / tickets blocks tell them what's been
+    *spec'd*, not what's been *built*.
+
+    Probes a small whitelist of source paths (src/, frontend/src/,
+    tests/, app/) and lists files with line counts. Skips trivial
+    files, build artifacts, virtualenvs, node_modules. Lists at most
+    ~40 files to keep the framing block tight; if the project is
+    bigger, the operator should be on the existing-projects onramp
+    (P19) anyway, which builds a structured map rather than a flat
+    file list.
+    """
+    if runner is None:
+        return ""
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return ""
+
+    code_paths = [
+        project_root / "src",
+        project_root / "frontend" / "src",
+        project_root / "tests",
+        project_root / "app",
+        project_root / "lib",
+    ]
+    SOURCE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx", ".sql", ".rs", ".go"}
+    SKIP_PARTS = {
+        "__pycache__", "node_modules", ".venv", "venv", "dist",
+        "build", ".pytest_cache", ".mypy_cache", "egg-info",
+    }
+    MIN_LINES = 5
+    MAX_ROWS = 40
+
+    rows: list[str] = []
+    for base in code_paths:
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.suffix not in SOURCE_EXTS:
+                continue
+            if any(part in SKIP_PARTS or part.endswith(".egg-info")
+                   for part in path.parts):
+                continue
+            try:
+                with path.open(encoding="utf-8", errors="ignore") as f:
+                    lines = sum(1 for _ in f)
+            except OSError:
+                continue
+            if lines < MIN_LINES:
+                continue
+            rel = path.relative_to(project_root)
+            rows.append(f"  - ``{rel}`` ({lines} lines)")
+            if len(rows) >= MAX_ROWS:
+                break
+        if len(rows) >= MAX_ROWS:
+            break
+
+    if not rows:
+        return ""
+    bullets = "\n".join(rows)
+    return (
+        f"**Existing source code in the repo** — IMPLEMENTATION ALREADY "
+        f"SHIPPED. Do not re-emit stories or features asking for the "
+        f"capabilities these files provide; the work is done. Your "
+        f"current milestone builds INCREMENTALLY on top of this code, "
+        f"adding only what its done_when demands beyond what's already "
+        f"there:\n"
+        f"{bullets}\n\n"
+        f"If your milestone's scope is partially or fully satisfied by "
+        f"existing code, fold that recognition into a single "
+        f"``observation`` (\"X exists at src/foo.py; this milestone "
+        f"extends it with Y\") rather than re-spec'ing the existing "
+        f"surface as fresh stories. The seed pool's stories are the "
+        f"specification trail; the source files above are the "
+        f"realization. Don't conflate the two — duplicate stories for "
+        f"already-shipped capabilities are scope creep that wastes "
+        f"design + implementation budget.\n"
+        f"\n"
+    )
+
+
+def _synthesize_milestone_directive(
+    scope: "_MilestoneScope", runner: "Runner | None",
+) -> str:
+    """Substrate-side directive synthesis when operator left it
+    blank (124b5858). Produces a tight directive from the active
+    milestone's scope so per-run signal isn't just "blank prompt
+    plus framing block."
+
+    Mvp-demo2 M2 design surfaced the gap: Alice drifted into
+    M1-flavored stories (save flow, multi-tab edit) during M2
+    design because there was no per-run nudge of "you are designing
+    M2 specifically — this is about RECALL, not capture." The
+    framing block helps but the directive is the operator-facing
+    intent surface; a missing one was a missing signal.
+
+    The synthesized directive names:
+      - active milestone (slug + name)
+      - one-line goal
+      - done_when bullets (terse)
+      - sibling-milestone disambiguation ("M1/M3 are NOT this
+        milestone's job — leave their scope alone")
+
+    Operator can still override by passing an explicit directive;
+    synthesis only fires when directive is empty/whitespace.
+    """
+    done_lines = "\n".join(f"  - {d}" for d in scope.done_when)
+
+    # Best-effort: list sibling milestones for "don't drift into
+    # their territory" framing. Project_root may not be available
+    # in some test fixtures; skip the siblings block then.
+    siblings_block = ""
+    project_root = getattr(runner, "project_root", None) if runner else None
+    if project_root is not None:
+        try:
+            from wonderland.milestone import MilestoneRegistry
+            all_milestones = MilestoneRegistry(
+                project_root
+            ).list_milestones()
+            sibling_lines = []
+            for record in all_milestones:
+                if record.slug == scope.slug:
+                    continue
+                relation = (
+                    "already shipped"
+                    if record.order < scope.order
+                    else "future milestone"
+                )
+                sibling_lines.append(
+                    f"  - ``{record.slug}`` ({relation})"
+                )
+            if sibling_lines:
+                siblings_block = (
+                    f"\n**Other milestones (NOT your scope this "
+                    f"run — leave their territory alone):**\n"
+                    f"{chr(10).join(sibling_lines)}\n"
+                )
+        except Exception:  # noqa: BLE001 — best-effort
+            siblings_block = ""
+
+    return (
+        f"Design milestone ``{scope.slug}`` ({scope.name}).\n\n"
+        f"**Goal:** {scope.goal}\n\n"
+        f"**Done when:**\n{done_lines}\n"
+        f"{siblings_block}\n"
+        f"This run's scope is ONLY this milestone. Stories, "
+        f"features, and tickets you ship should serve these "
+        f"done-criteria and no others. Past milestones already "
+        f"shipped — don't redesign their work. Future milestones "
+        f"have their own scope — don't preempt them. Drift into "
+        f"adjacent milestone territory is scope creep; surface it "
+        f"as a concern rather than absorbing it.\n"
+    )
+
+
 def _prepend_milestone_framing(
     directive: str, scope: "_MilestoneScope", *, runner: "Runner | None" = None,
 ) -> str:
@@ -3087,6 +3362,7 @@ def _prepend_milestone_framing(
     existing_stories_block = _format_existing_stories_block(runner)
     existing_tickets_block = _format_existing_tickets_block(runner)
     existing_rulings_block = _format_existing_rulings_block(runner)
+    existing_code_block = _format_existing_code_block(runner)
     framing = (
         f"{m1_lead_block}"
         f"**Milestone scope: {scope.name}** (slug: ``{scope.slug}``).\n"
@@ -3103,6 +3379,7 @@ def _prepend_milestone_framing(
         f"milestone, leave it for that milestone's design pass.\n"
         f"\n"
         f"{persona_block}"
+        f"{existing_code_block}"
         f"{existing_stories_block}"
         f"{existing_tickets_block}"
         f"{existing_rulings_block}"
@@ -4461,13 +4738,18 @@ def _route_blocking_review(
     review_payload: dict,
     actor: str,
     meeting_id: str,
+    auto_complete_in_flight_tickets: bool = True,
 ) -> None:
     """Request-changes path:
 
       1. Mark the iteration's IN_PROGRESS tickets as DONE — their
          implementation work shipped and Caterpillar's findings
          are coherence gaps to address in follow-up work, not
-         "the original tickets failed entirely".
+         "the original tickets failed entirely". (Skip when
+         ``auto_complete_in_flight_tickets=False`` — build_check
+         passes False because M8 already swept the worked tickets
+         and a second sweep would pick up freshly-synthesized
+         follow-ups as ghost completions.)
       2. Convert ticket-worthy findings (severity ``block`` /
          ``change-required``) into new TicketPayloads; write them
          to disk via TicketRegistry; transition them to QUEUED
@@ -4497,12 +4779,20 @@ def _route_blocking_review(
         or "(unknown review)"
     )
 
-    # Step 1: mark in-flight tickets DONE.
+    # Step 1: mark in-flight tickets DONE — unless the caller
+    # turned this off (build_check passes False: M8 already swept
+    # the iteration's worked tickets, and re-sweeping here would
+    # mark just-synthesized follow-ups as ghost completions before
+    # any implementation pass touches them).
     ticket_to_feature = _ticket_to_feature_map(project_root)
-    feature_tickets = [
-        slug for slug, feat in ticket_to_feature.items()
-        if feat == feature_slug
-    ]
+    feature_tickets = (
+        [
+            slug for slug, feat in ticket_to_feature.items()
+            if feat == feature_slug
+        ]
+        if auto_complete_in_flight_tickets
+        else []
+    )
     done_notes = (
         f"Auto-complete from {meeting_id!r} on request-changes "
         f"verdict ({review_slug!r}); follow-up tickets synthesized "
@@ -4568,6 +4858,39 @@ def _route_blocking_review(
     findings = review_payload.get("findings")
     if not isinstance(findings, list):
         return
+
+    # T-a3: convergence-failure detection. Before synthesizing more
+    # follow-up tickets, check whether the current findings recur
+    # the pattern of previous reviews on this feature. If yes, the
+    # team is oscillating on spec ambiguity, not converging — record
+    # a spec_ambiguity artifact for operator attention. Tickets
+    # still get synthesized (the team can fix what's there) but
+    # the operator now has a substrate-level signal that the
+    # implementation loop won't terminate without disambiguation.
+    if auto_complete_in_flight_tickets:  # only for M8 path, not build_check
+        try:
+            from wonderland.convergence import (
+                detect_convergence_failure,
+                record_spec_ambiguity,
+            )
+            failure = detect_convergence_failure(
+                project_root,
+                feature_slug=feature_slug,
+                current_findings=findings,
+            )
+            if failure is not None:
+                record_spec_ambiguity(project_root, failure)
+                # Best-effort stderr signal for live runs; the
+                # dashboard surface is the durable channel.
+                import sys
+                sys.stderr.write(
+                    f"[convergence-failure] feature={feature_slug!r} "
+                    f"recurring={len(failure.recurring_fingerprints)} "
+                    f"window={failure.window}\n"
+                )
+        except Exception:  # noqa: BLE001 — detection is best-effort
+            pass
+
     registry = TicketRegistry(project_root)
     queue_notes = (
         f"Synthesized from review ``{review_slug}`` finding; "
@@ -4867,28 +5190,74 @@ async def _run_verify_meeting(
             )
             if review_slug is not None:
                 artifact_kinds["review"] = 1
+                raw_findings = [
+                    {
+                        "severity": f.severity,
+                        "title": f.title,
+                        "location": f.location,
+                        "concern": f.concern,
+                        "request": f.request,
+                    }
+                    for f in all_findings
+                ]
+
+                # T-a4: env-class verify failures (missing deps,
+                # missing env vars, etc.) get routed to operator-
+                # attention instead of synthesized as Tweedle
+                # tickets. Tweedles can't honestly install
+                # fastapi as a dev dep — that's operator work.
+                # Mvp-demo F2 surfaced this: 2 consecutive runs
+                # hit MEETING_BUDGET on the test-env ticket
+                # because the team rightfully refused operator-
+                # class work routed as implementation.
+                code_findings = raw_findings
+                try:
+                    from wonderland.verify_routing import (
+                        route_verify_findings,
+                    )
+                    code_findings, op_attention_path = route_verify_findings(
+                        project_root, feature_slug, raw_findings,
+                    )
+                    if op_attention_path is not None:
+                        import sys
+                        sys.stderr.write(
+                            f"[operator-attention] env-class verify "
+                            f"failure on feature={feature_slug!r}; "
+                            f"written to {op_attention_path.name}\n"
+                        )
+                        artifact_kinds["operator_attention"] = (
+                            artifact_kinds.get("operator_attention", 0) + 1
+                        )
+                except Exception:  # noqa: BLE001 — routing is best-effort
+                    code_findings = raw_findings
+
                 review_payload_dict = {
                     "slug": review_slug,
                     "title": f"Build check ({meeting.id}) failed",
                     "verdict": "request-changes",
-                    "findings": [
-                        {
-                            "severity": f.severity,
-                            "title": f.title,
-                            "location": f.location,
-                            "concern": f.concern,
-                            "request": f.request,
-                        }
-                        for f in all_findings
-                    ],
+                    "findings": code_findings,
                 }
-                _route_blocking_review(
-                    project_root,
-                    feature_slug=feature_slug,
-                    review_payload=review_payload_dict,
-                    actor="wonderland-substrate",
-                    meeting_id=meeting.id,
-                )
+                # Skip the whole _route_blocking_review call when
+                # there are no code-class findings left — nothing
+                # for the Tweedles to do, the operator_attention
+                # artifact is the signal.
+                if code_findings:
+                    _route_blocking_review(
+                        project_root,
+                        feature_slug=feature_slug,
+                        review_payload=review_payload_dict,
+                        actor="wonderland-substrate",
+                        meeting_id=meeting.id,
+                        # Build_check fires after M8 in the same run.
+                        # M8's review already auto-completed the
+                        # iteration's worked tickets; re-sweeping here
+                        # would pick up M8's freshly-synthesized
+                        # follow-ups as ghost completions (mvp-demo:
+                        # 2 review-synthesized tickets went queued →
+                        # in_progress → done within 3 seconds of
+                        # creation, before any pass worked them).
+                        auto_complete_in_flight_tickets=False,
+                    )
                 # Re-emit a final event carrying the review_slug so
                 # consumers can link to the synthesized review.
                 yield BuildCheckEvent(
@@ -5154,13 +5523,35 @@ def _apply_milestone_plan_snapshot(
     for slugs in per_speaker_latest.values():
         active.update(slugs)
 
-    from wonderland.milestone import MilestoneRegistry
+    # Empty active set means every relevant speaker emitted
+    # milestone_plan with zero artifacts — almost certainly an LLM
+    # mis-shipment (the agent intended to "re-emit" but supplied no
+    # artifact), not a deliberate "abandon every milestone" decision.
+    # Mvp-demo lost m1-notebook-foundation this way: Rabbit emitted a
+    # milestone_plan utterance during tdd-design M2 with empty
+    # artifacts trying to fold a constraint into m1's done_when, and
+    # the snapshot helpfully unlinked the file. The agents have an
+    # explicit ``retract`` decision mode for genuine abandonment;
+    # snapshot is for "the new list replaces the old." No new list,
+    # no replacement — bail without deleting.
+    if not active:
+        return []
+
+    from wonderland.milestone import MilestoneRegistry, _log_milestone_unlink
 
     registry = MilestoneRegistry(project_root)
     deleted: list[str] = []
     for record in registry.list_milestones():
         if record.slug in active:
             continue
+        _log_milestone_unlink(
+            record.path,
+            reason="snapshot_not_in_active",
+            slug=record.slug,
+            active_set=sorted(active),
+            primary_speaker=primary_speaker,
+            speakers_emitted=sorted(per_speaker_latest.keys()),
+        )
         try:
             record.path.unlink()
             deleted.append(record.slug)
@@ -6032,6 +6423,35 @@ async def _convene_one(
         convenor_directive = directive
     else:
         convenor_directive = meeting.convenor_directive
+
+    # _prepend_milestone_framing only fires for the entry meeting via
+    # _resolve_milestone_scope; non-entry meetings see no active-
+    # milestone signal, so done_when criteria stay invisible to
+    # M2/M3/M4/M5 and scope creep can leak in unflagged. Inject a
+    # tight scope block (name + goal + done_when) at the head of
+    # every non-entry meeting's directive when a scope is active.
+    if directive is None:
+        scope = get_active_milestone_scope()
+        if scope is not None:
+            done_lines = "\n".join(
+                f"  - {d}" for d in scope.done_when
+            )
+            milestone_block = (
+                f"**Active milestone: {scope.name}** "
+                f"(slug: ``{scope.slug}``)\n"
+                f"\n"
+                f"**Goal:** {scope.goal}\n"
+                f"\n"
+                f"**Done when:**\n{done_lines}\n"
+                f"\n"
+                f"Stay scoped to these done-criteria. Any work "
+                f"outside them is scope creep for a future "
+                f"milestone — flag as a concern rather than "
+                f"absorbing.\n"
+                f"\n"
+                f"───────────────────────────────────────\n\n"
+            )
+            convenor_directive = milestone_block + convenor_directive
 
     # Surface the meeting label, name, and iteration metadata to the
     # team. Iteration label puts the current feature's title into the

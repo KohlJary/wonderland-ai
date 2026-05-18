@@ -1491,6 +1491,206 @@
       "status": "backlog",
       "created_at": "2026-05-17T20:46:16.603921",
       "created_by": "daedalus"
+    },
+    {
+      "id": "74e6d34d-e266-4b06-970f-01dfaee047d4",
+      "title": "pytest_passes per-failure ticket synthesis",
+      "description": "Substrate gap surfaced by validation5 feature 3's M9 verify pass.\n\nCURRENT BEHAVIOR: pytest_passes runs the test suite. When N tests fail, the check returns ok=False with one finding describing the failure in aggregate. _synthesize_followup_ticket_from_finding produces ONE ticket whose title and location reference the first failure (or some summary). Validation5 had 6 failing tests but only one synthesized ticket; the operator-visible granularity is \"tests are failing\" rather than \"here are 6 specific test failures.\"\n\nGAP: review-finding-to-ticket fidelity is too coarse for multi-failure runs. The Tweedles work the single ticket and run pytest themselves to see the full list \u2014 works in practice but loses the per-failure attribution + lifecycle (can't track which tests are fixed and which still fail individually). For a user-facing demo where the operator inspects the dashboard, \"1 ticket with vague title\" is less actionable than \"6 tickets, one per failing test, each citing the test path + assertion.\"\n\nPROPOSED SHAPE: extend check_pytest_passes (verification.py) to emit one ReviewFinding per failed test instead of one rollup finding. Each finding's location is the test path (tests/foo.py::test_bar), the quote is the assertion error, the concern is the test docstring (when present), the request is \"Run pytest <path>::<test> locally and address the failure.\" Same shape as Caterpillar's M8 findings, just substrate-emitted.\n\nDownstream: each finding synthesizes its own ticket per the existing _synthesize_followup_ticket_from_finding path. Tickets all source: review_synthesis so they skip tea-party (the failing test IS the spec). Each ticket closes independently when its specific test passes.\n\nPAPER RELEVANCE: cleaner narrative for substrate decomposes failures into actionable work units. Aligns the build-check finding shape with Caterpillar's review-finding shape \u2014 operator sees consistent ticket granularity regardless of source.\n\nBACKWARD COMPAT: existing single-rollup ticket behavior is acceptable for now (Tweedles still see full pytest output). This is a fidelity improvement, not a breaking change.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T21:04:02.211620",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "24d57b85-6682-4dd6-9f44-7a15130146c6",
+      "title": "Cross-feature ticket consolidation phase (M3.75) \u2014 runs after all per-feature M3.5 instances complete; identifies near-duplicate tickets across features (same source requirements, similar slugs, overlapping descriptions) and consolidates to one ticket under the most-fitting feature with the others retracted. Surfaced from mvp-demo M1 design: three features all emitted variants of 'sqlite schema for notes + tags' tickets. Probably belongs as M4 in tdd-design and/or as a standalone phase in tdd-decompose.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T22:58:08.822455",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "9045d3c4-bb4d-4a73-bef8-14ec9080bdd0",
+      "title": "discovery-existing workflow: probe a codebase to derive existing-state structural artifacts (existing_module, existing_capability, existing_pattern) before design phases. Substrate-equivalent of discovery.yaml but the interview subject is the codebase, not the operator. Sources: file traversal, dependency inspection, verify_imports-style probes, optional operator clarifications when ambiguity surfaces. Output feeds milestones-as-trajectory: operator marks 'we're at milestone N (everything to here exists in code), design milestone N+1' and the substrate scopes design/implementation to the delta.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T23:31:03.748099",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "6030601b-dbb6-4b6a-a610-1a3415590a4e",
+      "title": "Archaeology decision mode + agent role: who emits the structural understanding artifacts when discovery-existing runs. Cheshire Cat is the natural default by personality (system-coherence role). Open question: does this want its own guest cast \u2014 an archaeologist character whose characteristic failure mode is over-fitting a narrative to messy code (the inverse of Caterpillar's coherence-reading)? Decide as part of the phase. Decision mode needs a name (proposed: 'archaeology' or 'existing_state'), substrate primitive support (allowed_decisions guardrail), and a constitutional teaching block on what good archaeology looks like.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T23:31:03.829878",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "73690727-4ce5-4cab-8cce-03cf28ce9c89",
+      "title": "Convergence-failure detection: flag spec ambiguity when review-pass loops oscillate. Today the substrate happily runs review \u2192 implementation \u2192 review indefinitely as long as Caterpillar keeps finding things and the operator keeps queuing the resulting tickets. Mvp-demo M1 surfaced the failure mode: same 2 findings (DELETE shape + tag validation error shape) recurred across 5 consecutive review passes (~$11 burned) because Contract Note 001 + ADR-001 left the correct shape under-specified. Implementers oscillate between valid interpretations, Caterpillar rejects whichever's current, repeat. Detection heuristic: if the same finding-cluster (by location + concern fingerprint, not exact text) recurs in N consecutive review passes on the same feature, emit a 'spec_ambiguity' observation flagging the contract artifact(s) the findings cite, and pause the implementation loop pending operator disambiguation. Probably wants a TUI surface: 'feature X has been circling \u2014 review pass 5 surfaced findings substantially equivalent to passes 3+4. Likely contract ambiguity in <cited contract notes>.' Stops cost-burn on convergence failures and gives the operator a clear signal for where to intervene.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T23:36:18.427622",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "dc95169a-75ba-4d92-b43c-8c0c1be771df",
+      "title": "Detect environment-class verify failures and route to operator-attention, not implementation. Today when build_check (pytest_collects / pytest_passes / npm_build) fails, the substrate synthesizes a follow-up ticket and queues it as Tweedle implementation work. That's correct for code-class failures (missing imports, contract drift, runtime bugs) \u2014 but wrong for environment-class failures: missing dev dependencies in pyproject.toml, missing env vars, missing migrations, missing system packages, broken venv. The Tweedles can't honestly implement 'install fastapi as a dev dep' \u2014 that's operator/devops work \u2014 so they either burn budget refusing or write half-cooked attempts. Mvp-demo F2 surfaced the failure: pytest collection failed because fastapi wasn't in [project.dependencies], the substrate routed the fix as an implementation ticket, tweedledum + tweedledee correctly pushed back ('this is an environment setup task, not a code implementation task'), both meetings hit MEETING_BUDGET, and the loop didn't converge. Detection heuristic: parse the verify failure for tells \u2014 ModuleNotFoundError + missing-from-pyproject, missing env var references, schema-not-provisioned errors, etc. \u2192 emit operator_attention artifact instead of synthesizing an implementation ticket. TUI surface: dashboard shows 'F2 needs operator intervention: install fastapi as dev dep' with a one-line suggested command. Keeps the implementation pipeline scoped to code-class work and surfaces tooling/devops as the operator's lane.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-17T23:58:39.875968",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "98588505-dded-4111-8f00-ed69b7444bb5",
+      "title": "Dashboard 'Re-design milestone' action analogous to 'Decompose tickets'. Today the dashboard's 'Design this milestone' CTA hides once stories/features exist for the milestone \u2014 assumes design is done or in-flight. But operators legitimately need to re-trigger design (substrate fix landed mid-milestone, killed-run partial output to recover from, scope-shift after operator review of generated stories, etc.). Mvp-demo M2 surfaced this: after killing a partial design run mid-M2 and shipping a substrate fix (existing-code awareness block), the only path to re-trigger was wiping all M2 artifacts manually. Should mirror the tdd-decompose pattern: a 'Re-design milestone' button on milestones with existing design artifacts; transitions all artifacts attributed to this milestone back to in_design state, then offers tdd-design run launcher pre-scoped to the milestone. Optionally a 'Preserve existing artifacts as input' toggle vs full reset.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T01:05:13.345021",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "eb138e74-eb89-4e00-bdbe-46b1993810e6",
+      "title": "Milestone-vs-code coherence review pass \u2014 M8 catches internal drift (code-vs-ticket, code-vs-contract) but not external drift (code-vs-milestone-spec). Mvp-demo M1 shipped with the schema using a single 'content' column when M1's done_when explicitly named 'id, title, body, tags' as separate columns. The drift originated at M3 decomposition (Rabbit collapsed title+body into content), propagated through Tweedles' implementation, and Caterpillar's M8 reviews never flagged it because Caterpillar reads code-against-tickets-and-contracts \u2014 and the tickets themselves had 'content' baked in. Drift was visible if you read milestone.md and src/backend/models.py side-by-side; invisible to the review loop that exists. New phase or build_check: 'milestone_satisfaction' check that diffs current code state against the active milestone's done_when bullets. Could run as part of M9 verify, or as a separate end-of-milestone gate. Tooling exists for this conceptually \u2014 Caterpillar could even do it with the right prompt, but the substrate currently doesn't feed milestone.md to M8's review seed pool as a primary input.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T03:07:42.009356",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "08e60dd0-f60e-4b0f-99f9-be87ed8e0d57",
+      "title": "Trace and fix the M1 milestone deletion path. The mvp-demo pilot lost M1's milestone file twice without a clear deletion path: `_apply_milestone_plan_snapshot` empty-emission guard is in place and should prevent obvious cases, no retract on milestones fired, no MilestoneRegistry.delete_by_slug callers outside the dashboard ticket-prune path, and the BUDGET-outcome gating should prevent the phased snapshot from firing for non-COMPLETE meetings. Yet M1 disappeared from disk during M2 design runs both times (mtime evidence at start of M2 design, but no traceable code path). Possible suspects: phased snapshot firing during a different phase than expected, retract handler unlinking on a target_kind other than ticket (the scope guard only checks ticket retracts), MilestoneRegistry.write() rename path firing with a payload that matches a different guid + different slug. Add a tracing wrapper to MilestoneRegistry that logs every unlink + a SIGCHLD-style audit log for milestone file operations so the next repro is debuggable. Blocks the autonomous-pilot goal \u2014 recurring data loss is incompatible with Tier 2 autonomous.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-18T03:55:04.386786",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "040f2f3f-6466-4386-84a6-3b2a5812c098",
+      "title": "Tier 2 autonomous pilot \u2014 run a complete greenfield project end-to-end (discovery \u2192 milestone-plan \u2192 tdd-design \u00d7 N milestones \u2192 tdd-implement \u00d7 N milestones \u2192 working demo) with the operator participating only as gate-approver, not as fixer. No hand-edits to milestone files, tickets, contracts, or artifacts. No killing wedged runs. No manual cleanup of partial state. The operator may queue runs from the dashboard and review/approve outputs at standard gates, but cannot fix substrate fights. The deliverable is the working app + the total spend + the measurement of where (if anywhere) intervention was needed. Paper-grade evidence: 'Wonderland can produce a working application autonomously, on Haiku-4.5, for $X in Y minutes.' Prerequisite: M1-deletion bug traced + at least 2 of the wedge-detection roadmap items (convergence-failure detection 73690727, env-class verify routing dc95169a) shipped.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T03:55:04.474856",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "c54056b7-6cf5-4a42-a006-b17fc395b5eb",
+      "title": "Memory invalidation substrate primitive \u2014 agents need a mechanism to invalidate stale episodic memory when the substrate's own behavior changes. Mvp-demo M4 design wedged on a substrate issue that had already been fixed: agents had accumulated 291 utterances across previous design runs discussing 'v1-has-no-authentication is in M2 consumes but undecomposable.' The substrate fix (exempting scope/constraint kinds from realization check) silenced Dodo, but the agents pattern-matched on memory and re-derived the same wedge. Operator-side remediation required: surgical SQL DELETE of utterances matching wedge keywords across 8 agent databases. Tier 2 autonomous pilot can't tolerate that intervention. Proposals: (a) substrate-emitted 'memory invalidation' artifact that agents read on startup ('the issue you remember from rotations 3-25 has been fixed'); (b) decay or recency weighting in memory recall so older substrate-state observations weigh less than recent observations of current state; (c) agent-side guard directive 'if you detect you're pattern-matching on episodic memory, verify current substrate state and trust that over memory' \u2014 softer, easier to drift past. Belongs in p20 as a Tier 2 prerequisite.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T04:03:12.856580",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "e2d44cac-eb56-4cc1-b4dc-1b32b160603b",
+      "title": "Branch episodic memory at the design level (supersedes c54056b7 memory invalidation primitive). Architecture: each milestone's design pass gets its own branch of episodic memory rooted at a clean snapshot. Implementation passes branch from their milestone's design branch (potentially per-feature branches inside that). Wedge churn from one milestone's design doesn't bleed into siblings; the entire argument history of a wedge can be discarded by dropping the branch. On milestone closed, a consolidation step (Mock Turtle?) produces a 'milestone N summary' artifact at the project-level layer \u2014 captures conclusions without deliberation, so future branches see WHAT was built without inheriting argument churn. Surfaced from mvp-demo M4 design: aggressive memory wipe of wedge-related utterances also wiped useful history of M3's shipped feature, leading M4 design to re-create M3's markdown work. Memory-as-flat-log is the wrong abstraction for milestone-scoped reasoning. Branching gives clean boundaries that work with the existing milestones-as-trajectory ontology. Belongs in p20 as a Tier 2 prerequisite \u2014 possibly THE prerequisite, since it eliminates the operator-surgery need entirely. Supersedes c54056b7.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T04:05:58.686604",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "79ef174a-bc21-41c3-b7a2-0956277bce30",
+      "title": "Add persona-anchoring framing to milestone-plan for Alice. The tdd-design entry meeting prepends a milestone-framing block that names the active persona (from seeded persona requirements). Milestone-plan has no equivalent \u2014 Alice participates as a support voice (Rabbit is primary_speaker) but has no explicit 'you are speaking for X' anchor. Surfaced in mvp-demo2 Tier 2 pilot: Alice consistently got confused about persona during milestone-plan, not an issue when running design passes directly against basic directives (which named the persona inline). Fix: prepend persona-anchoring block to milestone-plan convener directive \u2014 name the highest-confidence persona requirement from seeds, frame Alice's support role as 'reviewing through this persona's lens.' Small directive edit; substrate-side primitive would be _format_persona_anchor_block(runner) helper mirroring the existing seeded-personas pattern. Belongs in p20 follow-up work surfaced during the autonomous pilot.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T14:41:39.274168",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "b3f440c8-553e-4fc7-abcd-9ef889652912",
+      "title": "Caterpillar M8 review: seed sibling-feature context so he can reason about gaps covered elsewhere. Today Caterpillar reviews one feature in isolation \u2014 sees its implementation, tickets, contracts, ADRs. Doesn't see sibling features (under the same milestone or adjacent ones) that might be responsible for filling the gap he's flagging. Result: false-positive findings of the shape 'this code doesn't handle X' when feature B is going to handle X. Substrate fix: seed M8's directive with a structured sibling-feature summary \u2014 for each non-current feature in the same milestone (and maybe future milestones), name its slug, kind, sources, and primary capability. Caterpillar's coherence-reading then covers the landscape, not just the slice. Mvp-demo2 Tier 2 pilot surfaced this as a pattern: Caterpillar flagged gaps that subsequent features were already designed to fill. Adjacent to but distinct from T-a6 (milestone-vs-code coherence detection): T-a6 finds gaps the code doesn't cover; this prevents false-positive gap flagging.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T15:01:33.761888",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "68a882b3-c420-43bd-bc72-bf2c04d53a7c",
+      "title": "Comparative pilot experiment: design-all-first vs interleaved-by-milestone sequencing. Current pattern (interleaved): milestone-plan \u2192 design M1 \u2192 implement M1 \u2192 design M2 \u2192 implement M2 \u2192 ... \u2192 integration. Proposed alternative (design-all-first): milestone-plan \u2192 design ALL milestones \u2192 implement M1 \u2192 M2 \u2192 ... \u2192 integration. Run the same project (e.g., the notebook directive) both ways, compare cost / quality / wedge count / operator-intervention frequency. Hypothesis: design-all-first addresses b3f440c8 (Caterpillar sees full sibling-feature landscape during review) and gives cleaner cross-feature consolidation, but loses the iterative-discovery feedback loop where impl reveals design needs. Substrate implications: existing-code-awareness block (_format_existing_code_block) assumes interleaved flow \u2014 design pass for M_n+1 surfaces M_n's code; design-all-first means later milestones' design sees no impl code, only spec. Memory branching also less clean \u2014 concurrent per-milestone branches without intervening consolidation. Probably wants a workflow flag (Workflow.design_all_first: bool = false) that controls the dashboard's queue-batching behavior + the order tdd-design / tdd-implement fire in. Paper deliverable: A/B comparative cost + quality data for the two sequencings, with discussion of which pattern works better for which project shapes. Surfaced during mvp-demo2 Tier 2 pilot.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T15:34:52.883073",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "837b5bbb-5c65-433c-953c-884e1e6cc477",
+      "title": "Add feature sequencing \u2014 Feature.depends_on: list[feature_slug] field. Currently features have no explicit dependency ordering \u2014 Rabbit emits them during M2 composition as a bag, operator picks queue order arbitrarily. Adding explicit dependency between features would: (1) force Rabbit during M2 composition to think about what each feature delivers + what enables it \u2014 the design pressure tightens scope per feature (constraints improve quality, same pattern as snapshot semantics + milestone scoping); (2) make implementation order substrate-decidable \u2014 no operator guesswork on which feature first; (3) extend existing-code-awareness block \u2014 design for feature N can see code from N's dependencies (which have already shipped); (4) partially resolve b3f440c8 \u2014 Caterpillar's M8 review could reason 'feature N depends on X which is shipped; that gap I'm flagging is covered there.' Substrate changes: FeaturePayload gets depends_on field, M2 composition directive teaches Rabbit to think about order, M3 decomposition + tdd-implement queue respect the dependency graph (topological sort), dashboard queue UI shows the dependency tree. Surfaced during mvp-demo2 Tier 2 pilot \u2014 operator observation that 'putting features in an order would as a byproduct result in more tightly designed features.'",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T15:40:06.501752",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "124b5858-48b5-47fa-8a72-d6eeabeac963",
+      "title": "Auto-synthesize default directive from active milestone scope when operator leaves directive blank. Today the directive is operator-stated free-text; blank means the only milestone signal is the _prepend_milestone_framing block at the entry meeting. Mvp-demo2 M2 design surfaced the gap: Alice drifted into M1-flavored stories (save flow, multi-tab edit) during M2 design because the per-run signal of 'you are designing M2 specifically' wasn't strong enough. Caterpillar got it right (search story) but Alice's persona-anchored design instinct pulled toward capture-flow without the milestone reminder. Proposal: when run_workflow fires with empty/whitespace directive AND an active milestone scope, synthesize one from milestone fields \u2014 goal + done_when + 'this milestone is about X, not Y (Y is sibling milestones' job)'. Substrate-side derivation, no operator burden. Operator can still override with explicit directive when they want. Connects to 79ef174a (persona-anchoring) and b3f440c8 (sibling-feature visibility) \u2014 all three are 'agents need stronger contextual signal per phase' in different shapes.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T16:00:05.946320",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "4a2597a4-b6c4-4d1f-bb3c-647c4aa40fd1",
+      "title": "Extend cross-feature consolidation (T-a5) to dedup against SHIPPED features from prior milestones, not just current-design tickets. Today consolidate_cross_feature_duplicates clusters tickets by upstream-source set across features currently in design. Misses the case where the current design pass produces a feature that duplicates work in a shipped/verified feature from a prior milestone. Mvp-demo2 M2 design surfaced this: Rabbit composed a 'markdown rendered preview' feature during M2 design despite M1 having a fully-shipped frontend/src/MarkdownPreview.tsx component. The existing-code-awareness block surfaced the file but Rabbit interpreted it as 'might need extension' rather than 'already done.' Substrate fix: extend the consolidator to also consider features whose lifecycle state is VERIFIED in prior milestones, and flag current-design features that substantially overlap. Could either auto-abort the duplicate (aggressive) or emit an operator_attention artifact (conservative). Same shape as b3f440c8 but at the design layer (Rabbit composing) instead of the review layer (Caterpillar flagging).",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T16:10:10.977888",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "81af78f8-381e-42b0-92ac-ac48263a44f2",
+      "title": "Two-tier feature presentation in design context: passive 'already shipped' block + active seed pool. Mvp-demo2 surfaced the tradeoff: when _load_features filters by primary milestone (to prevent Rabbit debating prior-milestone features in M3 composition), Rabbit loses the 'what already exists' signal and overshoots into adjacent-milestone scope (composed tags/search features during M3 design despite M2 having shipped them). The two purposes were entangled in the original unfiltered design \u2014 preventing wedge vs preventing overshoot. Proposal: split into two presentation paths. (1) Active-milestone features: in the seed pool as agent-visible artifacts (composable, amendable). (2) Sibling-milestone features (especially VERIFIED ones from prior milestones): in a passive 'ALREADY SHIPPED, DO NOT REDESIGN' block in the framing \u2014 visible as context but NOT seeded as bus artifacts (no risk of debate). This restores the existing-features-block intent (slug-stability + overshoot prevention) without re-introducing the wedge-bait dynamic. Belongs to p20 follow-up work surfaced during the autonomous pilot.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T16:55:45.223814",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "e7d226b8-ec93-43a7-98aa-37ad72cbed97",
+      "title": "Coverage check: recognize 'requirement realized by existing implementations' as a satisfaction path. Today the milestone_realization check only counts a requirement as realized when a NEW feature in this design pass sources stories realizing it. Doesn't recognize that prior-milestone implementations (verified features + shipped code) already satisfy a requirement. Mvp-demo2 M3 surfaced this: M3's consumes_requirements included 'five-minute-setup-acceptance-bar-clone-run-create-tag-search-persist-in-browser' (a validation criterion meant to verify the end-to-end flow works). The slug embeds capability names (tag, search, persist); Rabbit read it as 'I need to realize tag and search' and composed M2-overlapping features. The coverage check pressured this by flagging the requirement as unrealized. Fix shape: extend compute_unrealized_milestone_requirements to ALSO check whether any VERIFIED feature from prior milestones realizes the requirement via its source chain. If a prior shipped feature already realizes it, mark as satisfied \u2014 no pressure on Rabbit to compose again. Conceptually adjacent to 4a2597a4 (cross-feature consolidation aware of shipped features) \u2014 same gap class at a different substrate layer.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-18T16:59:51.295675",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

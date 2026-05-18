@@ -286,7 +286,7 @@ The JSON must conform to this schema:
           "read": "your understanding of what this code does, in your own words",
           "concern": "what is wrong, specifically, and why it matters",
           "request": "what would resolve this — actionable, not vibes",
-          "test_coverage_required": false  // optional; default false. Set true when the fix introduces a behavior that no existing test covers and adversarial test-scenario design (tea-party / M6) would catch edge cases the implementer wouldn't think of (e.g., "add JWT validation," "implement retry with backoff"). The synthesized follow-up ticket inherits this flag — true → tea-party; false → skip tea-party (the finding IS the spec). Skip is the cheap default; opt in explicitly when fresh coverage is warranted.
+          "test_coverage_required": false  // optional; default FALSE — and false is right for almost every finding. Set true ONLY when the fix introduces a brand-new capability surface that the team never wrote a test against (✅ "add JWT validation," "implement conflict-resolution UX," "introduce retry-with-backoff"). FALSE for correction findings even though no test exists for the bug (❌ schema drift, contract mismatch, missing null check, tz bug, off-by-one, typo, missing migration, OperationalError-class). Heuristic: if a Tweedle could write the test in one sitting without Mad Hatter's adversarial discipline, leave it false. In a typical 5-finding review, 0–1 should be true. When in doubt, false.
         }
       ],
       "approvals": [

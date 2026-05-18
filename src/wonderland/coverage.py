@@ -53,6 +53,32 @@ _NON_DECOMPOSABLE_REQUIREMENT_KINDS: frozenset[str] = frozenset(
     }
 )
 
+# Requirement kinds that CAN be consumed by a milestone (so they're
+# decomposable in the orphan-check sense — operator should acknowledge
+# them in some milestone) but DON'T need to be realized by a feature
+# (they're meta-statements about the system, not buildable units).
+# Mvp-demo wedge fixes:
+#   - ``scope`` / ``constraint`` (round 1): requirements like "v1 has
+#     no auth" and "backend availability is hard" kept generating
+#     phantom coverage gaps because they're consumed but unbuildable.
+#   - ``success_criterion`` (round 2, mvp-demo M4): requirements like
+#     "v1 ships when developer can clone-run in 5 minutes" are
+#     measurable outcome statements — operator-validated, not feature-
+#     realized. Same wedge shape: M4 design got stories but couldn't
+#     compose features because Dodo flagged the success_criterion as
+#     unrealized. Added here to the realizable-but-not-buildable set.
+# All kept in the orphan check (operator should acknowledge them in
+# some milestone), just exempt from "needs a feature to realize."
+_NON_REALIZABLE_REQUIREMENT_KINDS: frozenset[str] = (
+    _NON_DECOMPOSABLE_REQUIREMENT_KINDS | frozenset(
+        {
+            "scope",              # boundary statement — describes what's IN scope as a constraint, not a buildable feature
+            "constraint",         # property the system must have — not a feature, just a true statement about the deliverable
+            "success_criterion",  # measurable outcome statement (e.g., "v1 ships when X") — operator-validated, not feature-realized
+        }
+    )
+)
+
 
 @dataclass(frozen=True)
 class CoverageGap:
@@ -308,7 +334,7 @@ def compute_unrealized_milestone_requirements(
                 req_kinds[m.group(1)] = kind
         for slug in milestone_consumes:
             kind = req_kinds.get(slug)
-            if kind is not None and kind in _NON_DECOMPOSABLE_REQUIREMENT_KINDS:
+            if kind is not None and kind in _NON_REALIZABLE_REQUIREMENT_KINDS:
                 continue
             decomposable_consumes.append(slug)
     else:

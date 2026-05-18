@@ -1851,11 +1851,55 @@ class ProjectDashboardScreen(Screen[None]):
     def _milestone_to_feature_slugs(self, milestone_slug: str) -> set[str]:
         """Walk milestone.consumes_requirements → stories realizing
         each → features sourcing those stories. Returns the set of
-        feature slugs that belong to this milestone via the chain.
-        Mirrors compute_unrealized_milestone_requirements' walk but
-        returns feature slugs instead of unrealized requirements."""
-        import re
+        feature slugs whose PRIMARY milestone is this one.
 
+        Primary milestone = the earliest-ordered milestone whose
+        chain contains the feature. Features incidentally appearing
+        in multiple milestones' raw chains (because an over-broad
+        requirement like ``v1-ships-when-all-core-capabilities-work-
+        end-to-end`` is consumed by both M2 and M4, and any backend
+        feature realizes it) are attributed only to their earliest
+        milestone — the foundation owns them, not every later
+        milestone that shares an acceptance criterion.
+
+        Mvp-demo M2 surfaced the failure mode: M1's CRUD endpoint
+        feature appeared under M1 AND M2 AND M4 because three
+        milestones consumed an over-broad acceptance requirement
+        the feature happened to realize."""
+        primary_map = self._compute_primary_milestone_per_feature()
+        return {
+            feat for feat, primary in primary_map.items()
+            if primary == milestone_slug
+        }
+
+    def _compute_primary_milestone_per_feature(
+        self,
+    ) -> dict[str, str]:
+        """Compute feature_slug → primary_milestone_slug map.
+
+        Primary = the milestone whose chain (consumes_requirements
+        → realizing stories → feature sources) has the STRONGEST
+        OVERLAP with the feature's source set. Strongest = highest
+        count of overlapping story slugs. Ties break on smallest
+        order (foundation wins ties), then on slug (deterministic).
+
+        Why strongest-overlap instead of earliest-match: over-broad
+        acceptance requirements (e.g., ``v1-ships-when-all-core-
+        capabilities-work-end-to-end``) get consumed by multiple
+        milestones, and any feature realizing that requirement
+        ends up matching multiple chains. The right attribution
+        is to the milestone whose other narrower requirements the
+        feature also realizes — that's where the *bulk* of its
+        sourcing lives. Mvp-demo M2 surfaced both failure modes:
+        the localStorage feature was incorrectly attributed to M1
+        under earliest-wins (1 incidental story realizes M1), even
+        though all 3 of its sources realize M2's narrower
+        localStorage requirement.
+
+        Features whose chain matches no milestone get no entry
+        (orphan features, not shown under any milestone scope).
+        """
+        import re
         from wonderland.coverage import (
             _parse_milestone_consumes,
             _parse_story_realizes,
@@ -1865,8 +1909,10 @@ class ProjectDashboardScreen(Screen[None]):
         project_root = self.project.root_path
         milestone_dir = project_root / ".wonderland" / "milestones"
         if not milestone_dir.is_dir():
-            return set()
-        consumes: list[str] = []
+            return {}
+
+        # Build (slug, order) for all milestones, sorted by order then slug.
+        milestone_meta: list[tuple[str, int, list[str]]] = []
         for path in milestone_dir.glob("milestone-*.md"):
             try:
                 text = path.read_text(encoding="utf-8")
@@ -1875,14 +1921,21 @@ class ProjectDashboardScreen(Screen[None]):
             slug_m = re.search(
                 r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
             )
-            if slug_m and slug_m.group(1).strip() == milestone_slug:
-                consumes = _parse_milestone_consumes(text)
-                break
-        if not consumes:
-            return set()
+            order_m = re.search(
+                r"^\*\*Order:\*\*\s*(\d+)", text, re.MULTILINE
+            )
+            if not slug_m or not order_m:
+                continue
+            mslug = slug_m.group(1).strip()
+            morder = int(order_m.group(1))
+            consumes = _parse_milestone_consumes(text)
+            milestone_meta.append((mslug, morder, consumes))
+        milestone_meta.sort(key=lambda x: (x[1], x[0]))
 
-        # req_slug → set[story_slug] map. T-g3: filename id-part
-        # is short_guid (new) or legacy number.
+        if not milestone_meta:
+            return {}
+
+        # Build req_slug → set[story_slug].
         story_root = project_root / ".wonderland" / "stories"
         story_filename_re = re.compile(
             r"story-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
@@ -1901,33 +1954,73 @@ class ProjectDashboardScreen(Screen[None]):
                 for r in _parse_story_realizes(text):
                     req_to_stories.setdefault(r, set()).add(story_slug)
 
-        story_scope: set[str] = set()
-        for r in consumes:
-            story_scope.update(req_to_stories.get(r, set()))
-        if not story_scope:
-            return set()
+        # For each milestone (in order), compute its story scope.
+        milestone_story_scope: dict[str, set[str]] = {}
+        for mslug, _morder, consumes in milestone_meta:
+            scope: set[str] = set()
+            for r in consumes:
+                scope.update(req_to_stories.get(r, set()))
+            milestone_story_scope[mslug] = scope
 
-        # feature_slug → set[story_slug] from feature sources.
-        # T-g3: filename id-part is short_guid (new) or legacy number.
+        # For each feature, attribute to the milestone with the
+        # strongest overlap (most matching source stories). Ties
+        # break on the milestone's order (foundation wins ties),
+        # then on slug (deterministic).
+        order_by_slug = {ms: order for ms, order, _ in milestone_meta}
         feature_root = project_root / ".wonderland" / "features"
         feature_filename_re = re.compile(
             r"feature-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
         )
-        result: set[str] = set()
+        primary: dict[str, str] = {}
         if feature_root.is_dir():
             for p in feature_root.glob("feature-*.md"):
                 m = feature_filename_re.match(p.name)
                 if not m:
                     continue
-                feature_slug = m.group(1)
+                fslug = m.group(1)
                 try:
                     text = p.read_text(encoding="utf-8")
                 except OSError:
                     continue
-                sources = _parse_feature_sources(text)
-                if any(s in story_scope for s in sources):
-                    result.add(feature_slug)
-        return result
+                # T-g5 source resolution: sources may be plain slugs
+                # OR guid:slug-prefixed forms. Strip the optional
+                # guid prefix so comparison against story slugs works.
+                # Mvp-demo regression: M3's markdown-preview feature
+                # was orphaned because its sources used the new
+                # guid:slug form but milestone_story_scope contains
+                # plain slugs.
+                raw_sources = _parse_feature_sources(text)
+                sources: set[str] = set()
+                for src in raw_sources:
+                    if ":" in src:
+                        # guid:slug — keep just the slug portion
+                        sources.add(src.split(":", 1)[1])
+                    else:
+                        sources.add(src)
+                if not sources:
+                    continue
+                # Score each milestone by overlap count.
+                best: tuple[int, int, str] | None = None
+                for mslug, morder, _consumes in milestone_meta:
+                    overlap = len(sources & milestone_story_scope[mslug])
+                    if overlap == 0:
+                        continue
+                    # Sort key: (-overlap, order, slug) — higher
+                    # overlap first, then lower order, then slug
+                    # alphabetical. We negate overlap because we
+                    # want the LARGEST overlap to win in min().
+                    key = (-overlap, morder, mslug)
+                    if best is None or key < best:
+                        best = key
+                        best_ms = mslug
+                if best is not None:
+                    primary[fslug] = best_ms
+        # Suppress the noqa-friendly name-mangling complaint on
+        # ``best_ms`` — it's only referenced inside the if-block
+        # gated on ``best is not None``, so it's always defined
+        # when read.
+        _ = order_by_slug  # currently unused; reserved for callers
+        return primary
 
     def _refresh_milestones_cta(
         self, milestones: list[dict]
@@ -2467,16 +2560,50 @@ class ProjectDashboardScreen(Screen[None]):
         workflow + optional --milestone scope. Used by the
         milestones-pane CTA + the features-pane design CTA.
         Operator still confirms the launch on NewRunScreen; this
-        just teleports them there with the right defaults."""
+        just teleports them there with the right defaults.
+
+        124b5858: for design-shaped workflows with a milestone scope,
+        also prefill a synthesized directive from the milestone's
+        goal + done_when. Mirrors the impl-prefill pattern so the
+        operator sees what's being sent to the agents + can edit
+        before submit. Same synthesizer as the runtime fallback in
+        run_workflow — single source of truth.
+        """
         from wonderland.tui.screens.new_run import NewRunScreen
 
-        self.app.push_screen(
-            NewRunScreen(
-                project=self.project,
-                default_workflow=workflow_name,
-                default_milestone=milestone,
-            )
-        )
+        default_directive: str | None = None
+        if (
+            milestone is not None
+            and workflow_name in ("tdd-design", "tdd-decompose")
+        ):
+            try:
+                from wonderland.workflow import (
+                    _synthesize_milestone_directive,
+                    _resolve_milestone_scope,
+                )
+                # _resolve_milestone_scope wants a runner-like object;
+                # build a thin stand-in with just project_root attr.
+                import types
+                runner_proxy = types.SimpleNamespace(
+                    project_root=self.project.root_path
+                )
+                scope = _resolve_milestone_scope(runner_proxy, milestone)
+                if scope is not None:
+                    default_directive = _synthesize_milestone_directive(
+                        scope, runner_proxy
+                    )
+            except Exception:  # noqa: BLE001 — prefill is best-effort
+                default_directive = None
+
+        kwargs: dict = {
+            "project": self.project,
+            "default_workflow": workflow_name,
+            "default_milestone": milestone,
+        }
+        if default_directive is not None:
+            kwargs["default_directive"] = default_directive
+
+        self.app.push_screen(NewRunScreen(**kwargs))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
@@ -3032,7 +3159,112 @@ class ProjectDashboardScreen(Screen[None]):
             return
         verb = "verified" if target_state == FeatureState.VERIFIED else "rejected"
         self.notify(f"{row.slug} {verb}.", timeout=4)
+
+        # T-a2 chunk C: if this verify closed out a milestone (every
+        # primary-attributed feature now in VERIFIED state), fire
+        # episodic-memory consolidation: archive the milestone's
+        # design + impl branches across all per-agent stores, write
+        # a project-level summary utterance attributed to Mock
+        # Turtle. Subsequent design passes' inheritance chains see
+        # the summary but not the per-milestone deliberation noise.
+        if target_state == FeatureState.VERIFIED:
+            self._maybe_consolidate_milestone_for_feature(row.slug)
+
         self.action_refresh()
+
+    def _maybe_consolidate_milestone_for_feature(
+        self, verified_feature_slug: str,
+    ) -> None:
+        """Check whether ``verified_feature_slug`` closes its
+        milestone (every primary-attributed feature now VERIFIED).
+        If so, fire ``consolidate_milestone`` synchronously via a
+        new asyncio loop (the dashboard runs in textual's event
+        loop; the consolidation is a quick I/O bound op so blocking
+        is fine).
+
+        Operator gets a notify on success showing per-agent archive
+        counts. Errors are swallowed + notified — consolidation is
+        best-effort and shouldn't block the verify flow.
+        """
+        import asyncio
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            get_state as get_feature_state,
+        )
+        from wonderland.memory.consolidation import consolidate_milestone
+
+        try:
+            primary_map = self._compute_primary_milestone_per_feature()
+        except Exception:  # noqa: BLE001
+            return
+
+        milestone_slug = primary_map.get(verified_feature_slug)
+        if milestone_slug is None:
+            # Feature isn't attributed to a milestone — nothing to
+            # consolidate.
+            return
+
+        # Find every feature in this milestone; check states.
+        sibling_features = [
+            f for f, m in primary_map.items() if m == milestone_slug
+        ]
+        all_verified = True
+        for f in sibling_features:
+            state = get_feature_state(self.project.root_path, f)
+            if state != FeatureState.VERIFIED:
+                all_verified = False
+                break
+        if not all_verified:
+            # Milestone not yet fully closed.
+            return
+
+        # Look up milestone name (best-effort, for the summary body).
+        milestone_name: str | None = None
+        try:
+            import re
+            for path in (
+                self.project.root_path / ".wonderland" / "milestones"
+            ).glob("milestone-*.md"):
+                text = path.read_text(encoding="utf-8")
+                slug_m = re.search(
+                    r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
+                )
+                if slug_m and slug_m.group(1).strip() == milestone_slug:
+                    header_m = re.match(
+                        r"^##\s*Milestone\s+\d+:\s*(.+?)$",
+                        text, re.MULTILINE,
+                    )
+                    if header_m:
+                        milestone_name = header_m.group(1).strip()
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Fire consolidation. asyncio.run() ok here — dashboard is
+        # synchronous outside event handlers, and the consolidation
+        # call is short.
+        try:
+            results = asyncio.run(consolidate_milestone(
+                self.project.root_path,
+                milestone_slug=milestone_slug,
+                milestone_name=milestone_name,
+                feature_slugs=sorted(sibling_features),
+            ))
+        except Exception as exc:  # noqa: BLE001
+            self.notify(
+                f"Memory consolidation failed for {milestone_slug}: "
+                f"{exc}", severity="warning", timeout=6,
+            )
+            return
+
+        total = sum(results.values())
+        self.notify(
+            f"Milestone {milestone_slug} closed. Memory branches "
+            f"archived ({total} utterances across "
+            f"{len(results)} agents); project-level summary "
+            f"recorded.",
+            timeout=8,
+        )
 
     def _currently_highlighted_feature(self) -> _FeatureRow | None:
         """Return the feature corresponding to the highlighted node
