@@ -29,7 +29,7 @@ A personal markdown notebook web app. The directive came from the
 > server restarts. Stack: Python + FastAPI + SQLite backend, React
 > + Vite + TypeScript frontend.
 
-**Final artifact** (`projects/mvp-demo2/`):
+**Final artifact** (now lives at `demo/` in the repo; pilot substrate state remains at `projects/mvp-demo2/.wonderland/` for paper-source analysis):
 
 ```
 src/backend/
@@ -241,7 +241,7 @@ the *feature*.
 Verifying the working app (post-pilot):
 
 ```bash
-cd projects/mvp-demo2
+cd demo
 
 # Backend
 uv sync
@@ -261,7 +261,7 @@ in title or body. Filter by tag. Edit. Delete. Restart the server
 Run the tests:
 
 ```bash
-cd projects/mvp-demo2
+cd demo
 uv run pytest tests/    # 61 tests, all passing
 ```
 
