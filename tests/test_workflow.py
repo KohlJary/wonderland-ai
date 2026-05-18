@@ -95,6 +95,20 @@ class TestSeedBinding:
         assert sb.limit == 5
         assert sb.fallback == "any"
 
+    def test_tail_defaults_none(self):
+        """Context-compression Lever C — tail field exists, defaults
+        None to preserve pre-existing behavior. Workflows that don't
+        set it get the same all-utterances-in-order seed pool as
+        before this primitive shipped."""
+        sb = SeedBinding.model_validate({"from": "any", "kinds": ["review"]})
+        assert sb.tail is None
+
+    def test_tail_parses(self):
+        sb = SeedBinding.model_validate(
+            {"from": "any", "kinds": ["review"], "tail": 1}
+        )
+        assert sb.tail == 1
+
     def test_from_is_required(self):
         with pytest.raises(ValidationError):
             SeedBinding.model_validate({"kinds": ["adr"]})
@@ -1286,6 +1300,69 @@ class TestResolveSeeds:
         )
         assert len(seeds) == 1
         assert seeds[0].content.artifacts[0].payload["title"] == "t1"
+
+    def test_tail_takes_most_recent_N(self, populated_capture):
+        """Context-compression Lever C — tail picks the LAST N
+        utterances (capture order = chronological → tail = most
+        recent). The fixture's tickets are added t1, t2 (chronological
+        capture order); tail=1 should pick t2, not t1."""
+        seeds = resolve_seeds(
+            [
+                SeedBinding.model_validate(
+                    {"from": "decomposition", "kinds": ["ticket"], "tail": 1}
+                )
+            ],
+            populated_capture,
+        )
+        assert len(seeds) == 1
+        assert seeds[0].content.artifacts[0].payload["title"] == "t2", (
+            "tail=1 should pick the MOST RECENT (last-captured) "
+            "utterance, not the oldest"
+        )
+
+    def test_tail_zero_returns_empty(self, populated_capture):
+        seeds = resolve_seeds(
+            [
+                SeedBinding.model_validate(
+                    {"from": "decomposition", "kinds": ["ticket"], "tail": 0}
+                )
+            ],
+            populated_capture,
+        )
+        assert seeds == []
+
+    def test_tail_larger_than_pool_returns_all(self, populated_capture):
+        seeds = resolve_seeds(
+            [
+                SeedBinding.model_validate(
+                    {"from": "decomposition", "kinds": ["ticket"], "tail": 999}
+                )
+            ],
+            populated_capture,
+        )
+        # All tickets returned (no error from over-large tail)
+        assert len(seeds) >= 2
+
+    def test_limit_and_tail_compose(self, populated_capture):
+        """When both set: limit narrows first, then tail picks the
+        last N of the narrowed set. The two filters compose so the
+        directive author can express 'first 3 by capture, then most
+        recent 1 of those.'"""
+        seeds = resolve_seeds(
+            [
+                SeedBinding.model_validate(
+                    {
+                        "from": "decomposition",
+                        "kinds": ["ticket"],
+                        "limit": 2,  # first 2 → [t1, t2]
+                        "tail": 1,   # then last of those → [t2]
+                    }
+                )
+            ],
+            populated_capture,
+        )
+        assert len(seeds) == 1
+        assert seeds[0].content.artifacts[0].payload["title"] == "t2"
 
     def test_where_filter_matches_payload(self, populated_capture):
         seeds = resolve_seeds(

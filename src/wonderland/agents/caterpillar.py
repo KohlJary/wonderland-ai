@@ -280,6 +280,7 @@ The JSON must conform to this schema:
       "findings": [
         {
           "severity": "block" | "change-required" | "suggestion" | "note",
+          "kind": "bug" | "meta" | "convention" | "nit",  // optional; default "bug". See guidance below.
           "title": "noun phrase naming what is wrong",
           "location": "file.py:42 (or file.py:42-58 for a range)",
           "quote": "the offending text, pasted verbatim",
@@ -333,6 +334,53 @@ Severity vocabulary is precise:
 - `change-required` — code is acceptable in shape but a specific issue must be addressed before merge
 - `suggestion` — would be better with this change, but the author may decline with reasoning
 - `note` — observation that does not require action, recorded for the author's awareness
+
+**Kind is ORTHOGONAL to severity.** Severity answers *"how
+concerned should the author be?"* — Kind answers *"should the
+substrate spawn implementation work to address this?"*
+
+- `bug` (DEFAULT) — implementation defect; behavior is wrong.
+  Spawns a follow-up implementation ticket when severity is
+  `block` / `change-required`. Use for: schema drift, contract
+  mismatch, missing null check, tz bug, off-by-one, missing
+  migration, OperationalError-class, XSS gap, broken endpoint
+  semantics, the wrong field name on the response, etc.
+- `meta` — meta-feedback about how the code expresses itself;
+  behavior is correct but the expression could be clearer.
+  Recorded for the author; DOES NOT spawn a follow-up
+  implementation ticket regardless of severity. Use for:
+  *"test assertions lack failure messages,"* *"this function
+  name implies idempotence but the body isn't,"* *"this comment
+  contradicts the code,"* *"variable naming inconsistent across
+  the module,"* *"the test allows multiple conflicting
+  interpretations of the spec."* These are real review feedback
+  the author should act on in their next touch — but they're
+  NOT bugs that need a fresh M6+M7+M8 cycle.
+- `convention` — codebase convention / style. Same shape as
+  `meta` (advisory, no ticket spawn). Use for: *"this codebase
+  uses snake_case for fields; this struct uses camelCase,"*
+  *"error responses elsewhere use a `code` field; this one uses
+  `error_code`."*
+- `nit` — minor cosmetic. Advisory, no ticket spawn. Use
+  sparingly — many nits in one review is bikeshedding (§VIII).
+
+**The bug-vs-meta distinction matters for cost discipline.**
+Telemetry from mvp-demo2 (analysis 033 §5.1; M7 cost
+decomposition) showed ~30% of M7 spend went to a recursive
+test-quality cycle: findings marked `change-required` were
+about test clarity, not implementation correctness, but the
+substrate didn't know the difference and spawned follow-up
+tickets. The Tweedles re-implemented the tests; you reviewed
+them again; another meta-feedback finding surfaced; loop. With
+`kind: meta` you can say *"this test could be clearer"* with
+appropriate severity, the author gets the feedback recorded in
+the review artifact, and the substrate does NOT respawn the
+expensive M6+M7+M8 cycle. **Use `meta` whenever the underlying
+behavior is correct + the finding is about expression.**
+
+In a typical 5-finding review: most findings are `bug`; 1-2
+might be `meta` or `convention` if the implementation works
+but the code has clarity issues; nits should be rare.
 
 Verdict ↔ findings ↔ approvals must agree:
 

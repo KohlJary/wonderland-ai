@@ -67,6 +67,61 @@ class ReviewSeverity(StrEnum):
     """Observation that does not require action, recorded for the author's awareness."""
 
 
+class FindingKind(StrEnum):
+    """Whether a finding describes a bug (behavior is wrong) or
+    meta-feedback (behavior is correct; something about the
+    code's expression could be better).
+
+    The substrate uses this to gate ticket synthesis:
+    ``bug``-kind findings spawn follow-up implementation tickets
+    via ``_synthesize_followup_ticket_from_finding``; other kinds
+    record in the review artifact but do NOT spawn tickets, on
+    the theory that nobody should re-run M7 to "make the test
+    clearer" when the test already passes.
+
+    This is **orthogonal to severity**: a finding can be
+    ``change-required`` severity (operator should pay attention)
+    AND ``meta`` kind (advisory, no re-implementation needed).
+    The two axes answer different questions:
+
+    - severity → "how concerned should the author be?"
+    - kind → "should the substrate spawn implementation work?"
+
+    Analysis 033 §5.1 identified the recursive test-quality cycle
+    that motivated this primitive: Caterpillar surfacing findings
+    like "assertions lack clarity" or "test allows multiple
+    conflicting interpretations" got synthesized as follow-up
+    tickets, the Tweedles re-implemented the tests, Caterpillar
+    reviewed again. 5+ such cycles × $2-4 each per pilot. The
+    findings were legitimate review feedback but they were
+    meta-feedback, not bugs — implementation tickets were the
+    wrong shape of work to spawn from them.
+    """
+
+    BUG = "bug"
+    """Implementation defect — behavior is wrong. Spawns a
+    follow-up implementation ticket when severity is
+    ``block`` or ``change-required``. Default."""
+    META = "meta"
+    """Meta-feedback about how the code expresses its intent —
+    behavior is correct but clarity / structure / naming /
+    test-assertion-quality could be better. Recorded in the
+    review artifact for author awareness; does NOT spawn an
+    implementation ticket regardless of severity. The recursive
+    test-quality cycle's natural home."""
+    CONVENTION = "convention"
+    """Codebase convention / style observation. Author may
+    address in next touch or accept with reasoning. Does NOT
+    spawn an implementation ticket — convention drift is
+    handled via Convention Notes (caterpillar.md §V), not
+    re-implementation work."""
+    NIT = "nit"
+    """Minor cosmetic. Recorded for author awareness; never
+    spawns an implementation ticket. If you're tempted to file
+    many of these in one review, you may be drifting into
+    bikeshedding (§VIII)."""
+
+
 class ReviewVerdict(StrEnum):
     """Overall verdict the Caterpillar gives to the implementation under review."""
 
@@ -87,6 +142,31 @@ class ReviewFinding(BaseModel):
     """
 
     severity: ReviewSeverity
+    kind: FindingKind = FindingKind.BUG
+    """Whether this finding describes a bug (behavior is wrong) or
+    meta-feedback / convention / nit (behavior is correct;
+    expression could be better). Default ``bug`` preserves the
+    pre-existing behavior — findings that don't set this field
+    are treated as ticketable bug reports, same as before this
+    primitive was added.
+
+    Set explicitly to ``meta`` / ``convention`` / ``nit`` when
+    the finding is feedback to the author about clarity /
+    structure / style rather than an implementation defect. The
+    substrate uses this to gate ticket synthesis — only
+    ``bug``-kind findings spawn follow-up implementation tickets.
+
+    Orthogonal to severity. A ``change-required``-severity
+    ``meta``-kind finding tells the author "this matters, please
+    address it" but tells the substrate "don't re-run M7 to
+    fix it; the author addresses meta in their next touch."
+
+    Motivation (analysis 033 §5.1): the recursive test-quality
+    cycle that the Tweedles spent ~$12-15 of M7 on in mvp-demo2
+    was driven by findings that were meta-feedback but got
+    treated as bugs. Adding this field lets Caterpillar mark
+    them honestly without losing the feedback signal."""
+
     title: str = Field(min_length=1)
     """Short heading for the finding — the noun phrase that names what's wrong."""
     location: str = Field(min_length=1)
@@ -235,8 +315,16 @@ def render_review(number: int, payload: ReviewPayload) -> str:
 
 
 def _render_finding(finding: ReviewFinding) -> list[str]:
-    return [
+    lines = [
         f"#### {finding.severity.value}: {finding.title}",
+    ]
+    # Surface kind only when it's not the default (bug). Most
+    # findings will be bugs and rendering "kind: bug" on every
+    # one is noise; rendering "kind: meta" stands out where it
+    # matters.
+    if finding.kind is not FindingKind.BUG:
+        lines.append(f"**Kind:** {finding.kind.value}")
+    lines.extend([
         f"**Location:** {finding.location}",
         "**Quote:**",
         "",
@@ -247,7 +335,8 @@ def _render_finding(finding: ReviewFinding) -> list[str]:
         f"**Read:** {finding.read.rstrip()}",
         f"**Concern:** {finding.concern.rstrip()}",
         f"**Request:** {finding.request.rstrip()}",
-    ]
+    ])
+    return lines
 
 
 class ReviewRegistry:
@@ -431,6 +520,7 @@ class ReviewRegistry:
 
 
 __all__ = [
+    "FindingKind",
     "REVIEWS_DIRNAME",
     "ReviewFinding",
     "ReviewPayload",

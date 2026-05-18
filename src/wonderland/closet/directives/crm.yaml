@@ -1,0 +1,232 @@
+name: crm
+title: Single-team sales CRM — paper "does-more" pilot
+description: |
+  The second-pilot directive after notebook. Larger scope by
+  design — built to test substrate value where it should
+  compound: multi-feature cross-coordination, multi-user from
+  the start, real schema growth across milestones, compliance
+  surface with teeth.
+
+  Where notebook deliberately fit single-shot baselines, CRM
+  deliberately doesn't. Single-shot agents will cap at
+  iteration / context limits before the spec is half-built;
+  tool-using agents will partially cover but ship discipline
+  gaps that compound across the larger surface. This is the
+  scenario where Wonderland's
+  prior-milestone-awareness cluster (b3f440c8 et al.),
+  branching memory (T-a2), Mock Turtle consolidation,
+  Caterpillar M8 cross-ticket coherence, and the M3.5
+  ticket-consolidation pass all earn their place.
+
+  ## Why this directive
+
+  Notebook was the most charitable possible scenario for
+  baselines — well-scoped, six capabilities listed, single-user
+  no-auth, single schema table. The discipline-difference
+  framing is real on notebook but the comparison's biggest
+  blind spot (per paper/artifacts/comparison-baselines/README.md
+  — "What this directive doesn't surface") is "what happens at
+  scope where the substrate's machinery actually has to do
+  work." This directive is that scope.
+
+  Expected substrate stress points:
+    - 7-8 milestones, 4-7 features each → cross-feature
+      coordination at Caterpillar M8 stresses the b3f440c8
+      cluster directly.
+    - Multi-user from M7 → revision_id collision detection +
+      audit log become acute, not latent. Tests the
+      production-shape-as-derived-property thesis where the
+      discipline actually matters.
+    - PII + role-based access → Queen's M4 rulings have real
+      compliance teeth (GDPR Art. 32 access logging; SOC 2
+      CC6 access control).
+    - Schema growth across milestones → Alembic migration
+      discipline emerges or its absence becomes obvious.
+    - Pipeline state machine + activity-deal relationship →
+      Cat M4 has architectural decisions worth making (state
+      transition validation, denormalization tradeoffs).
+    - Reporting + aggregation → Caterpillar's cross-ticket
+      coherence has to span query layer + UI rendering.
+
+  ## Expected milestones
+
+  Rough sketch; milestone-plan will refine. Agents may
+  consolidate or split.
+
+    1. Foundation — schema (User/Contact/Company/Deal/
+       Activity/Tag), auth scaffolding, base UI shell, dev
+       setup with Alembic migrations from the start.
+    2. Contacts CRUD — list, create, edit, delete, detail
+       page with associated company.
+    3. Companies + relationships — Company CRUD, Contact
+       belongs-to Company, list-view aggregations.
+    4. Deals + pipeline — Deal CRUD, pipeline stages,
+       kanban-style board grouped by stage.
+    5. Activities — log calls/emails/meetings against
+       Contact and Deal, activity timeline view.
+    6. Search + filtering — across Contacts/Companies/Deals/
+       Activities with tag filtering + saved searches.
+    7. Reports + dashboard — pipeline value, win-rate by
+       stage, activity volume per user, conversion metrics.
+    8. Multi-user + permissions — role-based access (admin/
+       sales rep), per-record assignment, attribution on
+       audit log, optimistic locking enforced.
+
+  ## Estimate
+
+  30-50 features total across the 8 milestones. Per-milestone
+  cost comparable to notebook's $28 floor but milestones are
+  larger, so plausibly $40-60 each → **$280-480 total**.
+
+  Honest disclosure: significantly more than notebook. The
+  test is whether the substrate's value scales with scope
+  faster than its cost does. If per-feature cost holds flat
+  as scope grows, the substrate amortizes. If per-feature
+  cost grows because cross-feature coordination compounds,
+  the substrate has gaps at this scale that need surfacing.
+  Either outcome is paper-grade material.
+
+  ## What this pilot would close in the paper
+
+  - **comparison-baselines blind spot** ("What this directive
+    doesn't surface"): runs the substrate at scope where its
+    machinery has to do work, not just where its discipline
+    decorates a fits-in-one-prompt directive.
+  - **N=2 → N=3** on the evidence chapter's pilot count.
+  - **Tier 2 autonomy validation** at higher complexity —
+    does the operator's gate-approver role stay
+    gate-approver-shaped at 8 milestones, or does it slide
+    back toward fixer?
+  - **Quality-cost coupling at scale** — does the
+    coupling hold when cross-feature coordination compounds,
+    or does cost grow faster than quality scales?
+  - **b3f440c8-cluster validation** — the cluster fix doesn't
+    ship until after this pilot; this pilot's behavior
+    establishes the baseline against which the fix is
+    measured next iteration.
+
+body: |
+  Build a sales CRM for a small B2B startup's sales team.
+
+  Persona: Alex, the sole salesperson at a 12-person SaaS
+  startup. They manage ~300 active prospects across ~80
+  companies, run a pipeline of 15-20 active deals, and log
+  every call/email/meeting against the relevant contact or
+  deal. Their day-to-day: review pipeline in the morning,
+  follow up with prospects who went quiet, log activities
+  after every call, run a weekly report on pipeline value
+  + activity volume to share with the founder.
+
+  By v2 the founder will hire a second salesperson; the
+  system needs to support multi-user from the start so that
+  handoff doesn't require a rewrite.
+
+  Core capabilities:
+
+    Contacts + Companies
+      - Add, edit, delete, view individual people and the
+        companies they work for.
+      - A Contact belongs to at most one Company; a Company
+        has many Contacts.
+      - Tag contacts with arbitrary labels for segmentation
+        (e.g. "decision-maker", "champion", "ghosted").
+
+    Deals + Pipeline
+      - Create deals associated with one Company + one
+        primary Contact.
+      - Each deal has a value (USD), an expected close date,
+        and a current pipeline stage (Qualified / Proposal /
+        Negotiation / Won / Lost).
+      - View the pipeline as a kanban board: deals grouped
+        by stage, drag-to-move-stage (or click-to-change).
+      - Won and Lost deals stay visible in their stages but
+        are archived from the active pipeline view.
+
+    Activities
+      - Log a call, email, or meeting against a Contact or
+        Deal (or both).
+      - Each activity has a date, type, brief notes, and the
+        user who logged it.
+      - Activity timeline view: per Contact + per Deal +
+        global feed for the user.
+
+    Search + Filtering
+      - Substring search across Contact names, Company
+        names, Deal titles, Activity notes.
+      - Filter Contacts by tag, by Company, by activity
+        recency ("contacts I haven't touched in 30 days").
+      - Filter Deals by stage, by value range, by close date
+        proximity.
+
+    Reports + Dashboard
+      - Pipeline value: total $ in active pipeline, grouped
+        by stage.
+      - Activity volume: count of activities per type per
+        week, per user.
+      - Win/loss rates: deals Won vs Lost over a date range.
+      - Average deal cycle: time from creation to Won/Lost.
+
+    Multi-user + permissions
+      - Users register with email + password (no email
+        verification for v1; no SSO).
+      - Two roles: admin (sees everything, manages users)
+        and sales rep (sees own + shared records).
+      - Every Contact, Company, Deal, Activity has an
+        assigned owner (the user who created it; reassignable
+        by admin or by the owner).
+      - Audit log: every create/update/delete records who
+        did it and when, retained immutably.
+      - Optimistic locking on concurrent edits: if two users
+        edit the same Deal at once, the second save fails
+        with a clear conflict-resolution UX.
+
+  Stack constraints (same as notebook, to isolate
+  substrate-vs-stack as the variable):
+    - Backend: Python + FastAPI + SQLite. Single SQLite file;
+      Alembic for schema migrations from M1 onward (because
+      schema WILL grow across milestones).
+    - Frontend: React + Vite + TypeScript. Client-side
+      rendering. Use react-router for the routing surface
+      (more views than notebook had).
+    - Auth: backend-issued session cookies, bcrypt-hashed
+      passwords. No JWT, no OAuth.
+
+  Non-goals (explicit out-of-scope):
+    - No email integration (sending or receiving). Activities
+      are logged manually.
+    - No phone integration (no click-to-call, no recording).
+    - No real-time collaboration (no live cursors, no
+      WebSocket pushes). Optimistic locking handles the
+      conflict case.
+    - No mobile-specific UI; desktop browser is the target.
+    - No third-party API integrations (no Salesforce import,
+      no HubSpot sync, no Slack notifications).
+    - No marketing automation (no email campaigns, no
+      drip sequences).
+    - No advanced reporting (no custom SQL, no pivot tables,
+      no export to BI tools — the dashboard's 4 reports
+      are the surface).
+    - No multi-tenancy. Each deployment is one organization.
+
+  Compliance posture (Queen will rule on these):
+    - Passwords are bcrypt-hashed at cost factor ≥ 12.
+    - PII (contact emails, phone numbers, notes) is
+      retained per the audit log; soft-delete only (no hard
+      delete in v1 — full retention until the operator
+      explicitly purges).
+    - All access to PII generates an audit-log entry.
+    - Session cookies are HttpOnly, Secure, SameSite=Lax.
+
+  Success criteria: a developer can `git clone`, run the
+  README's bootstrap (Alembic migrate + seed an admin user),
+  and have Alex's workflow exercisable in their browser
+  within 10 minutes. They can register an account, add a
+  company + contact, create a deal, move it through pipeline
+  stages, log activities, search and filter, view the
+  dashboard, register a second user as a sales rep, and
+  observe an audit-log entry on every write.
+
+suggested_workflow: discovery
+suggested_skeleton: fullstack-fastapi-react
+tags: [fullstack, paper-pilot, crm, multi-user, compliance, paper-does-more]
+category: demo

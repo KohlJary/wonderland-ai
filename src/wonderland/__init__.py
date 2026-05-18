@@ -189,6 +189,7 @@ from wonderland.observation import (
     render_observation,
 )
 from wonderland.review import (
+    FindingKind,
     ReviewFinding,
     ReviewPayload,
     ReviewRecord,
@@ -370,6 +371,7 @@ __all__ = [
     "RedisCaucus",
     "RelationalStore",
     "Resolution",
+    "FindingKind",
     "ReviewFinding",
     "ReviewPayload",
     "ReviewRecord",

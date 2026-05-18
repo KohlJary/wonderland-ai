@@ -302,16 +302,34 @@ meetings:
       # feature's contract decisions).
       - from: any
         kinds: [ticket]
+      # Context-compression Lever C — tail bounds the contract-note
+      # pool. A feature with many contract iterations accumulates
+      # contract-notes across rounds of M5 / M8 follow-up; the
+      # MOST RECENT 5 are load-bearing (current shape + recent
+      # amendments). Older ones compound context-replay cost on
+      # every tool-use round-trip without adding signal —
+      # superseded notes have already been integrated into the
+      # latest contract. The 5 floor is generous (typical feature
+      # has 1-3 active contracts); features with more than 5
+      # contract notes are flagging that the seam-design phase
+      # itself fragmented + would benefit from M3.5-style
+      # consolidation.
       - from: any
         kinds: [contract_note]
+        tail: 5
       - from: tea-party
         kinds: [test_scenario]
-      # Prior review artifacts surface here for retry iterations
-      # after a request-changes verdict — Tweedles see what
-      # Caterpillar flagged in their last attempt. Scoped to the
-      # parent feature in resolve_seeds.
+      # Context-compression Lever C — tail: 1 keeps the MOST RECENT
+      # review and drops older ones. On retry iterations after
+      # `request-changes`, only the most recent review's findings
+      # are actionable; older reviews of the same feature have been
+      # superseded by Caterpillar's subsequent passes. Without this
+      # bound, a feature that goes through 4 review cycles seeds 4
+      # reviews into every M7 round-trip, compounding context-replay
+      # cost while only the latest finding is load-bearing.
       - from: any
         kinds: [review]
+        tail: 1
 
     # Same exit_condition shape as M6: implementation lands → meeting
     # exits regardless of phase. max_rotations tightened from 4→2 on
@@ -400,6 +418,46 @@ meetings:
       cite contracts. If budget runs out partway through, the
       cross-ticket check (#1) is the one that has to ship — it's
       the only review that catches contract drift between Tweedles.
+
+      **Per-finding ``kind`` field — default ``bug``, but distinguish
+      bugs from meta-feedback.** This is the substrate primitive
+      that closes the recursive test-quality cycle analysis 033 §5.1
+      documented. Mark a finding's ``kind`` honestly:
+
+        - ``bug`` (default) — implementation defect. Behavior is
+          wrong. The Tweedles need to fix the code. Substrate
+          spawns a follow-up M6+M7+M8 cycle to address it.
+          Examples: schema drift, contract mismatch, missing null
+          check, tz bug, off-by-one, missing migration, XSS gap,
+          OperationalError-class, wrong field on response.
+        - ``meta`` — feedback about how the code expresses its
+          intent. Behavior is CORRECT but expression could be
+          better. Recorded in the review artifact for the author;
+          does NOT spawn an implementation ticket regardless of
+          severity. Examples: *"test assertions lack failure
+          messages,"* *"this function name implies idempotence
+          but the body has side effects,"* *"this test allows
+          multiple conflicting interpretations,"* *"naming
+          inconsistent across the module."*
+        - ``convention`` — codebase style / convention.
+          Advisory, no ticket. Examples: naming-case drift,
+          response-envelope-shape inconsistency.
+        - ``nit`` — minor cosmetic. Advisory, no ticket. Use
+          sparingly; nit-storm is bikeshedding.
+
+      The distinction is **orthogonal to severity**. A
+      ``change-required``-severity ``meta``-kind finding tells the
+      author *"this matters, address it in your next touch"* +
+      tells the substrate *"do NOT respawn the M6+M7+M8 cycle to
+      re-implement the test."* In mvp-demo2, ~30% of M7 cost
+      went to a recursive test-quality cycle that should have been
+      ``meta`` from the start. Mark honestly; don't inflate
+      meta-feedback to bug just to ensure attention — that's
+      the cycle the substrate primitive is built to break.
+
+      In a typical 5-finding review: most are ``bug``, 1-2 might
+      be ``meta`` if the implementation works but the test or
+      code's expression has clarity issues.
 
       **Per-finding ``test_coverage_required`` flag — default
       FALSE, and false is right for almost every finding you file.**

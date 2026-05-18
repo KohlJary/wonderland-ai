@@ -61,6 +61,74 @@ def test_save_drops_empty_conventions(tmp_path: Path) -> None:
     assert "conventions:" not in text
 
 
+# ---------- prime_directive ----------
+
+
+def test_prime_directive_defaults_none() -> None:
+    """Legacy projects (created before the prime_directive field
+    landed) load cleanly with prime_directive=None — back-compat."""
+    ctx = ProjectContext(name="x", stack=ProjectStack(runtime="cli"))
+    assert ctx.prime_directive is None
+
+
+def test_prime_directive_roundtrips_through_save_load(tmp_path: Path) -> None:
+    """Operator-set directive survives save → load. Critical for
+    minimal-directive projects (obol) where the directive is the
+    soul and must survive across runs."""
+    ctx = ProjectContext(
+        name="obol",
+        stack=ProjectStack(runtime="tui", language="python"),
+        prime_directive=(
+            'Build me a TUI dashboard for managing personal finances. '
+            'Think "htop for money".'
+        ),
+    )
+    save_project_context(ctx, tmp_path)
+    loaded = load_project_context(tmp_path)
+    assert loaded is not None
+    assert loaded.prime_directive is not None
+    assert "htop for money" in loaded.prime_directive
+
+
+def test_save_drops_empty_prime_directive(tmp_path: Path) -> None:
+    """Whitespace-only / empty prime_directive doesn't serialize."""
+    ctx = ProjectContext(
+        name="no-directive",
+        stack=ProjectStack(runtime="cli"),
+        prime_directive="   ",
+    )
+    path = save_project_context(ctx, tmp_path)
+    text = path.read_text()
+    assert "prime_directive:" not in text
+
+
+def test_render_includes_prime_directive_when_set() -> None:
+    """The directive renders FIRST (after the project name) — it's the
+    soul; every meeting should read it before stack details."""
+    ctx = ProjectContext(
+        name="obol",
+        stack=ProjectStack(runtime="tui"),
+        prime_directive=(
+            'Build me a TUI dashboard for managing personal finances. '
+            'Think "htop for money".'
+        ),
+    )
+    body = render_context_body(ctx)
+    assert "**Prime directive (operator's original ask):**" in body
+    assert "htop for money" in body
+    # Prime directive renders BEFORE stack so meetings read the vibe
+    # before reading the constraints.
+    assert body.index("Prime directive") < body.index("Stack:")
+
+
+def test_render_omits_prime_directive_section_when_none() -> None:
+    """Legacy projects without a prime directive don't get an empty
+    header — the section is absent entirely."""
+    ctx = ProjectContext(name="legacy", stack=ProjectStack(runtime="cli"))
+    body = render_context_body(ctx)
+    assert "Prime directive" not in body
+
+
 def test_render_context_body_formats_stack_as_bullets() -> None:
     """The body that ends up in agent context is a bulleted fact
     sheet — not the YAML envelope. Agents should see facts, not

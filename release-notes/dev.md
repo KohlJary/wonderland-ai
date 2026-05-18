@@ -1,3 +1,103 @@
 # Dev — unreleased
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
+
+### `prime_directive` field on ProjectContext — preserve directive's soul across meetings
+
+The Project registry (`~/.wonderland/projects.json`) already had a `prime_directive` field that auto-populates from the first directive launched against a project. But `ProjectContext` (the per-project YAML at `<root>/.wonderland/project.yaml` that gets seeded into MEETINGS via the `project_context` kind) didn't carry it. Cat's M4 ADRs, Tweedles' M5 contracts, and Caterpillar's M8 reviews all read stack + entry_point but lost the directive's vibe after discovery.
+
+This matters for minimal-directive projects. With notebook's ~30-line spec or CRM's ~70-line spec, every meeting's relayed directive carries the soul. With obol's two-sentence *"Build me a TUI dashboard for managing personal finances. Think 'htop for money'"*, the soul lives only in discovery's seed; M4+ forget what they're building and design generic-CRUD instead of htop-shaped density.
+
+Fix: mirror the field onto `ProjectContext`. `render_context_body` renders the prime directive FIRST (after project name, before stack) — every meeting reads the vibe before reading the constraints. `save_project_context` drops whitespace-only / empty values like it already does for conventions.
+
+Auto-population on first-launched-directive (mirroring the Project registry's behavior) is a follow-up; for now operators add manually via `project.yaml` edit. Filed/operationally-validated on the obol pilot.
+
+5 new tests covering default-None back-compat, save/load roundtrip, whitespace-only drop, render-before-stack ordering, omit-section-when-none. 20/20 project_context tests pass.
+
+### FindingKind primitive — bug vs meta-feedback orthogonal to severity
+
+Mvp-demo2 M7 telemetry decomposition (this session) quantified the recursive test-quality cycle analysis 033 §5.1 had identified: ~$12-15 per pilot was spent in M7, plus $4-6 in downstream M8 reviews and $2-3 in M6 tea-parties, on Caterpillar findings that were meta-feedback (*"test assertions lack clarity,"* *"test allows multiple conflicting interpretations"*) but got treated as bugs and spawned follow-up implementation tickets. The Tweedles re-implemented the tests, Caterpillar reviewed again, another meta-finding surfaced, loop. Top 5 most expensive M7 tickets in mvp-demo2 were ALL test-quality recursions; none produced new application code.
+
+New `FindingKind` StrEnum on `ReviewFinding` — `bug` (default), `meta`, `convention`, `nit`. Orthogonal to severity: severity answers *"how concerned should the author be?"* — kind answers *"should the substrate spawn implementation work?"* A `change-required`-severity `meta`-kind finding tells the author "this matters, address it next touch" + tells the substrate "don't respawn M6+M7+M8 to re-implement the test."
+
+`_synthesize_followup_ticket_from_finding` now filters on kind: only `bug` spawns tickets, regardless of severity. Missing `kind` defaults to `bug` for back-compat with pre-primitive reviews. `render_review` surfaces the kind line only when non-default (bug everywhere would be noise; meta stands out).
+
+Caterpillar's output protocol + the M8 convener directive both teach the distinction with example-per-kind guidance. Caterpillar internalizing the distinction is the gate; the substrate filter is the backstop.
+
+Expected savings on the next notebook-class pilot: ~$18 (~22% of total) from cycle elimination across M6+M7+M8.
+
+15 new tests covering kind default, accept-each-kind, reject-unknown-kind, render-omits-default, render-surfaces-non-default, synthesis-skips-meta/convention/nit, synthesis-spawns-bug, back-compat for missing-kind. 122 synthesis-path-adjacent tests still pass.
+
+### Context-compression Lever A — cache current_thread (SUBSTRATE-WIDE)
+
+`Context.to_llm_request()` previously appended `current_thread` as a plain string (uncached); now wraps it in `CachedBlock`. **This affects every agent in every meeting**, not just M7 — anywhere a multi-turn deliberation pattern reads context multiple times within a single emission's tool-use loop benefits.
+
+Motivated by the M7 cost decomposition: 80 LLM calls per ticket ÷ 3 agent emissions = ~27 tool-use round-trips per emission. Within a single emission's tool-use loop, current_thread doesn't change — Lever A shifts it from $1/MTok uncached input to $0.10/MTok cache read on every round-trip after the first.
+
+Benefit by meeting shape:
+- M7 (Tweedle implementation, heavy tool-use): largest single win, 25-35% reduction
+- M8 (Caterpillar review with multiple file reads): 20-30% reduction
+- M6 (Hatter tea-party): 5-10% reduction (lighter tool-use)
+- tdd-design M1-M5 (multi-agent, light tool-use): 5-10%
+
+Tradeoff: Anthropic's 4-cache-breakpoint limit per request. With Tweedles' protocol insertion + relationships + the new current_thread cache, the previous 4-block layout would have become 5. Dropped the framework primer's own breakpoint slot — primer is still in the cached prefix of every downstream CachedBlock, just without its own standalone-prefix cache path. Loses cross-agent framework-only sharing (small cost; doesn't help M7 single-agent loops where the bulk of spend lives); gains within-emission current_thread reuse (large win).
+
+### Context-compression Lever C — `tail: int | None` on SeedBinding
+
+`SeedBinding` already supported `limit: int` (take first N — oldest in capture order). Added `tail: int | None` (take last N — most recent). Composes with `limit`: limit narrows first, tail picks the last N of the narrowed set.
+
+Applied to `tdd-implement.yaml` M7 seeds:
+- `review: tail=1` — retry iterations only need the most-recent Caterpillar findings; older reviews have been superseded
+- `contract_note: tail=5` — features with many contract iterations accumulate notes; the 5 most-recent are load-bearing, older are integrated into the latest; floor generous enough that typical 1-3-contract features aren't affected
+
+Could be extended to M8's review seeds + other meeting YAMLs for additional savings; current scope is M7-only.
+
+Combined Lever A + C tests: new tests for current_thread CachedBlock, tail defaults/parses/takes-most-recent/zero/over-large/composes-with-limit. 8 agent-test framework-cache assertions updated to reflect the new layout (framework primer at position 0 is now plain string).
+
+### Combined cost projection
+
+For a notebook-class pilot (mvp-demo2 baseline = $83.78):
+
+| Lever | Scope | Savings |
+|---|---|---:|
+| FindingKind | M6+M7+M8 recursion elimination | ~$18 |
+| Lever A | Every agent, every meeting (M7 + M8 + M6 + design) | ~$16-23 |
+| Lever C | M7 only (could be extended) | ~$2-4 |
+| **Combined** | | **~$36-45** |
+
+**Projected new total: ~$39-48 per notebook-class pilot (43-53% reduction).**
+
+For CRM-class (estimated $280-480 baseline): scaling factor better because more features = more recursion-class instances + more tool-use round-trips per ticket for A to amortize. **Projected ~$155-265 (35-50% reduction).**
+
+Validation gates for the next pilot:
+- Telemetry should show cache_write→cache_read shift
+- Reduced per-call uncached_input across all phases (not just M7)
+- Fewer M7 recursion cycles
+- `kind: meta` findings appearing in reviews
+
+If Caterpillar doesn't use the field honestly the synthesis backstop still works, but full savings depend on field discipline.
+
+### CRM directive — paper "does-more" pilot
+
+New `src/wonderland/closet/directives/crm.yaml` — second-pilot directive after notebook, designed deliberately NOT to fit single-shot baselines. 8 milestones, 30-50 features, multi-user from M7, PII + role-based access for Queen rulings with real compliance teeth (GDPR/SOC 2), Alembic from M1 (forces the migration discipline the cold reviewer's M1 finding flagged was missing on notebook), pipeline state machine + activity-deal relationship for Cat M4 ADRs. Estimate $280-480 at substrate-pre-cost-reduction baseline; with the cost-reduction primitives above, projected ~$155-265.
+
+Initial directive landed with `category: pilot` which the TUI's `category_sort_key` doesn't recognize (notebook uses `demo`, the convention); fixed in follow-up commit. Now appears in the picker.
+
+Directive committed; running deferred per operator decision. No pilot spend incurred yet.
+
+### Paper-source artifacts (chapters 1-9)
+
+Eight chapter-source artifacts in `paper/artifacts/` covering the full paper outline (thesis, architecture, cast, methodology, evidence, quality, limitations, future work). Plus reproducible comparison-baselines (A/B1/B2 single-shot baselines on Haiku 4.5 against the notebook directive, ~$3 total spend), and a 682-file decision-trail copy at `demo/wonderland-trail/` so paper readers can trace any line of code in `demo/` back through implementations → tickets → features → stories → requirements → operator quote.
+
+Demo README rewritten — was the stale skeleton README describing hello-world echo endpoints; now describes the actual shipped mvp-demo2 app + points at the trail. uv.lock bumped 0.7.0→0.8.0 to match the release that shipped in ccaf3f7 (missed lockfile sync during that release).
+
+The comparison-baselines analysis surfaces three axes (feature coverage / code quality / artifact trail) and two scope extrapolations (production-scale, complexity-scale). Notebook is acknowledged as the most charitable possible directive for single-shot baselines; the substrate's real differentiation lives in work the directive made unnecessary, filed as future comparative pilots.
+
+### Live verification of mvp-demo2 surfaced two real bugs
+
+Cross-checking the artifact end-to-end against `projects/mvp-demo2/` (not just curated `demo/`) found:
+- **Stale schema on disk** — pre-existing `app.db` had old `notes.tags` NOT NULL column from earlier pilot iteration; current model uses Tag association table; `Base.metadata.create_all` doesn't migrate existing tables. Validates the cold reviewer's M1 finding ("add Alembic before prod") bites at the first dev-to-anywhere boundary.
+- **Partial `node_modules` install** with `dompurify` absent at runtime. Dep correctly declared in package.json; `(test -d node_modules || npm install)` guard treated partial install as complete. Validates a substrate gap (M9 has `npm_build` but no `npm install` verification step).
+- **List doesn't auto-refresh on submit** — UX rough edge operator noticed in browser use. Class of bug Hatter scenario would have caught (severity: degradation) but substrate's scenario surface is largely backend-e2e, not frontend-state-cascade.
+
+Folded into the code-quality artifact §9 as live-verification receipts. The methodology chapter's "operator-noticed findings as research-grade signal" applies — bugs surfaced during unstructured "poke at the app for paper purposes" use, not structured eval.

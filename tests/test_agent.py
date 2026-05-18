@@ -123,10 +123,13 @@ def test_context_to_llm_request_caches_constitution() -> None:
 
     ctx = Context(constitution="You are X.")
     system, messages = ctx.to_llm_request()
-    # Position 0 is the framework primer (shared across all agents); position 1
-    # is the per-agent constitution. Per the T32 cache fix in P6.
+    # Framework primer is a plain string (gets cached as part of the
+    # constitution-prefix); constitution is the first CachedBlock.
+    # Context-compression Lever A traded the framework's own
+    # breakpoint slot for a current_thread breakpoint slot to stay
+    # under Anthropic's 4-cache-breakpoint limit per request.
     assert system == [
-        CachedBlock(FRAMEWORK_PRIMER),
+        FRAMEWORK_PRIMER,
         CachedBlock("You are X."),
     ]
     assert messages == [{"role": "user", "content": "(no trigger)"}]
@@ -138,23 +141,38 @@ def test_context_to_llm_request_caches_relationships_when_present() -> None:
     ctx = Context(constitution="You are X.", relationships="Tweedles overengineer.")
     system, _ = ctx.to_llm_request()
     assert system == [
-        CachedBlock(FRAMEWORK_PRIMER),
+        FRAMEWORK_PRIMER,
         CachedBlock("You are X."),
         CachedBlock("Tweedles overengineer."),
     ]
 
 
-def test_context_to_llm_request_appends_uncached_thread() -> None:
+def test_context_to_llm_request_caches_current_thread() -> None:
+    """Context-compression Lever A: current_thread becomes a
+    CachedBlock so within a single agent emission's tool-use loop
+    (~27 LLM calls per emission in mvp-demo2 M7 telemetry), the
+    transcript hits cache reads at $0.10/MTok instead of being
+    re-billed at $1/MTok uncached input on every round-trip.
+    """
     ctx = Context(
         constitution="You are X.",
         relationships="rels",
         current_thread="thread snapshot",
     )
     system, _ = ctx.to_llm_request()
-    assert system[-1] == "thread snapshot"  # plain str, no cache marker
-    # Primer + constitution + relationships are all cached blocks before the thread
-    assert all(isinstance(s, CachedBlock) for s in system[:-1])
-    assert len(system) == 4  # primer, constitution, relationships, thread
+    # All system parts after the framework primer are CachedBlocks,
+    # including current_thread (the key behavioral change).
+    assert isinstance(system[-1], CachedBlock)
+    assert system[-1].text == "thread snapshot"
+    # Total breakpoint count: constitution + relationships + thread
+    # = 3 CachedBlocks. Framework primer is a plain string. With
+    # Tweedle protocol inserted at index 2 we'd have 4, exactly the
+    # Anthropic max — see Tweedle agent for that case.
+    cached_count = sum(1 for s in system if isinstance(s, CachedBlock))
+    assert cached_count == 3, (
+        f"expected 3 cache breakpoints (constitution + relationships + "
+        f"current_thread); got {cached_count}"
+    )
 
 
 def test_context_to_llm_request_formats_triggers_into_user_message() -> None:

@@ -100,34 +100,48 @@ class Context:
     def to_llm_request(self) -> tuple[list[SystemPart], list[Message]]:
         """Convert this context into ``LLMClient.complete()`` arguments.
 
-        Layered prompt structure (each cached layer creates a cache
-        breakpoint):
+        Layered prompt structure (cached blocks create cache breakpoints;
+        Anthropic supports up to 4 per request).
 
         - **Framework primer** — invariant per-call AND across agents.
           Cast list, speech-act vocabulary, engagement grades, artifact
-          schemas, conflict-resolution table. The same content for every
-          agent so the cache write happens once across the team's first-
-          call activity. Per the T32 cache diagnostic in P6, this layer
-          also pushes every agent's combined cached prefix above Haiku
-          4.5's full-cache threshold (~7000 tokens) — without it,
-          smaller-constitution agents (Cat, Alice) sat below the
-          threshold and didn't cache at all.
+          schemas, conflict-resolution table. Sent as a plain string
+          (not CachedBlock) — still cached as part of any downstream
+          breakpoint's prefix; just doesn't have its own breakpoint.
+          Trades cross-agent framework-only cache for an additional
+          breakpoint slot at ``current_thread`` (see below). Within
+          single-agent loops (most of M7's cost) this trade is net
+          positive; multi-agent meetings still cache the framework via
+          the constitution-prefix.
         - **Constitution** — invariant per-agent (loaded once).
         - **Relationships** — slow-changing per-agent (the per-other-
           agent notes for the speakers in the current trigger set).
-        - **Current thread** — fast-changing (history transcript). NOT
-          cached; the per-call delta lives here.
+        - **Current thread** — per-emission history transcript.
+          Cached as of context-compression Lever A: within a single
+          Tweedle emission's tool-use loop (~27 LLM calls per emission
+          in mvp-demo2 M7 telemetry), this transcript doesn't change
+          across the round-trips. Caching shifts it from $1/MTok
+          uncached input to $0.10/MTok cache read on every round-trip
+          after the first. Expected M7 savings: ~20-40%.
         - **Triggers** — per-turn. In the user message, not the system
           blocks.
         """
         system: list[SystemPart] = [
-            CachedBlock(FRAMEWORK_PRIMER),
+            # Framework primer kept as a plain string so its breakpoint
+            # slot can be reused by current_thread (the higher-leverage
+            # cache). Framework is still in the cached prefix of every
+            # downstream CachedBlock — see docstring.
+            FRAMEWORK_PRIMER,
             CachedBlock(self.constitution),
         ]
         if self.relationships:
             system.append(CachedBlock(self.relationships))
         if self.current_thread:
-            system.append(self.current_thread)
+            # CachedBlock since context-compression Lever A. The current_thread
+            # transcript is stable across all tool-use round-trips within a
+            # single agent emission; caching it captures the within-emission
+            # reuse pattern that drives M7 cost.
+            system.append(CachedBlock(self.current_thread))
 
         trigger_text = "\n\n".join(_format_utterance(u) for u in self.triggers)
         # Engagement state goes BEFORE the trigger in the user message

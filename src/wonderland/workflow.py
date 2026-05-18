@@ -93,6 +93,20 @@ class SeedBinding(BaseModel):
         default=None,
         description="Take only the first N matching seeds. None = no limit.",
     )
+    tail: int | None = Field(
+        default=None,
+        description=(
+            "Take only the LAST N matching seeds (most recent in capture "
+            "order). None = no tail limit. Composes with ``limit`` — when "
+            "both are set, ``limit`` applies first, then ``tail`` selects "
+            "the last N of those. Useful for review-shaped artifacts "
+            "where only the most recent finding is load-bearing for the "
+            "next iteration but older reviews compound context-replay "
+            "cost on every tool-use round-trip. Context-compression "
+            "Lever C — see paper/artifacts/comparison-baselines/README.md "
+            "+ session-summaries for the M7 cost decomposition motivation."
+        ),
+    )
     fallback: str | None = Field(
         default=None,
         description=(
@@ -1719,6 +1733,17 @@ def resolve_seeds(
 
         if binding.limit is not None:
             filtered = filtered[: binding.limit]
+        if binding.tail is not None:
+            # Most-recent N. Applied after limit so the two compose
+            # predictably: limit narrows, tail picks from the tail of
+            # the narrowed list. Context-compression Lever C — needed
+            # for reviews + contract_notes where the most recent is
+            # load-bearing and older entries compound context cost
+            # on every tool-use round-trip without adding signal.
+            if binding.tail > 0:
+                filtered = filtered[-binding.tail:]
+            else:
+                filtered = []
 
         for u in filtered:
             if u.id not in seen_ids:
@@ -4683,6 +4708,19 @@ def _synthesize_followup_ticket_from_finding(
         not isinstance(severity, str)
         or severity not in _TICKETABLE_FINDING_SEVERITIES
     ):
+        return None
+    # Filter on kind: only ``bug``-kind findings spawn follow-up
+    # implementation tickets. ``meta`` / ``convention`` / ``nit``
+    # findings are advisory — they get recorded in the review
+    # artifact for the author but shouldn't trigger a fresh M6+M7+M8
+    # cycle. Per analysis 033 §5.1, the recursive test-quality cycle
+    # was the largest preventable cost in mvp-demo2 M7 ($12-15 / pilot
+    # by direct telemetry, ~30% of M7 cost). This gate is the
+    # primitive that closes that cycle. Default ``bug`` when missing
+    # preserves pre-existing behavior for findings emitted before this
+    # primitive shipped.
+    kind = finding.get("kind", "bug")
+    if isinstance(kind, str) and kind != "bug":
         return None
     title = finding.get("title")
     concern = finding.get("concern")

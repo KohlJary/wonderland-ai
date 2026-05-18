@@ -469,7 +469,7 @@ async def test_deliberate_includes_protocol_in_system_prompt(tmp_path: Path) -> 
     system_blocks = create_kwargs["system"]
     # Position 0 is the framework primer (shared across all agents)
     assert "Wonderland — Framework Primer" in system_blocks[0]["text"]
-    assert system_blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in system_blocks[0]  # framework primer is plain string since context-compression Lever A (cache breakpoint reused for current_thread)
     # Position 1 is the per-agent constitution
     assert system_blocks[1]["text"] == "C"
     assert system_blocks[1]["cache_control"] == {"type": "ephemeral"}

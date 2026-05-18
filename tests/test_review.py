@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from wonderland import (
+    FindingKind,
     ReviewFinding,
     ReviewPayload,
     ReviewRegistry,
@@ -218,6 +219,148 @@ def test_render_omits_cross_domain_refs_when_empty() -> None:
 
 def test_render_three_digit_padding() -> None:
     assert "Review 003:" in render_review(3, _payload())
+
+
+# ---------- FindingKind (meta-vs-bug primitive) ----------
+
+
+def test_finding_kind_defaults_to_bug() -> None:
+    """Default kind preserves pre-existing behavior — findings emitted
+    without an explicit kind are treated as bug reports, same as
+    before the primitive was added."""
+    f = _finding()
+    assert f.kind is FindingKind.BUG
+
+
+@pytest.mark.parametrize("kind", list(FindingKind))
+def test_finding_accepts_each_kind(kind: FindingKind) -> None:
+    f = _finding(kind=kind)
+    assert f.kind is kind
+
+
+def test_finding_rejects_unknown_kind() -> None:
+    with pytest.raises(ValidationError):
+        _finding(kind="opinion")  # type: ignore[arg-type]
+
+
+def test_render_omits_kind_when_bug_default() -> None:
+    """Bug is the default and the most common — rendering it on every
+    finding is noise. Surfacing the kind only when non-bug is the
+    rule that keeps reviews readable."""
+    out = render_review(1, _payload())  # default kind=bug on all findings
+    assert "**Kind:**" not in out
+
+
+def test_render_surfaces_kind_when_non_default() -> None:
+    out = render_review(
+        1,
+        _payload(
+            findings=[
+                _finding(kind=FindingKind.META),
+            ],
+        ),
+    )
+    assert "**Kind:** meta" in out
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [FindingKind.META, FindingKind.CONVENTION, FindingKind.NIT],
+)
+def test_render_surfaces_each_non_bug_kind(kind: FindingKind) -> None:
+    out = render_review(1, _payload(findings=[_finding(kind=kind)]))
+    assert f"**Kind:** {kind.value}" in out
+
+
+# ---------- Synthesis gate: kind-based ticket spawning ----------
+
+
+def test_synthesis_skips_meta_kind_findings() -> None:
+    """The load-bearing primitive: meta-kind findings record in the
+    review artifact but DO NOT spawn implementation tickets,
+    regardless of severity. This is the substrate gate that closes
+    the recursive test-quality cycle analysis 033 §5.1 documented."""
+    from wonderland.workflow import _synthesize_followup_ticket_from_finding
+
+    finding = _finding(
+        severity=ReviewSeverity.CHANGE_REQUIRED,
+        kind=FindingKind.META,
+    ).model_dump(mode="json")
+    result = _synthesize_followup_ticket_from_finding(
+        finding,
+        parent_feature_slug="some-feature",
+        review_slug="some-review",
+    )
+    assert result is None, (
+        "meta-kind finding should not spawn a ticket — that's the whole point"
+    )
+
+
+def test_synthesis_skips_convention_kind_findings() -> None:
+    from wonderland.workflow import _synthesize_followup_ticket_from_finding
+
+    finding = _finding(
+        severity=ReviewSeverity.CHANGE_REQUIRED,
+        kind=FindingKind.CONVENTION,
+    ).model_dump(mode="json")
+    result = _synthesize_followup_ticket_from_finding(
+        finding,
+        parent_feature_slug="some-feature",
+        review_slug="some-review",
+    )
+    assert result is None
+
+
+def test_synthesis_skips_nit_kind_findings() -> None:
+    from wonderland.workflow import _synthesize_followup_ticket_from_finding
+
+    finding = _finding(
+        severity=ReviewSeverity.CHANGE_REQUIRED,
+        kind=FindingKind.NIT,
+    ).model_dump(mode="json")
+    result = _synthesize_followup_ticket_from_finding(
+        finding,
+        parent_feature_slug="some-feature",
+        review_slug="some-review",
+    )
+    assert result is None
+
+
+def test_synthesis_spawns_bug_kind_findings() -> None:
+    """Default behavior preserved: bug-kind findings at ticketable
+    severity DO spawn implementation tickets."""
+    from wonderland.workflow import _synthesize_followup_ticket_from_finding
+
+    finding = _finding(
+        severity=ReviewSeverity.CHANGE_REQUIRED,
+        kind=FindingKind.BUG,
+    ).model_dump(mode="json")
+    result = _synthesize_followup_ticket_from_finding(
+        finding,
+        parent_feature_slug="some-feature",
+        review_slug="some-review",
+    )
+    assert result is not None
+    assert result.title == "validate_input also writes to the database"
+
+
+def test_synthesis_treats_missing_kind_as_bug_backcompat() -> None:
+    """Findings emitted before this primitive shipped don't include
+    a kind field; the synthesis path must treat them as bug-kind so
+    pre-existing behavior is preserved."""
+    from wonderland.workflow import _synthesize_followup_ticket_from_finding
+
+    finding = _finding(severity=ReviewSeverity.CHANGE_REQUIRED).model_dump(mode="json")
+    # Simulate a pre-primitive finding by deleting the kind field
+    finding.pop("kind", None)
+    result = _synthesize_followup_ticket_from_finding(
+        finding,
+        parent_feature_slug="some-feature",
+        review_slug="some-review",
+    )
+    assert result is not None, (
+        "missing kind should default to bug for back-compat"
+    )
 
 
 # ---------- ReviewRegistry — empty state ----------

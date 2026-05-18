@@ -1691,6 +1691,16 @@
       "status": "backlog",
       "created_at": "2026-05-18T16:59:51.295675",
       "created_by": "daedalus"
+    },
+    {
+      "id": "0393015e-79b5-49f6-bbb9-5edca7f80ed4",
+      "title": "Feature derived-state misclassifies ABORTED tickets as in-progress, causing pipeline_runner to iterate features whose only activity was aborted work \u2014 surfaced in crm-demo M1 impl run where a leftover aborted ticket on RBAC caused the pipeline to also iterate RBAC alongside the user-queued sqlite-schema feature, AND M9 build_check fix tickets got mis-attributed to RBAC because it was the 'currently iterating' feature. Fix: feature_lifecycle's derived-state-from-ticket-rollup logic should treat ABORTED tickets identically to DONE for the 'is this feature still active?' question. The distinction (DONE = completed successfully, ABORTED = completed unsuccessfully) matters elsewhere but NOT for pipeline-active-state filtering. Tier 2 gate violation: the substrate auto-ran fix tickets in the same run without operator re-approval.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-18T23:02:38.181984",
+      "created_by": "daedalus"
     }
   ],
   "version": 1
