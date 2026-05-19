@@ -4649,6 +4649,41 @@ def _find_accept_review(
     return None
 
 
+# Notes-pattern marker that the synthesize-followups path uses
+# when queueing tickets for the NEXT imp run. Tickets matching
+# this pattern are NOT meant for the current iteration's
+# accept-verdict sweep — they're future work, deliberately queued
+# for a subsequent operator-launched run. Substrate bug 676a4da8
+# fixed by tagging+skipping these; substrate bug ea9fb7c0 then
+# requires us to still fast-forward LEGITIMATE current-iteration
+# queued tickets so the feature can derive to READY_FOR_REVIEW.
+_FUTURE_RUN_QUEUE_MARKER = "queued for next imp run"
+
+
+def _ticket_queued_for_future_run(
+    project_root: Path, ticket_slug: str,
+) -> bool:
+    """Inspect the ticket's most recent ledger transition. If the
+    notes contain the future-run marker (planted by the
+    synthesize-followups path), this ticket is explicitly queued
+    for a SUBSEQUENT iteration and shouldn't be swept by the
+    current accept-verdict consequence.
+
+    Best-effort: returns False on any lookup failure so the
+    fast-forward still fires for tickets where we can't determine
+    intent (preserves the legitimate current-iteration case).
+    """
+    try:
+        from wonderland.ticket_lifecycle import transitions_for
+        history = transitions_for(project_root, ticket_slug)
+    except Exception:  # noqa: BLE001
+        return False
+    if not history:
+        return False
+    last_notes = history[-1].notes or ""
+    return _FUTURE_RUN_QUEUE_MARKER in last_notes
+
+
 def _complete_tickets_on_accept_review(
     project_root: Path,
     *,
@@ -4657,33 +4692,40 @@ def _complete_tickets_on_accept_review(
     actor: str,
     meeting_id: str,
 ) -> None:
-    """Mark every IN_PROGRESS ticket of ``feature_slug`` as DONE.
+    """Advance the feature's worked tickets to DONE on accept verdict.
     With the derived-feature-state work, the feature's
     ready_for_review rollup depends on all-tickets-DONE; this is
     the success-path counterpart to the request-changes
     abort path.
 
-    Tickets in other states (PENDING / DONE / ABORTED / QUEUED) are
-    left alone — DONE is for "we just iterated this and Caterpillar
-    approved", not for retroactively marking everything in the
-    feature.
+    Two cases handled:
 
-    Earlier this function fast-forwarded QUEUED tickets through
-    IN_PROGRESS → DONE on the assumption that "queued at the time
-    of accept review = worked in this iteration." Substrate bug
-    ``676a4da8`` proved that wrong: on obol-demo2 M1, this swept
-    operator-requeued tickets AND substrate-synthesized bug-fix
-    follow-ups (which were queued but never actually iterated)
-    to done in a single microsecond, with the actual fixes never
-    shipping. A `test_counter_increments_on_button_press` stub
-    test was "marked done" with the bug still present.
+      1. **IN_PROGRESS → DONE.** The normal case: M7 fired
+         transition_iteration_to:in_progress at end of
+         implementation; the ticket reached M8 review in
+         IN_PROGRESS state; accept verdict advances it to DONE.
 
-    Fixed semantic: only IN_PROGRESS tickets advance. If a
-    ticket was genuinely worked in the iteration, the pipeline's
-    per-ticket meeting orchestrator transitioned it to
-    IN_PROGRESS at M6/M7 entry. If it's still QUEUED at accept-
-    review time, it wasn't worked — leave it for the next
-    iteration to pick up properly.
+      2. **QUEUED → IN_PROGRESS → DONE.** The race-condition case:
+         the ticket was iterated in this pass but M7's
+         transition_iteration_to didn't fire successfully (illegal
+         transition, runner error, etc). The ticket is still QUEUED
+         at M8 time despite having been worked. Without the fast-
+         forward these stay queued forever, and the feature can't
+         derive to READY_FOR_REVIEW.
+
+    Tickets matched by ``_ticket_queued_for_future_run`` are
+    SKIPPED from the fast-forward — those are explicitly queued
+    for a subsequent operator-launched iteration (e.g. review-
+    synthesized follow-ups) and would be wrongly swept by the
+    current iteration's accept-verdict if we didn't filter.
+
+    Substrate bug history: ``676a4da8`` (originally swept all
+    queued tickets, including future-iteration follow-ups, marking
+    untouched bug-fix work as done — fixed by removing the
+    fast-forward entirely). ``ea9fb7c0`` (the all-IN_PROGRESS-only
+    rule left legitimate current-iteration queued tickets stuck —
+    fixed by restoring the fast-forward with a future-run-marker
+    skip).
     """
     from wonderland.ticket_lifecycle import (
         IllegalTransitionError as TicketIllegal,
@@ -4703,9 +4745,35 @@ def _complete_tickets_on_accept_review(
     ]
     for ticket_slug in feature_tickets:
         state = get_ticket_state(project_root, ticket_slug)
+        if state == TicketState.QUEUED:
+            # Skip tickets explicitly queued for a future run
+            # (substrate bug 676a4da8 — review-synthesized follow-
+            # ups belong to the NEXT iteration, not this one).
+            if _ticket_queued_for_future_run(project_root, ticket_slug):
+                continue
+            # Race-condition recovery: M7's transition_iteration_to
+            # didn't fire for some reason but the ticket WAS
+            # iterated. Fast-forward queued → in_progress so the
+            # feature can derive to READY_FOR_REVIEW (substrate
+            # bug ea9fb7c0).
+            try:
+                ticket_transition(
+                    project_root,
+                    ticket_slug,
+                    TicketState.IN_PROGRESS,
+                    by=actor,
+                    notes=(
+                        f"Auto-transition from {meeting_id!r} on "
+                        f"accept verdict ({review_slug!r}); ticket "
+                        "was worked in this iteration but M7's "
+                        "queue → in_progress transition didn't fire."
+                    ),
+                )
+                state = TicketState.IN_PROGRESS
+            except TicketIllegal:
+                continue
         if state != TicketState.IN_PROGRESS:
-            # PENDING / QUEUED / DONE / ABORTED — leave alone. See
-            # docstring for the bug 676a4da8 history.
+            # PENDING / DONE / ABORTED — leave alone.
             continue
         try:
             ticket_transition(

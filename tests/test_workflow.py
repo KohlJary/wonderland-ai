@@ -1835,6 +1835,200 @@ class TestResolveSeeds:
             == FeatureState.READY_FOR_REVIEW
         )
 
+    def test_accept_review_fast_forwards_legitimate_queued_ticket(
+        self, tmp_path: Path
+    ) -> None:
+        """Substrate bug ea9fb7c0 fix: a QUEUED ticket that was meant
+        for THIS iteration (operator-queued retry, or M7's
+        transition_iteration_to didn't fire for some reason) should
+        be fast-forwarded through IN_PROGRESS → DONE on accept
+        verdict — otherwise the feature can't derive to
+        READY_FOR_REVIEW because not-all-tickets-DONE."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            get_state as get_feature_state,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            _apply_post_meeting_transitions,
+        )
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-alpha.md").write_text(
+            "## Ticket 001: alpha\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+        # Operator-queued ticket (no future-run marker in notes) —
+        # legitimate current-iteration work.
+        ticket_transition(
+            tmp_path, "alpha", TicketState.QUEUED, by="operator",
+            notes="Operator queued for retry",
+        )
+
+        review_utt = _utt(
+            thread_id="review-xp",
+            speaker="caterpillar",
+            artifacts=[
+                _art(
+                    "review",
+                    slug="xp-shipped",
+                    verdict="accept",
+                )
+            ],
+        )
+        m8 = MeetingCls.model_validate({
+            "id": "review",
+            "label": "M8",
+            "name": "The Trial",
+            "goal": "review",
+            "roster": ["caterpillar"],
+            "per_item": "feature",
+            "seeds": [],
+        })
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        _apply_post_meeting_transitions(
+            meeting=m8,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            new_utterances=[review_utt],
+            current_item_slug="xp",
+        )
+        # Ticket fast-forwarded queued → in_progress → done.
+        assert (
+            get_ticket_state(tmp_path, "alpha") == TicketState.DONE
+        )
+        # Feature derives to ready_for_review.
+        assert (
+            get_feature_state(tmp_path, "xp")
+            == FeatureState.READY_FOR_REVIEW
+        )
+
+    def test_accept_review_skips_ticket_queued_for_future_run(
+        self, tmp_path: Path
+    ) -> None:
+        """Substrate bug 676a4da8 protection: tickets queued by the
+        synthesize-followups path (with the future-run marker in
+        notes) are NOT swept by the current iteration's accept
+        verdict — they're meant for a subsequent operator-launched
+        run."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            _apply_post_meeting_transitions,
+            _FUTURE_RUN_QUEUE_MARKER,
+        )
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        # Two tickets on the feature: one worked this iteration, one
+        # synthesized for the future.
+        (wonderland / "tickets" / "ticket-001-alpha.md").write_text(
+            "## Ticket 001: alpha\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+        (wonderland / "tickets" / "ticket-002-future-fix.md").write_text(
+            "## Ticket 002: future-fix\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+
+        for st in (
+            FeatureState.PROPOSED,
+            FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED,
+            FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+        # alpha: legitimate current-iteration ticket
+        ticket_transition(
+            tmp_path, "alpha", TicketState.QUEUED, by="operator",
+        )
+        ticket_transition(
+            tmp_path, "alpha", TicketState.IN_PROGRESS, by="system",
+        )
+        # future-fix: synthesized for next iteration (note marker)
+        ticket_transition(
+            tmp_path, "future-fix", TicketState.QUEUED,
+            by="wonderland-substrate",
+            notes=(
+                "Synthesized from review ``some-review`` finding; "
+                f"{_FUTURE_RUN_QUEUE_MARKER}."
+            ),
+        )
+
+        review_utt = _utt(
+            thread_id="review-xp",
+            speaker="caterpillar",
+            artifacts=[
+                _art(
+                    "review",
+                    slug="xp-shipped",
+                    verdict="accept",
+                )
+            ],
+        )
+        m8 = MeetingCls.model_validate({
+            "id": "review",
+            "label": "M8",
+            "name": "The Trial",
+            "goal": "review",
+            "roster": ["caterpillar"],
+            "per_item": "feature",
+            "seeds": [],
+        })
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        _apply_post_meeting_transitions(
+            meeting=m8,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            new_utterances=[review_utt],
+            current_item_slug="xp",
+        )
+        # alpha advances to DONE.
+        assert get_ticket_state(tmp_path, "alpha") == TicketState.DONE
+        # future-fix stays QUEUED — the future-run marker shielded
+        # it from the current iteration's accept-verdict sweep
+        # (substrate bug 676a4da8 protection).
+        assert (
+            get_ticket_state(tmp_path, "future-fix") == TicketState.QUEUED
+        )
+
     def test_roster_filter_narrows_per_iteration(self) -> None:
         """Meeting.apply_roster_filter narrows roster and
         team_groupings based on an item's payload field. Used by
