@@ -624,12 +624,40 @@ def test_collect_phantom_citations_resolves_guid_form(
     ) == [bogus_guid]
 
 
-def test_load_features_drops_phantom_citation_record(
+def test_load_features_drops_when_all_sources_phantom(
     tmp_path: Path,
 ) -> None:
-    """The load-time backstop — a feature on disk whose Sources
-    line cites a story that no longer resolves should not appear
-    in the seed pool returned by ``_load_features``."""
+    """A feature whose EVERY source is a phantom is fully unmoored —
+    drop from seed pool. Operator-visible WARNING surfaces the
+    cleanup."""
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.seeds_fallback import _load_features
+
+    # No stories registered → both citations are phantoms.
+    FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="Fully unmoored",
+        description="d", tickets=[],
+        stack_span="full-stack", tier="v1",
+        sources=["ghost-story-one", "ghost-story-two"],
+    ))
+
+    loaded = _load_features(tmp_path)
+    assert all(r.slug != "fully-unmoored" for r in loaded), (
+        "feature with NO resolving sources should be dropped"
+    )
+
+
+def test_load_features_keeps_record_with_partial_phantom_citations(
+    tmp_path: Path,
+) -> None:
+    """At-least-one-anchor semantics: a feature whose sources are
+    a mix of real + phantom is well-anchored via the real one;
+    keep it. The earlier all-must-resolve rule was too strict and
+    silently filtered tickets whose Sources legitimately cited
+    process artifacts (review slugs, build-check refs) alongside
+    the parent feature — observed on obol-demo2 M1 where the
+    pipeline iterated only the 3 done tickets while 5+ legitimate
+    queued tickets were filtered out."""
     from wonderland.story import StoryPayload, StoryRegistry
     from wonderland.feature import FeaturePayload, FeatureRegistry
     from wonderland.seeds_fallback import _load_features
@@ -640,23 +668,17 @@ def test_load_features_drops_phantom_citation_record(
         acceptance=["a"], tier="core", confusion_flags=["c"],
     ))
     FeatureRegistry(tmp_path).write(FeaturePayload(
-        title="Clean feature",
+        title="Anchored",
         description="d", tickets=[],
         stack_span="full-stack", tier="v1",
-        sources=["real-story"],
-    ))
-    drift = FeatureRegistry(tmp_path).write(FeaturePayload(
-        title="Drift feature",
-        description="d", tickets=[],
-        stack_span="full-stack", tier="v1",
-        sources=["real-story", "phantom-story-that-vanished"],
+        # One real, one phantom — anchored.
+        sources=["real-story", "phantom-extra-reference"],
     ))
 
     loaded = _load_features(tmp_path)
     slugs = {r.slug for r in loaded}
-    assert "clean-feature" in slugs
-    assert "drift-feature" not in slugs, (
-        "feature with phantom citation should be filtered from seed pool"
+    assert "anchored" in slugs, (
+        "feature with at least one resolving source must be kept"
     )
 
 
@@ -686,11 +708,15 @@ def test_load_features_keeps_clean_features_when_active_milestone_scope_is_none(
     assert loaded[0].slug == "clean-feature"
 
 
-def test_load_tickets_drops_phantom_citation_record(
+def test_load_tickets_drops_when_all_sources_phantom(
     tmp_path: Path,
 ) -> None:
-    """Same drift-filter, ticket flavor. Ticket sources can cite
-    features OR stories — both must resolve."""
+    """Same at-least-one-anchor semantic for tickets. Substrate-
+    synthesized follow-up tickets legitimately cite review slugs
+    (``build-check-verify-failed``, etc.) alongside the parent
+    feature — those review citations look phantom to the
+    feature/story-only resolver but are real process references.
+    Drop the ticket only when NO source resolves at all."""
     from wonderland.story import StoryPayload, StoryRegistry
     from wonderland.feature import FeaturePayload, FeatureRegistry
     from wonderland.ticket import TicketPayload, TicketRegistry
@@ -712,14 +738,27 @@ def test_load_tickets_drops_phantom_citation_record(
         owner="tweedledum", tier="v1", estimate="1d",
         description="d", sources=["real-feature"],
     ))
+    # Mixed sources: real feature + phantom — well-anchored; KEEP.
     TicketRegistry(tmp_path).write(TicketPayload(
-        title="Drift ticket",
+        title="Anchored review followup",
         owner="tweedledee", tier="v1", estimate="1d",
         description="d",
-        sources=["real-feature", "phantom-feature-gone"],
+        sources=["real-feature", "build-check-verify-failed"],
+    ))
+    # ALL phantom — fully unmoored; DROP.
+    TicketRegistry(tmp_path).write(TicketPayload(
+        title="Fully unmoored",
+        owner="tweedledum", tier="v1", estimate="1d",
+        description="d",
+        sources=["ghost-feature", "another-ghost"],
     ))
 
     loaded = _load_tickets(tmp_path)
     slugs = {r.slug for r in loaded}
     assert "clean-ticket" in slugs
-    assert "drift-ticket" not in slugs
+    assert "anchored-review-followup" in slugs, (
+        "ticket anchored via real feature must be kept despite extra phantom citation"
+    )
+    assert "fully-unmoored" not in slugs, (
+        "ticket whose every source is phantom must be dropped"
+    )

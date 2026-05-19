@@ -53,8 +53,8 @@ def _filter_phantom_citations(
     citing_kind: str,
     sources_parser: Callable[[str], list[str]],
 ) -> list[Any]:
-    """Drop records whose on-disk ``sources`` contain any citation
-    that no longer resolves to a real artifact on disk.
+    """Drop records whose on-disk ``sources`` contain NO citation
+    that resolves to a real artifact on disk.
 
     Surfaced by obol M3 (substrate bug ``0c98c694``): a feature
     whose stories were retracted or whose .md files disappeared
@@ -66,18 +66,41 @@ def _filter_phantom_citations(
     the after-the-fact backstop.
 
     Citing kinds:
-      - ``"feature"`` — sources must resolve to stories.
+      - ``"feature"`` — sources should resolve to stories.
       - ``"ticket"`` — sources may resolve to features OR stories.
+
+    **At-least-one-anchor semantics.** A record is dropped ONLY
+    when *every* source citation fails to resolve — meaning the
+    artifact is fully unmoored. When at least one source resolves
+    (typically the parent feature for a ticket, or one of the
+    parent stories for a feature), the record is well-anchored
+    and additional unresolved citations are tolerated as
+    process-artifact noise.
+
+    The earlier "all sources must resolve" rule was too strict for
+    tickets: substrate-synthesized follow-up tickets legitimately
+    cite review slugs (e.g. ``build-check-verify-failed``,
+    ``database-schema-initialization-and-seeded-data-loading``),
+    cross-ticket-coherence review titles, and occasionally
+    prefixed forms (``feature-001-...``) that look like phantoms
+    to a strict feature/story-only resolver but are real process
+    references. Dropping tickets on those alone left the pipeline
+    iterating only the small subset whose sources happened to be
+    plain feature slugs — observed on obol-demo2 M1 where the
+    pipeline kept selecting the same 3 done tickets while 5+
+    legitimate queued tickets were filtered out (substrate bug
+    ``088c204b``).
 
     Records whose source-line can't be parsed are kept (the parser
     is a single-line markdown extractor; an unreadable feature is
     a different bug class — not a phantom-citation case). Records
     whose ``path`` can't be read at all are dropped silently.
 
-    Operator visibility: each filtered record is logged at WARNING
-    so it surfaces in any pilot log capture. This is the substrate
-    being honest that it found drift, rather than the prior
-    defensive default that quietly kept corrupted records in scope.
+    Operator visibility: each fully-unanchored filtered record is
+    logged at WARNING so it surfaces in any pilot log capture.
+    Partial-phantoms (record kept despite some unresolved sources)
+    log at DEBUG so they're observable in detailed traces without
+    polluting normal output.
     """
     import logging
 
@@ -100,17 +123,33 @@ def _filter_phantom_citations(
         phantoms = collect_phantom_citations(
             sources, project_root, citing_kind=citing_kind,
         )
-        if phantoms:
+        if phantoms and len(phantoms) == len(sources):
+            # FULLY unanchored — every source is a phantom. Drop
+            # with WARNING so the operator sees the cleanup.
             logging.warning(
-                "seeds_fallback dropping %s %r — phantom citations: %s. "
-                "The cited artifact(s) were either retracted or their "
-                ".md file was lost; the artifact is filtered from the "
-                "seed pool to prevent downstream meeting loops. Clean "
-                "up the citations manually (edit the **Sources:** line) "
-                "or retract the orphan record.",
-                citing_kind, record.slug, phantoms,
+                "seeds_fallback dropping %s %r — ALL %d sources are "
+                "phantom citations: %s. The artifact is fully "
+                "unmoored from any real feature/story on disk; "
+                "filtered from the seed pool to prevent downstream "
+                "meeting loops. Clean up the citations manually "
+                "(edit the **Sources:** line) or retract the "
+                "orphan record.",
+                citing_kind, record.slug, len(sources), phantoms,
             )
             continue
+        if phantoms:
+            # PARTIAL phantoms — record is anchored via at least
+            # one resolving source; the rest are process-noise
+            # citations (review slugs, build-check refs, etc.) and
+            # tolerated. Log at DEBUG for traceability without
+            # polluting normal output.
+            logging.debug(
+                "seeds_fallback keeping %s %r despite %d/%d phantom "
+                "sources: %s (anchored via at least one resolving "
+                "citation)",
+                citing_kind, record.slug, len(phantoms), len(sources),
+                phantoms,
+            )
         clean.append(record)
     return clean
 
