@@ -27,7 +27,6 @@ queries pass an inheritance chain (typically ``["project",
 
 from __future__ import annotations
 
-from contextvars import ContextVar
 from pathlib import Path
 from types import TracebackType
 from typing import Self
@@ -49,24 +48,46 @@ PROJECT_BRANCH = "project"
 ARCHIVED_PREFIX = "archived:"
 
 
-_active_branch: ContextVar[str] = ContextVar(
-    "wonderland_active_branch", default=PROJECT_BRANCH
-)
+# Originally implemented as a ContextVar per the WONDERLAND_SPEC §8
+# "task-local" framing, but that broke across the Runner's actual
+# task topology. ContextVar values are captured at ``create_task``
+# time — Runner.start() spawns agent tasks BEFORE run_workflow sets
+# the active branch, so each agent task carries a snapshot of the
+# default ``PROJECT_BRANCH`` for its entire lifetime. Later
+# ``set_active_branch_id`` calls in run_workflow update only the
+# workflow task's contextvar; agents' ``memory.record(utterance)``
+# calls still read PROJECT_BRANCH from their stale snapshot, so
+# every utterance lands on ``branch_id='project'``. The branching
+# infrastructure existed on disk (schema v2 column, inheritance
+# chain) but did nothing because nothing ever got tagged with a
+# non-default branch — diagnosed on obol's M3 design where
+# 1,179/1,179 of caterpillar's utterances were on 'project',
+# letting M2 deliberation leak into M3 recall.
+#
+# Fix: workflow-scoped module-level string. asyncio is single-
+# threaded per event loop; concurrent runners in the same process
+# wasn't a real use case and the ContextVar semantics were
+# preventing the load-bearing case (Runner-shared workflow branch)
+# from working. Pipeline parallelism within a single workflow
+# shares the branch correctly because pipelines belong to one
+# milestone scope.
+_active_branch: str = PROJECT_BRANCH
 
 
 def get_active_branch_id() -> str:
-    """Return the active branch tag for the current task context.
+    """Return the active branch tag for the current workflow run.
 
     Defaults to ``PROJECT_BRANCH`` when no branch is set — that's the
-    right semantic for operator-driven flows + system events.
+    right semantic for operator-driven flows + system events that
+    happen outside a workflow scope.
     """
-    return _active_branch.get()
+    return _active_branch
 
 
-def set_active_branch_id(branch_id: str) -> object:
-    """Set the active branch for the current task context. Returns
-    a token that can be passed to ``reset_active_branch_id`` to
-    restore the prior value (mirrors ``ContextVar.set`` semantics).
+def set_active_branch_id(branch_id: str) -> str:
+    """Set the active branch for the current process. Returns the
+    PRIOR branch_id as the token; pass that token to
+    ``reset_active_branch_id`` to restore.
 
     Use a try/finally pattern to keep scopes clean::
 
@@ -76,13 +97,23 @@ def set_active_branch_id(branch_id: str) -> object:
         finally:
             reset_active_branch_id(token)
     """
-    return _active_branch.set(branch_id)
+    global _active_branch
+    prior = _active_branch
+    _active_branch = branch_id
+    return prior
 
 
 def reset_active_branch_id(token: object) -> None:
     """Restore the active branch to its prior value via the token
-    returned by ``set_active_branch_id``."""
-    _active_branch.reset(token)  # type: ignore[arg-type]
+    returned by ``set_active_branch_id`` (the token IS the prior
+    branch_id string after the ContextVar → global migration)."""
+    global _active_branch
+    if not isinstance(token, str):
+        # Tolerate stale ContextVar.Token-shaped callers during
+        # migration; reset to default rather than crashing.
+        _active_branch = PROJECT_BRANCH
+        return
+    _active_branch = token
 
 
 def inheritance_chain(branch_id: str | None = None) -> list[str]:

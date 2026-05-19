@@ -2,6 +2,29 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+### Episodic memory branching — ContextVar → workflow-scoped global
+
+Branching memory was nominally working: schema v2 has a `branch_id` column with index, `inheritance_chain()` correctly returns `[PROJECT_BRANCH, "design:m3-..."]` for active design scopes, and `run_workflow` calls `set_active_branch_id("design:<slug>")` at entry. But every single utterance from every run was tagged `branch_id='project'` regardless of the active milestone — diagnosed on obol M3 design where 1,179/1,179 of Caterpillar's utterances landed on `'project'`, letting M2 deliberation bleed into M3 recall and prompting the design caucus to loop on M2's Feature 002 instead of designing M3 budget features.
+
+Root cause: `_active_branch` was implemented as a `ContextVar`, which captures its value at `asyncio.create_task` time. The Runner spawns each agent's `run()` as a background task during `Runner.start()` — BEFORE `run_workflow` later calls `set_active_branch_id`. Each agent task carries a snapshot of the default `PROJECT_BRANCH` for its entire lifetime; later `set_active_branch_id` calls modify only the workflow task's contextvar; agents' `memory.record(utterance)` reads its own task's stale snapshot and writes `branch_id='project'` every time.
+
+Fix: replace the `ContextVar` with a module-level mutable `str`. The asyncio event loop is single-threaded, so process-wide visibility is structurally consistent with how workflow scope actually works. Pipeline parallelism within one workflow correctly shares the branch (all parallel ticket-impl threads belong to the same milestone-impl scope). Concurrent runners in the same process aren't a current use case; if they become one, the right fix is per-Runner state, not a return to ContextVar's brokenness.
+
+The token returned by `set_active_branch_id` is now the prior branch_id string (was previously a ContextVar.Token); `reset_active_branch_id` tolerates legacy Token-shaped callers during migration by resetting to PROJECT_BRANCH on type mismatch — defensive, not load-bearing.
+
+What this changes:
+- Future workflow runs correctly tag utterances with their milestone-scoped branch id.
+- Future agent recall (via `inheritance_chain`) correctly filters to project + active-branch — historical PROJECT_BRANCH content stops being the catch-all.
+
+What this **doesn't** fix:
+- Existing on-disk episodic data (e.g. obol's pilot history) is tagged `'project'` for every utterance and there's no way to retroactively re-attribute it to a milestone — the substrate didn't track that metadata at write time. Operators iterating on an existing project should wipe per-agent `episodic.sqlite` files (via `scripts/wipe-design.sh` or manual) before the first run on the new branching semantics; otherwise the legacy data continues to leak into recall through the PROJECT_BRANCH path.
+
+Test: the prior `test_contextvar_isolation_between_tasks` was encoding the buggy semantic as the spec — it asserted that three concurrent tasks each see their own branch. Replaced with `test_active_branch_is_process_wide_across_spawned_tasks` which encodes the new contract: an observer spawned BEFORE the parent task's `set_active_branch_id` call still sees the new branch, because the global propagated. This is exactly the Runner-spawns-agents-first / run-workflow-sets-branch-later case that was broken in production.
+
+284/284 tests pass across `test_episodic` + `test_workflow`.
+
+Surfaced by obol M3 design pass (paper-grade): operator noticed M2 features leaking into M3 design caucus, traced to per-agent episodic memory. Branching memory was the architectural fix per `project_substrate_fixes_dont_propagate_through_memory.md`; this is the substrate work catching up to the design intent.
+
 ### Read-time phantom-citation filter in `seeds_fallback` — closes the obol M3 dangling-reference loop
 
 Surfaced by the obol M3 design caucus looping for several turns on Feature 002's citations to non-existent stories. Root cause: phantom citations can become phantom *after* the on-emission strip catches them at composition time. A story gets retracted in a later run, or its .md file goes missing (substrate bug `d9c120d4`), and any features citing that story now carry dangling references through every downstream meeting that pulls them as seeds.

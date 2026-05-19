@@ -325,32 +325,69 @@ async def test_inheritance_chain_reads_scoped_correctly(tmp_path: Path) -> None:
         assert "m2-wedge-noise" not in bodies
 
 
-async def test_contextvar_isolation_between_tasks(tmp_path: Path) -> None:
-    """ContextVar gives task-local semantics — concurrent tasks each see
-    their own active branch. Critical for pipeline-parallel impl runs."""
+async def test_active_branch_is_process_wide_across_spawned_tasks(
+    tmp_path: Path,
+) -> None:
+    """The active branch is workflow-scoped / process-wide, NOT task-local.
+
+    This was originally a ContextVar (task-local) and the test asserted
+    isolation between concurrent tasks. But that broke the actual
+    production case the branching primitive was supposed to serve:
+    ``Runner.start()`` spawns each agent's ``run()`` as its own task
+    BEFORE ``run_workflow`` later calls ``set_active_branch_id``.
+    ContextVar captures at create-task time, so agent tasks were
+    pinned to the default PROJECT_BRANCH for their entire lifetime;
+    every ``memory.record`` landed on 'project'. Surfaced on obol's
+    M3 design pass: 1,179/1,179 of Caterpillar's utterances on
+    'project', M2 deliberation leaking into M3 recall.
+
+    The new contract: a workflow run is a single coherent scope, and
+    all agents within that workflow share its branch. Pipeline
+    parallelism within a workflow correctly shares the branch (all
+    parallel ticket-impl threads belong to the same milestone-impl
+    branch). Concurrent runners in the same process (not a current
+    use case) would share a branch — if that becomes important, the
+    fix is per-Runner state, not a return to ContextVar's brokenness.
+    """
     from wonderland.memory.episodic import (
+        PROJECT_BRANCH,
         get_active_branch_id,
+        reset_active_branch_id,
         set_active_branch_id,
     )
 
-    captured: dict[str, str] = {}
+    # Reset to known default; some prior test may have left state.
+    reset_active_branch_id(PROJECT_BRANCH)
+    captured: list[tuple[str, str]] = []
 
-    async def worker(branch: str) -> None:
-        set_active_branch_id(branch)
-        await asyncio.sleep(0.01)  # give other tasks a chance to interleave
-        captured[branch] = get_active_branch_id()
+    async def observer(label: str) -> None:
+        # No set in this task — verify the worker sees whatever the
+        # GLOBAL says, regardless of when this task was spawned
+        # relative to the set.
+        await asyncio.sleep(0.01)
+        captured.append((label, get_active_branch_id()))
 
-    await asyncio.gather(
-        worker("design:m1"),
-        worker("design:m2"),
-        worker("impl:m3:feat:x"),
-    )
+    # Spawn an observer BEFORE the parent sets a branch.
+    early = asyncio.create_task(observer("spawned_before_set"))
 
-    assert captured == {
-        "design:m1": "design:m1",
-        "design:m2": "design:m2",
-        "impl:m3:feat:x": "impl:m3:feat:x",
-    }
+    # Set the active branch in the parent task.
+    token = set_active_branch_id("design:m3-budget")
+    try:
+        # Spawn an observer AFTER the set.
+        late = asyncio.create_task(observer("spawned_after_set"))
+        await asyncio.gather(early, late)
+    finally:
+        reset_active_branch_id(token)
+
+    # Both observers should see "design:m3-budget" — the global
+    # propagated across task boundaries. ContextVar semantics would
+    # have given the early observer PROJECT_BRANCH (its snapshot).
+    by_label = dict(captured)
+    assert by_label["spawned_before_set"] == "design:m3-budget"
+    assert by_label["spawned_after_set"] == "design:m3-budget"
+
+    # After the reset, both subsequent reads should see PROJECT_BRANCH.
+    assert get_active_branch_id() == PROJECT_BRANCH
 
 
 async def test_legacy_v1_data_migrates_to_project_branch(tmp_path: Path) -> None:
