@@ -478,7 +478,10 @@ class NewProjectScreen(Screen["NewProjectResult | None"]):
             try:
                 skeleton = load_skeleton(skeleton_norm)
                 if is_bare_project_root(resolved_path):
-                    written = apply_skeleton(skeleton, resolved_path)
+                    written = apply_skeleton(
+                        skeleton, resolved_path,
+                        prime_directive=prime_norm,
+                    )
                     self.notify(
                         f"Project registered + skeleton applied "
                         f"({len(written)} files).",
@@ -486,7 +489,8 @@ class NewProjectScreen(Screen["NewProjectResult | None"]):
                     )
                 else:
                     pc_path = write_project_context_from_skeleton(
-                        skeleton, resolved_path
+                        skeleton, resolved_path,
+                        prime_directive=prime_norm,
                     )
                     if pc_path is not None:
                         self.notify(

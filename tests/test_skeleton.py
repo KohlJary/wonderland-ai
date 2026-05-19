@@ -244,3 +244,87 @@ def test_apply_skeleton_does_not_copy_manifest(tmp_path: Path) -> None:
     s = load_skeleton("python-cli")
     apply_skeleton(s, tmp_path)
     assert not (tmp_path / "manifest.yaml").exists()
+
+
+# --- prime_directive carryover (closes the obol M3 vibe-loss gap) ---
+
+
+def test_apply_skeleton_persists_prime_directive_to_project_context(
+    tmp_path: Path,
+) -> None:
+    """When the operator passes a prime_directive at project-create
+    time, it lands in ``.wonderland/project.yaml`` so every
+    downstream meeting's ``project_context`` seed carries the
+    operator's intent — not just discovery. Closes the gap where
+    minimal-directive projects (obol's "htop for money") lost vibe
+    at M4 / M5 / M8 because those meetings don't see the discovery
+    directive directly."""
+    from wonderland.project_context import load_project_context
+
+    s = load_skeleton("python-cli")
+    apply_skeleton(
+        s, tmp_path,
+        prime_directive="Build me a TUI dashboard for personal finances.",
+    )
+
+    ctx = load_project_context(tmp_path)
+    assert ctx is not None
+    # YAML round-trip preserves a trailing newline on block-scalar
+    # outputs; the meaningful content is what matters.
+    assert ctx.prime_directive is not None
+    assert ctx.prime_directive.rstrip() == (
+        "Build me a TUI dashboard for personal finances."
+    )
+
+
+def test_apply_skeleton_omits_prime_directive_when_none(
+    tmp_path: Path,
+) -> None:
+    """Back-compat: callers that don't pass prime_directive get the
+    legacy behavior — project.yaml has no prime_directive field."""
+    from wonderland.project_context import load_project_context
+
+    s = load_skeleton("python-cli")
+    apply_skeleton(s, tmp_path)
+
+    ctx = load_project_context(tmp_path)
+    assert ctx is not None
+    assert ctx.prime_directive is None
+
+
+def test_apply_skeleton_treats_whitespace_prime_directive_as_none(
+    tmp_path: Path,
+) -> None:
+    """Empty / whitespace prime_directive doesn't pollute the YAML."""
+    from wonderland.project_context import load_project_context
+
+    s = load_skeleton("python-cli")
+    apply_skeleton(s, tmp_path, prime_directive="   \n  ")
+
+    ctx = load_project_context(tmp_path)
+    assert ctx is not None
+    assert ctx.prime_directive is None
+
+
+def test_write_project_context_from_skeleton_accepts_prime_directive(
+    tmp_path: Path,
+) -> None:
+    """Same primitive callable on its own for retrofit (the non-bare
+    root path the new-project TUI flow uses when the operator
+    adopts an existing tree)."""
+    from wonderland.project_context import load_project_context
+    from wonderland.skeleton import write_project_context_from_skeleton
+
+    s = load_skeleton("python-cli")
+    written = write_project_context_from_skeleton(
+        s, tmp_path,
+        prime_directive="Track personal finances htop-style.",
+    )
+    assert written is not None
+
+    ctx = load_project_context(tmp_path)
+    assert ctx is not None
+    assert ctx.prime_directive is not None
+    assert ctx.prime_directive.rstrip() == (
+        "Track personal finances htop-style."
+    )

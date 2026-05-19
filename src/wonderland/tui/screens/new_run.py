@@ -1062,6 +1062,39 @@ class NewRunScreen(Screen[None]):
                 ):
                     self.project.prime_directive = params["directive"]
                 save_project(self.project)
+
+                # Mirror prime_directive into the per-project
+                # ProjectContext (.wonderland/project.yaml) so the
+                # per-meeting ``project_context`` seed carries the
+                # operator's intent into M4 ADRs / M5 contracts / M8
+                # reviews — not just the discovery seed. The Project
+                # registry tracks prime_directive globally; without
+                # this sync the per-project YAML stayed empty and
+                # minimal-directive projects (obol's two-sentence
+                # "htop for money") lost vibe after discovery, with
+                # M4+ designing generic-CRUD instead of intent-
+                # shaped density. Best-effort: skip silently if
+                # project.yaml doesn't exist (project predates the
+                # context-memory primitive, or skeleton wasn't
+                # applied), if prime_directive is empty/None (early
+                # in project lifecycle), or if it's already in sync.
+                if (
+                    self.project.prime_directive
+                    and self.project.prime_directive.strip()
+                ):
+                    from wonderland.project_context import (
+                        load_project_context,
+                        save_project_context,
+                    )
+
+                    project_root_path = Path(params["project_path"])
+                    ctx = load_project_context(project_root_path)
+                    if (
+                        ctx is not None
+                        and ctx.prime_directive != self.project.prime_directive
+                    ):
+                        ctx.prime_directive = self.project.prime_directive
+                        save_project_context(ctx, project_root_path)
             except Exception as exc:  # noqa: BLE001 — non-fatal
                 self.notify(
                     f"Couldn't update project run history: {exc}",

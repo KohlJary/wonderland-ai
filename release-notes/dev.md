@@ -2,6 +2,20 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+### `prime_directive` auto-syncs from Project registry to per-project `.wonderland/project.yaml`
+
+Closes the follow-up from the original `prime_directive` field commit (`4be781d`): the Project registry stored `prime_directive` globally, but the per-project ProjectContext YAML (the thing actually seeded into MEETINGS via the `project_context` kind) didn't automatically pick it up. Operators had to manually edit `project.yaml`. Surfaced on obol-demo2 where the 6-milestone plan landed in the registry without the prime_directive carryover, so M4 / M5 / M8 design would have gone back to seeing only `stack + entry_point` — losing the "htop for money" framing after discovery.
+
+Two sync points landed:
+
+1. **`new_run.py:_launch_run`** — after writing the Project's last_run_id / last_workflow / prime_directive on run launch, mirror the prime_directive into the per-project ProjectContext. Best-effort, no-op when project.yaml doesn't exist (legacy projects without context memory), prime_directive is empty, or it's already in sync. Fires BEFORE `launch_background_run` so the subprocess reads the freshly-synced YAML.
+
+2. **`skeleton.py:apply_skeleton` + `write_project_context_from_skeleton`** — both now accept an optional `prime_directive` parameter that gets written into the ProjectContext at project-create time. `new_project.py` passes `prime_norm` through both paths (bare-root apply + non-bare-root retrofit). Net-new projects get `prime_directive` in `project.yaml` from day one rather than waiting for first launch.
+
+4 new tests in `test_skeleton.py` covering: directive-persists path, none-omitted back-compat, whitespace-treated-as-none, retrofit path via `write_project_context_from_skeleton`. 47/47 tests pass (test_skeleton + test_project_context).
+
+For projects already on disk that were created before this commit: the next launch will sync automatically. Or use the one-line `load_project_context` / `save_project_context` round-trip if the operator wants to populate immediately without launching.
+
 ### Episodic memory branching — ContextVar → workflow-scoped global
 
 Branching memory was nominally working: schema v2 has a `branch_id` column with index, `inheritance_chain()` correctly returns `[PROJECT_BRANCH, "design:m3-..."]` for active design scopes, and `run_workflow` calls `set_active_branch_id("design:<slug>")` at entry. But every single utterance from every run was tagged `branch_id='project'` regardless of the active milestone — diagnosed on obol M3 design where 1,179/1,179 of Caterpillar's utterances landed on `'project'`, letting M2 deliberation bleed into M3 recall and prompting the design caucus to loop on M2's Feature 002 instead of designing M3 budget features.

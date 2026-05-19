@@ -275,6 +275,7 @@ def apply_skeleton(
     project_root: Path,
     *,
     overwrite: bool = False,
+    prime_directive: str | None = None,
 ) -> list[Path]:
     """Lay the skeleton's file tree into ``project_root``. Returns
     the list of paths written.
@@ -285,6 +286,16 @@ def apply_skeleton(
 
     The project root is created if missing. Parent directories of
     each skeleton file are created as needed.
+
+    ``prime_directive`` (optional): the operator's directive text to
+    persist into the per-project ProjectContext at creation time. When
+    provided, the resulting ``.wonderland/project.yaml`` includes the
+    prime directive so every downstream meeting's ``project_context``
+    seed carries the operator's intent — not just discovery. Without
+    this, minimal-directive projects (the obol "htop for money" case)
+    lose vibe at M4 / M5 / M8 because those meetings don't see the
+    discovery directive directly. Passed through to
+    ``write_project_context_from_skeleton``.
     """
     project_root.mkdir(parents=True, exist_ok=True)
 
@@ -318,7 +329,9 @@ def apply_skeleton(
     # — leaves the project to operate from directive-only
     # grounding (legacy behavior).
     project_yaml = _write_project_context_from_manifest(
-        skeleton, project_root, overwrite=overwrite
+        skeleton, project_root,
+        overwrite=overwrite,
+        prime_directive=prime_directive,
     )
     if project_yaml is not None:
         written.append(project_yaml)
@@ -331,6 +344,7 @@ def write_project_context_from_skeleton(
     project_root: Path,
     *,
     overwrite: bool = False,
+    prime_directive: str | None = None,
 ) -> Path | None:
     """Translate the skeleton's manifest.stack into a
     ``.wonderland/project.yaml`` so the team's seed loader can
@@ -343,6 +357,12 @@ def write_project_context_from_skeleton(
     projects created before context memory landed, or for adopt-
     existing-codebase flows where the operator picked the
     skeleton that matches an existing tree).
+
+    ``prime_directive`` (optional): persisted into the ProjectContext
+    so every downstream meeting's project_context seed carries the
+    operator's intent. Auto-passed through ``apply_skeleton`` and
+    the new-project TUI flow; callers can also pass it directly when
+    retrofitting an existing project.
 
     Returns the written path, or None when the manifest didn't
     declare a stack OR when a project.yaml already exists and
@@ -375,6 +395,11 @@ def write_project_context_from_skeleton(
         name=project_root.name,
         stack=stack,
         entry_point=skeleton.manifest.entry_point,
+        prime_directive=(
+            prime_directive
+            if prime_directive and prime_directive.strip()
+            else None
+        ),
     )
     return save_project_context(context, project_root)
 
