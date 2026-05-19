@@ -1,10 +1,10 @@
-# demo/ — mvp-demo2 shipped artifact
+# demo/mvp/ — mvp-demo2 shipped artifact
 
 A working full-stack markdown notebook app, **autonomously produced
 by Wonderland** running on Claude Haiku 4.5 across 3 milestones
 (data layer, search/tags, persistence + validation). $83.78 total
 pilot spend; operator participated as gate-approver + curator
-through the [Wonderland substrate](../README.md).
+through the [Wonderland substrate](../../README.md).
 
 This directory is the **reproducibility artifact** for the paper:
 clone the repo, follow the run instructions below, exercise the
@@ -13,15 +13,15 @@ provenance lives in [`wonderland-trail/`](./wonderland-trail/).
 
 For the pilot narrative + cost breakdown + autonomous-pilot
 analysis, see:
-- [analysis 034 — autonomous pilot](../src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md)
-- [analysis 033 — cost breakdown](../src/wonderland/closet/analyses/033-mvp-demo2-cost-breakdown.md)
+- [analysis 034 — autonomous pilot](../../src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md)
+- [analysis 033 — cost breakdown](../../src/wonderland/closet/analyses/033-mvp-demo2-cost-breakdown.md)
 
 ## What got built
 
 A single-user personal markdown notebook web app — create notes,
 tag them, search across title + body + tags, render markdown in
 a preview pane, persist across server restarts. Per the
-[notebook directive](../src/wonderland/closet/directives/notebook.yaml).
+[notebook directive](../../src/wonderland/closet/directives/notebook.yaml).
 
 ```
 src/backend/                       backend (FastAPI + SQLAlchemy + SQLite)
@@ -60,19 +60,19 @@ tests/                             61 tests, all passing
 **3,371 lines of application code + 1,577 lines of tests** (test:code
 ratio 0.47). Independent cold reviewer's verdict: *"competent,
 above-average code for an MVP."* See the
-[code quality analysis](../paper/artifacts/code-quality-mvp-demo2.md)
+[code quality analysis](../../paper/artifacts/code-quality-mvp-demo2.md)
 for the full review.
 
 ## Running the demo
 
 ```bash
 # Backend (terminal 1)
-cd demo
+cd demo/mvp
 uv sync
 uv run uvicorn src.backend.main:app --reload --port 8000
 
 # Frontend (terminal 2)
-cd demo/frontend
+cd demo/mvp/frontend
 npm install
 npm run dev
 ```
@@ -119,7 +119,7 @@ for the structure + how to read it.
    sources, then the story, then the requirement, then the
    architectural ADR. Five hops; each artifact is human-readable
    markdown.
-4. **Read the [code quality analysis](../paper/artifacts/code-quality-mvp-demo2.md)**
+4. **Read the [code quality analysis](../../paper/artifacts/code-quality-mvp-demo2.md)**
    for an independent reviewer's verdict + the honest
    limitations.
 
@@ -135,5 +135,5 @@ for the structure + how to read it.
   substrate version 0.8.0, cost $83.78, with the operator
   participating as gate-approver (one mid-pilot substrate fix,
   documented honestly as a Tier 2 violation).
-- See [`paper/`](../paper/) for the chapter source artifacts +
+- See [`paper/`](../../paper/) for the chapter source artifacts +
   cost breakdown.

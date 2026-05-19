@@ -68,8 +68,11 @@ packages = ["src/wonderland"]
 # wheel target is already scoped to src/wonderland; the sdist
 # would otherwise include the whole repo (including projects/ and
 # runs/ when they exist locally), so we exclude them explicitly.
-# ``demo/`` is the showcase application built by mvp-demo2 — git-
-# tracked here for the paper but not part of the published package.
+# ``demo/`` holds shipped-pilot reference applications (currently
+# just ``demo/mvp/`` from mvp-demo2; the parent dir is reserved for
+# future pilots) — git-tracked here for the paper but not part of
+# the published package. Prefix excludes both demo/ and any
+# demo/<pilot>/ subdir.
 exclude = [
     "projects/",
     "runs/",

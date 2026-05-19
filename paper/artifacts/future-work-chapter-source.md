@@ -157,7 +157,7 @@ Per the [code-quality artifact §8](./code-quality-mvp-demo2.md#8-comparison-bas
 - **Single-shot Haiku 4.5 against the notebook directive.**
   Cheapest (~$0.20-0.50). Give Haiku the literal directive
   in one inference, capture the artifact, compare line by
-  line to mvp-demo2's demo/. Hypothesis: 2-3 file sketch,
+  line to mvp-demo2's demo/mvp/. Hypothesis: 2-3 file sketch,
   no test coverage, no security helpers,
   `dangerouslySetInnerHTML` without sanitization.
 - **Single-shot Sonnet 4.6 against the notebook directive.**

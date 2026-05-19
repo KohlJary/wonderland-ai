@@ -244,7 +244,7 @@ not about whether the shipped artifact works.
 ### Frontend test coverage gap
 
 Per the code-quality artifact reviewer findings: `vitest`
-is installed in `demo/frontend/package.json` but zero
+is installed in `demo/mvp/frontend/package.json` but zero
 frontend tests exist. The Tweedles' M7 directive doesn't
 require Hatter scenarios to be translated into runnable
 frontend tests; M9's `npm_build` verifies compile + bundle,

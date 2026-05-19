@@ -29,7 +29,7 @@ A personal markdown notebook web app. The directive came from the
 > server restarts. Stack: Python + FastAPI + SQLite backend, React
 > + Vite + TypeScript frontend.
 
-**Final artifact** (now lives at `demo/` in the repo; pilot substrate state remains at `projects/mvp-demo2/.wonderland/` for paper-source analysis):
+**Final artifact** (now lives at `demo/mvp/` in the repo; pilot substrate state remains at `projects/mvp-demo2/.wonderland/` for paper-source analysis):
 
 ```
 src/backend/

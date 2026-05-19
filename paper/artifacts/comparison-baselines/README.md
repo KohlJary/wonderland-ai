@@ -17,7 +17,7 @@
 | **A** — single-shot, no tools | "User pastes directive into claude.ai" | One inference call, max 8192 output tokens, minimal system prompt | $0.0417 | One backend file (truncated) + 4 frontend files, ZERO tests, ZERO configs |
 | **B1** — custom tool loop | "User builds a minimal agent with filesystem tools" | 60-turn agent loop, write_file/read_file/list_files/run_bash tools, $5 budget cap | $1.4616 | 39 source files, 15 tests, hit iteration cap before verifying |
 | **B2** — Claude Code subagent | "User runs Claude Code on the same model" | General-purpose subagent with Haiku model + Claude Code's full toolset, 87 tool calls in 6.4 min | ~$1.50–3 (subagent billing approximate; usage reports 73,843 tokens) | 24 source files, 17 tests, all passing per subagent's own verification |
-| **Wonderland** — mvp-demo2 | The actual substrate + cast | Full pilot: discovery + milestone-plan + 3 × (design + implement) with operator gate-approval | **$83.78** | 49 source files (3,371 app + 1,577 test LOC), 61 tests, [682 markdown trail artifacts](../../../demo/wonderland-trail/) |
+| **Wonderland** — mvp-demo2 | The actual substrate + cast | Full pilot: discovery + milestone-plan + 3 × (design + implement) with operator gate-approval | **$83.78** | 49 source files (3,371 app + 1,577 test LOC), 61 tests, [682 markdown trail artifacts](../../../demo/mvp/wonderland-trail/) |
 
 All four runs are reproducible — A and B1 via [`run_single_shot.py`](./run_single_shot.py) + [`run_tool_loop.py`](./run_tool_loop.py); B2 by spawning a Claude Code subagent on Haiku; Wonderland via the substrate at version 0.8.0 against `src/wonderland/closet/directives/notebook.yaml`.
 
@@ -55,7 +55,7 @@ note matches, because `ilike(f"%{search}%")` treats user-input
 `%` as a SQL LIKE wildcard, not a literal). This is the exact
 bug class Wonderland's `_safe_ilike` + `_escape_like_pattern`
 discipline guards against — and that
-[`demo/wonderland-trail/test-scenarios/scenario-01KRXVFV-text-search-ignores-special-characters-sql-injection-boundary.md`](../../demo/wonderland-trail/test-scenarios/)
+[`demo/mvp/wonderland-trail/test-scenarios/scenario-01KRXVFV-text-search-ignores-special-characters-sql-injection-boundary.md`](../../../demo/mvp/wonderland-trail/test-scenarios/)
 documents as a Hatter scenario severity `silent-wrongness`.
 
 **B1 happens to dodge the wildcard bug** because it uses a
@@ -145,7 +145,7 @@ Spot-check of disciplines that emerged in the Wonderland output but not in the b
 | Inline contract/ticket references | n/a | None | None | **39** references across 8 source files — same contract (`contract-note-01KRY0B8`) cited from backend `models.py` AND frontend `api.ts` |
 | Severity-tagged tests | n/a | n/a (no tests) | None | 24 tests tagged with Hatter's vocabulary (`breakage` / `silent-wrongness` / `degradation` / `curiosity`) |
 
-Independent cold reviewer's verdict on Wonderland's `demo/` (see [code-quality artifact](../code-quality-mvp-demo2.md) for the full review): *"competent, above-average code for an MVP. Backend has notably good security discipline around LIKE-wildcard escaping and an over-engineered-but-thoughtful audit/revision design. Tests are unusually self-aware about edge cases. … no security blockers."*
+Independent cold reviewer's verdict on Wonderland's `demo/mvp/` (see [code-quality artifact](../code-quality-mvp-demo2.md) for the full review): *"competent, above-average code for an MVP. Backend has notably good security discipline around LIKE-wildcard escaping and an over-engineered-but-thoughtful audit/revision design. Tests are unusually self-aware about edge cases. … no security blockers."*
 
 No independent review has been run on A / B1 / B2 outputs. The discipline gaps above are observable directly without one.
 
@@ -174,9 +174,9 @@ By construction, single-shot agents (with or without tools) produce code. They d
 | `implementations/` — Ticket ref + Contract ref + Invariants Enforced + Schema Changes | **67** | 0 |
 | Lifecycle audit logs (JSONL) — every state transition with timestamp, actor, reason | **3 files**, hundreds of entries | 0 |
 
-**Total Wonderland artifact trail: 682 markdown files + 4 audit-log files** (curated copy at [`demo/wonderland-trail/`](../../../demo/wonderland-trail/) for paper readers).
+**Total Wonderland artifact trail: 682 markdown files + 4 audit-log files** (curated copy at [`demo/mvp/wonderland-trail/`](../../../demo/mvp/wonderland-trail/) for paper readers).
 
-The asymmetry is structural, not engineering effort. A single-shot agent that ships code has no scaffold for shipping the *reasoning* alongside the code. The artifact trail is what makes the resulting code maintainable: any function in `demo/src/` traces back through implementations → tickets → features → stories → requirements → operator quote, in five hops, every artifact human-readable markdown.
+The asymmetry is structural, not engineering effort. A single-shot agent that ships code has no scaffold for shipping the *reasoning* alongside the code. The artifact trail is what makes the resulting code maintainable: any function in `demo/mvp/src/` traces back through implementations → tickets → features → stories → requirements → operator quote, in five hops, every artifact human-readable markdown.
 
 ---
 
@@ -349,7 +349,7 @@ biggest blind spot. Filed in the
 - [`haiku-tools-custom/`](./haiku-tools-custom/) — B1 baseline output (metadata + transcript + workspace).
 - [`haiku-claude-code/`](./haiku-claude-code/) — B2 baseline output (TBD).
 - [`../code-quality-mvp-demo2.md`](../code-quality-mvp-demo2.md) — independent cold review of the Wonderland output.
-- [`../../../demo/wonderland-trail/`](../../../demo/wonderland-trail/) — the artifact trail that's the second axis's receipt.
+- [`../../../demo/mvp/wonderland-trail/`](../../../demo/mvp/wonderland-trail/) — the artifact trail that's the second axis's receipt.
 - [`../evidence-chapter-source.md`](../evidence-chapter-source.md) — the five pillars this comparison extends.
 - [`../thesis-chapter-source.md`](../thesis-chapter-source.md) — the corollaries this comparison sharpens.
 
@@ -427,7 +427,7 @@ claims were verified by running its committed workspace.)
   `tsc --noEmit`. The tsc errors don't block production
   bundling but would block any CI pipeline running `tsc`.
 
-### Wonderland — mvp-demo2 demo/
+### Wonderland — mvp-demo2 demo/mvp/
 
 - ✓ **All 61 tests pass** (verified during code-quality
   artifact prep).

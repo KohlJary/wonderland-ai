@@ -140,7 +140,7 @@ applicable.
 Reviewer's framing: *"exemplary. … I almost never see this
 discipline outside hardened codebases."*
 
-In `demo/src/backend/api/notes.py:196-220`:
+In `demo/mvp/src/backend/api/notes.py:196-220`:
 
 ```python
 def _escape_like_pattern(s: str) -> str:
@@ -201,7 +201,7 @@ Reviewer's framing: *"rigorous. … handles naive datetimes
 (SQLite reality), aware datetimes, and missing values, and
 emits ISO8601 with a `Z` suffix instead of `+00:00`."*
 
-In `demo/src/backend/models.py:114-131`:
+In `demo/mvp/src/backend/models.py:114-131`:
 
 ```python
 def ensure_tz_aware(dt: datetime | None) -> str:
@@ -242,7 +242,7 @@ bug.)
 
 ### 3.3. Markdown sanitization before `dangerouslySetInnerHTML`
 
-In `demo/frontend/src/Preview.tsx:25-56`:
+In `demo/mvp/frontend/src/Preview.tsx:25-56`:
 
 ```typescript
 export function Preview({ body }: PreviewProps) {
@@ -351,7 +351,7 @@ Tweedles extracted it as part of feature 1.
 
 ### 3.5. Tests as scenario documentation (the Hatter pattern)
 
-`demo/tests/test_search_wildcard_issues.py:1-15` (the file's
+`demo/mvp/tests/test_search_wildcard_issues.py:1-15` (the file's
 header):
 
 ```python
@@ -409,7 +409,7 @@ The reviewer called this file *"the standout"*:
 
 ### 3.6. App entry point wiring (cross-ticket coherence in the wild)
 
-`demo/frontend/src/App.tsx` correctly imports + mounts every
+`demo/mvp/frontend/src/App.tsx` correctly imports + mounts every
 component the design produced — Editor, NoteList, Search,
 EditorLayout — and wires them through view-state switching with
 URL pathname sync. The header docstring enumerates the
@@ -460,7 +460,7 @@ sanitization-before-injection, tracked TODOs.
 ## 5. Independent cold review (verbatim)
 
 The rigor move: we asked an independent Claude instance — fresh
-context, no Wonderland background, dropped into `demo/` cold —
+context, no Wonderland background, dropped into `demo/mvp/` cold —
 to do a senior code review. The instruction was to underclaim
 if anything, lead with what matters most, name concrete
 file:line citations, and treat the output as professional
@@ -945,7 +945,7 @@ differences the underlying model would produce on its own.
 
 Cross-checking the artifact end-to-end against the actual
 pilot location (`projects/mvp-demo2/`) instead of just the
-curated `demo/` copy. Started the backend on `:8001`, the
+curated `demo/mvp/` copy. Started the backend on `:8001`, the
 Vite dev server on `:5174` (ports shifted from the 5173/8000
 defaults because the operator had other services on them).
 
@@ -1070,6 +1070,6 @@ for them.
 - [Limitations chapter source](./limitations-chapter-source.md)
   — both bugs found here are linked from there as
   empirically-validated substrate gaps.
-- The actual code lives at `demo/` (curated paper-reader
+- The actual code lives at `demo/mvp/` (curated paper-reader
   copy) and `projects/mvp-demo2/` (live pilot state) —
   clone + run + verify the artifact yourself.

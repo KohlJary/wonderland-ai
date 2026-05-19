@@ -36,14 +36,16 @@ The paper draws on several existing locations beyond `paper/`:
 - `.daedalus/design-memory-branching.md` — T-a2 design proposal for memory branching
 
 **Pilot artifacts**:
-- `demo/` — pilot 2's shipped working application (copy of mvp-demo2's
+- `demo/mvp/` — pilot 2's shipped working application (copy of mvp-demo2's
   app code, frontend, tests). Cleanest path for paper readers to clone +
-  run + verify the artifact. Excluded from the PyPi build.
+  run + verify the artifact. Excluded from the PyPi build. The `demo/`
+  parent directory is reserved for additional shipped-app artifacts as
+  future pilots produce them (e.g. `demo/crm/` if CRM ships).
 - `projects/mvp-demo/` — pilot 1 full state, partial completion,
   substrate-immature data
 - `projects/mvp-demo2/` — pilot 2 full state, including the substrate
   artifacts (.wonderland/, runs/, telemetry/, memory/) used as paper
-  source material. The `demo/` copy is for reproducibility; this is
+  source material. The `demo/mvp/` copy is for reproducibility; this is
   for analysis.
 - Pilot run telemetry: `projects/mvp-demo2/.wonderland/telemetry/`
 
@@ -61,7 +63,7 @@ The paper draws on several existing locations beyond `paper/`:
   chapter — failure-modes-as-identity, the small-cast principle, guest
   casts (Holmes / Watson), pair protocols.
 - `artifacts/code-quality-mvp-demo2.md` — quantitative metrics + pattern
-  receipts + independent cold-reviewer findings on the demo/ shipped
+  receipts + independent cold-reviewer findings on the demo/mvp/ shipped
   artifact. The credibility-making evidence for the quality argument.
 - `artifacts/evidence-chapter-source.md` — five-pillar synthesis of
   paper-grade observations: quality-cost coupling, multi-lens
