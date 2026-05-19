@@ -571,36 +571,50 @@ class NewRunScreen(Screen[None]):
         # in the newly-selected workflow.
         self._meeting_enabled = {m.id: True for m in workflow.meetings}
 
-        # Rebuild meetings list. ``remove_children`` returns an
-        # AwaitRemove that schedules synchronous removal in the next
-        # message-loop tick; deferring the mount via call_after_refresh
-        # ensures the old widgets are gone before the new ones land,
-        # so DuplicateIds doesn't fire mid-swap.
+        # Rebuild meetings list. Earlier implementation called
+        # ``container.remove_children()`` (returns an AwaitRemove that
+        # flushes on the next message-loop tick) then scheduled the
+        # mount via ``call_after_refresh``. Those two were not
+        # serialized — scrolling fast across workflows in the picker
+        # could fire a new ``_render_workflow_detail`` before the old
+        # workflow's toggles had finished detaching, so the next
+        # workflow's first meeting whose id collided with any
+        # still-attached old toggle (e.g. tdd-design → tdd-decompose,
+        # both have ``decomposition``) tripped DuplicateIds.
+        #
+        # Fix: do the swap inside a worker that awaits remove_children
+        # before mounting, marked ``exclusive`` in a dedicated group so
+        # a new swap cancels any in-flight swap cleanly.
         try:
             container = self.query_one("#meetings-list", Vertical)
         except Exception:  # noqa: BLE001
             return
-        container.remove_children()
         self._currently_rendered_workflow_id = workflow.name
+        meetings_snapshot = list(workflow.meetings)
 
-        def _mount_new_meeting_toggles() -> None:
-            # Re-query — the original container reference is still
-            # valid but defensive lookup keeps the post-refresh path
-            # robust if the screen got rebuilt.
+        async def _swap_meeting_toggles() -> None:
             try:
                 box = self.query_one("#meetings-list", Vertical)
             except Exception:  # noqa: BLE001
                 return
-            for meeting in workflow.meetings:
-                box.mount(
+            await box.remove_children()
+            # remove_children awaited → DOM is empty, safe to mount.
+            box.mount(
+                *[
                     Checkbox(
                         f"{meeting.label}  {meeting.name}",
                         value=True,
                         id=f"meeting-toggle-{meeting.id}",
                     )
-                )
+                    for meeting in meetings_snapshot
+                ]
+            )
 
-        self.call_after_refresh(_mount_new_meeting_toggles)
+        self.run_worker(
+            _swap_meeting_toggles(),
+            exclusive=True,
+            group="meeting-toggles-swap",
+        )
 
         # Summary panel: workflow blurb + meeting count + category +
         # any pipeline indicator.
