@@ -4386,6 +4386,73 @@ def _collect_disk_slugs_and_guids(
     return slugs, guids
 
 
+def collect_phantom_citations(
+    sources: list[str],
+    project_root: Path,
+    *,
+    citing_kind: str,
+) -> list[str]:
+    """Return the subset of ``sources`` that don't resolve to any
+    real artifact on disk.
+
+    ``citing_kind`` controls which registries the citations are
+    matched against:
+
+      - ``"feature"`` — sources must resolve to stories (legacy or
+        guid-form).
+      - ``"ticket"`` — sources may resolve to features OR stories
+        (M3 decomposition can cite either).
+
+    A ``"phantom citation"`` is a slug or guid in the artifact's
+    sources field that names nothing currently on disk. Two ways
+    one shows up:
+
+      1. The agent invented a citation at emission time (caught by
+         ``_apply_source_resolution_for_utterance`` at emission;
+         this helper enables the on-emission caller to share logic).
+      2. A previously-real citation became phantom after-the-fact
+         because the cited story/feature was retracted or its file
+         was lost (the ``9231bcd5`` / ``d9c120d4`` cluster from the
+         obol M3 pilot — pre-existing dangling references that the
+         on-emission strip can't catch). The seed-loader filter
+         calls this helper at read time to drop drift-corrupted
+         artifacts from downstream meeting context.
+
+    The substrate keeps the artifact file on disk regardless — this
+    helper just enables the read-side filter to refuse to surface
+    drift-corrupted artifacts to downstream meetings. Cleanup of
+    the disk state is the operator's call.
+
+    Empty / non-list / non-string entries in ``sources`` are
+    skipped (treated as not-a-citation rather than phantom).
+    """
+    story_slugs, story_guids = _collect_disk_slugs_and_guids(
+        project_root / ".wonderland" / "stories",
+        kind="story",
+    )
+    if citing_kind == "feature":
+        valid_slugs = story_slugs
+        valid_guids = story_guids
+    elif citing_kind == "ticket":
+        feature_slugs, feature_guids = _collect_disk_slugs_and_guids(
+            project_root / ".wonderland" / "features",
+            kind="feature",
+        )
+        valid_slugs = story_slugs | feature_slugs
+        valid_guids = story_guids | feature_guids
+    else:
+        # Unknown citing kind — no resolution scope defined. Treat
+        # all as phantom rather than silently accept, so unexpected
+        # callers fail loudly.
+        return [s for s in sources if isinstance(s, str) and s]
+
+    return [
+        s for s in sources
+        if isinstance(s, str) and s
+        and not _source_resolves(s, valid_slugs, valid_guids)
+    ]
+
+
 def _source_resolves(
     source: str, valid_slugs: set[str], valid_guids: set[str],
 ) -> bool:

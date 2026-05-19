@@ -46,10 +46,87 @@ from wonderland.utterance import (
 )
 
 
+def _filter_phantom_citations(
+    records: list[Any],
+    project_root: Path,
+    *,
+    citing_kind: str,
+    sources_parser: Callable[[str], list[str]],
+) -> list[Any]:
+    """Drop records whose on-disk ``sources`` contain any citation
+    that no longer resolves to a real artifact on disk.
+
+    Surfaced by obol M3 (substrate bug ``0c98c694``): a feature
+    whose stories were retracted or whose .md files disappeared
+    after the feature was emitted carries phantom citations through
+    every downstream meeting that pulls it as a seed. The
+    on-emission strip (``_apply_source_resolution_for_utterance``)
+    catches phantoms at the moment the artifact is composed, but
+    can't catch drift that happens later. This read-time filter is
+    the after-the-fact backstop.
+
+    Citing kinds:
+      - ``"feature"`` — sources must resolve to stories.
+      - ``"ticket"`` — sources may resolve to features OR stories.
+
+    Records whose source-line can't be parsed are kept (the parser
+    is a single-line markdown extractor; an unreadable feature is
+    a different bug class — not a phantom-citation case). Records
+    whose ``path`` can't be read at all are dropped silently.
+
+    Operator visibility: each filtered record is logged at WARNING
+    so it surfaces in any pilot log capture. This is the substrate
+    being honest that it found drift, rather than the prior
+    defensive default that quietly kept corrupted records in scope.
+    """
+    import logging
+
+    # Lazy-import to keep this module load-light.
+    from wonderland.workflow import collect_phantom_citations
+
+    clean: list[Any] = []
+    for record in records:
+        try:
+            text = record.path.read_text(encoding="utf-8")
+        except OSError:
+            # Unreadable file — different bug class; skip silently.
+            continue
+        sources = sources_parser(text)
+        if not sources:
+            # No citations to validate (empty or unparseable line) —
+            # keep the record; downstream handles empty-sources case.
+            clean.append(record)
+            continue
+        phantoms = collect_phantom_citations(
+            sources, project_root, citing_kind=citing_kind,
+        )
+        if phantoms:
+            logging.warning(
+                "seeds_fallback dropping %s %r — phantom citations: %s. "
+                "The cited artifact(s) were either retracted or their "
+                ".md file was lost; the artifact is filtered from the "
+                "seed pool to prevent downstream meeting loops. Clean "
+                "up the citations manually (edit the **Sources:** line) "
+                "or retract the orphan record.",
+                citing_kind, record.slug, phantoms,
+            )
+            continue
+        clean.append(record)
+    return clean
+
+
 def _load_tickets(project_root: Path) -> list[Any]:
     from wonderland.ticket import TicketRegistry
+    from wonderland.coverage import _parse_feature_sources
 
-    return TicketRegistry(project_root).list_tickets()
+    all_tickets = TicketRegistry(project_root).list_tickets()
+    # Ticket sources cite features OR stories. Same phantom-citation
+    # parser as features (single ``**Sources:**`` comma-separated line).
+    return _filter_phantom_citations(
+        all_tickets, project_root,
+        citing_kind="ticket",
+        sources_parser=_parse_feature_sources,
+    )
 
 
 def _load_stories(project_root: Path) -> list[Any]:
@@ -59,36 +136,64 @@ def _load_stories(project_root: Path) -> list[Any]:
 
 
 def _load_features(project_root: Path) -> list[Any]:
-    """Load features from disk. When an active milestone scope is set,
-    filter to features whose primary milestone is the active one —
-    Rabbit composing for M3 doesn't need M1/M2's features in his
-    context (mvp-demo2 M3 design wedge: Rabbit debated prior-milestone
-    features instead of composing M3 features)."""
+    """Load features from disk. Two filters applied, in order:
+
+    1. **Phantom-citation filter** (substrate bug ``0c98c694``): drop
+       features whose on-disk ``Sources:`` line cites stories that no
+       longer resolve. Catches drift that happens AFTER the on-emission
+       strip — e.g. a story gets retracted but features citing it
+       weren't cascade-updated, OR a story's .md file went missing
+       (bug ``d9c120d4``). Without this filter, broken-citation features
+       leaked into every downstream milestone's seed pool, causing the
+       obol M3 caucus loop on Feature 002.
+
+    2. **Milestone-scope filter** (mvp-demo2 M3 wedge fix): when an
+       active milestone scope is set, drop features whose primary
+       milestone (strongest Jaccard overlap of sources against
+       milestone story-scope, ties on milestone order) isn't the
+       active scope. Rabbit composing for M3 doesn't need M1/M2's
+       features in his context.
+    """
     from wonderland.feature import FeatureRegistry
+    from wonderland.coverage import _parse_feature_sources
 
     all_features = FeatureRegistry(project_root).list_features()
 
-    # Lazy-import to avoid circular dep at module load
+    # Step 1: drop features with phantom citations. The defensive
+    # default that USED to silently include unattributable features
+    # (``if primary is None: include``) was masking exactly this
+    # class of drift; phantoms now get logged + dropped explicitly.
+    citation_clean = _filter_phantom_citations(
+        all_features, project_root,
+        citing_kind="feature",
+        sources_parser=_parse_feature_sources,
+    )
+
+    # Step 2: milestone-scope filter. Lazy-import to avoid circular
+    # dep at module load.
     try:
         from wonderland.workflow import get_active_milestone_scope
         scope = get_active_milestone_scope()
     except Exception:  # noqa: BLE001
         scope = None
     if scope is None:
-        return all_features
+        return citation_clean
 
     # Filter via the primary-milestone-per-feature heuristic:
     # strongest-overlap-wins (Jaccard similarity of feature.sources
     # against milestone story-scope), ties on milestone order.
     # Features whose primary is NOT the active scope get dropped
     # from this seed pool. Unattributable features (no overlap with
-    # any milestone) stay in — defensive.
+    # any milestone) stay in — defensive, but now sharply narrowed
+    # because the step-1 filter already dropped the most common
+    # cause of unattributability (phantom citations producing zero
+    # Jaccard overlap with every milestone).
     primary_map = _compute_primary_milestone_per_feature(project_root)
     if not primary_map:
-        return all_features  # no attribution possible, don't filter
+        return citation_clean  # no attribution possible, don't filter
 
     in_scope: list[Any] = []
-    for record in all_features:
+    for record in citation_clean:
         primary = primary_map.get(record.slug)
         if primary is None or primary == scope.slug:
             in_scope.append(record)

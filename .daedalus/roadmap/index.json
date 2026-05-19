@@ -1701,6 +1701,36 @@
       "status": "backlog",
       "created_at": "2026-05-18T23:02:38.181984",
       "created_by": "daedalus"
+    },
+    {
+      "id": "d9c120d4-5a82-4380-b5d4-57057f4c8052",
+      "title": "Feature .md file gets lost from disk while feature-states.jsonl ledger still tracks it through verified \u2014 surfaced on obol M3 design where M1 user-facing feature 'kohl-views-his-accounts-and-can-refresh-the-dashboard' had a complete state history (proposed \u2192 in_design \u2192 designed \u2192 verified) but the .md file was absent from .wonderland/features/. Downstream effect: M3 design caucus saw broken citations on Feature 002 that 'looked like' references to the missing M1 feature, looped on coherence-fix proposals for several turns. Class of bug: artifact-lifecycle desync between state ledger and the artifact file. Repro hypothesis: M2-run substrate mutation deleted or moved the file (maybe during retract path, maybe during a feature-rename, maybe during a wipe that should have been milestone-scoped). Investigation: scan obol pilot run logs from M2 for any delete/retract/rename ops against feature paths, identify which workflow surface lost the file.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T14:10:38.874377",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "0c98c694-c23c-4b7f-ac41-edf32d501a2e",
+      "title": "Milestone-scope feature filter's defensive default leaks unattributable features into every downstream milestone \u2014 seeds_fallback._load_features line 88 has 'if primary is None or primary == scope.slug: in_scope.append(record)'. Features the Jaccard-overlap heuristic can't attribute (typically because their sources are phantom or malformed) fall into the None branch and stay in scope across ALL milestones. Observed on obol M3 design: M2's Feature 002 had two phantom story slugs in addition to three real M2 ones; the phantoms diluted Jaccard overlap, the feature became unattributable, it leaked into M3's composition seed pool, and the M3 caucus looped for several turns on coherence-fixing the phantom citations. Fix: change the defensive default from 'keep' to 'drop with operator-visible warning'. Broken-citation features are usually a substrate bug, not legitimate cross-milestone material \u2014 warn the operator at run start and drop from seed pool. Companion bug to d9c120d4 (lost feature .md file).",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T14:12:56.093349",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "9231bcd5-074d-481c-a5e1-cc420761042a",
+      "title": "M2 composition meeting created Feature 002 with phantom story slugs in its Sources line \u2014 'kohl-views-account-balances-in-the-tui-dashboard-and-manually-refreshes' and 'kohl-s-financial-data-persists-across-app-restarts-in-local-sqlite' don't match any story on disk. The actual M1 dashboard stories had different slugs (01KRYQ1F-kohl-manually-refreshes-account-balances-without-restarting-the-app, 01KRYQ2F-kohl-opens-the-dashboard-and-sees-his-accounts-with-current-balances). Class of bug: feature.sources written from agent free-text rather than resolved against the actual story registry slug, OR M2 substrate failed slug-stability tightening (T-v6) against in-process-design feature citations. Investigation: walk M2 obol run logs for the composition step that emitted Feature 002, identify whether the slugs Cat/Rabbit wrote were already wrong on emission or were corrupted in serialization.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T14:12:56.192589",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

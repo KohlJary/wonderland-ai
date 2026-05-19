@@ -14,6 +14,43 @@ from wonderland.seeds_fallback import (
 from wonderland.utterance import SpeechAct
 
 
+def _seed_placeholder_stories(tmp_path: Path, slugs: list[str]) -> None:
+    """Register stories whose slug matches each entry in ``slugs`` so
+    downstream ticket/feature fixtures can cite them without tripping
+    the phantom-citation filter in ``_load_features`` / ``_load_tickets``.
+
+    Pre-filter, tests citing fictional slugs (``"s"``, ``"x"``,
+    ``"see-my-money-at-a-glance"``) silently produced corrupted records
+    that downstream meetings inherited; the filter rightly drops those
+    now, so tests that exercise seed-loading-SHAPE (not
+    citation-correctness) need to register the placeholder story first.
+    """
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.adr import slugify
+
+    registry = StoryRegistry(tmp_path)
+    for slug in slugs:
+        # Slugify the slug back into a title the story renderer accepts.
+        title = slug.replace("-", " ").capitalize() or "placeholder"
+        registry.write(StoryPayload(
+            title=title,
+            persona="placeholder persona",
+            situation="placeholder",
+            need=f"As placeholder I want {title} so tests pass.",
+            acceptance=["placeholder acceptance"],
+            tier="core",
+            confusion_flags=["placeholder confusion"],
+        ))
+        # Re-slugified title may not equal the requested slug if the
+        # input slug contained chars slugify normalizes; the helper
+        # assumes the caller passed already-slugified strings (the
+        # case for all existing fixtures).
+        assert slugify(title) == slug, (
+            f"placeholder story slug mismatch: requested {slug!r}, "
+            f"got {slugify(title)!r}"
+        )
+
+
 # --- Empty-state behavior ---
 
 
@@ -51,6 +88,8 @@ def test_disk_seeds_loads_tickets_from_disk(tmp_path: Path) -> None:
     """When tickets exist on disk, they surface as synthetic
     utterances with the right speech_act + speaker."""
     from wonderland.ticket import TicketPayload, TicketRegistry
+
+    _seed_placeholder_stories(tmp_path, ["see-my-money-at-a-glance"])
 
     registry = TicketRegistry(tmp_path)
     registry.write(TicketPayload(
@@ -113,6 +152,8 @@ def test_disk_seeds_multiple_kinds_in_one_call(tmp_path: Path) -> None:
     from wonderland.ticket import TicketPayload, TicketRegistry
     from wonderland.story import StoryPayload, StoryRegistry
 
+    _seed_placeholder_stories(tmp_path, ["x"])
+
     TicketRegistry(tmp_path).write(TicketPayload(
         title="T",
         owner="tweedledum",
@@ -134,7 +175,11 @@ def test_disk_seeds_multiple_kinds_in_one_call(tmp_path: Path) -> None:
     seeds = disk_seeds_for_kinds(
         tmp_path, ["ticket", "story"], thread_id="composition"
     )
-    assert len(seeds) == 2
+    # 1 ticket + 1 explicit story + 1 placeholder story (from the
+    # citation-filter setup helper) = 3 seeds. The test's intent is
+    # "multiple kinds surface in one call"; that holds regardless of
+    # exact story count.
+    assert len(seeds) == 3
     kinds = {s.content.artifacts[0].kind for s in seeds}
     assert kinds == {"ticket", "story"}
 
@@ -146,6 +191,8 @@ def test_disk_seeds_artifact_payload_has_slug_for_per_item_slicing(
     resolve_seeds per-item slicing logic can route the right feature
     to the right iteration."""
     from wonderland.feature import FeaturePayload, FeatureRegistry
+
+    _seed_placeholder_stories(tmp_path, ["see-my-money-at-a-glance"])
 
     FeatureRegistry(tmp_path).write(FeaturePayload(
         title="Balance dashboard",
@@ -330,6 +377,8 @@ class TestResolveSeedsDiskFallback:
             resolve_seeds,
         )
 
+        _seed_placeholder_stories(tmp_path, ["s"])
+
         TicketRegistry(tmp_path).write(TicketPayload(
             title="T-from-disk",
             owner="tweedledum",
@@ -381,6 +430,8 @@ class TestResolveSeedsDiskFallback:
             resolve_seeds,
         )
 
+        _seed_placeholder_stories(tmp_path, ["s"])
+
         for i in range(5):
             TicketRegistry(tmp_path).write(TicketPayload(
                 title=f"T-{i}",
@@ -412,6 +463,8 @@ class TestResolveSeedsDiskFallback:
             resolve_seeds,
         )
 
+        _seed_placeholder_stories(tmp_path, ["s"])
+
         FeatureRegistry(tmp_path).write(FeaturePayload(
             title="Feature One",
             description="d",
@@ -442,3 +495,231 @@ class TestResolveSeedsDiskFallback:
         # Only the feature-one slice should be present.
         assert len(seeds) == 1
         assert seeds[0].content.artifacts[0].payload["slug"] == "feature-one"
+
+
+# ====================================================================
+# Phantom-citation drift filter — substrate bugs 0c98c694 + 9231bcd5
+# from the obol M3 pilot. On-emission strip catches phantom slugs at
+# composition time; this filter catches drift that happens AFTER
+# emission (cited story retracted, cited file lost, etc.). Without
+# it, broken-citation artifacts leaked into every downstream
+# milestone's seed pool — observed as the M3 caucus loop on
+# Feature 002.
+# ====================================================================
+
+
+def test_collect_phantom_citations_clean_feature(tmp_path: Path) -> None:
+    """A feature citing only real stories on disk returns no phantoms."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.workflow import collect_phantom_citations
+
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="Kohl logs a transaction",
+        persona="Kohl",
+        situation="end of week",
+        need="As Kohl I want to log so I can track.",
+        acceptance=["a"], tier="core",
+        confusion_flags=["c"],
+    ))
+    phantoms = collect_phantom_citations(
+        ["kohl-logs-a-transaction"],
+        tmp_path,
+        citing_kind="feature",
+    )
+    assert phantoms == []
+
+
+def test_collect_phantom_citations_surfaces_unresolved_slug(
+    tmp_path: Path,
+) -> None:
+    """The bug shape: a slug that names no story on disk shows up
+    as a phantom."""
+    from wonderland.workflow import collect_phantom_citations
+
+    # No stories registered.
+    phantoms = collect_phantom_citations(
+        ["kohl-does-something-that-does-not-exist"],
+        tmp_path,
+        citing_kind="feature",
+    )
+    assert phantoms == ["kohl-does-something-that-does-not-exist"]
+
+
+def test_collect_phantom_citations_mixed_keeps_real_drops_phantom(
+    tmp_path: Path,
+) -> None:
+    """Feature 002's exact shape: some sources resolve, some don't.
+    The phantoms list contains only the unresolved entries."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.workflow import collect_phantom_citations
+
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="Real story",
+        persona="Kohl", situation="x", need="As Kohl I want y so z.",
+        acceptance=["a"], tier="core", confusion_flags=["c"],
+    ))
+    phantoms = collect_phantom_citations(
+        ["real-story", "phantom-one", "phantom-two"],
+        tmp_path,
+        citing_kind="feature",
+    )
+    assert phantoms == ["phantom-one", "phantom-two"]
+
+
+def test_collect_phantom_citations_ticket_resolves_against_features_or_stories(
+    tmp_path: Path,
+) -> None:
+    """Ticket sources can cite features or stories. Phantom detection
+    has to check both registries."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.workflow import collect_phantom_citations
+
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="A real story",
+        persona="Kohl", situation="x", need="As Kohl I want y so z.",
+        acceptance=["a"], tier="core", confusion_flags=["c"],
+    ))
+    FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="A real feature",
+        description="d", tickets=[],
+        stack_span="full-stack", tier="v1",
+        sources=["a-real-story"],
+    ))
+    # All three should resolve when citing-kind is ticket.
+    phantoms = collect_phantom_citations(
+        ["a-real-story", "a-real-feature", "phantom-thing"],
+        tmp_path,
+        citing_kind="ticket",
+    )
+    assert phantoms == ["phantom-thing"]
+
+
+def test_collect_phantom_citations_resolves_guid_form(
+    tmp_path: Path,
+) -> None:
+    """``<guid>:<slug>`` form is the P18 canonical citation. Each
+    half can resolve independently."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.workflow import collect_phantom_citations
+
+    story = StoryRegistry(tmp_path).write(StoryPayload(
+        title="A specific story",
+        persona="Kohl", situation="x", need="As Kohl I want y so z.",
+        acceptance=["a"], tier="core", confusion_flags=["c"],
+    ))
+    # GUID form alone resolves.
+    assert collect_phantom_citations(
+        [story.guid], tmp_path, citing_kind="feature",
+    ) == []
+    # guid:slug form resolves.
+    assert collect_phantom_citations(
+        [f"{story.guid}:a-specific-story"],
+        tmp_path, citing_kind="feature",
+    ) == []
+    # Phantom guid surfaces as phantom.
+    bogus_guid = "01XXXXXXXXXXXXXXXXXXXXXXXX"
+    assert collect_phantom_citations(
+        [bogus_guid], tmp_path, citing_kind="feature",
+    ) == [bogus_guid]
+
+
+def test_load_features_drops_phantom_citation_record(
+    tmp_path: Path,
+) -> None:
+    """The load-time backstop — a feature on disk whose Sources
+    line cites a story that no longer resolves should not appear
+    in the seed pool returned by ``_load_features``."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.seeds_fallback import _load_features
+
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="Real story",
+        persona="Kohl", situation="x", need="As Kohl I want y so z.",
+        acceptance=["a"], tier="core", confusion_flags=["c"],
+    ))
+    FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="Clean feature",
+        description="d", tickets=[],
+        stack_span="full-stack", tier="v1",
+        sources=["real-story"],
+    ))
+    drift = FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="Drift feature",
+        description="d", tickets=[],
+        stack_span="full-stack", tier="v1",
+        sources=["real-story", "phantom-story-that-vanished"],
+    ))
+
+    loaded = _load_features(tmp_path)
+    slugs = {r.slug for r in loaded}
+    assert "clean-feature" in slugs
+    assert "drift-feature" not in slugs, (
+        "feature with phantom citation should be filtered from seed pool"
+    )
+
+
+def test_load_features_keeps_clean_features_when_active_milestone_scope_is_none(
+    tmp_path: Path,
+) -> None:
+    """No active milestone scope → milestone-scope filter doesn't
+    apply, but the phantom-citation filter still does."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.seeds_fallback import _load_features
+
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="Real story",
+        persona="Kohl", situation="x", need="As Kohl I want y so z.",
+        acceptance=["a"], tier="core", confusion_flags=["c"],
+    ))
+    FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="Clean feature",
+        description="d", tickets=[],
+        stack_span="full-stack", tier="v1",
+        sources=["real-story"],
+    ))
+
+    loaded = _load_features(tmp_path)
+    assert len(loaded) == 1
+    assert loaded[0].slug == "clean-feature"
+
+
+def test_load_tickets_drops_phantom_citation_record(
+    tmp_path: Path,
+) -> None:
+    """Same drift-filter, ticket flavor. Ticket sources can cite
+    features OR stories — both must resolve."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.ticket import TicketPayload, TicketRegistry
+    from wonderland.seeds_fallback import _load_tickets
+
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="Real story",
+        persona="Kohl", situation="x", need="As Kohl I want y so z.",
+        acceptance=["a"], tier="core", confusion_flags=["c"],
+    ))
+    FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="Real feature",
+        description="d", tickets=[],
+        stack_span="full-stack", tier="v1",
+        sources=["real-story"],
+    ))
+    TicketRegistry(tmp_path).write(TicketPayload(
+        title="Clean ticket",
+        owner="tweedledum", tier="v1", estimate="1d",
+        description="d", sources=["real-feature"],
+    ))
+    TicketRegistry(tmp_path).write(TicketPayload(
+        title="Drift ticket",
+        owner="tweedledee", tier="v1", estimate="1d",
+        description="d",
+        sources=["real-feature", "phantom-feature-gone"],
+    ))
+
+    loaded = _load_tickets(tmp_path)
+    slugs = {r.slug for r in loaded}
+    assert "clean-ticket" in slugs
+    assert "drift-ticket" not in slugs
