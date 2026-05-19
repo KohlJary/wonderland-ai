@@ -4666,7 +4666,25 @@ def _complete_tickets_on_accept_review(
     Tickets in other states (PENDING / DONE / ABORTED / QUEUED) are
     left alone — DONE is for "we just iterated this and Caterpillar
     approved", not for retroactively marking everything in the
-    feature."""
+    feature.
+
+    Earlier this function fast-forwarded QUEUED tickets through
+    IN_PROGRESS → DONE on the assumption that "queued at the time
+    of accept review = worked in this iteration." Substrate bug
+    ``676a4da8`` proved that wrong: on obol-demo2 M1, this swept
+    operator-requeued tickets AND substrate-synthesized bug-fix
+    follow-ups (which were queued but never actually iterated)
+    to done in a single microsecond, with the actual fixes never
+    shipping. A `test_counter_increments_on_button_press` stub
+    test was "marked done" with the bug still present.
+
+    Fixed semantic: only IN_PROGRESS tickets advance. If a
+    ticket was genuinely worked in the iteration, the pipeline's
+    per-ticket meeting orchestrator transitioned it to
+    IN_PROGRESS at M6/M7 entry. If it's still QUEUED at accept-
+    review time, it wasn't worked — leave it for the next
+    iteration to pick up properly.
+    """
     from wonderland.ticket_lifecycle import (
         IllegalTransitionError as TicketIllegal,
         TicketState,
@@ -4685,28 +4703,9 @@ def _complete_tickets_on_accept_review(
     ]
     for ticket_slug in feature_tickets:
         state = get_ticket_state(project_root, ticket_slug)
-        # queued → in_progress fast-forward, same pattern as the
-        # request-changes path. Tickets that were worked in this
-        # iteration but never had their queue → in_progress
-        # transition fire still get marked done on accept.
-        if state == TicketState.QUEUED:
-            try:
-                ticket_transition(
-                    project_root,
-                    ticket_slug,
-                    TicketState.IN_PROGRESS,
-                    by=actor,
-                    notes=(
-                        f"Auto-transition from {meeting_id!r} on "
-                        f"accept verdict ({review_slug!r}); ticket "
-                        "was worked in this iteration but queue → "
-                        "in_progress hadn't fired yet."
-                    ),
-                )
-                state = TicketState.IN_PROGRESS
-            except TicketIllegal:
-                continue
         if state != TicketState.IN_PROGRESS:
+            # PENDING / QUEUED / DONE / ABORTED — leave alone. See
+            # docstring for the bug 676a4da8 history.
             continue
         try:
             ticket_transition(
@@ -5027,6 +5026,7 @@ def _route_blocking_review(
         f"Synthesized from review ``{review_slug}`` finding; "
         f"queued for next imp run."
     )
+    any_ticket_queued = False
     for finding in findings:
         if not isinstance(finding, dict):
             continue
@@ -5061,10 +5061,95 @@ def _route_blocking_review(
                 by=actor,
                 notes=queue_notes,
             )
+            any_ticket_queued = True
         except TicketIllegal:
             continue
         except Exception:  # noqa: BLE001
             continue
+
+    # Substrate bug 5fe6acd1 fix: when tickets get queued onto a
+    # feature that's sitting in DESIGNED (or any terminal state
+    # with fresh pending work), auto-bump the feature state to
+    # QUEUED so pipeline_runner's iterate_only_in_states filter
+    # picks it up on the next launch. Without this, follow-up
+    # tickets land queued on a DESIGNED feature and sit forever
+    # because the pipeline skips DESIGNED features — observed on
+    # obol-demo2 M1 where every M8 review-synthesized fix ticket
+    # was correctly queued but never iterated because the feature
+    # never advanced past DESIGNED.
+    if any_ticket_queued:
+        _bump_feature_to_queued_if_needed(
+            project_root, feature_slug=feature_slug,
+            actor=actor, meeting_id=meeting_id,
+            review_slug=str(review_slug),
+        )
+
+
+def _bump_feature_to_queued_if_needed(
+    project_root: Path,
+    *,
+    feature_slug: str,
+    actor: str,
+    meeting_id: str,
+    review_slug: str,
+) -> None:
+    """Auto-transition a feature DESIGNED→QUEUED when fresh tickets
+    need pipeline pickup. No-op when the feature is already in
+    QUEUED / IN_PROGRESS / READY_FOR_REVIEW (the pipeline already
+    iterates these), or in any state where the transition would be
+    illegal (PROPOSED / IN_DESIGN — the design phase hasn't
+    finished yet).
+
+    Substrate bug ``5fe6acd1`` — without this hook, M8-synthesized
+    follow-up tickets get queued onto a DESIGNED feature and the
+    pipeline never iterates them because its filter is
+    ``[queued, in_progress]``.
+    """
+    try:
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            IllegalTransitionError as FeatureIllegal,
+            get_state as get_feature_state,
+            transition as feature_transition,
+        )
+    except Exception:  # noqa: BLE001
+        return
+
+    current = get_feature_state(project_root, feature_slug)
+    if current is None:
+        return  # feature has no lifecycle record (unusual; skip)
+    # Already pipeline-visible — no bump needed.
+    if current in (
+        FeatureState.QUEUED,
+        FeatureState.IN_PROGRESS,
+        FeatureState.READY_FOR_REVIEW,
+    ):
+        return
+    # Only auto-bump from DESIGNED. Earlier states (PROPOSED /
+    # IN_DESIGN) mean the design pass isn't done; bumping them
+    # would corrupt the lifecycle. Terminal states (DONE / VERIFIED)
+    # could legitimately have follow-up work but the operator should
+    # decide whether to re-enter the implementation loop — don't
+    # auto-bump from terminal.
+    if current != FeatureState.DESIGNED:
+        return
+    try:
+        feature_transition(
+            project_root,
+            feature_slug,
+            FeatureState.QUEUED,
+            by=actor,
+            notes=(
+                f"Auto-bump from {meeting_id!r} on accept verdict "
+                f"({review_slug!r}); fresh tickets were queued on this "
+                f"feature, advancing state so pipeline_runner picks "
+                f"up the work on next launch (substrate bug 5fe6acd1)."
+            ),
+        )
+    except FeatureIllegal:
+        return
+    except Exception:  # noqa: BLE001 — best-effort
+        return
 
 
 # ---------------------------------------------------------------------- #

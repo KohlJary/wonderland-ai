@@ -195,3 +195,102 @@ def test_transitions_for_returns_chronological_history(
         TicketState.QUEUED,
         TicketState.IN_PROGRESS,
     ]
+
+
+# --- md status propagation (substrate bug 85aaee91 fix) ---
+
+
+def test_transition_propagates_state_to_md_status_field(
+    tmp_path: Path,
+) -> None:
+    """Ledger transitions cascade into the ticket .md file's
+    ``**Status:**`` field. Without this, operators inspecting
+    tickets directly saw stale state (md always said `open`
+    regardless of lifecycle state); pipeline_runner correctly
+    used the ledger but the divergence confused operators and
+    leaked into the dashboard (substrate bug 85aaee91)."""
+    import re
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.ticket import TicketPayload, TicketRegistry
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        back_fill_state,
+        transition,
+    )
+
+    # Story for the ticket to anchor to (phantom-citation filter).
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="Real story",
+        persona="p", situation="x",
+        need="As p I want y so z.",
+        acceptance=["a"], tier="core",
+        confusion_flags=["c"],
+    ))
+    record = TicketRegistry(tmp_path).write(TicketPayload(
+        title="A ticket",
+        owner="tweedledum",
+        tier="v1",
+        estimate="1d",
+        description="d",
+        sources=["real-story"],
+    ))
+
+    def md_status() -> str:
+        text = record.path.read_text(encoding="utf-8")
+        m = re.search(r"^\*\*Status:\*\*\s*(\S+)", text, re.MULTILINE)
+        assert m, "Status field missing from ticket md"
+        return m.group(1)
+
+    # Fresh ticket: status open per the default TicketPayload.status.
+    assert md_status() == "open"
+
+    # Walk the lifecycle: each transition should cascade to md.
+    back_fill_state(tmp_path, record.slug, TicketState.PENDING)
+    assert md_status() == "open"  # PENDING and QUEUED both render as 'open'
+
+    transition(tmp_path, record.slug, TicketState.QUEUED, by="operator")
+    assert md_status() == "open"
+
+    transition(tmp_path, record.slug, TicketState.IN_PROGRESS, by="system")
+    assert md_status() == "in_flight"
+
+    transition(tmp_path, record.slug, TicketState.DONE, by="system")
+    assert md_status() == "done"
+
+
+def test_transition_md_propagation_is_best_effort(tmp_path: Path) -> None:
+    """Propagation failures don't break the primary ledger write
+    contract. The ledger remains canonical even if the md update
+    can't land (deleted file, permissions, etc)."""
+    from wonderland.story import StoryPayload, StoryRegistry
+    from wonderland.ticket import TicketPayload, TicketRegistry
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        back_fill_state,
+        get_state,
+        transition,
+    )
+
+    StoryRegistry(tmp_path).write(StoryPayload(
+        title="Real story",
+        persona="p", situation="x",
+        need="As p I want y so z.",
+        acceptance=["a"], tier="core",
+        confusion_flags=["c"],
+    ))
+    record = TicketRegistry(tmp_path).write(TicketPayload(
+        title="Doomed ticket",
+        owner="tweedledee",
+        tier="v1",
+        estimate="1d",
+        description="d",
+        sources=["real-story"],
+    ))
+    back_fill_state(tmp_path, record.slug, TicketState.PENDING)
+    transition(tmp_path, record.slug, TicketState.QUEUED, by="operator")
+
+    # Delete the md before transitioning — propagation will silently
+    # skip, but the ledger must still record the transition.
+    record.path.unlink()
+    transition(tmp_path, record.slug, TicketState.IN_PROGRESS, by="system")
+    assert get_state(tmp_path, record.slug) == TicketState.IN_PROGRESS

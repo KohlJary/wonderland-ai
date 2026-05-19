@@ -179,6 +179,71 @@ def list_tickets_in_state(
     return matches
 
 
+# Substrate bug 85aaee91 fix: lifecycle ↔ md-status mapping.
+# The lifecycle TicketState (pending / queued / in_progress / done /
+# aborted) and the md-file TicketStatus (open / in_flight / blocked /
+# done / dropped) are two different vocabularies for the same
+# concept. Pre-fix, the md status field was set at write time and
+# never updated, so the .md said ``open`` even after the lifecycle
+# transitioned the ticket through done. Operators using
+# ``grep Status: tickets/*.md`` saw stale state; the dashboard's
+# audit view (which reads the ledger) saw correct state; the two
+# diverged silently.
+_LIFECYCLE_TO_MD_STATUS: dict[TicketState, str] = {
+    TicketState.PENDING: "open",
+    TicketState.QUEUED: "open",
+    TicketState.IN_PROGRESS: "in_flight",
+    TicketState.DONE: "done",
+    TicketState.ABORTED: "dropped",
+}
+
+
+def _propagate_state_to_md(
+    project_root: Path, ticket_slug: str, to_state: TicketState,
+) -> None:
+    """Update the ticket .md file's ``**Status:**`` field to mirror
+    the lifecycle state. Best-effort: silently skips when the
+    ticket file can't be found or rewritten — the ledger remains
+    canonical, this is just keeping the md cosmetic field honest.
+
+    Substrate bug ``85aaee91`` history: pipeline_runner uses the
+    ledger correctly (via ``get_state``), but operators inspecting
+    tickets directly (``cat tickets/x.md``) saw stale ``Status:``
+    fields. The deeper class of bug was multi-source-of-truth
+    drift — different surfaces consulting different sources. This
+    hook makes the ledger the single point of truth that
+    cascades into the md, eliminating the drift class for
+    ticket-level state.
+    """
+    import re
+    from wonderland.ticket import TicketRegistry
+
+    try:
+        record = TicketRegistry(project_root).find_by_slug(ticket_slug)
+    except Exception:  # noqa: BLE001
+        return
+    if record is None:
+        return
+    try:
+        text = record.path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    md_status = _LIFECYCLE_TO_MD_STATUS.get(to_state, "open")
+    new_text, replaced = re.subn(
+        r"^(\*\*Status:\*\*)\s*\S+",
+        rf"\1 {md_status}",
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if replaced == 0 or new_text == text:
+        return
+    try:
+        record.path.write_text(new_text, encoding="utf-8")
+    except OSError:
+        return
+
+
 def transition(
     project_root: Path,
     ticket_slug: str,
@@ -187,7 +252,14 @@ def transition(
     notes: str | None = None,
 ) -> TransitionRecord:
     """Append a state-transition record after validating the move.
-    Raises ``IllegalTransitionError`` for illegal moves."""
+    Raises ``IllegalTransitionError`` for illegal moves.
+
+    Side effect: the ticket .md file's ``**Status:**`` field is
+    re-rendered to mirror the new state (substrate bug
+    ``85aaee91`` fix — ledger as canonical source of truth,
+    md as cosmetic mirror). Best-effort; ledger write is the
+    primary contract.
+    """
     current = get_state(project_root, ticket_slug)
     legal = LEGAL_TRANSITIONS.get(current, frozenset())
     if to_state not in legal:
@@ -208,6 +280,7 @@ def transition(
         notes=notes,
     )
     _append_record(project_root, record)
+    _propagate_state_to_md(project_root, ticket_slug, to_state)
     return record
 
 
@@ -347,6 +420,7 @@ def back_fill_state(
         notes=notes or "Back-filled from pre-lifecycle ticket registry",
     )
     _append_record(project_root, record)
+    _propagate_state_to_md(project_root, ticket_slug, state)
     return record
 
 

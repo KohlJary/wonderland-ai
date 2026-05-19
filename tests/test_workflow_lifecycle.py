@@ -697,9 +697,22 @@ class TestPerItemDiskFallback:
     ) -> None:
         """When the bus has no ticket artifacts but the project has
         tickets on disk, per_item iteration should pick them up."""
+        from wonderland.story import StoryPayload, StoryRegistry
         from wonderland.ticket import TicketPayload, TicketRegistry
         from wonderland.workflow import _run_one_meeting  # noqa: F401
 
+        # Register the story this ticket cites so the phantom-citation
+        # filter (post-93306e6) doesn't drop the ticket from the
+        # seed pool. Pre-filter, this test used a placeholder slug
+        # which silently produced a corrupted record; the filter now
+        # rightly drops fully-unanchored records.
+        StoryRegistry(tmp_path).write(StoryPayload(
+            title="See money",
+            persona="placeholder", situation="x",
+            need="As placeholder I want y so z.",
+            acceptance=["a"], tier="core",
+            confusion_flags=["placeholder"],
+        ))
         # Drop a ticket on disk
         TicketRegistry(tmp_path).write(TicketPayload(
             title="Build account API",
