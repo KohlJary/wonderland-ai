@@ -304,14 +304,41 @@ class Tools:
     # Operations
     # ------------------------------------------------------------------ #
 
-    def read_file(self, path: str) -> str:
+    def read_file(
+        self,
+        path: str,
+        *,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> str:
         """Read a UTF-8 text file and return its contents.
 
-        Files larger than ``MAX_READ_BYTES`` are truncated with a
-        trailing ``[truncated: N more bytes]`` marker so the LLM can
-        decide whether to ask for a different range. Binary files
-        (UTF-8 decode errors) raise ToolError so the LLM doesn't try
-        to reason about garbage.
+        Optional line-range read via ``offset`` (1-indexed start line)
+        and ``limit`` (number of lines to return). Reduces per-call
+        context cost when the agent only needs a specific section —
+        observed on obol-demo3 M7 where Tweedles re-read the same
+        ~200-line files 40-58 times in a single thread, mostly to
+        check small details. Line-range reads cut the per-call
+        token spend on those by ~5-10x.
+
+        Behavior:
+          - No offset, no limit: full file (legacy behavior).
+          - offset=N, no limit: read from line N to EOF.
+          - offset=N, limit=K: read K lines starting at line N.
+          - no offset, limit=K: read first K lines.
+
+        Lines are returned with line-number prefixes when a range
+        is requested (so the agent knows where in the file they are
+        and can re-anchor on the same range later without re-reading
+        the whole file). Full-file reads keep the legacy no-prefix
+        format for back-compat.
+
+        Files larger than ``MAX_READ_BYTES`` (full-file reads only)
+        are truncated with a trailing ``[truncated: N more bytes]``
+        marker. Binary files (UTF-8 decode errors) raise ToolError.
+
+        Out-of-range offset / negative offset raise ToolError so the
+        agent gets clear feedback rather than silent empty output.
         """
         full = self._resolve(path)
         if not full.exists():
@@ -322,14 +349,62 @@ class Tools:
             data = full.read_bytes()
         except OSError as exc:
             raise ToolError(f"read failed for {path}: {exc}") from exc
-        truncated = len(data) > MAX_READ_BYTES
-        if truncated:
-            data = data[:MAX_READ_BYTES]
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError as exc:
-            raise ToolError(f"file {path} is not valid UTF-8 (cannot read as text): {exc}") from exc
-        if truncated:
+            raise ToolError(
+                f"file {path} is not valid UTF-8 (cannot read as text): {exc}"
+            ) from exc
+
+        # Line-range path: when offset OR limit set, return a
+        # numbered slice. Cheaper per-call than full file.
+        if offset is not None or limit is not None:
+            lines = text.splitlines(keepends=True)
+            total = len(lines)
+            start_idx = (offset - 1) if offset is not None else 0
+            if start_idx < 0:
+                raise ToolError(
+                    f"offset must be >= 1 (got {offset})"
+                )
+            if start_idx >= total and total > 0:
+                raise ToolError(
+                    f"offset {offset} is past EOF "
+                    f"({path} has {total} lines)"
+                )
+            if limit is not None and limit < 1:
+                raise ToolError(
+                    f"limit must be >= 1 (got {limit})"
+                )
+            end_idx = (
+                start_idx + limit
+                if limit is not None
+                else total
+            )
+            end_idx = min(end_idx, total)
+            slice_lines = lines[start_idx:end_idx]
+            numbered = [
+                f"{start_idx + i + 1:>5}\t{line}"
+                for i, line in enumerate(slice_lines)
+            ]
+            result = "".join(numbered)
+            if not result.endswith("\n"):
+                result += "\n"
+            footer = (
+                f"\n[lines {start_idx + 1}-{end_idx} of {total} "
+                f"in {path}]"
+            )
+            return result + footer
+
+        # Full-file path (legacy): truncate at MAX_READ_BYTES.
+        truncated_bytes = len(data) > MAX_READ_BYTES
+        if truncated_bytes:
+            try:
+                text = data[:MAX_READ_BYTES].decode("utf-8")
+            except UnicodeDecodeError:
+                # Edge case: truncation cut a multi-byte char.
+                text = data[:MAX_READ_BYTES].decode(
+                    "utf-8", errors="ignore"
+                )
             remaining = full.stat().st_size - MAX_READ_BYTES
             text += f"\n\n[truncated: {remaining} more bytes]"
         return text
@@ -958,8 +1033,20 @@ class Tools:
                 "description": (
                     "Read the contents of a text file relative to the project "
                     "root. Returns UTF-8 text. Files larger than 64 KiB are "
-                    "truncated with a trailing marker. Use this to inspect "
-                    "existing code before editing it."
+                    "truncated (full-file reads only). Use this to inspect "
+                    "existing code before editing it.\n\n"
+                    "OPTIONAL line-range read via `offset` (1-indexed start "
+                    "line) and `limit` (max lines to return). Prefer this "
+                    "over full-file reads when you know which section you "
+                    "need — when you've already grepped for a symbol and "
+                    "want to read its definition, when you're checking a "
+                    "specific function signature, when you've just written "
+                    "to part of a file and want to verify a different "
+                    "section. Line-range reads cut per-call token cost "
+                    "5-10x for the common case of needing one block out "
+                    "of a 200-line file. Output of a range read is "
+                    "numbered (line N\\tcontent) so you can re-anchor on "
+                    "the same range without re-reading."
                 ),
                 "input_schema": {
                     "type": "object",
@@ -967,6 +1054,20 @@ class Tools:
                         "path": {
                             "type": "string",
                             "description": "Path relative to the project root.",
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": (
+                                "Optional 1-indexed start line. Combine "
+                                "with `limit` to read a window."
+                            ),
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": (
+                                "Optional max number of lines to return. "
+                                "Without offset, returns the first N lines."
+                            ),
                         },
                     },
                     "required": ["path"],
@@ -1353,7 +1454,11 @@ class Tools:
         self._last_op_metadata = None
         try:
             if tool_name == "read_file":
-                result_str = self.read_file(tool_input["path"])
+                result_str = self.read_file(
+                    tool_input["path"],
+                    offset=tool_input.get("offset"),
+                    limit=tool_input.get("limit"),
+                )
             elif tool_name == "write_file":
                 result_str = self.write_file(
                     tool_input["path"], tool_input["content"]

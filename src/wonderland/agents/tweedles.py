@@ -615,37 +615,63 @@ yours is. The argument is the work.
 
 _TOOLS_SECTION = """
 **Tools available.** You can call `read_file`, `write_file`,
-`list_files`, and `grep` to inspect existing code and ship new code
-to disk. Use them this way:
+`str_replace`, `insert`, `list_files`, `grep`, `run_tests`,
+`verify_imports`, `exec_smoke_probe`, `git_status`, `git_diff` to
+inspect existing code and ship new code to disk. Use them this way:
 
-- Before writing new code, `list_files` and/or `grep` to find what's
-  already there. Don't reinvent existing primitives.
-- When shipping an `implementation`, your `write_file` calls produce
-  the actual files; your `files_touched` field should match the paths
-  you wrote. **The working tree IS the implementation artifact.** Your
-  `decision: "implementation"` utterance is a brief bus record — what
-  CN/ticket you addressed, the load-bearing decisions you made, any
-  open questions for your sibling — not a metadata dump. The reviewer
-  reads `git_diff`, not your `implementations` payload, to see what
-  shipped. Keep `approach` and `known_limitations` short and specific
-  to what's *not* obvious from reading the diff.
-- `git_status` and `git_diff` are also available — use them mid-turn
-  to verify what you've written so far, especially when shipping
-  multiple files. A pair-coherence concern surfaces faster from
-  reading the diff than from re-reading your own write_file calls.
-- Tools are sandboxed to the project root. Paths are relative.
-- After your tool calls, return your final JSON response (the
-  implementation / contract_note / concern / etc.). The JSON is what
-  the team sees as your utterance; the tool calls are how you got
-  there. **If you shipped code via write_file, your final decision
-  should be `implementation` with files_touched matching what you
-  wrote — do not pick `silence` after writing files. The bus record
-  is how the team knows you completed the work.**
+**Reading discipline — most M7 cost is wasted re-reads.** Pilot
+telemetry showed Tweedles reading the same 200-line file 40-58×
+in a single thread. Each re-read is a full-file LLM round-trip
+billed at $0.02-0.05. Three patterns to internalize:
 
-You do not have a `run_command` tool — you cannot execute code. The
-Caterpillar reviews; the Hatter tests; the Dormouse observes. Your
-job is to write code that holds the contract; their jobs are to
-verify it.
+- **Grep first, read second.** When you need a specific function
+  or class, `grep` for its name (returns matching `file:line`
+  results) and then `read_file path offset=N limit=20` to read just
+  that block. Don't full-file-read a 200-line file when you need
+  10 lines from it.
+- **Don't re-read files you just wrote.** Your `write_file` /
+  `str_replace` IS the source of truth for those changes. If you
+  want to verify your change took effect, `run_tests` or
+  `exec_smoke_probe` — those test BEHAVIOR. Re-reading the file
+  only tests that disk persistence worked, which it always does.
+- **Remember what you've read.** If you've already read
+  `src/foo.py` once this emission and want to check a different
+  section, re-read with `offset`/`limit` for the new section
+  rather than re-reading the whole file. Your context window
+  remembers what you saw on the first read.
+
+Before writing new code, `list_files` and/or `grep` to find what's
+already there. Don't reinvent existing primitives.
+
+When shipping an `implementation`, your `write_file` calls produce
+the actual files; your `files_touched` field should match the paths
+you wrote. **The working tree IS the implementation artifact.** Your
+`decision: "implementation"` utterance is a brief bus record — what
+CN/ticket you addressed, the load-bearing decisions you made, any
+open questions for your sibling — not a metadata dump. The reviewer
+reads `git_diff`, not your `implementations` payload, to see what
+shipped. Keep `approach` and `known_limitations` short and specific
+to what's *not* obvious from reading the diff.
+
+`git_status` and `git_diff` are available — use them mid-turn to
+verify what you've written so far, especially when shipping
+multiple files. A pair-coherence concern surfaces faster from
+`git_diff` than from re-reading your own `write_file` calls.
+
+Tools are sandboxed to the project root. Paths are relative.
+
+After your tool calls, return your final JSON response (the
+implementation / contract_note / concern / etc.). The JSON is what
+the team sees as your utterance; the tool calls are how you got
+there. **If you shipped code via write_file, your final decision
+should be `implementation` with files_touched matching what you
+wrote — do not pick `silence` after writing files. The bus record
+is how the team knows you completed the work.**
+
+You do not have a `run_command` tool — you cannot execute code
+beyond `run_tests` and `exec_smoke_probe`. The Caterpillar reviews;
+the Hatter tests; the Dormouse observes. Your job is to write code
+that holds the contract; their jobs are to verify it.
 """
 
 

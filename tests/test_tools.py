@@ -90,6 +90,96 @@ def test_read_binary_raises(tmp_path: Path) -> None:
         tools.read_file("binary.bin")
 
 
+# ---------- line-range reads (obol-demo3 cost-reduction follow-up) ----------
+
+
+def test_read_with_offset_and_limit_returns_numbered_slice(
+    tmp_path: Path,
+) -> None:
+    """Range read returns just the requested window with 1-indexed
+    line-number prefixes. The Tweedles can grep for a symbol and
+    then read just its definition block, instead of re-reading
+    full 200-line files 40+ times like obol-demo3 M7 telemetry
+    showed."""
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text(
+        "line1\nline2\nline3\nline4\nline5\n"
+    )
+    out = tools.read_file("src.py", offset=2, limit=2)
+    assert "    2\tline2" in out
+    assert "    3\tline3" in out
+    assert "line1" not in out
+    assert "line4" not in out
+    assert "[lines 2-3 of 5 in src.py]" in out
+
+
+def test_read_offset_only_reads_from_offset_to_eof(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text("a\nb\nc\nd\n")
+    out = tools.read_file("src.py", offset=3)
+    assert "    3\tc" in out
+    assert "    4\td" in out
+    assert "    1" not in out
+
+
+def test_read_limit_only_reads_first_n_lines(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text("a\nb\nc\nd\n")
+    out = tools.read_file("src.py", limit=2)
+    assert "    1\ta" in out
+    assert "    2\tb" in out
+    assert "    3" not in out
+    assert "[lines 1-2 of 4" in out
+
+
+def test_read_full_file_unchanged_when_no_range_params(
+    tmp_path: Path,
+) -> None:
+    """Back-compat: callers that don't pass offset/limit get the
+    legacy full-file output, no line-number prefixes."""
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text("hello\nworld\n")
+    out = tools.read_file("src.py")
+    assert out == "hello\nworld\n"
+    assert "[lines" not in out  # no range footer
+
+
+def test_read_invalid_offset_raises(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text("a\nb\n")
+    with pytest.raises(ToolError, match="offset must be"):
+        tools.read_file("src.py", offset=0)
+
+
+def test_read_offset_past_eof_raises(tmp_path: Path) -> None:
+    """Clear feedback when the agent tries to read past EOF, instead
+    of silently returning empty."""
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text("a\nb\n")
+    with pytest.raises(ToolError, match="past EOF"):
+        tools.read_file("src.py", offset=10)
+
+
+def test_read_invalid_limit_raises(tmp_path: Path) -> None:
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text("a\nb\n")
+    with pytest.raises(ToolError, match="limit must be"):
+        tools.read_file("src.py", limit=0)
+
+
+def test_read_dispatch_via_execute_with_range(tmp_path: Path) -> None:
+    """Execute() path forwards offset + limit correctly."""
+    tools = Tools(tmp_path)
+    (tmp_path / "src.py").write_text("a\nb\nc\nd\n")
+    out = tools.execute(
+        "read_file",
+        {"path": "src.py", "offset": 2, "limit": 2},
+    )
+    assert "    2\tb" in out
+    assert "    3\tc" in out
+    assert "    1" not in out
+
+
 # ---------- sandbox safety ----------
 
 
