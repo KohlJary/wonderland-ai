@@ -4601,31 +4601,53 @@ def _feature_in_implementation_state(
     }
 
 
-def _find_blocking_review(
+def _find_blocking_reviews(
     new_utterances: list[Utterance], feature_slug: str
-) -> dict | None:
-    """Scan utterances emitted during this iteration for a review
-    artifact whose verdict is request-changes or block. Returns the
-    artifact's full payload dict (slug, findings, target_files, etc.)
-    when found, else None.
+) -> list[dict]:
+    """Scan utterances emitted during this iteration for review
+    artifacts whose verdict is request-changes or block. Returns
+    a list of full payload dicts (slug, findings, target_files,
+    etc.) — possibly multiple per meeting when Caterpillar splits
+    a feature review into per-area reviews (e.g. backend + frontend).
 
     Used by ``_apply_post_meeting_transitions`` to route around the
     normal feature → ready_for_review transition when Caterpillar
     flags issues — instead, the substrate synthesizes follow-up
     tickets from the review's findings and the original iteration's
     tickets transition to DONE.
+
+    Earlier this returned only the FIRST blocking review found,
+    which dropped subsequent reviews' findings silently. Observed
+    on obol-demo3 M1 where M8 emitted two reviews (one
+    backend-area, one frontend-area), the frontend one had a
+    change-required+bug finding that should have spawned a
+    follow-up ticket, but only the backend review (with all-meta
+    findings) got processed — no tickets spawned, the bug
+    silently shipped.
     """
     del feature_slug  # Reserved for future scoping; one feature
     # per M8 iteration today so the iteration's utterances are
     # already correctly scoped.
+    out: list[dict] = []
     for u in new_utterances:
         for a in u.content.artifacts:
             if a.kind != "review":
                 continue
             verdict = a.payload.get("verdict")
             if verdict in ("request-changes", "block"):
-                return dict(a.payload)
-    return None
+                out.append(dict(a.payload))
+    return out
+
+
+def _find_blocking_review(
+    new_utterances: list[Utterance], feature_slug: str
+) -> dict | None:
+    """Back-compat shim: return the first blocking review (or None).
+    New callers should use ``_find_blocking_reviews`` (plural) to
+    process every blocking review in the iteration, not just the
+    first."""
+    reviews = _find_blocking_reviews(new_utterances, feature_slug)
+    return reviews[0] if reviews else None
 
 
 def _find_accept_review(
@@ -5997,17 +6019,35 @@ def _apply_post_meeting_transitions(
             project_root, feature_slug
         ):
             return
-        blocking_review = _find_blocking_review(
+        blocking_reviews = _find_blocking_reviews(
             new_utterances, feature_slug
         )
-        if blocking_review is not None:
-            _route_blocking_review(
-                project_root,
-                feature_slug=feature_slug,
-                review_payload=blocking_review,
-                actor=actor,
-                meeting_id=meeting.id,
-            )
+        if blocking_reviews:
+            # Process EVERY blocking review's findings, not just
+            # the first. Observed on obol-demo3 M1 where M8
+            # emitted two reviews (backend + frontend area) and
+            # the frontend review's change-required+bug finding
+            # never spawned a follow-up ticket because only the
+            # first (backend) review was processed. Cat splitting
+            # a feature review into per-area reviews is normal
+            # behavior and shouldn't drop downstream work.
+            #
+            # ``_route_blocking_review`` also marks the feature's
+            # in_progress tickets as done as a side effect; pass
+            # auto_complete_in_flight_tickets=False on all calls
+            # after the first so the mark-done sweep only fires
+            # once (the ticket transitions are idempotent — done
+            # → done is illegal and silently skipped — but the
+            # ledger writes are still wasted work).
+            for idx, review_payload in enumerate(blocking_reviews):
+                _route_blocking_review(
+                    project_root,
+                    feature_slug=feature_slug,
+                    review_payload=review_payload,
+                    actor=actor,
+                    meeting_id=meeting.id,
+                    auto_complete_in_flight_tickets=(idx == 0),
+                )
             return
         accept_review = _find_accept_review(new_utterances)
         if accept_review is not None:
