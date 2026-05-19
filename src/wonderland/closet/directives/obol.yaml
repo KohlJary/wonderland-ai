@@ -1,0 +1,59 @@
+name: obol
+title: Personal finance TUI — "htop for money"
+description: |
+  A second reference demo directive (alongside notebook) covering
+  the TUI / single-process / single-user shape — the lane that
+  most operators reaching for Wonderland for personal-tool work
+  would land in.
+
+  Produced a clean 6-milestone plan on the obol-demo2 pilot
+  (M1 data foundation, M2 balance dashboard, M3 transaction ledger,
+  M4 budget summary, M5 debt paydown, M6 CSV import). Each
+  milestone targets a coherent slice a layperson with finances
+  would recognize: "what do I have," "what did I spend," "did I
+  stay in budget," "when am I out of debt." Operator-validated as
+  the kind of two-sentence directive a non-developer might
+  actually write.
+
+  Stack differentiation from notebook: TUI instead of web (Textual
+  + pytest), single Python process instead of FastAPI + React,
+  SQLite local-only with no network. Tests substrate primitives
+  that the web-fullstack demos don't stress — Textual's screen
+  composition lifecycle, terminal-render contracts, single-process
+  module boundaries.
+
+  Persona target: a developer or researcher who wants a fast,
+  keyboard-driven personal finance view on their own data. Not a
+  competitor to Mint or YNAB — closer to ranger or htop for the
+  shape of interaction. The "htop for money" framing IS the load-
+  bearing intent; ADRs and contracts in M4 / M5 should read
+  density-first rather than CRUD-first.
+
+  Substrate guard rails this directive exercises:
+    - prime_directive carryover into project_context (the
+      htop-density framing has to survive into M4 ADRs / M5
+      contracts; without the prime_directive primitive, M4+
+      drifts to generic personal-finance shape)
+    - branching memory under multi-milestone scope
+    - milestone-scoped seed loaders (M2 design should not see M1
+      stories)
+    - foundation feature kind (M1 is data-layer plumbing,
+      kind: foundation rather than capability)
+
+  Expected total spend across all 6 milestones: $40-80 if substrate
+  health is good. Each milestone's M1-design pass ~$5-10,
+  implementation ~$5-15. Compares directly with notebook ($30-50
+  baseline) so the cost-per-milestone numbers transfer.
+
+body: |
+  Build a TUI dashboard for managing personal finances. Think
+  "htop for money".
+
+  Account balances, transaction ledgers with categorization,
+  categorized budgeting with weekly/monthly summary views, ability
+  to track debts and view paydown progress.
+
+suggested_workflow: discovery
+suggested_skeleton: python-tui
+tags: [tui, personal-finance, paper-demo, single-process, no-network, paper-shows-tui-shape]
+category: demo
