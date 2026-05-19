@@ -2004,6 +2004,24 @@ def _collect_per_item_items(
             if explicitly_queued:
                 queued_set = set(explicitly_queued)
                 items = [it for it in items if it["slug"] in queued_set]
+            else:
+                # No tickets explicitly queued for this lane's feature.
+                # Earlier behavior fell through to "keep ALL tickets"
+                # which silently re-iterated done tickets and ran
+                # the entire ticket set on features the operator
+                # never queued anything on — observed on obol-demo2
+                # M1 where a feature with no queued tickets ran every
+                # ticket on it, including the done ones (substrate
+                # bug 088c204b followup). Fix: keep only tickets in
+                # actionable states (pending / no-state-record).
+                # Done / aborted tickets are terminal and shouldn't
+                # iterate again unless the operator explicitly
+                # re-queues them.
+                actionable: set[Any] = {TicketState.PENDING, None}
+                items = [
+                    it for it in items
+                    if ticket_states.get(it["slug"]) in actionable
+                ]
     elif (
         lane_outer_slug is not None
         and lane_outer_kind is not None
