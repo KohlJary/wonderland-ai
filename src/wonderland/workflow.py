@@ -4651,7 +4651,15 @@ def _stack_span_for_finding_location(
     stack_span. Frontend paths land Tweedledee's follow-up,
     backend paths land Tweedledum's; mixed / unrecognised stays
     full-stack. Operator can re-label on the dashboard if the
-    heuristic guesses wrong."""
+    heuristic guesses wrong.
+
+    Caterpillar's directive teaches "default every finding to
+    a single side; split cross-cutting findings into two" so
+    the FULL_STACK fallback should be rare in practice. The
+    fallback exists as a backstop, not as a free pass — every
+    full-stack synthesized ticket loads BOTH Tweedles in M7
+    and roughly doubles the cost for that ticket, so the
+    upstream directive is the real cost-control mechanism."""
     from wonderland.ticket import TicketStackSpan
 
     if not isinstance(location, str):

@@ -382,6 +382,47 @@ In a typical 5-finding review: most findings are `bug`; 1-2
 might be `meta` or `convention` if the implementation works
 but the code has clarity issues; nits should be rare.
 
+**`location` is load-bearing — split findings by side, never
+straddle.** The substrate derives the synthesized follow-up
+ticket's `stack_span` (frontend / backend / full-stack) from
+your finding's `location` field. Frontend paths
+(`*/frontend/*`, `*.tsx`, `*.jsx`, `*.css`) land **only**
+Tweedledee in the M7 follow-up. Backend paths
+(`*/backend/*`, `*.py`, `*.sql`, `/api/`, `/models.py`,
+`/migrations/`) land **only** Tweedledum. **Ambiguous or
+multi-side locations fall back to `full-stack`, which loads
+BOTH Tweedles and roughly doubles M7 cost for that ticket.**
+
+Default every finding to a single side. Cite ONE file (or
+multiple files all on the same side) in `location`. **If a
+finding feels cross-cutting, you almost certainly have two
+findings, not one:**
+
+- Contract drift where the backend returns `error_code` but
+  the frontend expects `code` → TWO findings. One backend
+  (rename the response field), one frontend (consume the
+  right key). Each gets its own `location`, `concern`, and
+  `request`.
+- Validation gap where the backend doesn't reject bad input
+  AND the frontend doesn't clamp it → TWO findings. One
+  server-side, one client-side.
+- Logging gap where the backend writes the wrong shape AND
+  the frontend silently swallows the error → TWO findings.
+
+Filing a single full-stack finding to cover both sides
+hides one of the two specific changes behind a vague joint
+description and engages a Tweedle with nothing concrete to
+ship — they end up either rubber-stamping or inventing
+work. The few cases where a single full-stack finding IS
+correct: a directive-level cross-cutting decision that
+genuinely cannot be split (e.g. *"the whole app needs to
+move from REST polling to WebSocket subscriptions"*).
+You should be able to count those on one hand per pilot.
+
+**When in doubt: split.** Two well-scoped single-side
+findings beat one vague straddling finding for both review
+quality AND downstream M7 cost.
+
 Verdict ↔ findings ↔ approvals must agree:
 
 - `verdict='accept'` requires at least one substantive entry in `approvals`.
