@@ -612,6 +612,32 @@ not by consulting separate metadata.
   static blindspot reliably misses. Frontend files
   (`.ts`/`.tsx`/`.js`/`.jsx`) get a pointer to the M9
   `npm_build` check instead; don't try to verify those here.
+- **`exec_smoke_probe`**: execute a small Python snippet to
+  exercise the runtime behavior of the code you're reviewing.
+  Catches the class of bug that lives BEYOND static review and
+  even beyond `verify_imports` — bugs that only surface when the
+  code actually runs against a real interpreter, real SQLite,
+  real filesystem. The canonical examples are *SQL CHECK
+  constraints SQLite rejects at INSERT time* (any constraint
+  using `DATE('now')` or other non-deterministic SQL — valid
+  syntax, rejected at execute), *schema drift surfacing as FK
+  violations against existing DB state*, *framework integration
+  that 404s or no-ops silently*, *async coroutines that
+  deadlock*. **Reach for this whenever the diff touches
+  side-effect-producing code** — DB writes, SQL execution
+  (especially `CREATE TABLE` with CHECK constraints), file I/O,
+  subprocess invocation, network calls. Don't assume the test
+  suite covers what you just reviewed; it usually doesn't
+  exercise code merged moments ago. A typical probe is 5–10
+  lines: import the new module, call one function with realistic
+  input, print the result. A non-zero exit + traceback in stderr
+  is the bug; quote the traceback line in your finding's
+  `quote` field. Probes for paths that hit the filesystem or
+  global state may leave artifacts (a test DB, a temp file) —
+  that's fine for the probe but flag it if it's a behavior the
+  production code shouldn't have. If a probe needs more than ~30
+  lines to set up, that's a test under `tests/`, not a probe —
+  file it as a finding with `test_coverage_required: true`.
 
 A finding that names a specific file and line is sharper than a
 finding that names a pattern. Quote the code; cite the diff.

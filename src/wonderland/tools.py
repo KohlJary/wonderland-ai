@@ -57,6 +57,21 @@ MAX_TEST_OUTPUT_BYTES = 4 * 1024  # 4 KiB ≈ ~1k tokens
 # meeting's wall-clock budget.
 DEFAULT_TEST_TIMEOUT_SECONDS = 60.0
 
+# Cap on snippet length passed to `exec_smoke_probe`. Probes that need
+# more than 16 KiB are doing something other than smoke-testing a code
+# path — they should be a proper test in `tests/` instead.
+MAX_PROBE_SNIPPET_BYTES = 16 * 1024
+
+# Cap on `exec_smoke_probe` output. Same shape rationale as
+# MAX_TEST_OUTPUT_BYTES — a stack trace + a few lines of stdout is the
+# load-bearing signal; an exploded REPL dump dominates the LLM context.
+MAX_PROBE_OUTPUT_BYTES = 4 * 1024
+
+# Default wall-clock cap for `exec_smoke_probe`. Tighter than
+# DEFAULT_TEST_TIMEOUT_SECONDS — probes exercise a single code path,
+# not the full suite, so 30s is generous.
+DEFAULT_PROBE_TIMEOUT_SECONDS = 30.0
+
 # Hard cap on the number of grep results to avoid context-flood.
 MAX_GREP_HITS = 100
 
@@ -785,6 +800,109 @@ class Tools:
             out = out[:MAX_TEST_OUTPUT_BYTES] + "\n[truncated]"
         return f"verify_imports findings for {path}:\n{out}"
 
+    def exec_smoke_probe(
+        self,
+        snippet: str,
+        *,
+        timeout_seconds: float = DEFAULT_PROBE_TIMEOUT_SECONDS,
+    ) -> str:
+        """Run a Python snippet in the project root to exercise runtime
+        behavior of changed code.
+
+        The class of bug this catches lives BEYOND static review:
+          - SQL CHECK constraints SQLite rejects at INSERT time
+            (non-deterministic ``DATE('now')``, anything else
+            SQLite refuses)
+          - Schema drift that surfaces as FK violations or
+            type-coercion bugs against existing DB state
+          - Framework integration that 404s, deadlocks, or silently
+            no-ops
+          - File I/O that's denied at runtime but valid at parse time
+          - Async coroutines that block on an awaited never-resolves
+
+        Static review reading the diff reliably misses these; running
+        the code surfaces them in seconds. Cat reaches for this when
+        the diff touches side-effect-producing code (DB writes, SQL
+        execution, file I/O, subprocess invocation, network calls).
+
+        Implementation: invokes ``python -c <snippet>`` in the project
+        root with stdin closed and a hard wall-clock timeout. Captures
+        stdout + stderr + exit code. Truncates output to
+        MAX_PROBE_OUTPUT_BYTES.
+
+        Snippet length is capped at MAX_PROBE_SNIPPET_BYTES (16 KiB).
+        A probe that needs more than that should land as a proper
+        test under ``tests/`` instead — file it as a finding with a
+        ``test_coverage_required: true`` request.
+
+        Returns a formatted block:
+
+            exit_code=N
+            stdout:
+            <captured stdout>
+            stderr:
+            <captured stderr>
+
+        A non-zero exit_code is not a tool failure — it's the probe's
+        primary signal. Most runtime bugs surface as an exception (
+        non-zero exit + stderr traceback). The tool only raises
+        ToolError on infrastructure problems (no Python interpreter,
+        timeout, oversized snippet).
+        """
+        if not isinstance(snippet, str):
+            raise ToolError(
+                f"exec_smoke_probe expects a string snippet "
+                f"(got {type(snippet).__name__})"
+            )
+        if not snippet.strip():
+            raise ToolError(
+                "exec_smoke_probe requires a non-empty snippet"
+            )
+        if len(snippet.encode("utf-8")) > MAX_PROBE_SNIPPET_BYTES:
+            raise ToolError(
+                f"snippet exceeds {MAX_PROBE_SNIPPET_BYTES} bytes — "
+                f"narrow the probe to exercise just one code path, "
+                f"or file it as a test under tests/ via a finding "
+                f"with test_coverage_required=true"
+            )
+        cmd = [sys.executable, "-c", snippet]
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=self._root,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_seconds,
+                stdin=subprocess.DEVNULL,
+            )
+        except FileNotFoundError as exc:
+            raise ToolError(
+                "python interpreter not available — exec_smoke_probe "
+                "requires sys.executable to be valid"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ToolError(
+                f"smoke probe timed out after {timeout_seconds}s — "
+                f"narrow the probe to exercise less, or check whether "
+                f"the code under test has an infinite loop / "
+                f"blocking I/O"
+            ) from exc
+
+        stdout = (result.stdout or "").rstrip()
+        stderr = (result.stderr or "").rstrip()
+        parts = [f"exit_code={result.returncode}"]
+        parts.append(
+            f"stdout:\n{stdout}" if stdout else "stdout: (empty)"
+        )
+        parts.append(
+            f"stderr:\n{stderr}" if stderr else "stderr: (empty)"
+        )
+        out = "\n".join(parts)
+        if len(out.encode("utf-8")) > MAX_PROBE_OUTPUT_BYTES:
+            out = out[:MAX_PROBE_OUTPUT_BYTES] + "\n[truncated]"
+        return out
+
     def git_diff(self, path: str | None = None) -> str:
         """Show the diff of working-tree changes against HEAD.
 
@@ -1149,6 +1267,59 @@ class Tools:
                     "required": ["path"],
                 },
             },
+            {
+                "name": "exec_smoke_probe",
+                "description": (
+                    "Execute a Python snippet in the project root to "
+                    "probe the runtime behavior of changed code. "
+                    "Catches the class of bug that lives BEYOND "
+                    "static review: SQL CHECK constraints SQLite "
+                    "rejects at INSERT time (non-deterministic "
+                    "``DATE('now')``), schema drift that surfaces as "
+                    "FK violations or type-coercion bugs against "
+                    "existing DB state, framework integration that "
+                    "404s or no-ops silently, async coroutines that "
+                    "deadlock, file I/O that's denied at runtime but "
+                    "valid at parse time. Reach for this DURING "
+                    "review when the diff touches anything that "
+                    "produces side effects — DB writes, SQL "
+                    "execution, file I/O, subprocess invocation, "
+                    "network calls. Static review alone reliably "
+                    "misses runtime failures in these paths. Keep "
+                    "the snippet small: a few imports + a single "
+                    "function call exercising the happy path with "
+                    "realistic inputs is usually enough. A non-zero "
+                    "exit code is not a tool failure — it's the "
+                    "probe's primary signal. Returns "
+                    "``exit_code=N\\nstdout:<...>\\nstderr:<...>``, "
+                    "truncated to ~4 KiB."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "snippet": {
+                            "type": "string",
+                            "description": (
+                                "Python source to execute. Runs in the "
+                                "project root, so package imports work "
+                                "normally. Keep concise — under 16 KiB; "
+                                "under 30 lines for typical probes."
+                            ),
+                        },
+                        "timeout_seconds": {
+                            "type": "number",
+                            "description": (
+                                "Optional wall-clock cap in seconds "
+                                "(default 30.0). Tighten for probes "
+                                "that should complete instantly; "
+                                "loosen if exercising a deliberately "
+                                "slow path."
+                            ),
+                        },
+                    },
+                    "required": ["snippet"],
+                },
+            },
         ]
 
     def execute(
@@ -1225,6 +1396,13 @@ class Tools:
                 )
             elif tool_name == "verify_imports":
                 result_str = self.verify_imports(tool_input["path"])
+            elif tool_name == "exec_smoke_probe":
+                result_str = self.exec_smoke_probe(
+                    tool_input["snippet"],
+                    timeout_seconds=tool_input.get(
+                        "timeout_seconds", DEFAULT_PROBE_TIMEOUT_SECONDS
+                    ),
+                )
             else:
                 raise ToolError(f"unknown tool: {tool_name}")
             return result_str

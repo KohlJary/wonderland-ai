@@ -242,7 +242,11 @@ def test_tool_definitions_returns_full_set() -> None:
     str_replace + insert added in T67 (P10) for token-cheap iterative
     file authoring. verify_imports added in P16 T-v5 — Caterpillar's
     static-check tool for the bug class between code review and
-    test collection."""
+    test collection. exec_smoke_probe added after the obol M2
+    retrospective — for the runtime-only bug class (SQL CHECK
+    constraints, schema drift, framework wiring) that even
+    verify_imports can't catch because the code is syntactically
+    fine; only running it surfaces the failure."""
     defs = Tools.tool_definitions()
     names = {d["name"] for d in defs}
     assert names == {
@@ -257,6 +261,7 @@ def test_tool_definitions_returns_full_set() -> None:
         "git_diff",
         "run_tests",
         "verify_imports",
+        "exec_smoke_probe",
     }
 
 
@@ -912,3 +917,128 @@ def test_verify_imports_dispatch_via_execute(tmp_path: Path) -> None:
     tools.write_file("hi.py", "x = 1\n")
     out = tools.execute("verify_imports", {"path": "hi.py"})
     assert out.startswith("OK:")
+
+
+# ====================================================================
+# exec_smoke_probe — Caterpillar's M8 runtime probe for bugs that
+# static review (and even verify_imports) reliably misses: SQL CHECK
+# constraints SQLite rejects at INSERT, schema drift, framework
+# wiring that 404s, async deadlocks. Tests below verify the
+# happy-path output shape, the canonical failure-mode capture, and
+# the safety rails (snippet size cap, timeout, dispatch).
+# ====================================================================
+
+
+def test_exec_smoke_probe_in_tool_definitions() -> None:
+    """Caterpillar can't call the probe unless it's registered in
+    the Anthropic schema."""
+    defs = Tools.tool_definitions()
+    names = {d["name"] for d in defs}
+    assert "exec_smoke_probe" in names
+
+
+def test_exec_smoke_probe_runs_clean_snippet(tmp_path: Path) -> None:
+    """Happy path: a clean snippet runs to completion, exit_code=0,
+    stdout captures print() output, stderr is empty."""
+    tools = Tools(tmp_path)
+    out = tools.exec_smoke_probe("print('hello'); print('world')")
+    assert "exit_code=0" in out
+    assert "hello" in out
+    assert "world" in out
+    assert "stderr: (empty)" in out
+
+
+def test_exec_smoke_probe_captures_traceback_in_stderr(
+    tmp_path: Path,
+) -> None:
+    """The canonical signal for a bug: snippet raises, exit_code is
+    non-zero, traceback lands in stderr. This is the M2 SQLite CHECK
+    constraint shape — INSERT fails, sqlite3.OperationalError gets
+    raised, Cat sees the traceback and files the finding."""
+    tools = Tools(tmp_path)
+    out = tools.exec_smoke_probe("raise RuntimeError('boom')")
+    assert "exit_code=1" in out
+    assert "RuntimeError" in out
+    assert "boom" in out
+
+
+def test_exec_smoke_probe_runs_in_project_root(tmp_path: Path) -> None:
+    """Snippets need to resolve package imports against the project
+    root — without that, probing a freshly-added module is
+    impossible."""
+    tools = Tools(tmp_path)
+    tools.write_file("probe_target.py", "def value():\n    return 42\n")
+    out = tools.exec_smoke_probe(
+        "import probe_target; print(probe_target.value())"
+    )
+    assert "exit_code=0" in out
+    assert "42" in out
+
+
+def test_exec_smoke_probe_rejects_empty_snippet(tmp_path: Path) -> None:
+    """A blank probe is operator error — surface it as ToolError
+    rather than burning a subprocess."""
+    tools = Tools(tmp_path)
+    with pytest.raises(ToolError, match="non-empty"):
+        tools.exec_smoke_probe("")
+    with pytest.raises(ToolError, match="non-empty"):
+        tools.exec_smoke_probe("   \n   ")
+
+
+def test_exec_smoke_probe_rejects_oversized_snippet(
+    tmp_path: Path,
+) -> None:
+    """16 KiB is generous for a smoke probe. Anything larger is
+    a test, not a probe — guide Cat to file it as a tests/ ticket
+    via the error message."""
+    tools = Tools(tmp_path)
+    huge = "x = 1\n" * 5000  # ~30 KiB
+    with pytest.raises(ToolError, match="exceeds"):
+        tools.exec_smoke_probe(huge)
+
+
+def test_exec_smoke_probe_enforces_timeout(tmp_path: Path) -> None:
+    """A stuck probe must not block the review meeting's wall
+    clock. The hard timeout surfaces as ToolError so Cat can decide
+    whether to narrow the probe."""
+    tools = Tools(tmp_path)
+    with pytest.raises(ToolError, match="timed out"):
+        tools.exec_smoke_probe(
+            "import time; time.sleep(10)", timeout_seconds=0.5
+        )
+
+
+def test_exec_smoke_probe_truncates_oversized_output(
+    tmp_path: Path,
+) -> None:
+    """Probes that print() large blobs would dominate the LLM
+    context. The 4 KiB cap matches run_tests' approach."""
+    tools = Tools(tmp_path)
+    out = tools.exec_smoke_probe(
+        "print('x' * 10000)"
+    )
+    assert "[truncated]" in out
+    # Cap is 4 KiB; output stays bounded.
+    assert len(out.encode("utf-8")) < 5 * 1024
+
+
+def test_exec_smoke_probe_dispatch_via_execute(tmp_path: Path) -> None:
+    """The execute() path needs the tool wired into the dispatch
+    table; without that, the LLM's tool_use blocks become no-ops."""
+    tools = Tools(tmp_path)
+    out = tools.execute("exec_smoke_probe", {"snippet": "print('ok')"})
+    assert "exit_code=0" in out
+    assert "ok" in out
+
+
+def test_exec_smoke_probe_dispatch_honors_timeout_override(
+    tmp_path: Path,
+) -> None:
+    """Caterpillar can tighten the timeout via the dispatch path
+    for probes that should complete instantly."""
+    tools = Tools(tmp_path)
+    with pytest.raises(ToolError, match="timed out"):
+        tools.execute(
+            "exec_smoke_probe",
+            {"snippet": "import time; time.sleep(2)", "timeout_seconds": 0.3},
+        )
