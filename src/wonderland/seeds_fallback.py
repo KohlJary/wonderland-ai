@@ -169,9 +169,81 @@ def _load_tickets(project_root: Path) -> list[Any]:
 
 
 def _load_stories(project_root: Path) -> list[Any]:
+    """Load stories from disk. When an active milestone scope is set,
+    filter to stories whose ``realizes_requirements`` intersects the
+    active milestone's ``consumes_requirements`` — stories from
+    sibling milestones don't pollute the current milestone's design
+    pass.
+
+    Observed on obol-demo2 M2 design pass: without this filter,
+    Alice's M2 scoping meeting saw every story Alice wrote during
+    M1 design (milestone scope set, branching memory excluded
+    M1 deliberation from recall, but the disk-loader seed pool
+    still surfaced them). The result: M2 composition built on top
+    of M1 story material, defeating the milestone scoping the
+    operator just spent design budget setting up.
+
+    Stories with empty ``realizes_requirements`` are dropped from
+    scope (they pre-date the field or were poorly attributed at
+    write time). Operators can backfill the field if the story
+    is legitimately cross-milestone.
+    """
     from wonderland.story import StoryRegistry
 
-    return StoryRegistry(project_root).list_stories()
+    all_stories = StoryRegistry(project_root).list_stories()
+
+    # Lazy-import to avoid circular dep at module load.
+    try:
+        from wonderland.workflow import get_active_milestone_scope
+        scope = get_active_milestone_scope()
+    except Exception:  # noqa: BLE001
+        scope = None
+    if scope is None:
+        return all_stories
+
+    # Resolve the active milestone's consumes_requirements.
+    try:
+        from wonderland.coverage import (
+            _parse_milestone_consumes,
+            _parse_story_realizes,
+        )
+    except Exception:  # noqa: BLE001
+        return all_stories  # parser unavailable, fall through
+
+    milestone_dir = project_root / ".wonderland" / "milestones"
+    if not milestone_dir.is_dir():
+        return all_stories
+    active_reqs: set[str] = set()
+    for path in milestone_dir.glob("milestone-*.md"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # Match by slug appearing in the filename; defensive because
+        # milestone GUIDs vary and slug is the stable identifier.
+        if scope.slug not in path.name:
+            continue
+        active_reqs.update(_parse_milestone_consumes(text))
+
+    if not active_reqs:
+        # Couldn't resolve the active milestone's requirements
+        # (file missing, parser failed). Defensive: return all
+        # stories rather than wedge the meeting on empty seeds.
+        return all_stories
+
+    in_scope: list[Any] = []
+    for record in all_stories:
+        try:
+            text = record.path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        story_reqs = set(_parse_story_realizes(text))
+        # Drop stories that explicitly attribute to other milestones'
+        # requirements only. Stories without realizes_requirements
+        # are pre-attribution / legacy — also drop, operator backfills.
+        if story_reqs & active_reqs:
+            in_scope.append(record)
+    return in_scope
 
 
 def _load_features(project_root: Path) -> list[Any]:
