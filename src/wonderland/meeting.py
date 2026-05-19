@@ -617,6 +617,30 @@ async def run_phased_meeting(
                 await phase_event_writer(phase_start)
             yield phase_start
 
+            # Phase-entry exit check: when a prior phase in this same
+            # meeting already shipped the target artifact, skip this
+            # phase entirely. Without this, M7's validate phase
+            # ALWAYS ran a team window even when implement had
+            # already landed the implementation artifact — observed on
+            # obol-demo3 where every M7 ticket showed identical
+            # phase-event pairs (implement → exit_condition;
+            # validate → exit_condition) with 4+ wasted utterances per
+            # validate cycle. The check fires once per phase entry
+            # before any team window opens; if the artifact is
+            # already on the bus (from a prior phase of THIS meeting,
+            # not seeded from elsewhere), state.exit_condition_met
+            # flips True and the while-True loop's first
+            # is_complete() check exits before spending any agent
+            # turn. Same _check_exit_condition the per-window check
+            # uses — shares is_seed + artifact_count_before
+            # protections so cross-run seeded artifacts don't trip
+            # this prematurely.
+            _check_exit_condition(
+                state=state,
+                capture=capture,
+                artifact_count_before=artifact_count_before,
+            )
+
             meeting_budget_hit = False
 
             # Local helper: Identity → AgentIdentity coercion. Real
