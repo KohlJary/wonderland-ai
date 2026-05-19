@@ -180,6 +180,28 @@ The asymmetry is structural, not engineering effort. A single-shot agent that sh
 
 ---
 
+## What kind of comparison is this — single-shot vs. Wonderland is the cheapest possible framing
+
+A point of honesty about the baselines chosen here: single-shot (A) and lightly-orchestrated single-agent loops (B1, B2) are the *cheapest possible competitors* to put against Wonderland. They are also the ones that look best on small, well-scoped directives like the notebook, because their overhead per request is minimal and their structure isn't paying for state that isn't load-bearing.
+
+The full competitive landscape includes another category the artifact doesn't probe: **other agentic / multi-step coding systems** — Devin, Cursor Agent, Aider, Claude Code used as a project orchestrator. These systems share Wonderland's structural property of paying an *agent tax*: VM startup or sandbox initialization, codebase exploration, planning passes, test iteration, multi-turn deliberation. That tax scales with the agent's structure, not with the task's complexity. On a notebook directive, a Devin-class system would look as bloated relative to a single-shot baseline as Wonderland does — for the same category-level reason. Agentic systems pay for the machinery of being a system; whether that machinery is load-bearing depends on what you ask them to do.
+
+This reframes the notebook comparison's apparent unfavorability. *Within the agentic-system category*, the relevant question isn't "did Wonderland use more tokens than a single-shot prompt" (yes — every agentic system does on trivial tasks) but **"per agent-tax dollar, what does each system produce?"**
+
+| System category | Code | Session log | Tickets / features / stories | ADRs | Contracts | Reviews | Decision trail | Audit logs |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Single-shot (A) | ✓ | partial | — | — | — | — | — | — |
+| Single-agent tool loop (B1, B2) | ✓ | ✓ | — | — | — | — | — | — |
+| Devin / Cursor Agent / Aider | ✓ | ✓ | — | — | — | — | — | — |
+| Claude Code (project orchestrator) | ✓ | ✓ | optionally, via plan files | — | — | — | partial | — |
+| **Wonderland** | ✓ | ✓ | ✓ (typed primitives) | ✓ | ✓ (binding) | ✓ (FindingKind-typed) | ✓ (5-hop) | ✓ (JSONL state transitions) |
+
+Same agent-tax dollars, structurally more produced per dollar. This is a *quiet differentiator* — most agentic-coding evaluations measure "did the code work" and "how much did it cost," neither of which captures what Wonderland's tax pays for. The artifact trail is a side product of the substrate's structure, not a separate output that has to be paid for in addition to the code.
+
+The blind spot this section names — *agentic-vs-agentic* pilots — is a natural extension of the comparative-experiments program in the future-work chapter. A Devin or Cursor-Agent baseline on the same notebook directive would not be informative as a single-shot comparison (both would lose to single-shot on simple-task cost). It would be informative as an *artifact-density comparison*: which agentic system produces the most reusable, audit-able, maintainable byproducts per dollar of agent-tax it charges.
+
+---
+
 ## Production-scale extrapolation
 
 The discipline differences in Axis 1 look minor at notebook scale: one user, one device, small data. But each B1 / B2 gap maps to a known production bug class that gets expensive fast at any real scale:

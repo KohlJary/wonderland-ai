@@ -179,6 +179,59 @@ weakens; if Sonnet produces shape-comparable but
 discipline-lower code, the multi-lens-review thesis holds at
 the comparative level.
 
+### Agentic-vs-agentic baselines — artifact density per agent-tax dollar
+
+The single-shot baselines above test the *cheapest possible
+competitor* to Wonderland. The category that's structurally
+closer to Wonderland but hasn't been probed is *other
+agentic / multi-step coding systems*: Devin, Cursor Agent,
+Aider, Claude Code used as a project orchestrator. These
+systems share Wonderland's property of paying an agent
+tax — VM startup, codebase exploration, planning passes,
+test iteration, multi-turn deliberation — that scales with
+agent structure, not task complexity. On a small directive,
+all of them look bloated relative to single-shot for the
+same category-level reason. (See the
+[comparison-baselines analysis](./comparison-baselines/README.md#what-kind-of-comparison-is-this--single-shot-vs-wonderland-is-the-cheapest-possible-framing)
+for the framing of why notebook-class inefficiency is a
+category property, not a Wonderland-specific weakness.)
+
+**Shape of the eval:** Run Devin (or Cursor Agent, or Aider,
+or Claude Code-as-orchestrator) against the same notebook
+directive. Measure not just cost + working-code, but
+*artifact density per dollar* — what reusable byproducts
+does each system produce alongside the code? Wonderland's
+hypothesis is that within the agentic-system category, the
+substrate produces structurally more artifacts (typed
+tickets / features / stories, ADRs, contracts, FindingKind-
+typed reviews, 5-hop decision trails, JSONL audit logs) for
+the same agent-tax dollar than session-log-only systems
+do. Most agentic-coding evaluations measure "did the code
+work" and "how much did it cost"; neither captures what
+the tax pays for in terms of downstream maintainability.
+
+**Why this matters for the paper:** the comparison-baselines
+analysis's biggest framing blind spot is that it positions
+Wonderland against the cheapest baseline. A reader sympathetic
+to agentic coding (the right audience for "you *can* do this")
+will reasonably ask: *"OK, but what's Wonderland buying me
+relative to Devin or Cursor Agent, not relative to
+`claude -p`?"*  The answer is artifact density per dollar of
+overhead you're already paying — which is a defensible claim
+once measured, but which the current data doesn't
+substantiate. Filing as a near-term comparative pilot rather
+than long-horizon research because the eval design is
+tractable: one notebook directive, four agentic systems, 4-8
+hours of operator time per system, ~$50-200 total spend
+across all of them.
+
+**What this tests:** that Wonderland's structural artifact-
+production isn't redundant with what any agentic coding
+system already produces. If Cursor Agent's session logs +
+plan files cover 80% of Wonderland's artifact trail, the
+substrate's distinctive value compresses. If they cover 20%,
+the typed-artifact thesis holds at the comparative level.
+
 ### P7 generic-baseline-vs-identity-native eval
 
 The thesis chapter's Corollary 1 (small models outperform via
