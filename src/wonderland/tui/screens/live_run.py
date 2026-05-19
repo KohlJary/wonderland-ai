@@ -1775,10 +1775,20 @@ class LiveRunScreen(Screen[None]):
             detail = self.query_one("#right-detail", Static)
         except Exception:  # noqa: BLE001
             return
-        title = getattr(artifact, "title", "") or "(untitled)"
-        kind = getattr(artifact, "kind", "?")
+        # Escape user-controlled content before interpolating into
+        # the markup template. Artifact body can carry literal
+        # bracketed tokens ('[/yellow]', '[TODO]', '[?]') from
+        # Caterpillar's reviews or implementation prose; without
+        # escaping, Textual's markup parser treats them as tags and
+        # raises MarkupError on mismatched closers.
+        from rich.markup import escape as _esc
+
+        title = _esc(getattr(artifact, "title", "") or "(untitled)")
+        kind = _esc(getattr(artifact, "kind", "?"))
         body = getattr(artifact, "body", "") or ""
         path = getattr(artifact, "path", "")
+        body_failed = False
+        body_error = ""
         if not body and path:
             # RunArtifact / streaming-event shape: only the path
             # ships in the event, so the body has to come from
@@ -1789,26 +1799,35 @@ class LiveRunScreen(Screen[None]):
                     encoding="utf-8", errors="replace"
                 )
             except OSError as exc:
-                body = (
-                    f"[dim red]Failed to read artifact at "
-                    f"{path}: {exc}[/dim red]"
-                )
+                body_failed = True
+                body_error = str(exc)
+                body = ""
         # Generous cap — the scrolling pane is meant for full
         # inspection. 50K chars covers the biggest artifacts we
         # actually emit (long escalations, multi-page ADRs);
         # anything bigger gets a truncation note.
         max_chars = 50_000
-        if len(body) > max_chars:
-            body = (
-                body[:max_chars]
-                + f"\n\n[dim]…(truncated; {len(body) - max_chars} "
-                f"more chars on disk)[/dim]"
+        truncated_by = 0
+        if not body_failed and len(body) > max_chars:
+            truncated_by = len(body) - max_chars
+            body = body[:max_chars]
+        if body_failed:
+            body_markup = (
+                f"[dim red]Failed to read artifact at "
+                f"{_esc(str(path))}: {_esc(body_error)}[/dim red]"
             )
+        else:
+            body_markup = _esc(body)
+            if truncated_by:
+                body_markup += (
+                    f"\n\n[dim]…(truncated; {truncated_by} more "
+                    f"chars on disk)[/dim]"
+                )
         path_line = (
-            f"\n[dim]{path}[/dim]\n" if path else "\n"
+            f"\n[dim]{_esc(str(path))}[/dim]\n" if path else "\n"
         )
         detail.update(
-            f"[b]{kind}[/b]: {title}{path_line}\n{body}"
+            f"[b]{kind}[/b]: {title}{path_line}\n{body_markup}"
         )
 
     def _render_phase_event_detail(self, row_idx: int) -> None:
