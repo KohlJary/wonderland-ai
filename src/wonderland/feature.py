@@ -146,6 +146,23 @@ class FeaturePayload(BaseModel):
             "orphaned in lifecycle queries."
         ),
     )
+    milestone: str | None = Field(
+        default=None,
+        description=(
+            "T-ab5 — explicit milestone attribution. Slug or "
+            "``<guid>:<slug>`` of the milestone this feature "
+            "belongs to. When the design run was launched with "
+            "``--milestone <slug>``, Rabbit populates this with "
+            "the active milestone's slug — no inference required. "
+            "Substrate attribution (seed-loader scope filter, TUI "
+            "per-feature grouping) reads this field directly when "
+            "present; Jaccard-based attribution is the back-compat "
+            "fallback for features shipped before this field "
+            "existed. A feature belongs to exactly one milestone; "
+            "if a feature's scope spans, split it into two "
+            "features rather than naming two milestones."
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -167,6 +184,7 @@ def render_feature(number: int, payload: FeaturePayload) -> str:
         "",
         f"**GUID:** {payload.guid}",
         f"**Kind:** {payload.kind.value}",
+        f"**Milestone:** {payload.milestone or '—'}",
         f"**Sources:** {_join_or_dash(payload.sources)}",
         f"**Personas:** {_join_or_dash(payload.personas)}",
         f"**Stack span:** {payload.stack_span.value}",
@@ -263,6 +281,64 @@ class FeatureRegistry:
             if isinstance(payload, FeaturePayload)
             else FeaturePayload.model_validate(payload)
         )
+
+        # T-ab18 — reject cross-milestone feature emissions during
+        # milestone-scoped runs. When the run is scoped to milestone
+        # X and the feature's milestone field names a different
+        # milestone, the agent is cross-emitting (proposing work
+        # outside the active scope). Such features get correctly
+        # filtered out of T-ab17's iteration, but the emission
+        # itself burns budget and produces dead artifacts on disk.
+        # Reject at write time so the agent gets the error back
+        # and either re-emits with the active milestone slug OR
+        # surfaces the cross-scope concern as a ``concern`` /
+        # ``question_to_operator``, which is the substrate-correct
+        # channel for "I see work that belongs elsewhere."
+        #
+        # Permissive when:
+        #   - no active milestone scope (workflow isn't milestone-
+        #     scoped; e.g. ad-hoc design runs)
+        #   - feature.milestone is None (legacy / pre-T-ab5
+        #     emission; can't enforce a contract that wasn't
+        #     declared)
+        #
+        # Observed: mvp-demo-rerun-A M3 design produced 6 features
+        # all tagged ``milestone: m2-editor-ui-and-search`` —
+        # cross-emission. T-ab17 filtered them out of iteration but
+        # M4 architecture still burned budget producing an empty
+        # ADR on the 0-ticket result. The reject-at-write path
+        # would have surfaced the error to Rabbit on his first
+        # emission, allowing him to retry with the active milestone
+        # or escalate as a concern.
+        try:
+            from wonderland.workflow import get_active_milestone_scope
+            active_scope = get_active_milestone_scope()
+        except Exception:  # noqa: BLE001 — best-effort
+            active_scope = None
+        if active_scope is not None and validated.milestone:
+            cited_slug = (
+                validated.milestone.split(":", 1)[1]
+                if ":" in validated.milestone
+                else validated.milestone
+            )
+            if cited_slug != active_scope.slug:
+                raise ValueError(
+                    f"feature {validated.title!r}: ``milestone`` "
+                    f"field is set to {cited_slug!r} but the "
+                    f"active run scope is {active_scope.slug!r}. "
+                    f"Features emitted during a milestone-scoped "
+                    f"design run must belong to the active "
+                    f"milestone. If you see work that belongs to "
+                    f"another milestone, surface it as a "
+                    f"``concern`` (or ``question_to_operator`` "
+                    f"for a load-bearing scope question) — those "
+                    f"are the substrate-correct channels for "
+                    f"cross-scope observations. Re-emit this "
+                    f"feature with ``milestone: {active_scope.slug}`` "
+                    f"if it actually belongs to the active "
+                    f"milestone, OR retract and replace with a "
+                    f"concern."
+                )
 
         slug = slugify(validated.title)
         # T-g2: guid-first lookup; slug fallback for back-compat.

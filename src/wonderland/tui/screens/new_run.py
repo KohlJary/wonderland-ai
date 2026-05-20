@@ -69,6 +69,8 @@ _BLANK_PRESET = "__blank__"
 _PRIME_PRESET = "__prime__"
 
 
+
+
 class NewRunScreen(Screen[None]):
     """Compose a directive + workflow + project, launch a run.
 
@@ -1048,19 +1050,25 @@ class NewRunScreen(Screen[None]):
 
         # P11 T78: record run_id + workflow on the project so the
         # library / dashboard show the latest run.
-        # Prime-directive capture: first non-empty directive landed
-        # against a project becomes its canonical "prime" directive,
-        # surfaced in the preset table on subsequent runs so design
-        # passes stay oriented across N>1 iterations.
+        #
+        # T-ab10 (c9a665d0) — prime_directive is captured at project
+        # creation only (new_project.py / skeleton apply). It is NOT
+        # captured here from run-time directives because run-time
+        # directives are run-level scope (a milestone-scoped design
+        # pass, an implementation pass, an ad-hoc one-off question)
+        # whereas prime_directive is project-level intent. The
+        # earlier first-run-captures-prime heuristic conflated them:
+        # one M1-scoped first run permanently stamped the project's
+        # canonical prime_directive as "Design milestone m1-..." and
+        # the sync block below mirrored that into project.yaml on
+        # every subsequent run, contaminating every M2+ run's
+        # "operator's original ask" framing. Future operator-driven
+        # edits to prime_directive should go through an explicit
+        # project-context form, not silent run-time capture.
         if self.project is not None:
             try:
                 self.project.last_run_id = run_id
                 self.project.last_workflow = params["workflow_name"]
-                if (
-                    self.project.prime_directive is None
-                    and params["directive"].strip()
-                ):
-                    self.project.prime_directive = params["directive"]
                 save_project(self.project)
 
                 # Mirror prime_directive into the per-project

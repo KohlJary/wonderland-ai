@@ -1731,6 +1731,136 @@
       "status": "backlog",
       "created_at": "2026-05-19T14:12:56.192589",
       "created_by": "daedalus"
+    },
+    {
+      "id": "85aaee91-a922-467f-9b5f-64d917c81040",
+      "title": "Ticket .md Status field and ticket-states.jsonl ledger drift \u2014 pipeline_runner reads md .Status, dashboard/audit reads ledger, the two diverge silently. Observed on obol-demo2 M1 implementation: 12/12 tickets had md=open but ledger said various states (queued, done, no-record), so the pipeline kept iterating tickets the ledger considered done. The same shape as d9c120d4 (feature .md lost while state ledger tracks) but for tickets. Fix: pick ONE source of truth, propagate to the other on every transition. Probably: ledger is canonical (atomic JSONL append, never lost), md status field gets re-rendered on each transition.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T15:45:24.186837",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "676a4da8-835a-42f4-8334-4985839c2957",
+      "title": "M8 review accept-verdict bulk-marks unrelated queued tickets as done \u2014 observed on obol-demo2 at 15:36:46: a single review for 'database-schema-seeding-and-debt-paydown-calculation' caused 6+ tickets (including build-check-fix-tickets like test-failed-test-app-mounts) to all transition queued\u2192in_progress\u2192done at the same instant with note 'ticket was worked in this iteration but queue\u2192in_progress hadn't fired yet'. The bug-fix work was NOT actually done (test_counter_increments_on_button_press stub test still in file). The substrate's accept-verdict consequence is sweeping every ticket in the iteration's scope to done regardless of whether each ticket was actually addressed by the review. Fix: scope accept-verdict's mark-done effect to ONLY tickets explicitly named in the review's target_files / sources, not the whole iteration.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T15:45:24.281285",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "8c017192-22f4-42a0-8e2e-930d45cb7feb",
+      "title": "M3 decomposition fires multiple times on the same feature producing overlapping/duplicate ticket batches \u2014 observed on obol-demo2 schema feature: 4 separate batches (01KS0D0G, 01KS0D0Y, 01KS0D30, plus follow-up batches) decomposed similar tickets with slightly different slugs. The substrate ran one batch but ignored others; operator had to manually identify+delete dupes. Fix: M3 should detect a feature already has tickets cited against it and either skip decomposition or merge into existing ticket set.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T15:45:24.375216",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "5fe6acd1-0964-48df-94f6-f3eef2a4acc7",
+      "title": "Feature state doesn't auto-transition designed\u2192queued when fresh tickets queued \u2014 observed on obol-demo2 where both features stayed at 'designed' even after M3 decomposition created tickets needing pipeline pickup, and after M8 review synthesized follow-up tickets needing rerun. pipeline_runner's iterate_only_in_states:[queued,in_progress] filter then skips the feature entirely; queued tickets sit forever. Fix: on ticket-creation OR ticket-state-change-to-queued, auto-bump parent feature to queued (when feature is in 'designed' or terminal-but-with-pending-work states).",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T15:45:24.474541",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "140e6670-8ce0-45f4-81c9-c280844b389b",
+      "title": "Decomposed tickets cite wrong parent feature \u2014 observed on obol-demo2: implement-budget-aggregation-contract and implement-debt-paydown-term-calculation tickets in batch 01KS0D0G cite 'financial-data-schema-and-initialization' (the schema feature) when their conceptual work belongs to 'budget-and-debt-calculation-contracts' (the budget/debt feature). They ran as part of schema feature's iteration. Same family as 9231bcd5 (phantom citations) but where the citation does resolve, just to the wrong artifact. Fix: M3 decomposition's per_item:feature loop should enforce that emitted ticket sources cite ONLY the current iteration's feature (or stories scoped to it), reject anything else as a citation error at write time.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T15:45:24.573291",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "088c204b-c91e-45f8-acf1-7e4b6d750dfa",
+      "title": "Pipeline ticket-selection picks done tickets over queued tickets via an unidentified code path \u2014 observed on obol-demo2 M1 implementation: even with .md Status=done AND ticket-states ledger=done on 3 D0G tickets, AND 5 explicitly-queued tickets (operator-requeued D0Y + substrate-queued DR3 follow-ups) all citing the same parent feature, the run at 20260519T154744 iterated ONLY the 3 done tickets through tea-party + implementation. The expected lane filter at workflow.py:1995-2006 (explicitly_queued wins when non-empty) should have produced the opposite behavior. Investigation: trace _collect_per_item_items invocation chain in the pipeline path for tdd-implement; check whether bus utterances at run-start are pre-loading the done tickets and bypassing the disk-fallback+state-filter path; check whether _ticket_to_feature_map's first-match-wins gives a different feature attribution than expected. Pairs with 85aaee91 (md/ledger drift) and 676a4da8 (bulk auto-complete on accept verdict) \u2014 same family of multi-source-of-truth bugs in the iteration layer. NOT REPRODUCED with a minimal test case yet; the obol-demo2 .wonderland/ state is the only known repro corpus.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T15:55:20.140327",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "ea9fb7c0-efcd-43f0-a5b1-40450b0db480",
+      "title": "Feature stuck at QUEUED derived-state when review-pass has no ticket-worthy findings \u2014 operator-observed pattern: Cat reviews, has no findings worth synthesizing as follow-up tickets, and queued tickets from the iteration don't advance to DONE so the feature can't derive to READY_FOR_REVIEW. Hypothesis after 676a4da8 fix: accept-verdict path now only advances IN_PROGRESS tickets to DONE (correct, prevents bulk-mark bug), but review-spawned tickets that were queued and never picked up by another M6 cycle stay QUEUED indefinitely. _derive_post_ticket_state then lands on QUEUED (any queued, none active \u2192 QUEUED). Operator notes haven't yet confirmed whether original feature-generated tickets are affected the same way (probably not, those enter via per-ticket meeting orchestrator that reliably transitions QUEUED\u2192IN_PROGRESS at M6 entry). Investigation: confirm scenario with a single-pass feature, identify whether the wedge is mid-iteration (m7\u2192m8 before tickets advance) or between-runs (synthesized followups queued + no next run). Fix candidates: (a) auto-DONE queued tickets that were synthesized in the same review-pass with no follow-up work pending, (b) auto-launch a sub-iteration for review-spawned tickets if no other findings need triage, (c) lower bar on derived READY_FOR_REVIEW to allow stray-queued-tickets when they're labeled as follow-up-pending. Companion to 5fe6acd1 (feature state auto-transition designed\u2192queued) \u2014 same family of state-derivation lifecycle bugs.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-19T17:34:57.616630",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "01ce1932-13c1-4581-b18e-190acfec1344",
+      "title": "Milestone over-coverage gate \u2014 story.realizes \u2286 milestone.consumes",
+      "description": "milestone-plan currently gates UNDER-coverage (a required requirement has no story) but not OVER-coverage (a story realizes requirements outside the milestone's consumes scope). Observed in mvp-demo2 baseline: M0 design produced user-facing stories that realized M1/M2 requirements, bleeding scope and forcing later milestones to either retread or under-design.\n\nGate: during milestone-plan finalization (and again during tdd-design seeding), assert each story's `realizes` set is a subset of the milestone's `consumes` set. Violations surface as a coverage_check failure \u2014 Alice/Caterpillar should either narrow the story's realizes list, retract the story, or escalate the milestone scope for revision.\n\nPairs with: existing requirement-coverage check (under-coverage), milestone-scope seed filter (34f37c9), retract substrate (T-m7).\n\nLikely small diff \u2014 one additional check in the same code path as the requirement-coverage check.",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-19T20:05:23.193964",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "c9a665d0-08d2-421e-aa04-eeebc1dba1df",
+      "title": "Global Project registry overwrites project.yaml prime_directive \u2014 three-way sync bug",
+      "description": "Three storage locations for prime_directive get out of sync:\n\n1. ~/.wonderland/projects.json (global Project registry) \u2014 captured at first-run by new_run.py:1059-1063\n2. <project>/.wonderland/project.yaml prime_directive \u2014 captured at TUI run time\n3. The directive text in the composer at run time\n\nnew_run.py:1092-1097 unidirectionally syncs (1) \u2192 (2) on every run when they differ. If a user runs a milestone-scoped directive once (e.g., 'Design milestone m1-foundation...'), the global registry captures it as the project's canonical prime_directive. Subsequent runs sync that milestone-scoped string INTO project.yaml, which agents then read as 'operator's original ask' \u2014 contaminating every milestone scope downstream.\n\nObserved: mvp-demo-rerun-A's first run was M1-scoped; the registry captured 'Design milestone m1-foundation...' as prime_directive. Every subsequent M2/M3/M4 run had project.yaml silently rewritten to the M1 string, even after operator-side fixes to project.yaml. Required diagnostic to trace why the file kept reverting.\n\nFix options:\n\n(a) prime_directive should be project-level, not run-level. Capture should fire only on project creation (skeleton apply / new-project flow), not on first-run.\n(b) The sync direction should be project.yaml \u2192 registry, not the reverse (project.yaml is the source of truth, registry is a cache).\n(c) Both: project-level capture + non-overwriting sync.\n\nRelated: this is the kind of bug that's invisible to the agents themselves (they read what the substrate gives them); only operator-side diagnosis surfaces it. Pairs with the citation-integrity / defensive-defaults memory note.\n\nAffected files: src/wonderland/tui/screens/new_run.py:1051-1097, src/wonderland/project.py, src/wonderland/project_context.py",
+      "priority": "P2",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-20T14:34:30.153539",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "ccf5fdfe-fe00-481e-ba04-966d1c09f59a",
+      "title": "Milestone unlinking during tdd-design corrupts substrate state",
+      "description": "tdd-design runs are deleting milestone artifacts from disk, leaving downstream runs (esp. for that milestone's scope) without their structured constraint surface.\n\nSymptom: observed on mvp-demo-rerun-A. After an M2 design pass that 'tried to fix a requirement,' the M1 milestone file (milestone-01KS0WPP-m1-foundation-data-layer-api-contract.md) disappeared from .wonderland/milestones/. Subsequent M1 design runs had empty milestone seed pools, fell back to project-level prime_directive, and designed for the full app surface.\n\nWhy it matters: with T-ab11 (milestone artifact seeded into every tdd-design meeting) and T-ab9 (filter to active scope), the milestone artifact is the load-bearing scope signal in design runs. Its disappearance silently disables the entire scope-discipline stack.\n\nKnown unlink paths in milestone.py:\n1. _log_milestone_unlink + path.unlink() at milestone.py:436-444 \u2014 fires during MilestoneRegistry.write when slug changes. Logged.\n2. workflow.py:5915-5934 'snapshot cleanup' \u2014 fires for milestone-plan workflow only. Logged.\n\nObserved unlink was unlogged (no milestone-unlink.log on A). Likely cause: an agent used the write_file or delete_file tool to operate on .wonderland/milestones/ directly, bypassing the MilestoneRegistry.write path. The tool layer doesn't know about milestone-substrate semantics.\n\nCompounding factor: tdd-design declares disallowed_decisions: [milestone_plan, ...] to block agents from emitting milestone_plan utterances during design \u2014 but the file-system tools (write_file, delete_file) are completely orthogonal to the speech_act layer. An agent that decides 'I'll just edit the milestone .md to fix this requirement' can do so freely.\n\nFix options:\n\n(a) Path-level write guard: the file-tool layer refuses write_file / delete_file on .wonderland/milestones/ during runs (not just tdd-design \u2014 also tdd-implement, etc.) Milestones are operator-or-milestone-plan-only artifacts.\n(b) Workflow-level disallowed_paths: tdd-design.yaml declares which paths agents can't touch with file tools. Parallel to disallowed_decisions.\n(c) MilestoneRegistry.write rejects non-milestone-plan callers when called outside milestone-plan workflow context (active workflow check).\n\n(a) is cheapest + most defensible. (b) is more flexible. Both reduce the same surface: agents inside design/impl workflows can't unilaterally modify substrate-of-record artifacts.\n\nPairs with: T-ab11 (seeding) which assumes milestones are on disk; T-ab9 (scope filter) which silently filters empty when no files exist.\n\nAffected files: src/wonderland/tools.py (write_file / delete_file), src/wonderland/milestone.py (registry), src/wonderland/workflow.py (workflow-level guards).",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-20T15:26:56.163182",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "cbed1a0e-d9f7-4170-a560-07d8c62940a5",
+      "title": "Add foundation/capability axis to requirement kinds",
+      "description": "Observed in T-ab14 validator audit: existing milestones flagged false-positive because the requirement-kind taxonomy can't distinguish foundation-shaped from capability-shaped requirements of the same kind.\n\nExamples:\n- 'v1-success-criterion-persistence-contract-verified' is success_criterion + foundation-shaped (about infra deliverable). The T-ab14 validator treats all success_criterion as capability-indicator, so a foundation milestone consuming this fails the check.\n- 'markdown-renderer-github-flavored-syntax-required' is integration + capability-shaped (the renderer enables user-visible behavior). The validator treats all integration as infra-appropriate, so a capability milestone consuming only this fails the check.\n- 'developer-experience-and-onboarding' style milestones have developer-persona capability work; no requirement-kind currently distinguishes 'dev-experience capability' from 'user-experience capability.'\n\nProposal: add an orthogonal axis to requirement schema \u2014 foundation_or_capability (or similar name). Discovery's interview phase classifies each requirement on both axes:\n- kind: persona / situation / scope / constraint / integration / stack_constraint / success_criterion / behavior / out_of_scope / deal_breaker (existing)\n- axis: foundation / capability / both (new)\n\nT-ab14 validator becomes more precise: flag based on axis, not on kind alone. Foundation milestones can consume foundation-axis success_criteria; capability milestones can consume capability-axis integration requirements.\n\nPairs with T-ab14 (milestone validator) and T-ab6 (milestone kind / roster filter). Same finding generalizes: the substrate's taxonomy is too flat \u2014 kinds describe shape (success_criterion / constraint / etc.) but not orientation (foundation / capability). Two-axis classification is the right semantic.\n\nAffected: src/wonderland/requirement.py (add axis field), discovery interview prompts (capture axis at discovery time), src/wonderland/milestone.py:_validate_kind_consistency (consume axis instead of kind alone).",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-20T16:26:38.021008",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "42fc2ed5-65ca-472c-820a-8c2c8586dc7b",
+      "title": "Registry rejections don't roll back bus utterances / memory",
+      "description": "When a registry write raises (T-ab14 milestone kind-consistency, T-ab15 requirement axis, T-ab18 feature cross-emission), the agent's upstream utterance is still recorded on the bus + in episodic memory. The artifact never lands on disk, but the agent's WORDS proposing it persist as recall context.\n\nObserved: mvp-demo-rerun-A M3 design. Cat emitted features cross-tagged for M2 in a previous M3 run. T-ab18 correctly rejected the feature writes (artifacts didn't land), but Cat's M3 branch memory retained 131 utterances including a 'composing M2 features' emission. Next M3 design pass started \u2192 Cat read his branch memory \u2192 continued litigating M2 feature completeness instead of doing M3 work. Required manual M3 branch memory wipe (977 utterances total across 8 agents) to unblock.\n\nPattern: rejected emissions create CONTRADICTORY HISTORY for the agent. They said something; the substrate didn't accept it; next session they read their own statement as authoritative recall and continue from there. The agent's own past words become a wedge.\n\nTwo fix shapes:\n\n(a) Transactional emission: agent emits \u2192 substrate validates against registries BEFORE bus publication \u2192 if rejected, the utterance never reaches bus or memory. Cleanest semantic but requires reordering the emission pipeline (currently emit \u2192 bus \u2192 registry; would become emit \u2192 validate \u2192 bus + registry atomically).\n\n(b) Rejection-triggered retraction: when a registry write rejects, the substrate automatically emits a retract speech_act targeting the just-published utterance. Bus history shows 'agent said X then immediately retracted because substrate rejected.' Memory inheritance + recall logic already understands retracts. Smaller change but creates noisier transcripts.\n\n(a) is the structurally right answer; (b) is the operationally cheap one. Either fixes the wedge.\n\nAffects: src/wonderland/feature.py (T-ab18 raise path), src/wonderland/milestone.py (T-ab14 raise path), src/wonderland/interview.py (T-ab15 raise path), src/wonderland/agent.py / bus publication ordering.\n\nPairs with: project_attention_decay_through_workflow memory (which observed framing fades, but didn't catch the rejected-emission-persists-in-memory class of failure). Worth adding to that memory or making its own observation.",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-20T17:22:22.984315",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "2b54bf15-13aa-4553-8602-ed9d778ff1c7",
+      "title": "milestone-review workflow \u2014 cross-feature coherence within a milestone",
+      "description": "T-ab20 made M8 review scope-discipline-aware (per-feature, per-stack_span). That leaves a substrate gap: who reviews CROSS-FEATURE coherence within a milestone? An M2 capability milestone with 4 features (capture, edit-delete, markdown-preview, retrieval) needs a coherence check across all 4 \u2014 do they work together as a capture+retrieval flow? Currently no workflow fires for this.\n\nProposal: milestone-review workflow that fires after all features in a milestone reach verified state. Cat does the cross-feature coherence check at the milestone scope. Analogue of M5 contract-negotiation but at the milestone level: ''do these features actually compose into the milestone's promised deliverable?''\n\nWorkflow shape:\n- Trigger: operator-launched, OR automatic when last feature in milestone hits verified\n- Roster: caterpillar (+ maybe alice for persona grounding, queen for security pass)\n- Meetings:\n  - **M1 cross-feature coherence check** \u2014 Cat reads all features in milestone, their tickets, contracts, ADRs. Surfaces findings about cross-feature contract drift, missing integration points, persona-flow gaps.\n  - **M2 verdict + retract** \u2014 Cat verdicts the milestone (approve / request-changes). request-changes spawns follow-up tickets attributed to the offending feature; approve transitions milestone state to shipped.\n- Output: review artifacts at milestone-scope, possibly milestone-state transitions\n\nPairs with: T-ab20 (per-feature M8 review stays scoped), T-ab6 (milestone kind drives some behavior here too \u2014 foundation milestones may need different coherence checks than capability milestones).\n\nAlso adds the shipped milestone state to MilestoneStatus enum, complementing existing proposed / in_progress / done / deferred.\n\nRoadmap as P3 because operationally the per-feature review usually catches enough; the cross-feature gap is currently absorbed by operator-discretion final checks. Worth doing for paper-grade rigor and to close the substrate's review-coverage loop.",
+      "priority": "P3",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-20T19:29:14.799989",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

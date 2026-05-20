@@ -1904,6 +1904,7 @@ class ProjectDashboardScreen(Screen[None]):
             _parse_milestone_consumes,
             _parse_story_realizes,
             _parse_feature_sources,
+            _parse_feature_milestone,
         )
 
         project_root = self.project.root_path
@@ -1972,6 +1973,7 @@ class ProjectDashboardScreen(Screen[None]):
             r"feature-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
         )
         primary: dict[str, str] = {}
+        known_milestone_slugs = {ms for ms, _, _ in milestone_meta}
         if feature_root.is_dir():
             for p in feature_root.glob("feature-*.md"):
                 m = feature_filename_re.match(p.name)
@@ -1982,6 +1984,19 @@ class ProjectDashboardScreen(Screen[None]):
                     text = p.read_text(encoding="utf-8")
                 except OSError:
                     continue
+                # T-ab5: explicit milestone field is authoritative
+                # when present and resolvable. Strip guid prefix
+                # (slug-only form is what milestone_meta holds).
+                # Jaccard fallback below only runs for legacy
+                # features shipped before T-ab5.
+                explicit = _parse_feature_milestone(text)
+                if explicit:
+                    slug_only = (
+                        explicit.split(":", 1)[1] if ":" in explicit else explicit
+                    )
+                    if slug_only in known_milestone_slugs:
+                        primary[fslug] = slug_only
+                        continue
                 # T-g5 source resolution: sources may be plain slugs
                 # OR guid:slug-prefixed forms. Strip the optional
                 # guid prefix so comparison against story slugs works.

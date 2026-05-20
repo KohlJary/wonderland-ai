@@ -290,6 +290,44 @@ class RequirementKind(StrEnum):
     until asked."""
 
 
+class RequirementAxis(StrEnum):
+    """T-ab15 — orthogonal axis to RequirementKind, classifying the
+    requirement by infrastructure-vs-user-facing orientation.
+
+    The existing ``kind`` taxonomy (persona, situation, constraint,
+    integration, scope, success_criterion, behavior, ...) describes
+    WHAT SHAPE the requirement is. The axis describes WHICH
+    DIRECTION it points:
+
+      - ``foundation`` — about the substrate, contracts, plumbing,
+        developer/operator concerns. A constraint about SQLite
+        choice, a success_criterion about "persistence contract
+        verified," an integration with a markdown renderer library.
+        Consumed by foundation-kind milestones.
+
+      - ``capability`` — about user-visible behavior, persona
+        outcomes, end-user-observable signals. A success_criterion
+        about "Kohl finds notes by phrase," a behavior about
+        "user can edit notes." Consumed by capability-kind
+        milestones.
+
+      - ``both`` — applies across both contexts. Persona
+        requirements typically have this axis (they ground every
+        milestone). Cross-cutting scope statements similarly.
+        Default for legacy / pre-axis requirements (back-compat
+        — the validator treats ``both`` permissively).
+
+    The substrate's milestone kind-consistency check (T-ab14) reads
+    this axis to determine whether a foundation milestone is
+    legitimately consuming a capability-axis requirement (an error)
+    or a both-axis one (fine).
+    """
+
+    FOUNDATION = "foundation"
+    CAPABILITY = "capability"
+    BOTH = "both"
+
+
 class Confidence(StrEnum):
     """How the requirement got into the registry. operator_stated
     means the operator named this directly in an interview;
@@ -339,6 +377,16 @@ class RequirementPayload(BaseModel):
     kind: RequirementKind
     """Category — drives downstream seed dispatch."""
 
+    axis: RequirementAxis = RequirementAxis.BOTH
+    """T-ab15 — foundation/capability orientation, orthogonal to
+    ``kind``. The same kind can be foundation-oriented (a
+    success_criterion about persistence verified) or capability-
+    oriented (a success_criterion about user-visible behavior).
+    Drives the T-ab14 milestone kind-consistency check; legacy
+    requirements default to ``both`` for permissive back-compat
+    (validator doesn't reject milestones consuming both-axis
+    requirements regardless of milestone kind)."""
+
     body: str = Field(min_length=1)
     """The structured claim — the interviewer's rendering of what the
     operator said into a stable requirement statement. Typically 1-3
@@ -369,6 +417,7 @@ class RequirementRecord:
     kind: RequirementKind
     confidence: Confidence
     path: Path
+    axis: RequirementAxis = RequirementAxis.BOTH
 
     def read(self) -> str:
         return self.path.read_text(encoding="utf-8")
@@ -398,6 +447,7 @@ def render_requirement(
         f"**GUID:** {payload.guid}",
         f"**Slug:** {slug}",
         f"**Kind:** {payload.kind.value}",
+        f"**Axis:** {payload.axis.value}",
         f"**Confidence:** {payload.confidence.value}",
         f"**Source interview:** {payload.interview_id}",
         f"**Source question:** {payload.question_id}",
@@ -550,6 +600,7 @@ class RequirementRegistry:
             kind=validated.kind,
             confidence=validated.confidence,
             path=full_path,
+            axis=validated.axis,
         )
 
     # ------------------------------------------------------------------ #
@@ -563,7 +614,7 @@ class RequirementRegistry:
             return None
         id_part = match.group("id")
         slug = match.group("slug")
-        title, kind, confidence = (
+        title, kind, confidence, axis = (
             RequirementRegistry._fields_from_file(
                 path, fallback_title=slug
             )
@@ -578,6 +629,7 @@ class RequirementRegistry:
             kind=kind,
             confidence=confidence,
             path=path,
+            axis=axis,
         )
 
     @staticmethod
@@ -605,18 +657,23 @@ class RequirementRegistry:
     @staticmethod
     def _fields_from_file(
         path: Path, *, fallback_title: str
-    ) -> tuple[str, RequirementKind, Confidence]:
-        """Parse the first few lines for title + kind + confidence.
-        Falls back to safe defaults for files the writer didn't
-        produce (e.g. operator-edited markdown that lost a header)."""
+    ) -> tuple[str, RequirementKind, Confidence, RequirementAxis]:
+        """Parse the first few lines for title + kind + confidence
+        + axis. Falls back to safe defaults for files the writer
+        didn't produce (e.g. operator-edited markdown that lost a
+        header). Legacy requirements without ``**Axis:**`` line
+        default to ``RequirementAxis.BOTH`` — permissive back-compat
+        so the T-ab14 validator doesn't reject milestones consuming
+        pre-T-ab15 requirements."""
         title = fallback_title
         kind = RequirementKind.SCOPE  # safe default
         confidence = Confidence.OPERATOR_STATED
+        axis = RequirementAxis.BOTH
         try:
             with path.open(encoding="utf-8") as f:
-                lines = [f.readline() for _ in range(8)]
+                lines = [f.readline() for _ in range(10)]
         except OSError:
-            return title, kind, confidence
+            return title, kind, confidence, axis
         for line in lines:
             stripped = line.strip()
             if stripped.startswith("## Requirement"):
@@ -628,13 +685,19 @@ class RequirementRegistry:
                     kind = RequirementKind(raw)
                 except ValueError:
                     pass
+            elif stripped.startswith("**Axis:**"):
+                raw = stripped.removeprefix("**Axis:**").strip()
+                try:
+                    axis = RequirementAxis(raw)
+                except ValueError:
+                    pass
             elif stripped.startswith("**Confidence:**"):
                 raw = stripped.removeprefix("**Confidence:**").strip()
                 try:
                     confidence = Confidence(raw)
                 except ValueError:
                     pass
-        return title, kind, confidence
+        return title, kind, confidence, axis
 
 
 # --------------------------------------------------------------------- #

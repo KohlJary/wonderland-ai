@@ -121,12 +121,34 @@ def _parse_requirement_kind(text: str) -> str | None:
     return m.group(1).strip().lower()
 
 
+_AXIS_LINE = re.compile(r"^\*\*Axis:\*\*\s*(\S+)", re.MULTILINE)
+
+
+def _parse_requirement_axis(text: str) -> str | None:
+    """T-ab15 — pull the ``**Axis:**`` value out of a requirement
+    markdown. Returns the lowercase axis string or None when
+    missing (legacy pre-axis requirement). Caller treats None as
+    ``both`` for permissive back-compat."""
+    m = _AXIS_LINE.search(text)
+    if not m:
+        return None
+    return m.group(1).strip().lower()
+
+
 def _parse_milestone_consumes(text: str) -> list[str]:
     """Pull the ``**Consumes requirements:**`` bullet list out of a
     milestone markdown. Tolerant of operator hand-edits — same shape
     as the workflow._parse_milestone_body parser, just narrowed to
     the consumes section."""
     return _parse_bullet_section(text, "**Consumes requirements:**")
+
+
+def _parse_milestone_done_when(text: str) -> list[str]:
+    """Pull the ``**Done when:**`` bullet list out of a milestone
+    markdown. Used by the done_when_coverage check (tdd-design-no-
+    stories A/B variant) where done-when items stand in for the
+    story layer as the seed corpus for feature composition."""
+    return _parse_bullet_section(text, "**Done when:**")
 
 
 def _parse_story_realizes(text: str) -> list[str]:
@@ -149,6 +171,36 @@ def _parse_feature_sources(text: str) -> list[str]:
     if line in ("", "—", "-"):
         return []
     return [s.strip() for s in line.split(",") if s.strip()]
+
+
+def _parse_feature_milestone(text: str) -> str | None:
+    """Pull the ``**Milestone:**`` line out of a feature markdown
+    (T-ab5 explicit attribution). Returns the slug (or guid:slug)
+    when set; None for legacy features without the field or when
+    set to the placeholder dash."""
+    return _parse_milestone_field(text)
+
+
+def _parse_story_milestone(text: str) -> str | None:
+    """Pull the ``**Milestone:**`` line out of a story markdown
+    (T-ab7 explicit attribution, mirror of feature.milestone).
+    Returns the slug (or guid:slug) when set; None for legacy
+    stories without the field or when set to the placeholder dash."""
+    return _parse_milestone_field(text)
+
+
+def _parse_milestone_field(text: str) -> str | None:
+    """Shared parser for the ``**Milestone:**`` line. Story + feature
+    use the same shape; the helper keeps the rendering/parsing
+    contracts symmetric."""
+    milestone_re = re.compile(r"^\*\*Milestone:\*\*\s*(.+?)$", re.MULTILINE)
+    m = milestone_re.search(text)
+    if not m:
+        return None
+    val = m.group(1).strip()
+    if val in ("", "—", "-"):
+        return None
+    return val
 
 
 def _parse_bullet_section(text: str, header: str) -> list[str]:
@@ -462,10 +514,102 @@ def compute_minimum_stories_gap(project_root: Path) -> CoverageGap | None:
     )
 
 
+def compute_done_when_coverage_gap(
+    project_root: Path, milestone_slug: str | None
+) -> CoverageGap | None:
+    """tdd-design-no-stories A/B variant check: every done-when
+    bullet in the active milestone has at least one feature citing
+    the milestone in its sources.
+
+    Operates on a count-floor heuristic rather than item-level
+    fingerprinting: features cite the milestone slug/guid (not
+    individual done-when items), so the check verifies the
+    feature-count for this milestone is at least the done-when
+    count. A milestone with 4 done-when items and 1 feature shows
+    as 3 items short.
+
+    Returns ``None`` when:
+      - ``milestone_slug`` is None (no active scope)
+      - the milestone can't be found on disk
+      - no done-when items parsed (degenerate milestone)
+      - feature count >= done-when count
+    """
+    if not milestone_slug:
+        return None
+    milestone_root = project_root / ".wonderland" / "milestones"
+    if not milestone_root.is_dir():
+        return None
+
+    done_when: list[str] = []
+    milestone_guid: str | None = None
+    for path in milestone_root.glob("milestone-*.md"):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        slug_line = re.search(
+            r"^\*\*Slug:\*\*\s*(\S+)", text, re.MULTILINE
+        )
+        if not (slug_line and slug_line.group(1).strip() == milestone_slug):
+            continue
+        done_when = _parse_milestone_done_when(text)
+        guid_line = re.search(
+            r"^\*\*GUID:\*\*\s*(\S+)", text, re.MULTILINE
+        )
+        if guid_line:
+            milestone_guid = guid_line.group(1).strip()
+        break
+
+    if not done_when:
+        return None
+
+    # Count features citing this milestone in their sources.
+    feature_root = project_root / ".wonderland" / "features"
+    feature_count = 0
+    if feature_root.is_dir():
+        for path in feature_root.glob("feature-*.md"):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for src in _parse_feature_sources(text):
+                # Accept slug-only, guid-only, or guid:slug.
+                head = src.split(":", 1)[0]
+                tail = src.split(":", 1)[1] if ":" in src else src
+                if (
+                    head == milestone_slug
+                    or tail == milestone_slug
+                    or (milestone_guid and head == milestone_guid)
+                ):
+                    feature_count += 1
+                    break
+
+    if feature_count >= len(done_when):
+        return None
+
+    gap = len(done_when) - feature_count
+    summary = (
+        f"Coverage gap: milestone ``{milestone_slug}`` has "
+        f"{len(done_when)} done-when item(s) but only "
+        f"{feature_count} feature(s) cite it. Rabbit must ship "
+        f"at least {gap} more feature(s) sourcing the milestone "
+        f"to cover the remaining done-when items. Cite the "
+        f"milestone slug ``{milestone_slug}`` (or its GUID) in "
+        f"each new feature's Sources line."
+    )
+    return CoverageGap(
+        check_name="done_when_coverage",
+        gap_kind="underpowered_done_when",
+        items=tuple(done_when[feature_count:]),
+        summary=summary,
+    )
+
+
 _CHECK_REGISTRY: dict[str, CheckFn] = {
     "requirement_coverage": compute_orphan_requirements,
     "milestone_realization": compute_unrealized_milestone_requirements,
     "minimum_stories": compute_minimum_stories_gap,
+    "done_when_coverage": compute_done_when_coverage_gap,
 }
 
 
@@ -486,7 +630,7 @@ def run_coverage_check(
     if fn is None:
         return None
     try:
-        if check_name == "milestone_realization":
+        if check_name in ("milestone_realization", "done_when_coverage"):
             return fn(project_root, milestone_slug)
         return fn(project_root)
     except Exception:  # noqa: BLE001 — coverage is informational

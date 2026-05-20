@@ -1,0 +1,510 @@
+name: tdd-design-no-stories
+description: |
+  A/B variant of tdd-design that elides the story-generation phase
+  (M1 scoping). Features are composed directly from the active
+  milestone's ``Done when:`` criteria — done-when items stand in
+  for stories as the substrate-of-record for what the team is
+  delivering.
+
+  Motivation: the story layer in canonical tdd-design largely
+  restates milestone done-when criteria with persona narrative.
+  Phantom-citation bugs, retread between milestones, and
+  three-layer attribution (feature → story → requirement →
+  milestone) all trace back to stories carrying load that
+  done-when could carry directly. This variant tests the
+  hypothesis empirically: if features composed from done-when
+  ship at comparable quality for materially lower cost, the
+  story primitive is redundant and the substrate can collapse a
+  layer.
+
+  Otherwise structurally identical to tdd-design:
+    - same phases beyond M1 (composition, decomposition,
+      consolidation, architecture, contract-negotiation)
+    - same per-feature iteration
+    - same agent rosters and team groupings
+    - same cross-run continuity contract
+    - same lifecycle transitions
+
+  Differences from canonical tdd-design:
+    - **M1 scoping (story generation) removed entirely** — no
+      Alice-led story emission, no minimum_stories coverage check.
+    - **M2 composition seeds from milestone done-when** instead of
+      from the M1 story pool. Features cite the milestone slug/guid
+      in their ``Sources:`` line.
+    - **Coverage check swapped**: ``done_when_coverage`` (features
+      per milestone ≥ done-when item count) replaces
+      ``milestone_realization`` (which walked through stories).
+    - Downstream phases (M3 decomposition, M4 architecture)
+      drop the story seed; nothing else changes.
+
+  Run side-by-side against canonical tdd-design on identical
+  starting state (same project, same milestone scope) to compare
+  design cost, feature count + quality, and scope-leakage.
+
+version: 1
+
+disallowed_decisions:
+  - milestone_plan
+  - interview_questions
+  - interview_review
+
+defaults:
+  budget_dollars: 3.00
+  quiescence_seconds: 300.0
+
+meetings:
+
+  # ─────────────────────────────────────────────────────────────────
+  # M2 (was M2 in canonical) — Features composed from milestone
+  # done-when criteria. No stories upstream; the milestone's
+  # ``Done when:`` bullets are the seed corpus Rabbit decomposes
+  # into features.
+  # ─────────────────────────────────────────────────────────────────
+  - id: composition
+    label: M2
+    name: Advice from a Caterpillar
+    goal: compose user-facing features from the milestone's done-when criteria
+    roster: [alice, white_rabbit, caterpillar]
+    meeting_budget: 0.40
+    convenor_directive: |
+      **Rabbit, ship features.** This variant of tdd-design has no
+      M1 story phase — the milestone's ``Done when:`` bullets ARE
+      your seed corpus. Read the active milestone artifact in your
+      context (the substrate seeded it as a ``milestone`` artifact);
+      each ``Done when:`` bullet is a deliverable the team has
+      committed to. Compose them into features — units a stakeholder
+      can describe in one sentence.
+
+      Features come in two kinds; pick the right one per feature:
+
+        - ``kind: capability`` (default) — a user-facing capability.
+          Maps to "user can do X" framing. Most done-when items
+          will compose as capability features.
+        - ``kind: foundation`` — developer-experience plumbing
+          (mock data, observability, environment config, build
+          tooling, dev dashboards). Maps to "the project gains
+          the ability to X" framing — same lifecycle, same
+          tickets, just not a thing a non-developer persona would
+          describe. **Don't waste budget arguing whether plumbing
+          'counts as a feature' — ship it as ``kind: foundation``.**
+
+      For each feature, name:
+        - ``kind`` — capability or foundation (per above)
+        - ``stack_span`` (frontend / backend / full-stack)
+        - ``milestone`` — **REQUIRED**: copy the active milestone's
+          slug (or ``<guid>:<slug>``) verbatim from the milestone
+          artifact in your context. Every feature belongs to
+          exactly one milestone — the active one. A feature whose
+          scope spans another milestone is two features that
+          should be split. Substrate attribution reads this field
+          directly (no inference); omitting it falls back to a
+          Jaccard guess that repeatedly mis-assigns features.
+        - ``personas`` — at least one persona name from the
+          project's requirements or the milestone goal text. Do
+          NOT invent new personas or import example names from
+          your training (this is a documented bleed pattern). For
+          foundation features the persona is typically a
+          developer/operator/installer — copy the persona's name
+          straight from a requirement-kind=persona artifact in
+          your context.
+        - ``tickets`` — leave as an empty list; M3 will populate
+        - ``tier`` (v1 / fast-follow / post-launch)
+        - ``sources`` — **REQUIRED**: cite the active milestone
+          this feature belongs to. Use the milestone slug
+          (legacy), full 26-char GUID, or ``"<guid>:<slug>"``
+          (P18 canonical, preferred — the milestone artifact in
+          your seed context carries the ``**GUID:**`` line). One
+          milestone citation is enough; you may add additional
+          milestone citations if the feature spans more than one
+          milestone's done-when scope, but the active milestone
+          comes first. A guid that doesn't resolve to an actual
+          milestone on disk is a phantom citation; the substrate
+          strips the artifact.
+
+      Aim for one feature per done-when item, ±1. A milestone
+      with 4 done-when bullets should produce ~3-5 features.
+      Multiple done-when bullets can converge on one feature when
+      they describe the same user-visible surface (e.g.,
+      "transaction ledger view shows all transactions" +
+      "filtering by category works" both belong to a single
+      "transaction ledger view" feature). One done-when bullet
+      can split into multiple features when it spans distinct
+      user-visible surfaces.
+
+      **Dedup discipline — features must be distinguishable
+      flows, not overlapping slices of the same flow.** A common
+      composition failure mode (observed in pilot runs): Rabbit
+      ships two features whose titles + descriptions describe the
+      *same user journey* with different framing. Before shipping
+      a feature, check every existing feature in your context:
+
+        - If your candidate feature's ``personas`` overlap with
+          an existing feature's personas AND it addresses
+          overlapping done-when items, you're shipping a
+          duplicate — pick one framing and skip the other.
+        - If two of your already-shipped features have
+          overlapping personas + done-when coverage, that's the
+          same bug; ship a third feature that *merges* them,
+          then `concern` the operator that the substrate doesn't
+          currently have a feature-merge primitive so the
+          duplicates stay until pruned manually.
+
+      The downstream cost of duplicate features is enormous: M3
+      decomposes each into tickets independently, so the same
+      implementation work shows up under two features'
+      decomposition iterations, and the operator has to figure
+      out which attribution is correct. Better to ship one
+      well-named feature than two that fight over their tickets.
+
+      **Cross-run note.** Features from prior design passes that
+      already cite this milestone may appear in your project
+      context. Don't duplicate them — focus your composition on
+      done-when items not yet covered by an existing feature.
+
+      **Silence is wrong here — your job is to produce features.**
+      Without features, M3 has no input.
+
+      **Alice — grounding voice.** You own persona fidelity. Push
+      back when a feature names a persona that doesn't exist in
+      the requirements, when a feature description drifts from
+      what a persona would actually do, or when a done-when item
+      in the milestone has no feature serving it. Default to
+      silence unless a grounding intervention is needed.
+
+      **Caterpillar — composition pass.** For each feature Rabbit
+      ships, ask: does this claim hold against the done-when
+      items it covers? If a feature aggregates incoherent
+      done-when items or makes a claim the milestone's done-when
+      doesn't support, surface the gap so Rabbit can revise.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [requirement]
+      # The active milestone is the seed corpus — its body contains
+      # the Done when: bullets Rabbit composes against. The substrate
+      # narrows to just the active milestone when --milestone is
+      # passed; without --milestone, all milestones in the project
+      # appear and Rabbit has to pick (operator should always pass
+      # --milestone for this variant).
+      - from: any
+        kinds: [milestone]
+
+    transition_emitted_to: proposed
+    phases:
+      - name: discussion
+        max_rotations: 3
+        exit_condition_artifact: feature
+      - name: commit
+        max_rotations: 2
+        exit_condition_artifact: feature
+        # done_when_coverage — verify the active milestone has
+        # at least as many features citing it as it has done-when
+        # bullets. Triggers a synthetic Dodo observation listing
+        # the gap + grants a bonus rotation so Rabbit can compose
+        # additional features. No-op when --milestone isn't passed.
+        coverage_check: done_when_coverage
+
+  # ─────────────────────────────────────────────────────────────────
+  # M3 — Tickets per feature. Identical to canonical except no
+  # story seed (there are no stories in this variant).
+  # ─────────────────────────────────────────────────────────────────
+  - id: decomposition
+    label: M3
+    name: The Rabbit's Errand
+    goal: decompose each feature into v1 tickets the Tweedles can pick up
+    roster: [alice, white_rabbit]
+    per_item: feature
+    iterate_only_in_states: [proposed]
+    parallel: true
+    meeting_budget: 0.30
+    per_item_roster_filter:
+      field: kind
+      map:
+        capability: [alice, white_rabbit]
+        foundation: [white_rabbit]
+    convenor_directive: |
+      **Rabbit, decompose this feature into tickets.** The feature
+      in your context is a user-facing capability; your job is to
+      name the implementation atoms that ship together to deliver it.
+
+      For each ticket, name:
+        - ``title`` — what the ticket is, in one short phrase
+        - ``owner`` — which Tweedle (tweedledee for frontend bias,
+          tweedledum for backend bias, or "either" for full-stack)
+        - ``tier`` (v1 / fast-follow / post-launch — usually
+          inherits from feature tier)
+        - ``stack_span`` — **REQUIRED**: one of ``frontend``,
+          ``backend``, or ``full-stack``. The substrate uses this
+          to scope M7 (implementation) to just the Tweedle whose
+          side the ticket touches — frontend tickets only load
+          Tweedledee, backend tickets only load Tweedledum,
+          full-stack tickets load both. Don't default everything
+          to ``full-stack`` to be safe; that defeats the whole
+          point of the field. **Be explicit and stingy**:
+            - ``frontend`` when the ticket's deliverable is a UI
+              component, route, page, store action, frontend
+              schema, client-side validation, etc. — code that
+              lives under the frontend tree only.
+            - ``backend`` when the deliverable is a model, API
+              endpoint, migration, scheduled job, server-side
+              validation, integration, etc. — code under the
+              backend tree only.
+            - ``full-stack`` ONLY when the ticket genuinely
+              requires both sides to ship together as one unit.
+          If a frontend ticket needs a backend change to land
+          first, that's a ``Blocked by:`` dependency on a
+          SEPARATE backend ticket, not a reason to mark this one
+          ``full-stack``. Splitting reduces M7 cost and clock
+          time materially; merging defeats the optimization.
+        - ``estimate`` (your honest read; the Tweedles will adjust)
+        - ``description`` — what shipping this ticket means
+        - ``sources`` — **REQUIRED**: the parent feature's citation
+          must be the FIRST entry in this list. Cite the parent
+          feature by slug (legacy), full GUID, or
+          ``"<guid>:<slug>"`` (P18 canonical, preferred). Without
+          this, the substrate can't tell which tickets to
+          implement when the operator queues a feature.
+        - ``acceptance`` — observable conditions of done
+
+      Aim for 1–4 tickets per feature. A feature with 0 tickets is
+      a feature that's not actually decomposed; a feature with 6+
+      tickets is probably actually 2 features that should be split
+      back in M2.
+
+      **Alice — same grounding role.** Defend the user-facing
+      point of the tickets. Push back when a ticket compresses
+      the feature's purpose past user-recognition or drifts
+      toward technical convenience.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [milestone]
+      - from: composition
+        kinds: [feature]
+
+    transition_iteration_to: in_design
+    phases:
+      - name: decompose
+        max_rotations: 2
+        exit_condition_artifact: ticket
+
+  # ─────────────────────────────────────────────────────────────────
+  # M3.5 — Consolidation. Identical to canonical (operates on
+  # tickets and features, not stories).
+  # ─────────────────────────────────────────────────────────────────
+  - id: consolidation
+    label: M3.5
+    name: A Caterpillar's Edit
+    goal: |
+      consolidate this feature's tickets — merge overlaps, prune
+      duplicates, and assign explicit blocked-by dependencies so
+      M7 can serialize implementations of dependent tickets
+    roster: [white_rabbit, caterpillar]
+    per_item: feature
+    iterate_only_in_states: [in_design]
+    parallel: true
+    meeting_budget: 0.30
+    convenor_directive: |
+      **Rabbit — ship ``ticket`` decisions only. Do NOT emit a
+      ``feature`` decision in this meeting.** This is the trap:
+      the iteration item IS a feature, but the meeting's job is
+      consolidating its TICKETS. M2 is closed; you don't ship
+      features here. Every emission you make in this meeting is
+      a ``ticket`` decision (or ``concern`` / ``silence`` /
+      ``question_to_operator`` when something else applies).
+
+      M3 just decomposed this feature into tickets and two failure
+      modes are common at M3: over-decomposition (one capability
+      sliced into 8 micro-tickets that should be 3) and missing
+      dependencies (no explicit ``Blocked by:`` so M7
+      implementations race on shared foundations). M3.5 fixes
+      both per feature.
+
+      **What ``ticket`` emissions to make:**
+
+        - **Tickets you want to keep AS-IS** with no changes:
+          don't re-emit them. Just leave them alone.
+        - **Tickets you want to MERGE**: ship a new ``ticket``
+          decision with the merged content (combined acceptance,
+          broader description, union of sources from the absorbed
+          tickets). Caterpillar will delete the absorbed ones.
+        - **Tickets whose ``Blocked by:`` needs updating**: ship
+          a new ``ticket`` decision with the existing slug, the
+          existing content, and a fresh ``dependencies.blocked_by``
+          list naming the upstream ticket slugs.
+
+      **Assigning ``Blocked by:`` is the load-bearing job.** Walk
+      this feature's tickets. For each one ask: which other
+      tickets' implementations does this need on disk before it
+      can start? Be explicit.
+
+      **Caterpillar — prune duplicates with ``retract``.** Prefer
+      the first-class ``retract`` decision over ``delete_file`` —
+      retract names specific target_slugs, removes them from bus
+      + disk, and logs the action in the transcript.
+
+      **Hard rule: never delete more tickets than you have
+      explicit evidence to retract.** A duplicate is two tickets
+      covering the same acceptance criteria with the same
+      stack-span. "Adjacent scope" or "could be combined" is NOT
+      duplication; raise that as a `concern`.
+
+      **Aim for 3-7 tickets per feature after consolidation.**
+
+      **Silence is okay if there's nothing to consolidate** — a
+      feature with 3 well-scoped tickets and no merge-or-deps
+      work to do is fine to leave untouched.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [feature]
+      - from: decomposition
+        kinds: [ticket]
+
+    phases:
+      - name: consolidate
+        max_rotations: 2
+        exit_condition_artifact: ticket
+
+  # ─────────────────────────────────────────────────────────────────
+  # M4 — Architecture + security. Same as canonical, minus the
+  # story seed (no stories exist in this variant; ADRs ground
+  # against features + tickets + the milestone done-when).
+  # ─────────────────────────────────────────────────────────────────
+  - id: architecture
+    label: M4
+    name: A Mock Turtle's Lament
+    goal: |
+      produce architectural commitments (ADRs) and security rulings,
+      grounded in the features + tickets the team has shipped
+    roster: [alice, cheshire_cat, queen_of_hearts]
+    meeting_budget: 0.40
+    convenor_directive: |
+      The features + tickets are settled. Now the team commits to
+      the architectural shape that delivers them.
+
+      **First, re-read the operator's directive in your context.**
+      Stack constraints named there (e.g. "TUI", "CLI", "mobile
+      app", "web app") are non-negotiable architectural
+      commitments. The directive is verbatim.
+
+      **Cat — write ADR(s).** Each ADR names a structural
+      decision (storage shape, integration patterns, data flow)
+      with explicit tradeoffs. Ground every claim in the
+      directive + features + tickets + milestone done-when;
+      don't architect for hypothetical extensions. Use status
+      "Proposed" so M5 can challenge.
+
+      **Queen — security ruling pass.** For each feature, name
+      the threat model. One ruling per feature where the threat
+      model is non-trivial; skip features with no meaningful
+      security posture.
+
+      **Alice — grounding voice.** Push back when an
+      architectural decision drifts from the user-facing point
+      of the features it supports OR drifts from the operator's
+      directive.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [directive]
+      - from: any
+        kinds: [milestone]
+      - from: composition
+        kinds: [feature]
+      - from: decomposition
+        kinds: [ticket]
+    phases:
+      - name: discussion
+        max_rotations: 2
+        team_groupings: [[cheshire_cat, queen_of_hearts, alice]]
+        exit_condition_artifact: adr
+      - name: commit
+        max_rotations: 1
+        team_groupings: [[cheshire_cat, queen_of_hearts, alice]]
+        exit_condition_artifact: adr
+
+  # ─────────────────────────────────────────────────────────────────
+  # M5 — Contracts per feature. Identical to canonical (story-free
+  # already in the canonical workflow).
+  # ─────────────────────────────────────────────────────────────────
+  - id: contract-negotiation
+    label: M5
+    name: The Pair Protocol
+    goal: negotiate per-feature contracts informed by the ADR
+    roster: [tweedledee, tweedledum, alice]
+    per_item: feature
+    iterate_only_in_states: [in_design]
+    parallel: true
+    meeting_budget: 0.60
+    convenor_directive: |
+      **Tweedles — negotiate the contract for this feature.**
+
+      **First, read project_context (in your seed context) for
+      the runtime shape.** Your role names interpret DIFFERENTLY
+      in different runtimes. Translate before negotiating:
+
+        - ``runtime: tui`` (single-process terminal app):
+          tweedledee = widget / screen / layout layer;
+          tweedledum = data / model / persistence layer. The
+          boundary between you is module imports, not HTTP.
+        - ``runtime: cli`` (single-shot command-line):
+          tweedledee = argparse / output formatting; tweedledum
+          = subcommand logic + persistence. Same in-process rule.
+        - ``runtime: web`` (client-server, browser + service):
+          tweedledee owns the browser surface, tweedledum owns
+          the API service, the boundary IS HTTP.
+        - ``runtime: service`` (long-running daemon, no UI):
+          tweedledum carries; tweedledee may not be relevant.
+
+      Read the feature, its constituent tickets, and the ADRs in
+      your context. Produce contract notes that name the seams
+      in the right shape for the runtime: function signatures +
+      data classes for in-process; endpoints + envelopes for HTTP.
+
+      Stack span (the feature's own ``stack_span`` field) guides
+      who leads:
+        - ``full-stack`` features: both negotiate the seam together
+        - ``frontend`` features: tweedledee leads, tweedledum confirms
+        - ``backend`` features: tweedledum leads, tweedledee confirms
+
+      A contract note carries: ``proposed_change`` (required,
+      non-empty), ``current_shape`` (existing contract or "n/a,
+      fresh feature"), and ``rationale``.
+
+      **Alice — grounding voice.** Push back when a contract
+      compresses the user-facing point of a feature past
+      recognition, OR when a contract drifts from the runtime
+      shape (HTTP language in a TUI project, etc.).
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      - from: any
+        kinds: [directive]
+      - from: composition
+        kinds: [feature]
+      - from: decomposition
+        kinds: [ticket]
+      - from: architecture
+        kinds: [adr, ruling]
+
+    transition_iteration_to: designed
+    phases:
+      - name: discussion
+        max_rotations: 2
+        team_groupings: [[tweedledee, tweedledum, alice]]
+        exit_condition_artifact: contract_note
+      - name: commit
+        max_rotations: 1
+        team_groupings: [[tweedledee, tweedledum, alice]]
+        exit_condition_artifact: contract_note
+category: design

@@ -93,6 +93,22 @@ meetings:
     goal: produce user stories from inhabited personas
     roster: [alice, caterpillar]
     meeting_budget: 0.40
+    # T-ab6 — milestone-kind roster filter. Capability milestones
+    # run Alice solo (persona-driven user stories from M1); foundation
+    # milestones run Caterpillar solo (developer-as-user stories for
+    # plumbing/contracts/seed-data). The substrate reads the active
+    # milestone's kind from the run scope and narrows the roster
+    # accordingly. Eliminates the scope-bleed failure mode where
+    # Alice invents user personas for non-user-facing foundation
+    # work and pulls capability-milestone scope into the foundation
+    # milestone (observed across mvp-demo / obol-demo3 pilots).
+    # Without an active milestone scope, falls through to the full
+    # [alice, caterpillar] roster (no narrowing).
+    milestone_roster_filter:
+      field: kind  # informational — substrate reads active scope kind directly
+      map:
+        capability: [alice]
+        foundation: [caterpillar]
     # Entry meeting — the user's launching directive replaces
     # any convenor_directive at runtime. Framing for M1 lives
     # in the agents' constitutions:
@@ -140,6 +156,15 @@ meetings:
         kinds: [project_context]
       - from: any
         kinds: [requirement]
+      # T-ab11 — seed the active milestone artifact so its goal,
+      # done-when, and consumes_requirements reach the agents as
+      # structured context, not just as framing text. With T-ab9's
+      # milestone-scope filter, only the active milestone surfaces
+      # (no sibling pollution). Without this seed, the prepended
+      # framing prose is the only narrowing signal — and a wide
+      # project_level prime_directive can drown it out.
+      - from: any
+        kinds: [milestone]
       - from: any
         kinds: [story]
         consumed_by: feature
@@ -192,6 +217,17 @@ meetings:
       For each feature, name:
         - ``kind`` — capability or foundation (per above)
         - ``stack_span`` (frontend / backend / full-stack)
+        - ``milestone`` — **REQUIRED** when the design run was
+          launched with ``--milestone <slug>``: copy the active
+          milestone's slug (or ``<guid>:<slug>``) verbatim from
+          the milestone artifact in your context. Every feature
+          you ship in this run belongs to exactly one milestone —
+          the active one. A feature whose scope spans into another
+          milestone is two features that should be split, not one
+          feature with ambiguous attribution. Substrate
+          attribution reads this field directly (no inference);
+          omitting it falls back to a Jaccard guess that
+          repeatedly mis-assigns features in production.
         - ``personas`` — at least one persona name from an M1
           story already in your context; do NOT invent new
           personas or import example names from your training
@@ -277,6 +313,13 @@ meetings:
     seeds:
       - from: any
         kinds: [project_context]
+      # T-ab11 — active milestone artifact (T-ab9 scope-filtered).
+      # Carries goal + done-when + consumes_requirements as
+      # structured context so Rabbit composes features bounded
+      # by *this* milestone's scope rather than the project-level
+      # directive's full surface.
+      - from: any
+        kinds: [milestone]
       # consumed_by: feature scopes M2 to *uncomposed* stories. On
       # cross-run design passes (operator iterating tdd-design 5–10×
       # against the same project, the workflow's economic argument),
@@ -427,6 +470,11 @@ meetings:
     seeds:
       - from: any
         kinds: [project_context]
+      # T-ab11 — active milestone artifact for decomposition scope
+      # discipline. Rabbit's ticket decomposition stays bounded by
+      # the milestone's done-when, not the project-level directive.
+      - from: any
+        kinds: [milestone]
       - from: scoping
         kinds: [story]
       - from: composition
@@ -567,6 +615,12 @@ meetings:
     seeds:
       - from: any
         kinds: [project_context]
+      # T-ab11 — active milestone artifact for consolidation scope
+      # discipline. Consolidation merges/dedups tickets within a
+      # feature; the milestone artifact frames what "in scope"
+      # means for this feature's tickets.
+      - from: any
+        kinds: [milestone]
       # Feature binding stays on its own so the iteration-kind slice
       # keeps only THIS lane's feature artifact (current_item_slug
       # match against feature.payload.slug).
@@ -611,6 +665,13 @@ meetings:
       grounded in the features + tickets the team has shipped
     roster: [alice, cheshire_cat, queen_of_hearts]
     meeting_budget: 0.40
+    # T-ab19: skip M4 entirely when the active milestone scope has
+    # zero in-scope features with tickets. An ADR grounded in zero
+    # concrete deliverables ends up generic/abstract; cheap to skip
+    # rather than burn budget. Fires for the case where M2 cross-
+    # emits everything to other milestones (T-ab17 filters them
+    # out) leaving M3 with no tickets to architect against.
+    requires_active_scope_tickets: true
     convenor_directive: |
       The features + tickets are settled. Now the team commits to
       the architectural shape that delivers them.
@@ -655,6 +716,11 @@ meetings:
       # memory (greenfield via legacy paths).
       - from: any
         kinds: [project_context]
+      # T-ab11 — active milestone artifact for ADR scope discipline.
+      # Cat architects to serve the active milestone's done-when,
+      # not the project-level directive's full surface.
+      - from: any
+        kinds: [milestone]
       # Operator's literal launching prompt. Even when project
       # context names the stack, the directive carries intent for
       # *this* run — what feature, what scope. Cat reads both:
@@ -702,6 +768,14 @@ meetings:
     # M5 re-negotiates contracts that already exist and ships
     # duplicate contract notes.
     iterate_only_in_states: [in_design]
+    # T-ab16: skip features whose M3 decomposition + M3.5
+    # consolidation produced zero constituent tickets. A
+    # feature with no tickets has nothing for the Tweedles
+    # to contract about. Observed in mvp-demo-rerun-A M3
+    # design: 7 features shipped, 6 collapsed to 0-ticket
+    # dead weight after consolidation, M5 iterated all 7
+    # at $0.30-0.60/iter — ~$2-3 of pure waste.
+    iterate_only_with_tickets: true
     parallel: true  # T93: contracts negotiate per-feature seams
                     # independently. Feature A's API shape and
                     # feature B's UI envelope are separate concerns.
@@ -785,6 +859,11 @@ meetings:
       # constitutions and not in M5's frame).
       - from: any
         kinds: [project_context]
+      # T-ab11 — active milestone artifact for contract scope
+      # discipline. Contracts are negotiated to satisfy this
+      # milestone's done-when, not the project-level surface.
+      - from: any
+        kinds: [milestone]
       - from: any
         kinds: [directive]
       - from: composition

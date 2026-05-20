@@ -206,6 +206,7 @@ def _load_stories(project_root: Path) -> list[Any]:
         from wonderland.coverage import (
             _parse_milestone_consumes,
             _parse_story_realizes,
+            _parse_story_milestone,
         )
     except Exception:  # noqa: BLE001
         return all_stories  # parser unavailable, fall through
@@ -236,6 +237,23 @@ def _load_stories(project_root: Path) -> list[Any]:
         try:
             text = record.path.read_text(encoding="utf-8")
         except OSError:
+            continue
+        # T-ab7: explicit milestone field is authoritative when
+        # present. Strip guid prefix (slug-only form is what the
+        # scope holds). When set to a different milestone, drop
+        # the story from this scope; when set to the active scope,
+        # include it directly without consulting realizes. Stories
+        # without the field fall through to the legacy intersection
+        # filter on realizes_requirements (back-compat for stories
+        # shipped before T-ab7). The legacy path leaks across
+        # milestones via shared cross-cutting requirements (scope /
+        # constraint / persona slugs consumed by many milestones) —
+        # the explicit field exists precisely to bypass that leak.
+        explicit = _parse_story_milestone(text)
+        if explicit:
+            slug_only = explicit.split(":", 1)[1] if ":" in explicit else explicit
+            if slug_only == scope.slug:
+                in_scope.append(record)
             continue
         story_reqs = set(_parse_story_realizes(text))
         # Drop stories that explicitly attribute to other milestones'
@@ -329,6 +347,7 @@ def _compute_primary_milestone_per_feature(
             _parse_milestone_consumes,
             _parse_story_realizes,
             _parse_feature_sources,
+            _parse_feature_milestone,
         )
     except Exception:  # noqa: BLE001
         return {}
@@ -387,6 +406,7 @@ def _compute_primary_milestone_per_feature(
     feature_root = project_root / ".wonderland" / "features"
     if not feature_root.is_dir():
         return primary
+    known_milestone_slugs = {ms for ms, _, _ in milestone_meta}
     for p in feature_root.glob("feature-*.md"):
         m = feat_re.match(p.name)
         if not m:
@@ -396,6 +416,17 @@ def _compute_primary_milestone_per_feature(
             text = p.read_text(encoding="utf-8")
         except OSError:
             continue
+        # T-ab5: explicit milestone field is authoritative when
+        # present and resolvable. Strip guid prefix (slug-only form
+        # is what the milestone meta tuple holds). Jaccard fallback
+        # below only applies when the field is absent / unresolvable
+        # — i.e., legacy features shipped before T-ab5.
+        explicit = _parse_feature_milestone(text)
+        if explicit:
+            slug_only = explicit.split(":", 1)[1] if ":" in explicit else explicit
+            if slug_only in known_milestone_slugs:
+                primary[fslug] = slug_only
+                continue
         raw_sources = _parse_feature_sources(text)
         # T-g5: strip guid prefix
         sources: set[str] = set()
@@ -467,10 +498,34 @@ def _load_requirements(project_root: Path) -> list[Any]:
 def _load_milestones(project_root: Path) -> list[Any]:
     """P15 milestone artifacts. Speaker = white_rabbit (the canonical
     plan owner). milestone-plan re-runs read these as cross-run
-    context so agents can amend rather than restart."""
+    context so agents can amend rather than restart.
+
+    T-ab9 milestone-scope filter: when an active milestone scope is
+    set (tdd-design/tdd-implement with ``--milestone <slug>``), only
+    surface the active milestone's artifact. Sibling milestones are
+    summarized in the framing block as "already shipped" / "future
+    milestone" rather than seeded as full artifacts — full artifacts
+    contain done-when + consumes detail that downstream agents treat
+    as actionable scope. Mvp-demo-rerun-A M2 leak: Rabbit composed
+    a foundation feature in M2's composition because M1's full
+    milestone artifact (slug "m1-foundation-data-layer-api-contract",
+    body describing SQLite schema + FastAPI stubs) was visible in
+    seeds despite the framing block calling M1 "already shipped".
+
+    No-active-scope flows (milestone-plan re-runs, ad-hoc workflows)
+    still see all milestones — that's the expected behavior when
+    the workflow is project-level rather than milestone-scoped.
+    """
     from wonderland.milestone import MilestoneRegistry
 
     records = MilestoneRegistry(project_root).list_milestones()
+    try:
+        from wonderland.workflow import get_active_milestone_scope
+        scope = get_active_milestone_scope()
+    except Exception:  # noqa: BLE001
+        scope = None
+    if scope is not None:
+        records = [r for r in records if r.slug == scope.slug]
     return [_RegistryRecordAdapter(r) for r in records]
 
 

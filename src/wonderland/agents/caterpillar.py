@@ -269,7 +269,8 @@ The JSON must conform to this schema:
       ],
       "realizes_requirements": [
         "requirement-slug-this-plumbing-story-addresses (often a `constraint` or `integration` kind from discovery, e.g., 'react-frontend-sqlite-backend-v1-stack-locked')"
-      ]
+      ],
+      "milestone": "active milestone slug verbatim from the milestone artifact in your context (e.g. 'm1-foundation-data-layer-api-contract') — REQUIRED when the run is milestone-scoped; null only when no scope is active. Cross-milestone supporting concerns surface as a `concern`, not as a story shared across scopes."
     }
   ],
   "reviews": [                        // include ONLY when decision is "review"

@@ -94,6 +94,24 @@ class StoryPayload(BaseModel):
     a scoped run means the coverage check has nothing to anchor
     against. Slugs are the requirement filename's slug component,
     same shape as ``milestone.consumes_requirements``."""
+    milestone: str | None = Field(
+        default=None,
+        description=(
+            "T-ab7 — explicit milestone attribution. Slug or "
+            "``<guid>:<slug>`` of the milestone this story belongs "
+            "to. When the design run was launched with "
+            "``--milestone <slug>``, Alice/Cat populate this with "
+            "the active milestone's slug — no inference required. "
+            "Substrate scope filtering (story-loader seed pool) "
+            "reads this field directly when present; the legacy "
+            "intersection-on-realizes_requirements path is the "
+            "back-compat fallback for stories shipped before this "
+            "field existed. A story belongs to exactly one "
+            "milestone; cross-milestone supporting concerns should "
+            "be raised as design-time concerns, not stamped onto "
+            "multiple milestones via shared realizes."
+        ),
+    )
 
     @field_validator("confusion_flags")
     @classmethod
@@ -136,6 +154,7 @@ def render_story(number: int, payload: StoryPayload) -> str:
         f"## Story {number:03d}: {payload.title}",
         "",
         f"**GUID:** {payload.guid}",
+        f"**Milestone:** {payload.milestone or '—'}",
         "",
         f"**Persona:** {payload.persona.rstrip()}",
         "",

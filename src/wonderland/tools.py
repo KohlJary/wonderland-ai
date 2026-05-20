@@ -300,6 +300,68 @@ class Tools:
             raise ToolError(f"path {requested!r} escapes project root {self._root}")
         return path
 
+    def _check_delete_allowed(self, requested: str, full: Path) -> None:
+        """T-ab12 (ccf5fdfe) — refuse agent-initiated DELETES on
+        substrate-of-record paths under ``.wonderland/``.
+
+        Observed failure: mvp-demo-rerun-A M2 design pass deleted
+        the M1 milestone file, leaving the M1 design run with an
+        empty milestone seed pool and the full-app-scope drift
+        symptom. Deletion of substrate artifacts during a design/
+        impl workflow is never the right semantic — agents that
+        want to remove an artifact should emit a ``retract``
+        speech_act (which is workflow-aware), not raw file-tool
+        unlinks.
+
+        Mutation (write_file / str_replace / insert) is still
+        permitted: agents may legitimately need to amend a
+        milestone's content (fix a typo in done-when, correct a
+        consumes_requirements slug). The mutation path keeps the
+        file on disk so the seed-loader and substrate guards still
+        see the artifact; deletion would silently remove it.
+
+        Deletion of source files (src/, tests/, frontend/) remains
+        unaffected — that's the legitimate workflow for cleaning
+        up implementation atoms.
+        """
+        try:
+            rel = full.relative_to(self._root)
+        except ValueError:
+            return  # _resolve already raises on escapes
+        rel_str = rel.as_posix()
+        protected_prefixes = (
+            ".wonderland/milestones",
+            ".wonderland/requirements",
+            ".wonderland/memory",
+        )
+        protected_files = (
+            ".wonderland/project.yaml",
+            ".wonderland/feature-states.jsonl",
+            ".wonderland/ticket-states.jsonl",
+            ".wonderland/phase-events.jsonl",
+            ".wonderland/tool-calls.jsonl",
+            ".wonderland/milestone-unlink.log",
+        )
+        if rel_str in protected_files:
+            raise ToolError(
+                f"refusing to delete substrate-of-record file "
+                f"{requested!r}: this file is owned by the substrate "
+                f"(project config / lifecycle state / audit log). "
+                f"Deletion is not the right semantic here."
+            )
+        for prefix in protected_prefixes:
+            if rel_str == prefix or rel_str.startswith(prefix + "/"):
+                raise ToolError(
+                    f"refusing to delete substrate-of-record path "
+                    f"{requested!r}: artifacts under this directory "
+                    f"are owned by a specific workflow (milestones → "
+                    f"milestone-plan; requirements → discovery; "
+                    f"memory → substrate). Use a ``retract`` "
+                    f"speech_act instead of raw delete_file — "
+                    f"retract is workflow-aware and reversible; "
+                    f"file deletion is neither."
+                )
+
     # ------------------------------------------------------------------ #
     # Operations
     # ------------------------------------------------------------------ #
@@ -438,6 +500,7 @@ class Tools:
         the file existed doesn't have to pre-check with read_file.
         """
         full = self._resolve(path)
+        self._check_delete_allowed(path, full)
         if full.is_dir():
             raise ToolError(
                 f"path is a directory, not a file: {path}; "

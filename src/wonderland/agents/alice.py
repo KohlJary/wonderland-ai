@@ -324,6 +324,21 @@ to the meeting:
     plausibly fits — usually a sign the story shouldn't be in
     scope at all.
 
+    **Each story you ship MUST also populate ``milestone`` with
+    the active milestone's slug** (or ``<guid>:<slug>``) when
+    the run is milestone-scoped. Copy it verbatim from the
+    active milestone artifact in your context. Without this
+    field, the substrate falls back to a requirement-intersection
+    heuristic to decide which milestone the story belongs to —
+    and shared cross-cutting requirements (scope, persona,
+    constraint) leak stories across milestone boundaries. The
+    explicit field is the load-bearing fix: a story tagged
+    ``milestone: m1-foundation`` won't appear in M2's design
+    pool even if it realizes a requirement M2 also consumes.
+    A story belongs to exactly one milestone; cross-milestone
+    supporting work should surface as a ``concern``, not as a
+    story shared across scopes.
+
     **Slug stability is load-bearing in M1, same as in
     milestone-plan.** When you see stories already in your seed
     context — OR in the "Stories already on disk for this
@@ -440,7 +455,8 @@ The JSON must conform to this schema:
       "realizes_requirements": [
         "requirement-slug-this-story-addresses",
         "another-requirement-slug-if-the-story-spans-two"
-      ]
+      ],
+      "milestone": "m2-active-milestone-slug-or-null-if-unscoped"
     }
   ],
   "scenarios": [                      // include ONLY when decision is "test_scenario"
@@ -470,6 +486,7 @@ The JSON must conform to this schema:
       "interview_id": "the interview's id from your context (e.g. 'persona-interview')",
       "question_id": "which of the operator's answered questions this requirement came from",
       "kind": "persona" | "situation" | "constraint" | "integration" | "scope" | "success_criterion" | "out_of_scope" | "deal_breaker",
+      "axis": "foundation" | "capability" | "both",  // T-ab15 — orthogonal to kind. foundation: infra/contracts/dev-experience (consumed by foundation milestones). capability: user-visible behavior, persona outcomes (consumed by capability milestones). both: cross-cutting (persona slugs, project-wide scope statements). When unsure, use "both" — substrate is permissive on it.
       "body": "your structured rendering of what the operator said — 1-3 sentences, the stable claim that downstream meetings will read",
       "operator_quote": "raw verbatim from the operator's answer, for traceability",
       "confidence": "operator_stated"

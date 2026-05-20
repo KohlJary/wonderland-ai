@@ -373,6 +373,35 @@ meetings:
     convenor_directive: |
       **Caterpillar — review this feature.**
 
+      **SCOPE DISCIPLINE — read this first.** Your review is scoped
+      to THIS FEATURE ONLY. The project may contain other features
+      (in this milestone or future milestones) at various states of
+      completion; many will be incomplete or not started. **Do NOT
+      surface findings about files / components / endpoints that
+      belong to other features.** Those have their own review
+      passes scheduled. A frontend ``NoteEditor`` component that
+      doesn't exist yet is M2's problem, not M1's — flagging its
+      absence during M1's review wastes budget and spawns
+      misattributed follow-up tickets.
+
+      **Scope the cross-ticket coherence check to this feature's
+      stack_span:**
+
+        - ``stack_span: backend`` — coherence check is contract
+          notes + backend files only. Do NOT look at frontend
+          files; they belong to capability milestones that
+          haven't shipped yet (and shouldn't). The "consumer
+          file" / "app entry point" guidance below ONLY applies
+          to full-stack features.
+        - ``stack_span: frontend`` — coherence check is contract
+          notes + frontend files only. Do NOT look at backend
+          source unless it's already shipped and this feature
+          consumes it; if backend doesn't exist yet, that's a
+          separate foundation milestone's job.
+        - ``stack_span: full-stack`` — both sides, plus the app
+          entry point. The cross-ticket check below in full
+          applies here.
+
       The most expensive defects in feature work live *between* files:
       a contract note says one thing, the backend implements 50% of
       it, the frontend assumes 100% of it; or a component gets built
@@ -382,16 +411,20 @@ meetings:
       reproduces, and it's the one to ship FIRST when budget is
       tight. Do these checks in order:
 
-        1. **Cross-ticket coherence FIRST.** Open these together
-           BEFORE any single-file review:
+        1. **Cross-ticket coherence FIRST** (full-stack features
+           only; for backend/frontend-only features, restrict to
+           the relevant side). Open these together BEFORE any
+           single-file review:
              - The feature's contract note(s) (the agreement
                between Tweedles on field semantics)
              - At least one backend file the contract names
+               (skip if stack_span is frontend-only)
              - At least one frontend / consumer file the contract
-               names
+               names (skip if stack_span is backend-only)
              - The app entry point (e.g. ``App.tsx``, ``main.py``,
-               ``main.rs`` — wherever the feature gets mounted into
-               the running program)
+               ``main.rs`` — wherever the feature gets mounted
+               into the running program) — only for full-stack
+               features that actually mount into the runtime
            Verify: do all three name the same fields with the same
            semantics? Does a category at 85%-of-budget produce the
            same display state in the frontend as in the backend's
@@ -401,6 +434,14 @@ meetings:
            Contract drift and orphaned components are the canonical
            cross-ticket bugs; both are invisible to a single-file
            review.
+
+           **For a backend-only feature**, the coherence check is
+           contract notes + backend files only. If you find
+           yourself reading frontend code to verify coherence,
+           STOP — you've drifted out of this feature's scope.
+           Whole-project coherence is a separate workflow
+           (milestone-review / end-of-milestone coherence pass);
+           it's not your job in this M8.
 
         2. **Does the code match the contract?** Per-file: walk the
            implementation against the ADR + contract notes.

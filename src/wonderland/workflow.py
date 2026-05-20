@@ -372,6 +372,42 @@ class Meeting(BaseModel):
             "over every candidate item (legacy behavior)."
         ),
     )
+    iterate_only_with_tickets: bool = Field(
+        default=False,
+        description=(
+            "T-ab16 input filter for per_item: feature meetings. "
+            "When True, drop features with zero constituent tickets "
+            "before iterating. Used by tdd-design's M5 (Pair "
+            "Protocol / contract-negotiation) to skip features whose "
+            "M3 decomposition + M3.5 consolidation produced no "
+            "tickets — there's nothing to negotiate a contract "
+            "about. Observed in mvp-demo-rerun-A M3 design: 7 "
+            "features shipped from M2 composition, 6 collapsed to "
+            "0-ticket dead weight after consolidation, but M5 "
+            "iterated all 7 anyway, burning ~6× extra Pair Protocol "
+            "iterations at $0.30-0.60 each. Only applies to "
+            "per_item: feature meetings; per_item: ticket is a "
+            "no-op (tickets aren't expected to have nested tickets)."
+        ),
+    )
+    requires_active_scope_tickets: bool = Field(
+        default=False,
+        description=(
+            "T-ab19 meeting-level skip guard. When True AND active "
+            "milestone scope is set AND zero in-scope features have "
+            "constituent tickets, skip the meeting entirely. Used "
+            "by tdd-design's M4 (Mock Turtle's Lament / "
+            "architecture): an ADR is grounded in concrete tickets, "
+            "so when decomposition produced no tickets (because all "
+            "features got filtered cross-scope or consolidated to "
+            "zero), M4 has nothing to architect against. Skipping "
+            "saves the M4 budget ($0.30-0.60) for what would have "
+            "been an abstract/empty ADR. Different from "
+            "``iterate_only_with_tickets`` (per-item filter) — this "
+            "is a meeting-level decision applied before any agents "
+            "convene."
+        ),
+    )
     requires_test_design: bool = Field(
         default=False,
         description=(
@@ -551,6 +587,20 @@ class Meeting(BaseModel):
             "Tweedledee for a ``stack_span: frontend`` ticket."
         ),
     )
+    milestone_roster_filter: RosterFilter | None = Field(
+        default=None,
+        description=(
+            "T-ab6 — narrow the roster based on the active milestone's "
+            "kind (foundation|capability). Filter is applied once at "
+            "meeting setup (not per-iteration). Used by tdd-design's "
+            "scoping phase to swap Alice ↔ Caterpillar: capability "
+            "milestones run Alice solo (persona-driven stories), "
+            "foundation milestones run Caterpillar solo (developer-"
+            "as-user stories). Eliminates the scope-bleed failure "
+            "mode where Alice invents user personas for non-user-"
+            "facing foundation work."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_phase_names_unique(self) -> "Meeting":
@@ -570,23 +620,33 @@ class Meeting(BaseModel):
         member of the meeting's full roster. Catches typo'd or
         cross-meeting references before they cause a silent
         substrate failure at iteration time."""
-        if self.per_item_roster_filter is None:
-            return self
-        if self.per_item is None:
-            raise ValueError(
-                f"meeting {self.id!r} declares per_item_roster_filter "
-                f"but is not a per_item meeting"
-            )
-        roster_set = set(self.roster)
-        for value, narrowed in self.per_item_roster_filter.map.items():
-            extras = [a for a in narrowed if a not in roster_set]
-            if extras:
+        if self.per_item_roster_filter is not None:
+            if self.per_item is None:
                 raise ValueError(
-                    f"meeting {self.id!r}: per_item_roster_filter "
-                    f"value {value!r} names agent(s) {extras} "
-                    f"that aren't in the meeting's roster "
-                    f"{sorted(roster_set)}"
+                    f"meeting {self.id!r} declares per_item_roster_filter "
+                    f"but is not a per_item meeting"
                 )
+            roster_set = set(self.roster)
+            for value, narrowed in self.per_item_roster_filter.map.items():
+                extras = [a for a in narrowed if a not in roster_set]
+                if extras:
+                    raise ValueError(
+                        f"meeting {self.id!r}: per_item_roster_filter "
+                        f"value {value!r} names agent(s) {extras} "
+                        f"that aren't in the meeting's roster "
+                        f"{sorted(roster_set)}"
+                    )
+        if self.milestone_roster_filter is not None:
+            roster_set = set(self.roster)
+            for value, narrowed in self.milestone_roster_filter.map.items():
+                extras = [a for a in narrowed if a not in roster_set]
+                if extras:
+                    raise ValueError(
+                        f"meeting {self.id!r}: milestone_roster_filter "
+                        f"value {value!r} names agent(s) {extras} "
+                        f"that aren't in the meeting's roster "
+                        f"{sorted(roster_set)}"
+                    )
         return self
 
     def apply_roster_filter(
@@ -620,6 +680,43 @@ class Meeting(BaseModel):
         new_roster = [a for a in self.roster if a in narrowed]
         # Filter team_groupings in every phase: drop non-roster
         # agents; drop empty teams.
+        new_phases: list[PhaseSpec] = []
+        for phase in self.phases:
+            if not phase.team_groupings:
+                new_phases.append(phase)
+                continue
+            new_teams = tuple(
+                tuple(a for a in team if a in narrowed)
+                for team in phase.team_groupings
+            )
+            new_teams = tuple(team for team in new_teams if team)
+            new_phases.append(
+                phase.model_copy(update={"team_groupings": new_teams})
+            )
+        return self.model_copy(
+            update={"roster": new_roster, "phases": new_phases}
+        )
+
+    def apply_milestone_roster_filter(self, kind: str | None) -> "Meeting":
+        """T-ab6 — narrow the roster based on the active milestone's
+        kind (foundation|capability). Returns self unchanged when:
+
+          - ``milestone_roster_filter`` isn't set on this meeting
+          - ``kind`` is None (no active milestone scope)
+          - ``kind`` isn't in the filter's map
+          - the narrowed roster matches the existing roster
+
+        Roster + per-phase team_groupings get the same filter applied
+        — agents not in the narrowed roster are dropped; empty teams
+        are dropped entirely.
+        """
+        rf = self.milestone_roster_filter
+        if rf is None or kind is None or kind not in rf.map:
+            return self
+        narrowed = set(rf.map[kind])
+        if narrowed == set(self.roster):
+            return self
+        new_roster = [a for a in self.roster if a in narrowed]
         new_phases: list[PhaseSpec] = []
         for phase in self.phases:
             if not phase.team_groupings:
@@ -1099,6 +1196,7 @@ class _MilestoneScope:
     goal: str
     done_when: tuple[str, ...]
     consumes: frozenset[str]
+    kind: str = "capability"  # T-ab6: foundation|capability, read by milestone_roster_filter
 
 
 _ACTIVE_MILESTONE_SCOPE: _MilestoneScope | None = None
@@ -2843,6 +2941,7 @@ def _resolve_milestone_scope(
             goal=goal,
             done_when=tuple(done_when),
             consumes=frozenset(consumes),
+            kind=record.kind.value,
         )
     except Exception:  # noqa: BLE001 — fall back to unscoped
         return None
@@ -3641,6 +3740,66 @@ async def _run_workflow_serial(
 
             items = filtered
 
+        # T-ab16 — iterate_only_with_tickets: drop features whose
+        # M3 decomposition + M3.5 consolidation produced zero
+        # constituent tickets. A feature with no tickets has
+        # nothing for M5 Pair Protocol to negotiate a contract
+        # about; iterating over it burns budget for no output.
+        if (
+            getattr(meeting, "iterate_only_with_tickets", False)
+            and meeting.per_item == "feature"
+            and getattr(runner, "project_root", None) is not None
+        ):
+            feature_to_tickets = _feature_to_tickets_map(
+                runner.project_root
+            )
+            filtered_with_tickets: list[dict[str, Any]] = []
+            for item in items:
+                slug = item["slug"]
+                if feature_to_tickets.get(slug):
+                    filtered_with_tickets.append(item)
+            items = filtered_with_tickets
+
+        # T-ab17 — implicit active-milestone iteration filter. When
+        # the run is milestone-scoped AND we're iterating per-feature,
+        # only iterate over features whose ``milestone`` field matches
+        # the active scope's slug. Drops features that Rabbit
+        # cross-emitted during M2 composition (tagged for other
+        # milestones via T-ab5's attribution) before they enter M3
+        # decomposition. Without this, M3/M3.5/M5 burn budget on
+        # features that semantically belong to other milestones and
+        # were correctly attributed away.
+        #
+        # Observed: mvp-demo-rerun-A M3 design shipped 7 features
+        # from M2 composition, 6 attributed to M1/M2 (correct), 1 to
+        # M3 — but all 7 entered M3 decomposition iteration anyway,
+        # producing 6 dead-end iterations.
+        #
+        # Implicit (no YAML opt-in) because active-milestone scope
+        # IS the iteration filter — there's no design-time scenario
+        # where you'd want cross-milestone feature iteration during
+        # a milestone-scoped run. Features without a milestone field
+        # (legacy, pre-T-ab5) pass through unchanged for back-compat.
+        active_scope = get_active_milestone_scope()
+        if (
+            active_scope is not None
+            and meeting.per_item == "feature"
+            and getattr(runner, "project_root", None) is not None
+        ):
+            feature_milestones = _feature_to_milestone_map(
+                runner.project_root
+            )
+            filtered_by_scope: list[dict[str, Any]] = []
+            for item in items:
+                slug = item["slug"]
+                feature_ms = feature_milestones.get(slug)
+                # Permissive: feature without milestone field (legacy)
+                # passes through. Strict match against active slug
+                # when milestone field IS set.
+                if feature_ms is None or feature_ms == active_scope.slug:
+                    filtered_by_scope.append(item)
+            items = filtered_by_scope
+
         if not items:
             # Nothing to iterate over — emit a synthetic skip so the
             # consumer sees the meeting was acknowledged. Fail-loud
@@ -3902,6 +4061,69 @@ def _ticket_to_feature_map(project_root: Path) -> dict[str, str]:
                         break
     except Exception:  # noqa: BLE001 — best-effort
         return {}
+    return out
+
+
+def _feature_to_milestone_map(project_root: Path) -> dict[str, str]:
+    """T-ab17 — build an index feature_slug → milestone_slug by reading
+    each feature's explicit ``**Milestone:**`` field (T-ab5).
+
+    Returns the slug-only form (strips ``<guid>:`` prefix if present).
+    Features without the milestone field (legacy, pre-T-ab5) are
+    omitted from the map — callers treat absence as "unknown,
+    permissive" rather than "empty milestone, restrictive."
+
+    Used by the implicit active-milestone iteration filter on
+    per_item: feature meetings during milestone-scoped runs.
+
+    Best-effort: returns empty map on any error so the caller falls
+    through to no-filter behavior.
+    """
+    out: dict[str, str] = {}
+    try:
+        from wonderland.feature import FeatureRegistry
+        from wonderland.coverage import _parse_feature_milestone
+
+        for record in FeatureRegistry(project_root).list_features():
+            try:
+                text = record.path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            explicit = _parse_feature_milestone(text)
+            if not explicit:
+                continue
+            slug_only = (
+                explicit.split(":", 1)[1] if ":" in explicit else explicit
+            )
+            out[record.slug] = slug_only
+    except Exception:  # noqa: BLE001 — best-effort
+        return {}
+    return out
+
+
+def _feature_to_tickets_map(project_root: Path) -> dict[str, list[str]]:
+    """T-ab16 — inverse of ``_ticket_to_feature_map``: build an index
+    feature_slug → list of constituent ticket slugs by walking the
+    ticket registry and reading each ticket's ``Sources:`` field.
+
+    Used by the ``iterate_only_with_tickets`` per-item filter on
+    M5 (Pair Protocol / contract-negotiation) to skip features
+    whose decomposition + consolidation produced zero tickets.
+    A feature with no tickets has nothing for the Tweedles to
+    negotiate a contract about.
+
+    Mirrors the ticket→feature index's normalization: handles bare
+    slugs, ``kind: slug`` prefixed, ``kind-slug`` prefixed; tolerates
+    the ``—`` placeholder.
+
+    Best-effort: returns empty map on any error so the caller can
+    gracefully fall through to no-filter behavior.
+    """
+    # Cheap implementation — derive from the existing ticket→feature
+    # map. Reverses the (k, v) pairs into v → [k1, k2, ...].
+    out: dict[str, list[str]] = {}
+    for ticket_slug, feature_slug in _ticket_to_feature_map(project_root).items():
+        out.setdefault(feature_slug, []).append(ticket_slug)
     return out
 
 
@@ -4449,8 +4671,17 @@ def collect_phantom_citations(
         kind="story",
     )
     if citing_kind == "feature":
-        valid_slugs = story_slugs
-        valid_guids = story_guids
+        # Features in the canonical tdd-design flow cite stories.
+        # The no-stories A/B variant (tdd-design-no-stories) cites
+        # milestones directly via done-when. Accepting milestone
+        # slugs/guids alongside story ones keeps both flows
+        # phantom-clean without a separate citing_kind.
+        milestone_slugs, milestone_guids = _collect_disk_slugs_and_guids(
+            project_root / ".wonderland" / "milestones",
+            kind="milestone",
+        )
+        valid_slugs = story_slugs | milestone_slugs
+        valid_guids = story_guids | milestone_guids
     elif citing_kind == "ticket":
         feature_slugs, feature_guids = _collect_disk_slugs_and_guids(
             project_root / ".wonderland" / "features",
@@ -5996,29 +6227,30 @@ def _apply_post_meeting_transitions(
     # ``transition_iteration_to: ready_for_review`` (derivation
     # handles the feature rollup once tickets are DONE).
     #
-    # Gated on feature lifecycle state: only fires when the feature
-    # is in an IMPLEMENTATION state (queued / in_progress /
-    # ready_for_review). The earlier "any per_item=feature meeting
-    # that emits a review" gate was too broad — tdd-design's
-    # consolidation meeting is per_item=feature AND Caterpillar
-    # legitimately emits review artifacts there to call out
-    # duplicate decompositions. The bug surfaced in projects/
-    # validation: a request-changes review during design back-
-    # filled fresh tickets to in_progress, then immediately marked
-    # them done, mid-design. Implementation-stage routing in a
-    # design-stage meeting.
+    # T-ab21 gate: discriminate by MEETING ID rather than feature
+    # lifecycle state. Only M8 review (tdd-implement.yaml's
+    # ``id: review``) and the legacy ``m8`` alias trigger ticket
+    # transitions. tdd-design's M3.5 consolidation (id:
+    # ``consolidation``) is per_item=feature and Caterpillar
+    # legitimately emits review utterances there for duplicate
+    # ticket detection, but those reviews must NOT drive
+    # implementation-stage ticket transitions.
     #
-    # The lifecycle gate makes the semantics right: routing fires
-    # iff the feature is actually being implemented. Design-stage
-    # features (proposed / in_design / designed) skip silently;
-    # Caterpillar's design-time concerns surface as ``concern`` or
-    # ``retract`` utterances which already have their own routing.
-    if current_item_slug and meeting.per_item == "feature":
+    # Earlier gate (_feature_in_implementation_state) used feature
+    # state as a proxy for "is this implementation-stage". The
+    # proxy was fragile: features stuck in ``designed`` state
+    # (because some upstream step didn't transition them to
+    # ``queued``) had their M8 accept verdicts silently swallowed,
+    # leaving tickets stuck in ``queued`` forever. Discriminating
+    # on meeting ID is unambiguous and resilient to feature-state
+    # bookkeeping gaps.
+    _IMPLEMENTATION_REVIEW_MEETING_IDS = frozenset({"review", "m8"})
+    if (
+        current_item_slug
+        and meeting.per_item == "feature"
+        and meeting.id in _IMPLEMENTATION_REVIEW_MEETING_IDS
+    ):
         feature_slug = current_item_slug
-        if not _feature_in_implementation_state(
-            project_root, feature_slug
-        ):
-            return
         blocking_reviews = _find_blocking_reviews(
             new_utterances, feature_slug
         )
@@ -6507,6 +6739,64 @@ async def _run_one_meeting(
     # ``meeting`` object remains unchanged.
     if item_payload is not None:
         meeting = meeting.apply_roster_filter(item_payload)
+
+    # T-ab6 — apply the milestone-kind roster filter, if any. Reads
+    # the active milestone's kind (foundation|capability) and narrows
+    # the roster + team_groupings accordingly. Used by tdd-design's
+    # scoping phase to swap Alice ↔ Caterpillar based on milestone
+    # shape. No-op when no milestone scope is active or when this
+    # meeting doesn't declare a milestone_roster_filter.
+    active_scope = get_active_milestone_scope()
+    active_kind = active_scope.kind if active_scope is not None else None
+    meeting = meeting.apply_milestone_roster_filter(active_kind)
+
+    # T-ab19 — requires_active_scope_tickets skip. Meetings (esp. M4
+    # architecture) can be configured to skip when the active
+    # milestone's features have zero constituent tickets. Architecture
+    # without tickets to ground in produces empty / abstract ADRs;
+    # cheap to skip rather than burn budget on a no-op meeting.
+    # Mvp-demo-rerun-A M3 retry: T-ab17 filtered all cross-emitted
+    # features out of decomposition, 0 tickets produced, M4 still
+    # ran on empty seed pool and produced a useless ADR.
+    if (
+        getattr(meeting, "requires_active_scope_tickets", False)
+        and active_scope is not None
+        and getattr(runner, "project_root", None) is not None
+    ):
+        feature_milestones = _feature_to_milestone_map(runner.project_root)
+        feature_to_tickets = _feature_to_tickets_map(runner.project_root)
+        in_scope_features_with_tickets = [
+            fslug for fslug, mslug in feature_milestones.items()
+            if mslug == active_scope.slug
+            and feature_to_tickets.get(fslug)
+        ]
+        if not in_scope_features_with_tickets:
+            # Mirror the "Nothing to iterate over" synthetic-skip
+            # pattern used in the per_item dispatch (line ~3807).
+            # Field names must match MeetingStartEvent / MeetingEndEvent
+            # actual constructors — earlier attempt with wrong names
+            # threw silently and wedged the workflow after M3.5.
+            yield MeetingStartEvent(
+                meeting=meeting,
+                seeds=[],
+                thread_id=thread_id or meeting.id,
+                iteration_index=iteration_index or 0,
+                iteration_total=iteration_total or 0,
+                iteration_label=iteration_label or "(skipped: no in-scope tickets)",
+            )
+            yield MeetingEndEvent(
+                meeting=meeting,
+                outcome="COMPLETE",
+                elapsed_s=0.0,
+                calls_delta=0,
+                cost_delta=0.0,
+                artifact_kinds={},
+                thread_id=thread_id or meeting.id,
+                iteration_index=iteration_index or 0,
+                iteration_total=iteration_total or 0,
+                iteration_label=iteration_label or "(skipped: no in-scope tickets)",
+            )
+            return
 
     # P15 T-m6 stage-leak guardrail. Register this meeting's
     # allowed_decisions for the thread so each agent's publish

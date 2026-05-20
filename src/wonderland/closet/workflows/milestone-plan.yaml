@@ -137,6 +137,7 @@ meetings:
             "slug": "foundation",
             "name": "Foundation: data layer + profile shell",
             "order": 1,
+            "kind": "foundation",
             "goal": "Marcus can launch the app, create a profile, and the persistence layer is ready for the logging loop.",
             "done_when": [
               "App launches on a fresh machine",
@@ -245,6 +246,8 @@ meetings:
         - stable slug (re-emit to amend an existing milestone)
         - 1-indexed order
         - human-readable name
+        - ``kind`` — ``foundation`` for infrastructure/contract
+          milestones; ``capability`` for user-facing flows
         - 1-3 sentence goal
         - observable done_when conditions (concrete enough to
           check)
@@ -263,6 +266,64 @@ meetings:
       done_when should describe an operator-visible outcome
       ("app launches, profile can be created and selected")
       not just "schema exists."
+
+      **Milestone kind — foundation vs capability.** Every
+      milestone gets a ``kind`` field with one of two values:
+
+        - ``kind: foundation`` — sets up infrastructure the rest
+          of the project depends on (schema, API contracts, seed
+          data, build tooling, dev environment). The persona is
+          typically a developer/operator/installer, not the
+          end user. Done-when reads as "the project gains the
+          ability to X." Usually the first milestone (sometimes
+          more than one). The substrate runs Caterpillar solo on
+          foundation scoping; Alice is filtered out because the
+          user-facing narrative reflex isn't load-bearing here.
+        - ``kind: capability`` (default) — delivers a user-facing
+          flow the end persona can describe in one sentence. Done-
+          when reads as "Marcus can do X." The substrate runs Alice
+          solo on capability scoping; Caterpillar is filtered out.
+
+      **Foundation milestones consume INFRASTRUCTURE-shaped
+      requirements only.** Requirement kinds that anchor in
+      foundation:
+        - ``persona``, ``situation`` — universal grounding (every
+          milestone consumes these)
+        - ``constraint`` — infrastructure constraints (storage,
+          scale, deployment)
+        - ``integration`` — API contracts, stack interop boundaries
+        - ``stack_constraint`` — runtime / framework choices
+        - ``scope`` — what v1 means at the infra layer
+        - ``out_of_scope``, ``deal_breaker`` — bounds
+
+      **Foundation milestones MUST NOT consume USER-FACING
+      capability requirements.** Specifically: never put a
+      requirement of kind ``success_criterion`` or a
+      behavior-shaped requirement (the ones that read as "user
+      can search/edit/filter/etc.") in a foundation milestone's
+      consumes list. **Even if the foundation milestone STUBS
+      the endpoint or schema for that capability, the requirement
+      itself belongs to the capability milestone that ships the
+      behavior.** Observed failure mode (mvp-demo-rerun M1):
+      milestone-plan included ``search-and-filter-compose-tag-
+      filter-then-search-within`` in M1's consumes because M1
+      stubs the ``GET /notes/search`` endpoint. The endpoint stub
+      is M1's job; the SEARCH CAPABILITY is M3's job. Putting the
+      search requirement in M1's consumes confused downstream
+      design — agents read the requirement as M1's marching
+      order and tried to deliver the search capability inside the
+      foundation milestone. The right split: M1 lists the endpoint
+      stubs in its done_when (operator-observable: endpoints
+      return 501 with the right contract shapes) without claiming
+      the user-facing capability requirement; M3 consumes the
+      search requirement and ships the actual delivery.
+
+      Quick test: if a requirement reads as "user can do X,"
+      it goes in the milestone that DELIVERS X, not the one
+      that prepares infrastructure for X. If the milestone-plan
+      agent isn't sure, default to placing it in the capability
+      milestone and let the foundation milestone reference it
+      only via done_when prose.
 
       **Coverage discipline — every requirement gets a home.**
       Look through your context seed-by-seed. Each requirement
