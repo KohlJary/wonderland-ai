@@ -464,3 +464,74 @@ def test_npm_build_fails_with_finding(tmp_path: Path) -> None:
     assert finding.severity == "block"
     # Location parser pulls the file:line:col from the output.
     assert "App.tsx:5" in finding.location
+
+
+# ---------- T-ab60: source-line context in npm build findings ----------
+
+
+def test_extract_all_npm_error_locations_dedupes_and_preserves_order(
+) -> None:
+    """Multi-error npm output: collect ALL distinct (file, line, col)
+    tuples in order of first appearance, drop duplicates."""
+    from wonderland.verification import _extract_all_npm_error_locations
+
+    output = """
+src/NoteEditor.tsx(169,13): error TS2322: ...
+src/api.ts(45,3): error TS2304: ...
+src/NoteEditor.tsx(169,13): error TS2322: ... (repeated)
+src/api.ts(80,7): error TS2304: ...
+"""
+    locs = _extract_all_npm_error_locations(output)
+    assert locs == [
+        ("src/NoteEditor.tsx", 169, 13),
+        ("src/api.ts", 45, 3),
+        ("src/api.ts", 80, 7),
+    ]
+
+
+def test_format_source_context_marks_failing_line(tmp_path):
+    """Source context block: failing line marked with `→`, ±3 lines
+    of surrounding code, file path + line in code fence header."""
+    from wonderland.verification import _format_source_context
+
+    src = tmp_path / "src" / "NoteEditor.tsx"
+    src.parent.mkdir(parents=True)
+    src.write_text("\n".join(
+        f"line-{i}" for i in range(1, 11)
+    ), encoding="utf-8")
+
+    block = _format_source_context(tmp_path, "src/NoteEditor.tsx", 5, 13)
+    # Header includes path + line + col
+    assert "src/NoteEditor.tsx:5 (col 13)" in block
+    # Failing line marked with arrow
+    assert "→ 5 | line-5" in block
+    # Surrounding lines present (line 2-8 with the ±3 window)
+    assert "line-2" in block and "line-8" in block
+    # Doesn't include lines outside the window
+    assert "line-1" not in block and "line-9" not in block
+
+
+def test_format_source_context_returns_empty_when_file_missing(tmp_path):
+    """Generated files / paths that don't resolve return empty string
+    — caller drops the source context block rather than rendering
+    a broken one."""
+    from wonderland.verification import _format_source_context
+
+    assert _format_source_context(tmp_path, "does-not-exist.tsx", 1, None) == ""
+
+
+def test_format_source_context_fallback_finds_file_by_basename(tmp_path):
+    """npm errors emit paths relative to package.json dir (e.g.
+    ``src/foo.tsx``), but the project_root may be one level up. Walk
+    rglob as a fallback so we find the file even when the relative
+    path doesn't resolve from project_root directly."""
+    from wonderland.verification import _format_source_context
+
+    src = tmp_path / "frontend" / "src" / "NoteEditor.tsx"
+    src.parent.mkdir(parents=True)
+    src.write_text("\n".join(f"line-{i}" for i in range(1, 5)), encoding="utf-8")
+
+    # Reference path is `src/NoteEditor.tsx` (from frontend/), but
+    # project_root is tmp_path (one level up from frontend/).
+    block = _format_source_context(tmp_path, "src/NoteEditor.tsx", 2, None)
+    assert "→ 2 | line-2" in block

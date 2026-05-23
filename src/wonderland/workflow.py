@@ -6824,13 +6824,33 @@ def _apply_review_verdict_routing(
     # (bypassing _record_reviews + bus emission), or the bus utterance
     # was silently dropped between agent emit and capture (T-ab23-shape
     # silent crash). The disk record IS the contract; route from it.
+    routed_from_disk = False
     if meeting_started_at is not None:
-        _reconcile_accept_reviews_from_disk(
+        routed_from_disk = _reconcile_accept_reviews_from_disk(
             project_root=project_root,
             feature_slug=feature_slug,
             mtime_floor=meeting_started_at,
             actor=actor,
             meeting_id=meeting.id,
+        )
+
+    # T-ab59: still nothing. Caterpillar silenced through M8 without
+    # emitting a verdict on bus OR disk. Synthesize an auto-accept
+    # review so the lifecycle isn't hung waiting on a verdict that
+    # will never come. Silence on M8 = implicit approval (the safety-
+    # net interpretation); M9 verify still runs as a separate
+    # substrate-side check, so structural issues aren't masked by
+    # auto-approval. mvp-demo-redux surfaced this hang: post-T-ab54
+    # (caterpillar alone) + T-ab49-revert (single-agent succession
+    # on 1 PASSED) means caterpillar's first-window silence ends the
+    # meeting cleanly but with zero artifact, leaving tickets
+    # IN_PROGRESS forever.
+    if not routed_from_disk:
+        _synthesize_default_accept_review(
+            project_root=project_root,
+            feature_slug=feature_slug,
+            meeting_id=meeting.id,
+            actor=actor,
         )
 
 
@@ -6841,8 +6861,12 @@ def _reconcile_accept_reviews_from_disk(
     mtime_floor: datetime,
     actor: str,
     meeting_id: str,
-) -> None:
+) -> bool:
     """T-ab43: when bus dispatch finds no verdict, fall back to disk.
+
+    Returns True if any accept review was routed; False if no qualifying
+    record existed. (T-ab59: caller uses the return signal to decide
+    whether to synthesize a default accept verdict.)
 
     obol-260522-1 surfaced: caterpillar wrote 2 accept reviews to
     disk but caterpillar's episodic memory had zero accept emissions
@@ -6867,8 +6891,9 @@ def _reconcile_accept_reviews_from_disk(
     try:
         from wonderland.review import ReviewRegistry, ReviewVerdict
     except Exception:  # noqa: BLE001 — best-effort
-        return
+        return False
     registry = ReviewRegistry(project_root)
+    routed_any = False
     for record in registry.list_reviews():
         if record.verdict != ReviewVerdict.ACCEPT:
             continue
@@ -6891,6 +6916,82 @@ def _reconcile_accept_reviews_from_disk(
             actor=actor,
             meeting_id=meeting_id,
         )
+        routed_any = True
+    return routed_any
+
+
+def _synthesize_default_accept_review(
+    *,
+    project_root: Path,
+    feature_slug: str,
+    meeting_id: str,
+    actor: str,
+) -> None:
+    """T-ab59: caterpillar silenced through M8 review without emitting
+    any verdict + no review on disk either. Synthesize a default accept
+    review so the ticket-lifecycle transitions can fire.
+
+    mvp-demo-redux surfaced: post-T-ab54 (caterpillar-only M8 roster)
+    + T-ab49-revert (single-agent succession on 1 PASSED window) means
+    a caterpillar who picks ``decision: silence`` on his only window
+    ends the M8 meeting cleanly (PhaseEnded reason=succession,
+    MeetingEnded outcome=COMPLETE) but with ZERO review artifact on
+    bus or disk. Feature's tickets stay IN_PROGRESS forever because
+    the lifecycle transitions hang on a review existing.
+
+    The substrate's safety-net interpretation: silence on M8 review =
+    implicit approval. If Caterpillar had concerns he would have
+    surfaced them (request-changes / block) per the M8 directive.
+    Auto-approval is the safe default because:
+      - M9 verify still runs as a separate substrate-side check
+        (pytest, build_check, npm_build) — catches structural failures
+        that pass code review.
+      - Operator can retract via dashboard if the auto-approval was
+        wrong (the synthesized review is a normal disk record).
+      - Lifecycle UNBLOCKS — without this, the feature never reaches
+        ready_for_review and downstream verification can't proceed.
+
+    The synthesized review is explicitly tagged in title + approvals so
+    the audit trail makes clear this verdict was substrate-generated,
+    not caterpillar-authored. Caterpillar can re-emit a real review in
+    a subsequent M8 pass to supersede the synthesized one.
+    """
+    try:
+        from wonderland.review import (
+            ReviewPayload,
+            ReviewRegistry,
+            ReviewVerdict,
+        )
+    except Exception:  # noqa: BLE001 — best-effort
+        return
+    payload = ReviewPayload(
+        title=f"Auto-approved: {feature_slug} (caterpillar silenced on M8)",
+        target_files=["(substrate-synthesized — caterpillar silenced)"],
+        verdict=ReviewVerdict.ACCEPT,
+        approvals=[
+            "Caterpillar did not surface any concerns during the M8 "
+            "review meeting. Per T-ab59 substrate safety net, silence "
+            "on M8 review is interpreted as implicit approval — no "
+            "findings, no concerns, no questions = accept verdict. "
+            "M9 verify still runs as a separate substrate-side "
+            "check for structural failures. If this auto-approval is "
+            "wrong, retract via the dashboard's review controls and "
+            "re-run M8."
+        ],
+    )
+    try:
+        record = ReviewRegistry(project_root).write(payload)
+    except Exception:  # noqa: BLE001 — best-effort
+        # If we can't write (disk full, permission, etc.), abort
+        # silently rather than crashing the post-meeting flow.
+        return
+    _complete_tickets_on_accept_review(
+        project_root,
+        feature_slug=feature_slug,
+        review_slug=record.slug,
+        actor=actor,
+        meeting_id=meeting_id,
+    )
 
 
 def _apply_post_meeting_transitions(

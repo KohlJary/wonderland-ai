@@ -8,19 +8,25 @@
 
 > ### ▶ See it in action
 >
-> [**Mvp-demo2 — first end-to-end Tier 2 autonomous pilot**](./src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md).
-> A full-stack markdown notebook produced autonomously: discovery
-> → milestone-plan → 3 design+implement+verify cycles. **$83.78**
-> total spend, **5000 lines** of code (~3400 application + ~1600
-> test), **61 passing tests**, SQL-injection-safe handlers, custom
-> React hooks, modular components. The operator was a gate-approver
-> — pressed buttons at milestone-close gates, skipped a few
-> duplicate features, watched the team build. Zero killed runs,
-> zero hand-edited artifacts, one mid-pilot substrate fix.
+> [**Mvp-demo-redux — same notebook spec, 36% the cost**](./analyses/046-mvp-redux-cost-receipt.md).
+> The same full-stack markdown notebook that mvp-demo2 shipped for
+> $83.78 now ships end-to-end for **$30.58** — a **63% cost
+> reduction** with the working app preserved (CRUD + search + tag
+> filter all functional, 22/22 backend tests passing, frontend
+> builds clean). Per-milestone trajectory: M1 foundation $15.59 →
+> M2 capability $10.91 → **M3 capability $3.72** as the substrate
+> compounds. Multi-agent overhead vs single-shot baselines
+> compressed from ~30× to ~10× while quality artifacts (test
+> coverage, contract notes, ADRs, per-feature reviews, automated
+> verify) shipped intact. The cost drop is a compounding stack
+> across 0.8.1 → 0.9.0 → 0.10.0 → 0.10.1. Pilot artifacts at
+> [`demo/mvp-redux/`](./demo/mvp-redux/); original baseline at
+> [`demo/mvp/`](./demo/mvp/) for direct comparison.
 >
-> If you're trying to figure out what this project actually *is*,
-> start there. (For the earlier single-directive demo of one-shot
-> code generation, see [the Geocities pilot](./SHOWCASE.md).)
+> For the prior baseline that established Tier 2 pilots, see
+> [Mvp-demo2 — first end-to-end Tier 2 autonomous pilot](./src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md).
+> For the earlier single-directive demo of one-shot code
+> generation, see [the Geocities pilot](./SHOWCASE.md).
 
 Wonderland is a cast of agents — each named after an Alice-in-Wonderland
 character — that collaborate across the entire software production pipeline.

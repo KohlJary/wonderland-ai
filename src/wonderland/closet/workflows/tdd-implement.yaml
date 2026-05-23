@@ -398,6 +398,33 @@ meetings:
     convenor_directive: |
       **Caterpillar — review this feature.**
 
+      **You MUST emit a review artifact in this meeting.** Silence is
+      not a valid decision here — the downstream lifecycle
+      transitions (ticket IN_PROGRESS → DONE, feature → ready_for_
+      review) depend on a verdict artifact existing. Don't pass
+      without shipping one. The valid verdicts are:
+
+        - ``verdict: accept`` — code matches contracts, tests cover
+          the acceptance criteria, cross-ticket coherence holds. Ship
+          this when you have no load-bearing concerns. ``approvals``
+          field must list at least one substantive thing that was
+          well done (per Caterpillar §I — approval is not given
+          cheaply, but "code matches contract A; tests cover
+          acceptance criteria B; cross-ticket coherence verified
+          across files X, Y" is sufficient when no concerns exist).
+        - ``verdict: request-changes`` — at least one finding that
+          needs author response before the feature can ship.
+        - ``verdict: block`` — at least one finding severe enough
+          that the work should not proceed in current form
+          (architectural drift, security issue, contract violation).
+
+      **If you genuinely have nothing to flag, ship
+      ``verdict: accept`` with a brief approvals note.** The
+      substrate has a safety net (T-ab59) that auto-synthesizes an
+      accept review if you silence, but that's a substrate
+      patch-over, not a substitute for your judgment. The audit
+      trail is cleaner when YOU ship the verdict.
+
       **SCOPE DISCIPLINE — read this first.** Your review is scoped
       to THIS FEATURE ONLY. The project may contain other features
       (in this milestone or future milestones) at various states of

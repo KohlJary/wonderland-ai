@@ -2559,11 +2559,27 @@ class TestResolveSeeds:
             current_item_slug="xp",
             meeting_started_at=meeting_started_at,
         )
-        # Ticket stays IN_PROGRESS — pre-meeting disk reviews are
-        # out-of-window.
+        # The stale pre-meeting review is correctly mtime-filtered out
+        # of reconciliation. But T-ab59 then synthesizes an accept
+        # review to unblock the lifecycle — caterpillar silenced on
+        # this meeting, so silence = implicit approval. Ticket
+        # transitions DONE via the synthesized review, NOT via the
+        # stale one.
         assert (
-            get_ticket_state(tmp_path, "alpha") == TicketState.IN_PROGRESS
-        ), "pre-meeting reviews must not trigger reconciliation"
+            get_ticket_state(tmp_path, "alpha") == TicketState.DONE
+        ), "T-ab59 synthesis should unblock lifecycle even when only stale reviews exist"
+        # Two reviews on disk now: the stale prior cycle + the new
+        # T-ab59 synthesized one. The synthesized one is the source
+        # of the transition.
+        reviews = ReviewRegistry(tmp_path).list_reviews()
+        assert len(reviews) == 2, "stale review preserved + new synthesis added"
+        synth = [
+            r for r in reviews
+            if "caterpillar silenced" in r.path.read_text().lower()
+        ]
+        assert len(synth) == 1, (
+            "T-ab59 synthesized review should be present and self-identify"
+        )
 
     def test_roster_filter_narrows_per_iteration(self) -> None:
         """Meeting.apply_roster_filter narrows roster and
@@ -5724,3 +5740,203 @@ class TestDeriveImplicitMilestoneForImplement:
             self._runner(tmp_path)
         )
         assert result is None
+
+
+# ---------- T-ab59: synthesized accept review when caterpillar silences ----------
+
+
+def test_t_ab59_synthesizes_accept_review_when_caterpillar_silences(
+    tmp_path: Path,
+) -> None:
+    """T-ab59: post-T-ab54 (caterpillar-only M8) + T-ab49-revert (single-
+    agent succession on 1 PASSED) means caterpillar's first-window
+    silence ends M8 cleanly but with zero review artifact. Without
+    synthesis, tickets stay IN_PROGRESS forever because the lifecycle
+    transitions depend on a verdict existing.
+
+    Fix: when no review utterance fires on bus AND no review file
+    landed on disk via _reconcile_accept_reviews_from_disk (T-ab43),
+    synthesize an accept review so the ticket lifecycle can proceed.
+    Silence on M8 = implicit approval (the safe default; M9 verify
+    still catches structural issues).
+    """
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        get_state as get_feature_state,
+        transition as feature_transition,
+    )
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        get_state as get_ticket_state,
+        transition as ticket_transition,
+    )
+    from wonderland.review import ReviewRegistry, ReviewVerdict
+    from wonderland.workflow import (
+        Meeting as MeetingCls,
+        _apply_review_verdict_routing,
+    )
+
+    wonderland = tmp_path / ".wonderland"
+    (wonderland / "features").mkdir(parents=True)
+    (wonderland / "tickets").mkdir()
+    (wonderland / "reviews").mkdir()
+    (wonderland / "features" / "feature-001-foundation.md").write_text(
+        "## Feature 001: foundation\n", encoding="utf-8"
+    )
+    (wonderland / "tickets" / "ticket-001-schema.md").write_text(
+        "## Ticket 001: schema\n\n**Sources:** foundation\n",
+        encoding="utf-8",
+    )
+
+    # Get feature + ticket into the right lifecycle states
+    for st in (
+        FeatureState.PROPOSED,
+        FeatureState.IN_DESIGN,
+        FeatureState.DESIGNED,
+        FeatureState.QUEUED,
+        FeatureState.IN_PROGRESS,
+    ):
+        feature_transition(tmp_path, "foundation", st, by="test")
+    ticket_transition(
+        tmp_path, "schema", TicketState.QUEUED, by="operator"
+    )
+    ticket_transition(
+        tmp_path, "schema", TicketState.IN_PROGRESS, by="system"
+    )
+
+    m8 = MeetingCls.model_validate({
+        "id": "review",
+        "label": "M8",
+        "name": "The Trial",
+        "goal": "review",
+        "roster": ["caterpillar"],
+        "per_item": "feature",
+        "transition_iteration_to": "ready_for_review",
+        "seeds": [],
+    })
+
+    class _FakeRunner:
+        project_root = tmp_path
+
+    from datetime import datetime, UTC
+
+    # Caterpillar silenced — empty new_utterances list. No review on
+    # disk either (fresh reviews dir, no pre-existing files).
+    _apply_review_verdict_routing(
+        meeting=m8,
+        runner=_FakeRunner(),  # type: ignore[arg-type]
+        new_utterances=[],
+        current_item_slug="foundation",
+        meeting_started_at=datetime.now(UTC),
+    )
+
+    # Ticket transitioned to DONE via the synthesized review.
+    assert get_ticket_state(tmp_path, "schema") == TicketState.DONE, (
+        "synthesis should have routed an accept review and completed "
+        "the in-progress ticket"
+    )
+
+    # Feature derives to ready_for_review (all-tickets-DONE rollup).
+    assert (
+        get_feature_state(tmp_path, "foundation")
+        == FeatureState.READY_FOR_REVIEW
+    )
+
+    # The synthesized review exists on disk with the expected shape.
+    reviews = ReviewRegistry(tmp_path).list_reviews()
+    assert len(reviews) == 1, "exactly one synthesized review expected"
+    review = reviews[0]
+    assert review.verdict == ReviewVerdict.ACCEPT
+    # Title marker makes the audit trail clear about the synthesis source
+    assert "caterpillar silenced" in review.path.read_text().lower(), (
+        "synthesized review should self-document via the title marker"
+    )
+
+
+def test_t_ab59_skips_synthesis_when_disk_already_has_review(
+    tmp_path: Path,
+) -> None:
+    """If caterpillar wrote a review via write_file (T-ab43 path)
+    instead of via bus emit, the disk-reconcile finds it and routes
+    normally. T-ab59 synthesis should NOT fire in that case — it
+    would create a duplicate review record."""
+    from wonderland.feature_lifecycle import (
+        FeatureState,
+        get_state as get_feature_state,
+        transition as feature_transition,
+    )
+    from wonderland.ticket_lifecycle import (
+        TicketState,
+        get_state as get_ticket_state,
+        transition as ticket_transition,
+    )
+    from wonderland.review import (
+        ReviewPayload,
+        ReviewRegistry,
+        ReviewVerdict,
+    )
+    from wonderland.workflow import (
+        Meeting as MeetingCls,
+        _apply_review_verdict_routing,
+    )
+
+    wonderland = tmp_path / ".wonderland"
+    (wonderland / "features").mkdir(parents=True)
+    (wonderland / "tickets").mkdir()
+    (wonderland / "reviews").mkdir()
+    (wonderland / "features" / "feature-001-foundation.md").write_text(
+        "## Feature 001: foundation\n", encoding="utf-8"
+    )
+    (wonderland / "tickets" / "ticket-001-schema.md").write_text(
+        "## Ticket 001: schema\n\n**Sources:** foundation\n",
+        encoding="utf-8",
+    )
+    for st in (
+        FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+        FeatureState.DESIGNED, FeatureState.QUEUED,
+        FeatureState.IN_PROGRESS,
+    ):
+        feature_transition(tmp_path, "foundation", st, by="test")
+    ticket_transition(tmp_path, "schema", TicketState.QUEUED, by="op")
+    ticket_transition(
+        tmp_path, "schema", TicketState.IN_PROGRESS, by="system"
+    )
+
+    # Simulate caterpillar's write_file path: review on disk, no bus emit.
+    ReviewRegistry(tmp_path).write(ReviewPayload(
+        title="real-caterpillar-review",
+        target_files=["src/schema.py"],
+        verdict=ReviewVerdict.ACCEPT,
+        approvals=["schema matches the contract"],
+    ))
+
+    m8 = MeetingCls.model_validate({
+        "id": "review",
+        "label": "M8",
+        "name": "The Trial",
+        "goal": "review",
+        "roster": ["caterpillar"],
+        "per_item": "feature",
+        "transition_iteration_to": "ready_for_review",
+        "seeds": [],
+    })
+
+    class _FakeRunner:
+        project_root = tmp_path
+
+    from datetime import datetime, UTC, timedelta
+
+    _apply_review_verdict_routing(
+        meeting=m8,
+        runner=_FakeRunner(),  # type: ignore[arg-type]
+        new_utterances=[],
+        current_item_slug="foundation",
+        meeting_started_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+
+    # Ticket DONE via the existing real review (T-ab43 path).
+    assert get_ticket_state(tmp_path, "schema") == TicketState.DONE
+    # ONLY one review on disk — synthesis should NOT have added a duplicate.
+    reviews = ReviewRegistry(tmp_path).list_reviews()
+    assert len(reviews) == 1
+    assert "caterpillar silenced" not in reviews[0].path.read_text().lower()

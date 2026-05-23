@@ -677,6 +677,86 @@ _TS_LOCATION_RE = re.compile(
 )
 
 
+def _extract_all_npm_error_locations(
+    combined: str,
+) -> list[tuple[str, int, int | None]]:
+    """T-ab60: extract ALL distinct (file, line, col) tuples from an
+    npm build's combined output, deduped + in order of first
+    appearance. The original single-match path lost downstream errors
+    that often share root cause (one bad import triggers 3 type
+    errors). Returning all matches lets the finding surface source
+    context for each, helping Tweedles fix the cause not just the
+    first symptom.
+    """
+    seen: set[tuple[str, int, int | None]] = set()
+    out: list[tuple[str, int, int | None]] = []
+    for m in _TS_LOCATION_RE.finditer(combined):
+        file_path = m.group(1)
+        line = int(m.group(2))
+        col = int(m.group(3)) if m.group(3) else None
+        key = (file_path, line, col)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def _format_source_context(
+    project_root: Path,
+    rel_path: str,
+    line: int,
+    col: int | None,
+    *,
+    lines_around: int = 3,
+) -> str:
+    """T-ab60: pull the failing line + N lines on each side from the
+    source file, formatted as a code block with the failing line
+    marked. Returns empty string when the file can't be read (e.g.
+    error references a generated file, or path doesn't resolve from
+    project_root). Keeps each context block tight (~10 lines) so
+    multi-error builds don't explode the finding size.
+    """
+    # Resolve path — try project_root, then walk up looking for it
+    # (npm errors emit paths relative to package.json dir, not project root).
+    full_path: Path | None = None
+    for candidate in (project_root / rel_path,):
+        if candidate.is_file():
+            full_path = candidate
+            break
+    if full_path is None:
+        # Look for the file by basename in src/ as a fallback
+        basename = Path(rel_path).name
+        for hit in project_root.rglob(basename):
+            if hit.is_file():
+                full_path = hit
+                break
+    if full_path is None:
+        return ""
+    try:
+        text = full_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    lines = text.splitlines()
+    if not (1 <= line <= len(lines)):
+        return ""
+    start = max(1, line - lines_around)
+    end = min(len(lines), line + lines_around)
+    width = len(str(end))
+    rendered_lines = []
+    for ln in range(start, end + 1):
+        marker = "→" if ln == line else " "
+        rendered_lines.append(
+            f"{marker} {str(ln).rjust(width)} | {lines[ln - 1]}"
+        )
+    col_hint = f" (col {col})" if col else ""
+    return (
+        f"```{rel_path}:{line}{col_hint}\n"
+        + "\n".join(rendered_lines)
+        + "\n```"
+    )
+
+
 def check_npm_build(
     project_root: Path,
     *,
@@ -818,14 +898,53 @@ def check_npm_build(
             raw_output=_truncate_for_finding(proc.stdout),
         )
     combined = (proc.stdout + "\n" + proc.stderr).strip()
-    # Try to pull file:line context out for the location field; pick
-    # the first concrete TS/JSX path we see.
+    # T-ab60: extract ALL error locations, not just first. Build a
+    # source-context block per unique location so Tweedles see what
+    # they actually wrote at the failing line — TypeScript type-
+    # mismatch errors are dense and hard to fix from the raw message
+    # alone ("Type 'string' not assignable to 'Resize | undefined'"
+    # means nothing without seeing the actual ``resize: ...`` line).
+    locations = _extract_all_npm_error_locations(combined)
+    # First location stays in the finding's location field for the
+    # dashboard's at-a-glance attribution
     location = ""
-    m = _TS_LOCATION_RE.search(combined)
-    if m:
-        location = f"{m.group(1)}:{m.group(2)}"
-        if m.group(3):
-            location += f":{m.group(3)}"
+    if locations:
+        first = locations[0]
+        location = f"{first[0]}:{first[1]}"
+        if first[2] is not None:
+            location += f":{first[2]}"
+    # Render source context for up to 5 distinct error locations;
+    # beyond that, dump the rest as raw error lines so we don't
+    # explode the finding size on cascading errors that share root
+    # cause.
+    source_blocks: list[str] = []
+    for rel_path, line, col in locations[:5]:
+        block = _format_source_context(project_root, rel_path, line, col)
+        if block:
+            source_blocks.append(block)
+    source_context = "\n\n".join(source_blocks) if source_blocks else ""
+    extra_locations_note = ""
+    if len(locations) > 5:
+        extra_locations_note = (
+            f"\n\n*({len(locations) - 5} additional error location(s) "
+            f"in the raw output below — likely cascading from the "
+            f"first {len(source_blocks)} fix targets.)*"
+        )
+    request_parts = [
+        f"Run ``npm run {script_name}`` locally and fix the errors "
+        f"below. Pay special attention to unresolved imports / "
+        f"missing default exports — the canonical sign that a "
+        f"component shipped but never got wired into App.tsx."
+    ]
+    if source_context:
+        request_parts.append(
+            "**Source context at error locations** (failing line "
+            "marked with `→`):\n\n" + source_context + extra_locations_note
+        )
+    request_parts.append(
+        "**Raw build output:**\n\n"
+        f"```\n{_truncate_for_finding(combined)}\n```"
+    )
     return VerificationResult(
         check_name="npm_build",
         ok=False,
@@ -841,14 +960,7 @@ def check_npm_build(
                     f"wired into the entry point), or a Vite config "
                     f"mismatch."
                 ),
-                request=(
-                    f"Run ``npm run {script_name}`` locally and fix "
-                    f"the errors below. Pay special attention to "
-                    f"unresolved imports / missing default exports — "
-                    f"the canonical sign that a component shipped "
-                    f"but never got wired into App.tsx.\n\n"
-                    f"```\n{_truncate_for_finding(combined)}\n```"
-                ),
+                request="\n\n".join(request_parts),
             ),
         ),
         raw_output=_truncate_for_finding(combined),

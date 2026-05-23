@@ -268,21 +268,70 @@ meetings:
       not just "schema exists."
 
       **Milestone kind — foundation vs capability.** Every
-      milestone gets a ``kind`` field with one of two values:
+      milestone gets a ``kind`` field with one of two values.
+      **This is a deliberate per-milestone choice, not a
+      default-to-capability fallback.** Both kinds are equally
+      valid; the question is what the milestone primarily
+      DELIVERS:
 
         - ``kind: foundation`` — sets up infrastructure the rest
           of the project depends on (schema, API contracts, seed
-          data, build tooling, dev environment). The persona is
-          typically a developer/operator/installer, not the
-          end user. Done-when reads as "the project gains the
-          ability to X." Usually the first milestone (sometimes
-          more than one). The substrate runs Caterpillar solo on
+          data, build tooling, dev environment, external API
+          integrations, auth/session management, cross-feature
+          plumbing). The persona is typically a developer/
+          operator/installer, not the end user. Done-when reads
+          as "the project gains the ability to X" or "developer
+          can wire up Y." The substrate runs Caterpillar solo on
           foundation scoping; Alice is filtered out because the
           user-facing narrative reflex isn't load-bearing here.
-        - ``kind: capability`` (default) — delivers a user-facing
-          flow the end persona can describe in one sentence. Done-
-          when reads as "Marcus can do X." The substrate runs Alice
-          solo on capability scoping; Caterpillar is filtered out.
+        - ``kind: capability`` — delivers a user-facing flow the
+          end persona can describe in one sentence. Done-when
+          reads as "Marcus can do X" / "Kohl can do Y." The
+          substrate runs Alice solo on capability scoping;
+          Caterpillar is filtered out.
+
+      **Quick decision rubric.** Read the milestone's done_when
+      conditions aloud and ask:
+        - "Project / developer gains the ability to X" → foundation
+        - "End user can do X" → capability
+        - Mixed signals → split into two milestones if the
+          done-when has both shapes, OR pick whichever the
+          downstream-dependent milestones rely on (foundation
+          deps cascade; capability deps don't).
+
+      **Non-M1 foundation milestones are common and correct.** The
+      M1-is-foundation pattern (data layer + skeleton) is the
+      most common case but NOT the only one. Mid-project
+      foundation milestones land when:
+        - An external API integration enters the build (Plaid,
+          OAuth provider, payment processor, third-party data
+          source) — the integration's contract surface IS the
+          milestone's deliverable, before any capability
+          consumes it.
+        - Auth / session / multi-user infrastructure ships
+          mid-project (after the v1 single-user MVP).
+        - A new persistence layer or replication scheme
+          augments the original (e.g. switching from local
+          SQLite to syncing with cloud after the local-only
+          v1 ships).
+        - Build pipeline / deployment infrastructure matures
+          (CI/CD, packaging, distribution).
+
+      If you find yourself wanting to write done_when like
+      "API can fetch transactions from Plaid" or "OAuth flow
+      established for Google login" — that's a foundation
+      milestone. The CAPABILITY of "Kohl sees transactions" or
+      "Marcus signs in with Google" lives in the milestone that
+      consumes the integration, not the one that establishes it.
+
+      **Observed failure mode (obol-260522 pilot).** Planner
+      shipped 9 milestones, all kind=capability — including
+      "Plaid integration" (M7) and additional infrastructure
+      milestones that the operator manually had to flip to
+      foundation. The pattern: planner read the "(default)"
+      framing for capability and never engaged the foundation
+      question for non-M1 milestones. **Don't be that pilot.**
+      Engage the decision rubric for EVERY milestone, not just M1.
 
       **You MUST produce a kind=foundation M1 when the requirement
       corpus contains ANY of:** persistence/storage constraints
