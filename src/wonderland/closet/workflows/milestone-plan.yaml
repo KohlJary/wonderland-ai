@@ -267,28 +267,59 @@ meetings:
       ("app launches, profile can be created and selected")
       not just "schema exists."
 
-      **Milestone kind — foundation vs capability.** Every
-      milestone gets a ``kind`` field with one of two values.
-      **This is a deliberate per-milestone choice, not a
-      default-to-capability fallback.** Both kinds are equally
-      valid; the question is what the milestone primarily
-      DELIVERS:
+      **Milestone kind — foundation vs capability. This field
+      materially changes how the milestone gets designed
+      downstream.** It is not metadata; it is a routing decision
+      the substrate consumes. Picking the wrong kind sends the
+      wrong agent to the wrong work:
+
+        - **kind: foundation** routes M1 scoping (the design
+          phase's first meeting) to Caterpillar solo. Caterpillar
+          writes developer-as-user stories: "developer can wire up
+          the auth middleware," "developer can run migrations
+          against a fresh database," "developer can swap the news
+          provider without touching the rendering code." Alice is
+          filtered out because the user-facing narrative reflex is
+          not load-bearing for infrastructure work.
+        - **kind: capability** routes M1 scoping to Alice solo.
+          Alice writes persona-driven user stories: "Kohl opens
+          the dashboard and sees Sarah's current time," "Marcus
+          captures a workout note in under thirty seconds." The
+          Caterpillar is filtered out because infrastructure-shaped
+          stories ("developer can ...") drift from the user-flow
+          focus capability work requires.
+
+      **What goes wrong when you pick capability for a foundation
+      milestone**: Alice writes "Kohl can sign up" stories for what
+      is actually the auth + session + DB-schema-bootstrap work. The
+      stories describe the user-facing surface but not the
+      infrastructure underneath. Downstream tweedles read those
+      stories looking for the contract to implement and find only
+      the UX layer — the JWT signing, password hashing, session
+      cookie handling, migration runner all have to be reverse-
+      engineered from "Kohl can sign up." mvp-demo-redux and the
+      LDR pilot both shipped milestones literally NAMED "Foundation:
+      ..." in their titles but tagged ``kind: capability``, and
+      the operator had to manually flip them before downstream
+      design could route correctly. **If your milestone title
+      contains the word "Foundation," the kind should almost
+      certainly be foundation. If you find yourself writing a
+      done-when condition that reads "developer can ..." or
+      "project gains the ability to ...," the kind is foundation.**
+
+      Both kinds are equally valid; the question is what the
+      milestone primarily DELIVERS:
 
         - ``kind: foundation`` — sets up infrastructure the rest
           of the project depends on (schema, API contracts, seed
           data, build tooling, dev environment, external API
           integrations, auth/session management, cross-feature
           plumbing). The persona is typically a developer/
-          operator/installer, not the end user. Done-when reads
-          as "the project gains the ability to X" or "developer
-          can wire up Y." The substrate runs Caterpillar solo on
-          foundation scoping; Alice is filtered out because the
-          user-facing narrative reflex isn't load-bearing here.
+          operator/installer, not the end user.
         - ``kind: capability`` — delivers a user-facing flow the
-          end persona can describe in one sentence. Done-when
-          reads as "Marcus can do X" / "Kohl can do Y." The
-          substrate runs Alice solo on capability scoping;
-          Caterpillar is filtered out.
+          end persona can describe in one sentence. The persona
+          is the end user (Marcus, Kohl, etc.) not the developer
+          building the thing.
 
       **Quick decision rubric.** Read the milestone's done_when
       conditions aloud and ask:
