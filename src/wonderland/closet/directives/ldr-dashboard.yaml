@@ -1,0 +1,155 @@
+name: ldr-dashboard
+title: Long-distance relationship dashboard — fullstack with auth + public APIs
+description: |
+  A third reference demo directive (alongside notebook and obol)
+  designed specifically to address publication-grade reviewer
+  objections about the substrate's generalization beyond CRUD-shaped
+  web apps. Picks a domain where:
+
+    - The app's core value is READ-MOSTLY (consuming external data),
+      not user-generated CRUD — distinct interaction model from
+      notebook
+    - External API consumption is load-bearing (weather + news),
+      forcing the substrate to handle data-shape it doesn't control,
+      rate limits, transient failures
+    - Auth + sessions are required (you sign in to see YOUR partner),
+      exercising security primitives notebook skipped entirely
+    - Timezone math is unavoidable correctness territory (partner's
+      "current time" given offset + DST is a classic landmine)
+    - Multi-entity user model (you + partner) — closer to real
+      product data shapes than single-user notebook
+
+  Stack: fullstack-fastapi-react (same skeleton as notebook so the
+  shape is comparable; the differences are in the application
+  surface, not the substrate's setup work). Backend handles
+  authentication, partner profile storage, API key management, and
+  proxying to external services. Frontend renders the dashboard
+  view with live time + weather + news.
+
+  Persona target: someone in a long-distance relationship who wants
+  a quick "how's it going there" glance at their partner's day.
+  The directive is one sentence at the operator level; the
+  substrate decomposes it into foundation (auth + user model +
+  API integration shell) + capabilities (time, weather, news as
+  separate readable cards).
+
+  Why this directive matters for the paper:
+
+    - Receipts that Wonderland's cost trajectory generalizes beyond
+      the well-trodden CRUD-app territory single-shot baselines do
+      cheaply
+    - Demonstrates the substrate handles external dependencies
+      (API keys, network failures, schema variability) as
+      first-class concerns, not afterthoughts
+    - Exercises the foundation/capability axis on a domain where
+      foundation work (auth + API key management) is genuinely
+      distinct from capability work (rendering time/weather/news)
+    - Persona is emotionally concrete ("see my partner's day at a
+      glance") so done-when conditions are clean to write and
+      verify ("Kohl signs in, sees Sarah's local 3pm, Vienna
+      weather, Austrian headlines")
+
+  External API choices (planner can pick; both have free tiers):
+
+    - Weather: OpenWeatherMap free tier (city name → current weather
+      + brief forecast), or Open-Meteo (no API key required, lat/lon
+      based). Open-Meteo is friendlier for the paper-demo path
+      because it doesn't require key management — but if the
+      substrate handles key management cleanly that's interesting
+      data too.
+    - News: NewsAPI.org free tier (country code → headlines), or
+      RSS-based (country-specific feed URLs). RSS dodges key
+      management; NewsAPI exercises it.
+
+  Expected feature decomposition (rough sketch; planner refines):
+    1. Foundation — auth (signup + signin), user + partner profile
+       model, API key/config handling, basic dashboard route
+    2. Time card — partner's current time with timezone awareness,
+       updates live (every minute or on view)
+    3. Weather card — current weather + brief forecast for partner's
+       location, error states for API unavailability
+    4. News card — top headlines from partner's country, error
+       states, refresh action
+
+  Each feature should land in 3-6 tickets, $5-15 per feature in
+  implementation. Total MVP target: $40-70 across all features
+  (slightly higher than notebook because auth + API integrations
+  carry more surface).
+
+  Verification path: a reader can ``git clone``, sign up as Kohl,
+  set Sarah as their partner with location "Vienna", and see Sarah's
+  current time, Vienna weather, and Austrian news headlines on the
+  dashboard within five minutes of post-install work.
+
+body: |
+  Build a web dashboard for long-distance relationships.
+
+  I sign in, set my partner's location, and see their current time,
+  local weather, and top local news headlines on one page so I can
+  feel a little closer to their day.
+
+  Personas: Kohl, a developer in San Francisco, has a partner Sarah
+  in Vienna. Kohl wants to glance at the dashboard a few times a day
+  and see what Sarah's day looks like — is it morning there? Is it
+  raining? Is anything big happening in the news? Sarah may
+  eventually sign in too to see Kohl's San Francisco context, but
+  v1 is single-direction (one user with a partner profile).
+
+  Core capabilities:
+
+    - Sign up with email + password; sign in to your own session.
+    - Set your partner's display name and location (city +
+      country is fine; lat/lon optional if the planner picks an
+      API that prefers coordinates).
+    - Dashboard view shows three cards: partner's current time
+      (with their timezone), partner's local weather (current
+      conditions + brief forecast), and partner's local top news
+      headlines (3-5 items).
+    - Cards refresh when you reload the page; live ticking time
+      (updates each minute) is a nice-to-have, not required for v1.
+    - Graceful error states when an external API is down or
+      rate-limited — the rest of the dashboard still works, the
+      affected card shows "couldn't load weather right now."
+
+  Stack constraints:
+
+    - Backend: Python + FastAPI + SQLite. User + partner profile
+      stored in SQLite. Password hashing via passlib or equivalent.
+      Session via signed cookies or JWT — planner's call.
+    - Frontend: React + Vite + TypeScript. Dashboard SPA with sign-up
+      / sign-in flows and the three-card dashboard view.
+    - External APIs: pick one weather provider and one news provider
+      with free tiers. Open-Meteo (weather, no key) and an RSS feed
+      (news, no key) keep the demo friction low. NewsAPI.org +
+      OpenWeatherMap also work if you'd rather exercise API-key
+      handling.
+    - Skeleton: fullstack-fastapi-react. Dev runs as two processes
+      (uvicorn + npm run dev) with Vite proxying API calls to the
+      backend.
+
+  Non-goals (explicit out-of-scope):
+
+    - No real-time push / websockets. Refresh on page reload is
+      sufficient.
+    - No partner-to-partner messaging or shared journaling. The
+      dashboard is read-only, looking outward at your partner's
+      context.
+    - No multiple partners or polyamorous configurations in v1.
+      One user, one partner profile.
+    - No mobile-specific UI; desktop browser is the target.
+    - No password reset / email verification flows. v1 assumes
+      you remember your password; "I lost it" is a manual DB
+      operation.
+
+  Success criteria: a developer can ``git clone``, follow the
+  README's "run the demo" steps, sign up as themselves, set their
+  partner's location, and see their partner's current time,
+  weather, and news headlines within five minutes of post-install
+  verification time. If their partner is in Vienna at 3pm, the
+  dashboard shows Vienna at 3pm with current Vienna weather and
+  current Austrian headlines.
+
+suggested_workflow: discovery
+suggested_skeleton: fullstack-fastapi-react
+tags: [fullstack, paper-demo, mvp, auth, external-apis, third-party-integration]
+category: demo
