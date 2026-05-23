@@ -369,7 +369,23 @@ meetings:
     goal: |
       review the feature's full deliverable — implementation,
       tests, and cross-ticket coherence — produce a verdict
-    roster: [caterpillar, tweedledee, tweedledum]
+    # T-ab54: Caterpillar-only. obol-260522-1 M8 cost analysis
+    # (paper/artifacts/caterpillar-m8-cost-analysis.md) found
+    # tweedles were the dominant M8 cost driver — $15.60 vs
+    # Caterpillar's $7.13, a 2.2× ratio. They passed 80% of their
+    # priority windows but paid full compose_context + tool-loop
+    # cost per window. The YAML comment below previously noted the
+    # design intent (tweedles "buzz in without a standing roster
+    # slot" via §III selectively-engaging rules), but the roster
+    # had drifted from that intent. Restoring it: Caterpillar
+    # reviews, tweedles' M7 outputs (implementation summaries,
+    # contract notes) are already seeded into M8 via the existing
+    # bindings below, so Caterpillar's review context is unchanged.
+    # If tweedles spot a misreading in Caterpillar's review they
+    # can publish a concern to the bus from outside the meeting
+    # (§III opt-in path), which lands as cross-meeting input
+    # rather than guaranteed-window participation.
+    roster: [caterpillar]
     per_item: feature
     iterate_only_in_states: [queued]
     # Bumped \$0.40 → \$0.60 based on real-run data: M8 consistently
@@ -646,7 +662,10 @@ meetings:
     phases:
       - name: review
         max_rotations: 2
-        team_groupings: [[caterpillar, tweedledee, tweedledum]]
+        # T-ab54: team_groupings removed alongside the roster narrow.
+        # With cast=[caterpillar] the default one-agent-per-team
+        # behavior is correct; an explicit single-member team would
+        # be no-op noise.
         exit_condition_artifact: review
         # T-ab39: review is the single biggest cost line in implement
         # runs (observed $0.51-$1.75/feature on obol pilots). Caterpillar

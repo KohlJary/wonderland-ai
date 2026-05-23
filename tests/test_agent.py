@@ -1085,3 +1085,45 @@ def test_default_max_tokens_is_at_least_8k():
         "wide-directive responses can truncate mid-JSON. See Geocities "
         "diagnose run analysis."
     )
+
+
+# ---------- T-ab57 tool-result truncation ----------
+
+
+def test_tool_result_truncation_preserves_small_results() -> None:
+    """Small tool results pass through unchanged — only oversized
+    results get capped. Most tool calls return small results
+    (read_file median 1.8K, list_files median 496 bytes) — they
+    should not be touched."""
+    from wonderland.agent import _maybe_truncate_tool_result
+
+    small = "short file content\n" * 10  # ~190 bytes
+    assert _maybe_truncate_tool_result(small, "read_file") == small
+
+
+def test_tool_result_truncation_caps_oversized() -> None:
+    """Results above the cap get truncated with a marker telling the
+    model how many bytes were dropped + how to recover them."""
+    from wonderland.agent import _maybe_truncate_tool_result
+
+    # 50KB grep result — well over the 5K cap
+    big = "match-line\n" * 5000
+    result = _maybe_truncate_tool_result(big, "grep")
+
+    assert len(result) < len(big), "should shrink oversized result"
+    assert "truncated" in result, "should mark truncation"
+    assert "grep" in result, "should reference original tool name"
+    assert "bytes" in result, "should report byte count dropped"
+    # Head is preserved
+    assert result.startswith("match-line"), "head of original content preserved"
+
+
+def test_tool_result_truncation_handles_non_string_defensively() -> None:
+    """Tool framework currently returns str, but defensive in case a
+    future tool returns structured content (dict/bytes/etc.).
+    Should not crash, just pass through."""
+    from wonderland.agent import _maybe_truncate_tool_result
+
+    structured: dict[str, str] = {"key": "value"}
+    # Non-string input is returned as-is rather than raising.
+    assert _maybe_truncate_tool_result(structured, "weird_tool") is structured  # type: ignore[arg-type]

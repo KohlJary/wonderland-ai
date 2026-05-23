@@ -353,6 +353,45 @@ def _truncation_banner(dropped_count: int) -> str:
     )
 
 
+# T-ab57: tool-result truncation. Tool results live in the
+# deliberation's loop_messages list for the rest of that
+# deliberation, so a single oversized result (e.g. 35K-byte grep,
+# 65K git_diff) costs cache_write once + cache_read on every
+# subsequent LLM call in the same tool loop. Capping at a
+# reasonable budget prevents the long-tail outliers from amplifying
+# across iterations. obol-260522-1 data: 52% of tweedle tool-result
+# bytes were above 5K. The cap encourages the model to be more
+# targeted on retries (e.g. grep with narrower pattern, read_file
+# with line range) rather than dumping huge outputs into context.
+_TOOL_RESULT_CAP_CHARS = 5_000
+
+
+def _maybe_truncate_tool_result(content: str, tool_name: str) -> str:
+    """Cap oversized tool results; preserve small ones verbatim.
+
+    When the content exceeds ``_TOOL_RESULT_CAP_CHARS``, keep the
+    head (most output formats put the most useful info first —
+    e.g. grep matches, file content from line 1) and append a
+    marker telling the model how many bytes were dropped + how to
+    get them if needed.
+    """
+    if not isinstance(content, str):
+        # Tool framework currently returns str; defensive against
+        # future tool returning structured content.
+        return content
+    if len(content) <= _TOOL_RESULT_CAP_CHARS:
+        return content
+    truncated = len(content) - _TOOL_RESULT_CAP_CHARS
+    head = content[:_TOOL_RESULT_CAP_CHARS - 200]
+    marker = (
+        f"\n\n[truncated {truncated:,} bytes for context budget. "
+        f"If the truncated content is load-bearing, re-run "
+        f"`{tool_name}` with narrower scope (e.g. line range, "
+        f"more specific pattern, smaller directory).]"
+    )
+    return head + marker
+
+
 def _log_context_size(
     agent_name: str,
     triggers: list[Utterance],
@@ -1045,6 +1084,18 @@ class WonderlandAgent:
                             path = tool_input.get("path")
                             if isinstance(path, str):
                                 self._last_write_file_paths.append(path)
+                        # T-ab57: cap tool result size to prevent within-
+                        # deliberation context bloat. Each tool result stays
+                        # in loop_messages for all subsequent LLM calls in
+                        # this deliberation (~5-13 calls typical), so an
+                        # untruncated 35K grep or 65K git_diff multiplies
+                        # its cost across many cache_read cycles.
+                        # obol-260522-1 cost analysis: 52% of tweedle
+                        # tool-result bytes were above 5K (concentrated
+                        # in grep + read_file + git_diff long tail).
+                        tool_output = _maybe_truncate_tool_result(
+                            tool_output, block.name
+                        )
                         tool_results.append(
                             {
                                 "type": "tool_result",
