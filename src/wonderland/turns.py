@@ -58,6 +58,15 @@ class PhaseDefinition:
     check at end of each rotation; on gap, injects a synthetic Dodo
     observation + extends ``max_rotations`` by 1 (capped). None =
     no gating, original behavior preserved."""
+    memory_scope: str = "all"
+    """T-ab25a: ``all`` (default) or ``meeting_only``. Controls
+    what slice of episodic memory the phase's agents see when
+    ``compose_context`` builds the thread transcript. ``all``
+    preserves original behavior; ``meeting_only`` filters out
+    seed utterances (re-published prior-thread history) so the
+    agents see only what happened in THIS meeting. Used to keep
+    pure-execution phases (implement) from drowning in
+    accumulated iteration noise."""
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -161,8 +170,19 @@ class PhaseState:
 
         That's the natural phase-end condition: every cast member
         passed their most recent window without an act breaking the
-        chain. Returns False until at least one full rotation of
-        windows has opened.
+        chain. Returns False until at least ``len(cast)`` full windows
+        have opened.
+
+        T-ab49 reverted: the ``max(2, ...)`` floor was added to give
+        single-agent phases a retry chance after T-ab48 rejections,
+        but obol-260522-1 M6 showed it just doubles cost when the
+        agent has nothing to add (alice was passing twice in a row
+        instead of once). T-ab50 fixed the underlying issue (alice
+        was receiving "M1 LEAD: Caterpillar" framing on a capability
+        milestone where she was the only cast member); with that
+        fixed, single-agent phases pass once when there's genuinely
+        nothing more to add — same semantics as a multi-agent phase
+        where every voice has spoken its piece.
         """
         n = len(self.cast)
         if len(self.outcomes) < n:

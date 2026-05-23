@@ -203,6 +203,208 @@ _format_utterance = format_utterance
 
 
 # --------------------------------------------------------------------- #
+# T-ab24a Stage 1 — context-size diagnostic instrumentation.
+#
+# mvp-demo-rerun-A surfaced a memory-inflation failure mode: after N
+# iterations on the same feature, the assembled context grew past
+# Claude's 200K hard cap and every deliberation crashed with a
+# BadRequestError. T-ab23 surfaced the crash; this helper surfaces
+# *which* context layer is driving the growth so Stage 2 can target
+# the right thing to truncate.
+#
+# Approximation: ~4 chars per token. Good enough for diagnostic
+# breakdowns (we're looking for "thread_history is 170K" vs
+# "triggers are 5K", not exact token math). Exact tokenization is
+# available via anthropic.client but adds latency to every context
+# build; not worth it for instrumentation.
+# --------------------------------------------------------------------- #
+
+_CONTEXT_SIZE_WARN_TOKENS = 100_000  # 50% of Claude's 200K cap
+_CONTEXT_SIZE_INFO_TOKENS = 30_000  # Below this, silence
+
+# T-ab24b Stage 2 — thread_history budget.
+#
+# Observed in mvp-demo-rerun-A: 657K chars of thread_history mapped
+# to 203K real tokens (3.24 chars/token for our utterance content,
+# which is markdown-with-code-heavy). Claude's hard cap is 200K
+# real tokens. Reserve ~70K real tokens for system prompt + tools
+# schema + constitution + triggers + headroom, budget the rest for
+# thread_history.
+#
+# 130K real tokens × 3.24 chars/token ≈ 420K char budget. We budget
+# in chars directly (rather than going through the approximation)
+# so the constant has the calibration baked in — no double-
+# conversion error.
+_THREAD_HISTORY_BUDGET_CHARS = 420_000
+
+
+def _approx_tokens(text: str) -> int:
+    """Char-based token approximation (~4 chars/token for English text).
+
+    Conservative — undercounts real tokens by ~1.2-1.3× for our
+    utterance content (markdown + code). Good for diagnostic
+    breakdowns; for budgeting use char-counts with calibrated
+    constants instead (see ``_THREAD_HISTORY_BUDGET_CHARS``)."""
+    return len(text) // 4
+
+
+def _approx_utterance_chars(u: Utterance) -> int:
+    """Approximate the rendered size of a single utterance.
+
+    Used by ``_budget_thread_history`` to walk the history and pick
+    which utterances fit in the budget. Matches ``format_utterance``
+    shape closely enough for budgeting (slight over-count is fine;
+    we err on the side of preserving headroom)."""
+    body_len = len(u.content.body or "")
+    artifact_len = sum(
+        len(a.payload or "") if hasattr(a, "payload") and isinstance(a.payload, str)
+        else 200  # rough estimate when artifact payload isn't a plain string
+        for a in u.content.artifacts
+    )
+    # ~80 chars for the speaker/act header + framing
+    return body_len + artifact_len + 80
+
+
+# T-ab24c — first-K priming preserved across the truncation. Earliest
+# utterances in a meeting establish the framing (directive, ticket,
+# contract notes); they're load-bearing for an agent picking up the
+# thread. We keep the first PRIMING_KEEP utterances by chronological
+# position, then walk newest backward filling the remaining budget.
+_PRIMING_KEEP = 10
+
+
+def _budget_thread_history(
+    history: list[Utterance],
+    budget_chars: int = _THREAD_HISTORY_BUDGET_CHARS,
+) -> tuple[list[Utterance], int]:
+    """Truncate ``history`` to fit within ``budget_chars`` of
+    rendered size. Keeps first-K + newest-K, drops the middle.
+
+    Returns ``(kept_history, dropped_count)``. When the full history
+    fits, returns it unchanged with ``dropped_count == 0``.
+
+    Strategy when over budget:
+      1. Keep the first ``_PRIMING_KEEP`` utterances — the meeting's
+         opening framing (directive, ticket, early contracts).
+         Preserves the agent's anchor for what the meeting is about.
+      2. Walk the remaining tail newest → oldest, including each
+         utterance until the remaining budget exhausts. Preserves
+         active deliberation context.
+      3. Drop the middle. The accumulated iteration noise from past
+         attempts on the same thread is what grows linearly with
+         re-runs; that's exactly what we want to shed.
+
+    T-ab24b's first cut preserved all seed utterances on the theory
+    that seeds were small framing artifacts. mvp-demo-rerun-A broke
+    that assumption: Runner.convene re-publishes prior-thread
+    history as seeds, so after enough iteration, 2165 of 2169
+    utterances were seeds — the truncation dropped 4 non-seeds and
+    kept everything else. T-ab24c treats seeds and non-seeds
+    equivalently. The first-K + newest-K strategy preserves the
+    same framing utterances (they're at the start of the thread)
+    without needing to special-case seed-ness.
+
+    Edge case: when the first-K itself exceeds budget, we keep the
+    first-K anyway and drop everything after. Operator should
+    investigate (likely an unusually huge ticket or seed payload);
+    Stage 3 (LLM summarization) would compact the priming itself
+    when needed.
+    """
+    total = sum(_approx_utterance_chars(u) for u in history)
+    if total <= budget_chars:
+        return history, 0
+
+    # Priming = first K utterances (chronological). These carry the
+    # meeting's opening framing regardless of seed-ness.
+    priming = history[:_PRIMING_KEEP]
+    tail = history[_PRIMING_KEEP:]
+    priming_size = sum(_approx_utterance_chars(u) for u in priming)
+    remaining = budget_chars - priming_size
+
+    if remaining <= 0:
+        # Priming alone exceeds budget — keep priming, drop the tail.
+        # Operator-investigatable; Stage 3 would handle gracefully.
+        return priming, len(tail)
+
+    # Walk the tail newest → oldest, accumulating until budget exhausts.
+    kept_tail: list[Utterance] = []
+    running = 0
+    for u in reversed(tail):
+        size = _approx_utterance_chars(u)
+        if running + size > remaining:
+            break
+        kept_tail.append(u)
+        running += size
+    kept_tail.reverse()
+
+    dropped = len(tail) - len(kept_tail)
+    return priming + kept_tail, dropped
+
+
+def _truncation_banner(dropped_count: int) -> str:
+    """One-line notice prepended to a truncated transcript so agents
+    know they're seeing a partial thread. Stays small — banner cost
+    shouldn't eat measurable budget."""
+    return (
+        f"[Context-budget notice: {dropped_count} earlier "
+        f"utterance(s) in this thread were elided to fit the "
+        f"model's context window. Seed utterances + most-recent "
+        f"turns are preserved.]\n\n"
+    )
+
+
+def _log_context_size(
+    agent_name: str,
+    triggers: list[Utterance],
+    ctx: "Context",
+) -> None:
+    """Log per-layer context size after assembly. WARN above 100K
+    tokens (half the 200K cap) so operators see prompts approaching
+    the wall before they crash; INFO above 30K for routine
+    visibility. Silent under 30K — most prompts are fine."""
+    import logging
+
+    constitution_t = _approx_tokens(ctx.constitution)
+    relationships_t = _approx_tokens(ctx.relationships)
+    thread_history_t = _approx_tokens(ctx.current_thread)
+    engagement_state_t = _approx_tokens(ctx.engagement_state)
+    triggers_text = format_transcript(triggers) if triggers else ""
+    triggers_t = _approx_tokens(triggers_text)
+    total = (
+        constitution_t
+        + relationships_t
+        + thread_history_t
+        + engagement_state_t
+        + triggers_t
+    )
+
+    if total < _CONTEXT_SIZE_INFO_TOKENS:
+        return
+
+    thread_id = triggers[0].thread_id if triggers else "(none)"
+    logger = logging.getLogger("wonderland.context_size")
+    level = (
+        logging.WARNING
+        if total >= _CONTEXT_SIZE_WARN_TOKENS
+        else logging.INFO
+    )
+    logger.log(
+        level,
+        "context-size agent=%s thread=%s total~=%d "
+        "constitution=%d relationships=%d thread_history=%d "
+        "triggers=%d engagement_state=%d",
+        agent_name,
+        thread_id,
+        total,
+        constitution_t,
+        relationships_t,
+        thread_history_t,
+        triggers_t,
+        engagement_state_t,
+    )
+
+
+# --------------------------------------------------------------------- #
 # Compaction — agent reflects on a thread between threads
 # --------------------------------------------------------------------- #
 
@@ -495,7 +697,12 @@ class WonderlandAgent:
         """
         return [await self.pending.get()]
 
-    async def compose_context(self, triggers: list[Utterance]) -> Context:
+    async def compose_context(
+        self,
+        triggers: list[Utterance],
+        *,
+        memory_scope: str = "all",
+    ) -> Context:
         """Build the layered context for this turn.
 
         Constitution comes from the identity (invariant, cached).
@@ -506,16 +713,85 @@ class WonderlandAgent:
         every turn). Triggers themselves are excluded from the
         transcript since they're presented separately as the immediate
         stimulus.
+
+        T-ab25a: ``memory_scope`` controls what slice of thread
+        history the agent sees.
+          - ``"all"`` (default): every utterance, including seeds
+            re-published from prior threads. Original behavior.
+          - ``"meeting_only"``: non-seed utterances only. Right for
+            pure-execution phases (implement) where the accumulated
+            iteration noise is contamination, not signal.
+        Passed in by the meeting engine from the active phase's
+        ``memory_scope`` field on ``PhaseDefinition``.
         """
         thread_text = ""
         relationships_text = ""
         engagement_state = ""
         if triggers:
             thread_id = triggers[0].thread_id
-            history = await self.memory.query_by_thread(thread_id)
+            # T-ab52: scope the recall query to the active branch's
+            # inheritance chain (project + active branch). Without
+            # this, query_by_thread defaults to ALL branches — so
+            # T-ab8's per-milestone write isolation has no read-time
+            # teeth: a query for thread_id='scoping' during M6 design
+            # pulls in M1-M5's scoping utterances too (different
+            # branches, same thread_id). obol-260522-1 measured 72
+            # such cross-milestone utterances bleeding into M6's
+            # recall before this fix landed. The inheritance_chain
+            # for ``design:m6-...`` is ``[project, design:m6-...]``
+            # — agent sees its own branch + project-level summaries
+            # only, sibling milestone branches are filtered out.
+            from wonderland.memory.episodic import inheritance_chain
+
+            history = await self.memory.query_by_thread(
+                thread_id, branches=inheritance_chain()
+            )
             trigger_ids = {t.id for t in triggers}
             history_excluding_triggers = [u for u in history if u.id not in trigger_ids]
-            thread_text = format_transcript(history_excluding_triggers)
+
+            # T-ab27: drop nudge utterances. Dodo's priority-window-
+            # open nudges are ~280 chars of scaffolding ("your turn
+            # to act…") with no semantic content the agent benefits
+            # from re-reading. Filter at compose_context (not at
+            # storage) so the audit trail is preserved — operators
+            # debugging meeting flow can still see the nudge sequence
+            # via direct SQLite query or future dashboard view.
+            # Future-proofed by speech_act, not speaker, in case
+            # other characters emit framing nudges later.
+            history_excluding_triggers = [
+                u for u in history_excluding_triggers
+                if u.speech_act is not SpeechAct.NUDGE
+            ]
+
+            # T-ab25a: apply memory_scope filter. When meeting_only,
+            # drop seed utterances (re-published prior-thread history).
+            # The mvp-demo-rerun-A broken implement thread had 2165
+            # seeds vs 4 non-seeds — meeting_only drops 99.8% of the
+            # accumulated context for a pure-execution phase.
+            if memory_scope == "meeting_only":
+                history_excluding_triggers = [
+                    u for u in history_excluding_triggers if not u.is_seed
+                ]
+
+            # T-ab24b: cap thread_history rendered size so iterative
+            # re-runs on the same thread don't accumulate past the
+            # model's context window. Preserves seeds + most-recent;
+            # drops the middle.
+            budgeted_history, dropped = _budget_thread_history(
+                history_excluding_triggers,
+            )
+            thread_text = format_transcript(budgeted_history)
+            if dropped > 0:
+                thread_text = _truncation_banner(dropped) + thread_text
+                import logging
+                logging.getLogger("wonderland.context_size").info(
+                    "thread_history truncated: agent=%s thread=%s "
+                    "dropped=%d kept=%d (seeds + most-recent)",
+                    self.identity.name,
+                    thread_id,
+                    dropped,
+                    len(budgeted_history),
+                )
 
             speaker_names: set[str] = {t.speaker.name for t in triggers}
             for past in history_excluding_triggers:
@@ -525,13 +801,15 @@ class WonderlandAgent:
 
             engagement_state = self._build_engagement_state(thread_id, history)
 
-        return Context(
+        ctx = Context(
             constitution=self.identity.constitution_text,
             relationships=relationships_text,
             current_thread=thread_text,
             triggers=tuple(triggers),
             engagement_state=engagement_state,
         )
+        _log_context_size(self.identity.name, triggers, ctx)
+        return ctx
 
     def _build_engagement_state(
         self, thread_id: str, history: list[Utterance]

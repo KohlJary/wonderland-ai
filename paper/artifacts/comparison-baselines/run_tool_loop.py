@@ -181,8 +181,8 @@ def load_api_key() -> str:
     return json.loads(cfg.read_text())["anthropic"]["api_key"]
 
 
-def load_directive(repo_root: Path) -> tuple[str, dict]:
-    path = repo_root / "src" / "wonderland" / "closet" / "directives" / "notebook.yaml"
+def load_directive(repo_root: Path, name: str = "notebook") -> tuple[str, dict]:
+    path = repo_root / "src" / "wonderland" / "closet" / "directives" / f"{name}.yaml"
     data = yaml.safe_load(path.read_text())
     return data.get("body", "").strip(), data
 
@@ -206,6 +206,7 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=4096, help="max output tokens per turn")
     parser.add_argument("--budget-usd", type=float, default=5.0, help="cumulative cost cap")
     parser.add_argument("--max-iterations", type=int, default=60, help="max model turns")
+    parser.add_argument("--directive", default="notebook", help="directive name in src/wonderland/closet/directives/ (sans .yaml)")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[3]
@@ -215,7 +216,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     api_key = load_api_key()
-    directive_body, directive_meta = load_directive(repo_root)
+    directive_body, directive_meta = load_directive(repo_root, args.directive)
 
     user_message = (
         "Build the following web app. Implement it by writing files to the workspace, "

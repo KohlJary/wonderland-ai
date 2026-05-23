@@ -65,6 +65,57 @@ def reset_current_thread_id(token: contextvars.Token) -> None:
 def get_current_thread_id() -> str:
     return _current_thread_id.get()
 
+
+# T-ab35: track the active meeting id so tool guards can determine
+# the active phase (scoping/composition vs later phases). Same
+# contextvar pattern as thread_id above. Set by ``_convene_one``
+# at meeting start; reset on completion.
+_current_meeting_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "wonderland_telemetry_meeting_id", default=""
+)
+
+
+def set_current_meeting_id(meeting_id: str) -> contextvars.Token:
+    """Stamp subsequent tool calls with this meeting_id so phase-aware
+    guards (T-ab35) can read it without an explicit kwarg."""
+    return _current_meeting_id.set(meeting_id)
+
+
+def reset_current_meeting_id(token: contextvars.Token) -> None:
+    _current_meeting_id.reset(token)
+
+
+def get_current_meeting_id() -> str:
+    return _current_meeting_id.get()
+
+
+# T-ab36: track the current run's start timestamp so the build_check
+# attribution fallback can filter feature candidates to those whose
+# latest state transition happened within the current run's window.
+# Manual operator state overrides made before the run started become
+# ineligible. Set once by ``Runner.__init__``; never reset (the
+# Runner is per-process, the contextvar dies with the process).
+_current_run_started_at: contextvars.ContextVar[datetime | None] = (
+    contextvars.ContextVar(
+        "wonderland_telemetry_run_started_at", default=None
+    )
+)
+
+
+def set_current_run_started_at(started_at: datetime) -> contextvars.Token:
+    """Stamp the current run's start time so downstream attribution
+    fallbacks (T-ab36) can scope candidates to the in-window state
+    transitions only."""
+    return _current_run_started_at.set(started_at)
+
+
+def reset_current_run_started_at(token: contextvars.Token) -> None:
+    _current_run_started_at.reset(token)
+
+
+def get_current_run_started_at() -> datetime | None:
+    return _current_run_started_at.get()
+
 # --------------------------------------------------------------------- #
 # Pricing — Claude Haiku 4.5 per-MTok rates (USD)
 # --------------------------------------------------------------------- #

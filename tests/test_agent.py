@@ -115,6 +115,356 @@ def test_format_transcript_preserves_order() -> None:
     assert reverse.index("C") < reverse.index("B") < reverse.index("A")
 
 
+# ---------- T-ab24a context-size instrumentation ----------
+
+
+def test_log_context_size_silent_under_threshold(caplog) -> None:
+    """Small prompts shouldn't spam the log — instrumentation only
+    fires above 30K tokens (INFO) or 100K (WARN). A normal first-
+    turn deliberation easily fits below 30K."""
+    import logging
+    from wonderland.agent import _log_context_size
+
+    ctx = Context(
+        constitution="You are X.",
+        relationships="",
+        current_thread="",
+        triggers=(),
+        engagement_state="",
+    )
+    with caplog.at_level(logging.INFO, logger="wonderland.context_size"):
+        _log_context_size("tweedledee", [], ctx)
+    assert len(caplog.records) == 0
+
+
+def test_log_context_size_warns_above_100k_tokens(caplog) -> None:
+    """T-ab24a: context approaching Claude's 200K cap should fire a
+    WARN with the per-layer breakdown so operators can see which
+    layer is driving inflation (mvp-demo-rerun-A: thread_history
+    grew to ~170K after N iterations on the same feature, crashing
+    every implement attempt)."""
+    import logging
+    from wonderland.agent import _log_context_size
+
+    # ~500K chars at 4 chars/token = ~125K tokens — above the 100K
+    # WARN threshold.
+    huge_thread = "x" * 500_000
+    ctx = Context(
+        constitution="c",
+        relationships="r",
+        current_thread=huge_thread,
+        triggers=(),
+        engagement_state="e",
+    )
+    with caplog.at_level(logging.INFO, logger="wonderland.context_size"):
+        _log_context_size("tweedledum", [], ctx)
+
+    records = [
+        r for r in caplog.records if r.name == "wonderland.context_size"
+    ]
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    msg = records[0].getMessage()
+    # Per-layer breakdown is in the message
+    assert "tweedledum" in msg
+    assert "thread_history=125000" in msg
+    assert "total~=125" in msg  # total is ~125003
+
+
+def test_log_context_size_info_between_30k_and_100k(caplog) -> None:
+    """Between the 30K floor and the 100K WARN: INFO-level visibility
+    for steady-state monitoring without alarming the operator."""
+    import logging
+    from wonderland.agent import _log_context_size
+
+    # ~200K chars at 4 chars/token = ~50K tokens
+    moderate_thread = "x" * 200_000
+    ctx = Context(
+        constitution="c",
+        relationships="r",
+        current_thread=moderate_thread,
+        triggers=(),
+        engagement_state="e",
+    )
+    with caplog.at_level(logging.INFO, logger="wonderland.context_size"):
+        _log_context_size("alice", [], ctx)
+
+    records = [
+        r for r in caplog.records if r.name == "wonderland.context_size"
+    ]
+    assert len(records) == 1
+    assert records[0].levelno == logging.INFO
+
+
+# ---------- T-ab24b thread_history truncation ----------
+
+
+def _seed_utt(body: str = "seed") -> Utterance:
+    """Seed utterance (is_seed=True) for budget-preservation tests."""
+    u = _utterance(body=body)
+    return u.model_copy(update={"is_seed": True})
+
+
+def test_budget_thread_history_passes_through_under_budget() -> None:
+    """Under budget, history is returned unchanged with zero
+    dropped — no overhead for the healthy path."""
+    from wonderland.agent import _budget_thread_history
+
+    history = [_utterance(body="small")] * 10
+    kept, dropped = _budget_thread_history(history, budget_chars=100_000)
+    assert dropped == 0
+    assert kept == history
+
+
+def test_budget_thread_history_preserves_first_k_and_recent() -> None:
+    """T-ab24c: over budget, keep first-K (priming/framing) +
+    newest fit-in-budget. Drop the middle. Seed-ness is irrelevant
+    to the truncation — meeting framing is at the start of the
+    thread regardless of how seed-flagging happened."""
+    from wonderland.agent import _budget_thread_history, _PRIMING_KEEP
+
+    # First _PRIMING_KEEP utterances are small (priming). Then a
+    # big middle of ~5000-char utterances. Then a few small recent
+    # ones. Budget should preserve priming + most-recent.
+    priming = [_utterance(body=f"prime{i}") for i in range(_PRIMING_KEEP)]
+    middle = [_utterance(body=f"{chr(65+i)}" * 5000) for i in range(6)]
+    recent = [_utterance(body=f"recent{i}") for i in range(3)]
+    history = priming + middle + recent
+
+    # Budget = priming (~10 × 100 = 1000) + recent (3 × 100 = 300) + headroom
+    # for 0-1 middle entries. Set tight enough to drop most middle.
+    kept, dropped = _budget_thread_history(history, budget_chars=3000)
+
+    # All priming preserved
+    for p in priming:
+        assert p in kept
+    # All recent preserved
+    for r in recent:
+        assert r in kept
+    # Most or all middle dropped
+    middle_kept = [u for u in middle if u in kept]
+    assert len(middle_kept) <= 1
+    assert dropped >= 5
+
+
+def test_budget_thread_history_handles_seed_heavy_threads() -> None:
+    """T-ab24c regression: mvp-demo-rerun-A had a thread with 2165
+    seed utterances and 4 non-seeds. T-ab24b's "preserve all seeds"
+    rule kept everything; T-ab24c treats them equivalently so
+    truncation actually shrinks the rendered context."""
+    from wonderland.agent import _budget_thread_history, _PRIMING_KEEP
+
+    # Simulate the shape: many seeds at the start (re-published from
+    # prior threads via Runner.convene), each ~2000 chars, plus a
+    # handful of recent non-seeds.
+    seeds = [_seed_utt(body="S" * 2000) for _ in range(50)]
+    non_seeds = [_utterance(body="recent") for _ in range(4)]
+    history = seeds + non_seeds
+
+    # Total ≈ 50 × 2080 + 4 × 86 = ~104K chars. Budget 30K should
+    # force aggressive truncation.
+    kept, dropped = _budget_thread_history(history, budget_chars=30_000)
+
+    # First _PRIMING_KEEP seeds preserved (priming)
+    assert kept[:_PRIMING_KEEP] == seeds[:_PRIMING_KEEP]
+    # Recent non-seeds preserved
+    for r in non_seeds:
+        assert r in kept
+    # Most middle seeds dropped — kept length much less than original
+    assert len(kept) < len(history) * 0.5
+    assert dropped > 0
+
+
+def test_budget_thread_history_drops_tail_when_priming_overflows() -> None:
+    """Edge case: even the first-K (priming) exceeds budget.
+    Keep priming + drop everything after. Operator-investigatable;
+    Stage 3 (LLM summarization) would handle this gracefully."""
+    from wonderland.agent import _budget_thread_history, _PRIMING_KEEP
+
+    big_priming = [_utterance(body="X" * 8000) for _ in range(_PRIMING_KEEP)]
+    tail = [_utterance(body="t") for _ in range(3)]
+    history = big_priming + tail
+
+    kept, dropped = _budget_thread_history(history, budget_chars=5000)
+
+    assert kept == big_priming  # priming preserved despite oversized
+    assert dropped == 3  # all tail dropped
+
+
+# ---------- T-ab25a memory_scope ----------
+
+
+async def test_compose_context_all_scope_includes_seeds(tmp_path) -> None:
+    """memory_scope='all' (default): thread transcript includes
+    seeded + non-seeded utterances. Original behavior."""
+    agent = await _agent(tmp_path)
+    thread_id = "test-thread-scope-all"
+    seed = _utterance(thread_id=thread_id, body="seed body").model_copy(
+        update={"is_seed": True}
+    )
+    fresh = _utterance(thread_id=thread_id, body="fresh body")
+    await agent.memory.episodic.record(seed)
+    await agent.memory.episodic.record(fresh)
+
+    trigger = _utterance(thread_id=thread_id, body="trigger")
+    ctx = await agent.compose_context([trigger], memory_scope="all")
+    assert "seed body" in ctx.current_thread
+    assert "fresh body" in ctx.current_thread
+
+
+async def test_compose_context_meeting_only_scope_excludes_seeds(
+    tmp_path,
+) -> None:
+    """T-ab25a: memory_scope='meeting_only' drops seed utterances.
+    The thread transcript shows only what happened in THIS meeting,
+    not accumulated context re-published from prior threads. The
+    fix that unblocks mvp-demo-rerun-A's broken implement: 2165
+    seeds dropped, only non-seeds rendered."""
+    agent = await _agent(tmp_path)
+    thread_id = "test-thread-scope-meeting"
+    seed = _utterance(thread_id=thread_id, body="seed body").model_copy(
+        update={"is_seed": True}
+    )
+    fresh = _utterance(thread_id=thread_id, body="fresh body")
+    await agent.memory.episodic.record(seed)
+    await agent.memory.episodic.record(fresh)
+
+    trigger = _utterance(thread_id=thread_id, body="trigger")
+    ctx = await agent.compose_context([trigger], memory_scope="meeting_only")
+    assert "seed body" not in ctx.current_thread
+    assert "fresh body" in ctx.current_thread
+
+
+async def test_t_ab52_compose_context_honors_inheritance_chain(tmp_path) -> None:
+    """T-ab52: compose_context must scope its recall to the active
+    branch's inheritance chain, NOT all branches.
+
+    obol-260522-1 measured 72 cross-milestone utterances leaking
+    into M6's design recall via shared ``thread_id='scoping'`` —
+    T-ab8 set up per-milestone write isolation but agent.py:732
+    called query_by_thread without ``branches=``, so reads pulled
+    from every branch. This test pins the fix: when the active
+    branch is ``design:m6``, utterances under
+    ``design:m5`` on the same thread_id must NOT appear in the
+    rendered thread transcript.
+    """
+    from wonderland.memory.episodic import (
+        set_active_branch_id,
+        reset_active_branch_id,
+    )
+
+    agent = await _agent(tmp_path)
+    thread_id = "scoping"
+
+    # Plant an utterance from a "sibling milestone" branch.
+    sibling_token = set_active_branch_id("design:m5-sibling")
+    try:
+        sibling = _utterance(
+            thread_id=thread_id, body="sibling milestone leak"
+        )
+        await agent.memory.episodic.record(sibling)
+    finally:
+        reset_active_branch_id(sibling_token)
+
+    # Plant an utterance from the "active milestone" branch.
+    active_token = set_active_branch_id("design:m6-active")
+    try:
+        m6_utt = _utterance(
+            thread_id=thread_id, body="active milestone content"
+        )
+        await agent.memory.episodic.record(m6_utt)
+
+        # compose_context with the m6 branch active. Without T-ab52
+        # the rendered transcript pulls BOTH utterances; with the
+        # fix it pulls only m6's (plus project, but we wrote
+        # nothing there).
+        trigger = _utterance(thread_id=thread_id, body="trigger")
+        ctx = await agent.compose_context([trigger])
+    finally:
+        reset_active_branch_id(active_token)
+
+    assert "active milestone content" in ctx.current_thread
+    assert "sibling milestone leak" not in ctx.current_thread, (
+        "compose_context leaked an utterance from a sibling "
+        "milestone branch — inheritance_chain not being honored on "
+        "the recall query"
+    )
+
+
+def test_phase_spec_rejects_invalid_memory_scope() -> None:
+    """Substrate-level validator: PhaseSpec only accepts known
+    memory_scope values. Typos / future renames should fail loud
+    at workflow-load time, not silently default to ``all``."""
+    from wonderland.workflow import PhaseSpec
+
+    PhaseSpec(name="implement", memory_scope="all")
+    PhaseSpec(name="implement", memory_scope="meeting_only")
+    try:
+        PhaseSpec(name="implement", memory_scope="bogus")
+    except Exception as e:
+        assert "memory_scope" in str(e)
+    else:
+        raise AssertionError("expected ValueError for unknown memory_scope")
+
+
+def test_phase_spec_default_memory_scope_is_all() -> None:
+    """Backwards compat: phases that don't declare memory_scope
+    default to 'all' (original behavior)."""
+    from wonderland.workflow import PhaseSpec
+
+    spec = PhaseSpec(name="implement")
+    assert spec.memory_scope == "all"
+    phase_def = spec.to_phase_definition()
+    assert phase_def.memory_scope == "all"
+
+
+async def test_compose_context_drops_nudges_from_thread_history(
+    tmp_path,
+) -> None:
+    """T-ab27: Dodo's priority-window-open nudges are pure
+    scaffolding — they don't carry semantic content the agent
+    benefits from re-reading. compose_context filters them out so
+    the rendered transcript stays focused on real deliberation.
+    Storage is preserved (audit trail); only the agent's view is
+    cleaned. Future-proofed by speech_act (not speaker) so any
+    framing nudges from other characters get the same treatment."""
+    agent = await _agent(tmp_path)
+    thread_id = "test-thread-nudge-filter"
+
+    # A real deliberation utterance + a Dodo nudge in the same thread
+    real_utt = _utterance(
+        thread_id=thread_id, body="real proposal content",
+        act=SpeechAct.PROPOSAL,
+    )
+    dodo_nudge = _utterance(
+        thread_id=thread_id,
+        speaker="dodo",
+        body="**Priority window — phase: implement.** It is your turn to act.",
+        act=SpeechAct.NUDGE,
+    )
+    await agent.memory.episodic.record(real_utt)
+    await agent.memory.episodic.record(dodo_nudge)
+
+    trigger = _utterance(thread_id=thread_id, body="trigger")
+    ctx = await agent.compose_context([trigger], memory_scope="all")
+
+    assert "real proposal content" in ctx.current_thread
+    assert "Priority window" not in ctx.current_thread
+    assert "It is your turn to act" not in ctx.current_thread
+
+
+def test_truncation_banner_mentions_count_and_strategy() -> None:
+    """Banner gives agents enough signal to know they're seeing a
+    truncated transcript and what was kept."""
+    from wonderland.agent import _truncation_banner
+
+    b = _truncation_banner(42)
+    assert "42" in b
+    assert "elided" in b.lower() or "truncat" in b.lower()
+    assert "seed" in b.lower()
+    assert "recent" in b.lower()
+
+
 # ---------- Context ----------
 
 

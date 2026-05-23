@@ -663,7 +663,14 @@ async def run_phased_meeting(
             ) -> Utterance | None:
                 target = runner.agents[agent_id]
                 try:
-                    context = await target.compose_context([window_open])
+                    # T-ab25a: pass the phase's memory_scope so the
+                    # agent's compose_context can filter the thread
+                    # history appropriately (e.g., implement → drop
+                    # accumulated seed contamination).
+                    context = await target.compose_context(
+                        [window_open],
+                        memory_scope=phase_def.memory_scope,
+                    )
                     return await asyncio.wait_for(
                         target.deliberate(context),
                         timeout=window_timeout_seconds,
@@ -801,6 +808,38 @@ async def run_phased_meeting(
                         # window slot is consumed, and the §VIII
                         # observability still counts a window even
                         # when the agent's deliberation crashed.
+                        #
+                        # T-ab23: log the exception so silent crashes
+                        # don't masquerade as deliberate passes.
+                        # mvp-demo-rerun-A had 6 implement runs across
+                        # multiple verify-synthesized tickets where
+                        # agents were crashing in the deliberation
+                        # pipeline; the substrate caught the exception,
+                        # emitted AgentPassEvent, and produced $0 cost
+                        # runs that looked identical to legitimate
+                        # "agent had nothing to say" — masking the
+                        # real bug for days. The exception log makes
+                        # crash-vs-pass distinguishable in the run log.
+                        import logging
+                        import traceback as _tb
+                        tb_str = "".join(
+                            _tb.format_exception(
+                                type(raw_response),
+                                raw_response,
+                                raw_response.__traceback__,
+                            )
+                        )
+                        logging.getLogger(__name__).warning(
+                            "agent deliberation crashed (treating as "
+                            "pass): agent=%s phase=%s thread=%s "
+                            "exc_type=%s exc=%s\n%s",
+                            agent_id,
+                            phase_def.name,
+                            thread_id,
+                            type(raw_response).__name__,
+                            raw_response,
+                            tb_str,
+                        )
                         response = None
                     else:
                         response = raw_response

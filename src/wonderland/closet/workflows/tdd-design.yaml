@@ -197,6 +197,33 @@ meetings:
     roster: [alice, white_rabbit, caterpillar]
     meeting_budget: 0.40
     convenor_directive: |
+      **SCOPE LOCK — read this first.** This composition meeting
+      designs features for the ACTIVE MILESTONE ONLY (the one named
+      in the milestone artifact in your context). Sibling milestones
+      exist on disk; they are NOT your concern this run. Common
+      drift patterns to avoid (observed on obol-260522-1 M5):
+
+        - "Before I compose M5 features I need clarity on M3→M4
+          sequencing" — NO. Compose M5 from M5's stories. Cross-
+          milestone sequencing was resolved by the milestone planner;
+          re-litigating it here is scope creep.
+        - "Story 012 (M4) implies a schema dependency on M3..." —
+          surface this as ONE single-sentence concern and move on.
+          M4 has already shipped (or will ship in its own run); your
+          composition shouldn't amend its features or pre-empt its
+          stories.
+        - Reading the names of M3/M4 features in tool-use output and
+          composing features that bridge them — your features list
+          M5 sources only. Cross-milestone bridge features are a
+          design smell; the substrate's per-feature iteration filters
+          (T-ab17/19/20) handle cross-feature concerns downstream.
+
+      Surface cross-milestone concerns as `concern` (one sentence,
+      then move on) — do NOT spend rotations debating them. The
+      milestone planner already sequenced the work; your job is to
+      design THIS milestone's features well, not to re-plan the
+      project.
+
       **Rabbit, ship features.** Read the stories in your context and
       compose them into features — units a stakeholder can describe
       in one sentence. Features come in two kinds; pick the right

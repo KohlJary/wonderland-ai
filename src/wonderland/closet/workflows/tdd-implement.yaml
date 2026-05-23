@@ -343,10 +343,19 @@ meetings:
         max_rotations: 2
         team_groupings: [[tweedledee, tweedledum]]
         exit_condition_artifact: implementation
+        # T-ab25a: implement is a pure-execution phase — tweedles
+        # need the ticket + contracts + current-meeting rotations,
+        # not the accumulated chatter from N prior iteration
+        # attempts. meeting_only drops the seed utterances
+        # (re-published prior-thread history) that grow linearly
+        # with re-runs on the same ticket. mvp-demo-rerun-A had
+        # 2165 seeds vs 4 non-seeds → 203K-token overflow → crash.
+        memory_scope: meeting_only
       - name: validate
         max_rotations: 1
         team_groupings: [[tweedledee, tweedledum]]
         exit_condition_artifact: implementation
+        memory_scope: meeting_only
 
   # ─────────────────────────────────────────────────────────────────
   # M8 — Review per feature. Caterpillar evaluates the cohesive
@@ -452,6 +461,43 @@ meetings:
            ticket has acceptance conditions; are there test
            scenarios that demonstrate them? Missing coverage is a
            concern.
+
+      **Before filing a verdict — oscillation check.** Look at your
+      memory of this thread. If you've previously reviewed the SAME
+      artifact (same file, same contract field, same behavior) and
+      requested changes in OPPOSITE directions across cycles (e.g.,
+      "add tags to seed data" in cycle 1, then "remove tags from
+      seed data" in cycle 2, then a current Tweedle implementation
+      flips it again) — that's not a bug to file another verdict
+      against. It's a **contract ambiguity** the Tweedles cannot
+      resolve from the spec alone, and another request-changes will
+      just send them back to the previous interpretation.
+
+      When you spot this pattern:
+
+        1. STOP. Do not emit ``approve`` or ``request-changes`` on
+           the oscillating artifact.
+        2. Emit a ``question_to_operator`` speech act naming the
+           specific ambiguity: *which* artifact, *which* field /
+           behavior, and the two (or more) interpretations you've
+           seen the Tweedles attempt. Phrase the question as a
+           binary or short-list of options the operator can pick.
+        3. Wait for the operator's OBSERVATION reply. The reply
+           IS the ruling; treat it as authoritative for this
+           feature's contract.
+        4. In your NEXT review pass, if the contract note doesn't
+           yet encode the operator's resolution, file a
+           ``change-required`` finding requesting the Tweedles
+           update the relevant contract note to make the
+           resolution durable. (Without that artifact update,
+           future implementations re-discover the ambiguity.)
+
+      The signal you're looking for is opposite-direction
+      requested-changes verdicts (not just any prior contact with
+      the artifact — a single prior verdict isn't oscillation).
+      Cycle counts on the affected tickets are a hint: see ``...
+      (cycle 3)`` or higher in your seed context = high probability
+      the team's been here before.
 
       Verdict: ``approve`` (ship it, transition to
       ready_for_review) or ``request-changes`` (block, name what
@@ -565,6 +611,17 @@ meetings:
         kinds: [test_scenario]
       - from: implementation
         kinds: [implementation]
+      # T-ab39: re-seed prior review records so T-ab29's oscillation
+      # detection still has signal under memory_scope: meeting_only
+      # below. Without this re-seed, the cross-meeting memory drop
+      # would blind Caterpillar to prior cycles' verdicts and
+      # request-changes / approve flip-flop becomes invisible. tail: 2
+      # keeps the most-recent two cycles' verdicts (current cycle's
+      # antecedents are what matter for the opposite-direction-verdict
+      # check); older cycles are superseded and irrelevant.
+      - from: any
+        kinds: [review]
+        tail: 2
 
     # No ``transition_iteration_to`` line on M8 anymore. The
     # substrate routes verdicts directly to the ticket lifecycle:
@@ -591,6 +648,18 @@ meetings:
         max_rotations: 2
         team_groupings: [[caterpillar, tweedledee, tweedledum]]
         exit_condition_artifact: review
+        # T-ab39: review is the single biggest cost line in implement
+        # runs (observed $0.51-$1.75/feature on obol pilots). Caterpillar
+        # at M8 reads the implementation off disk + receives contracts,
+        # tickets, prior reviews via seeds — the accumulated chatter
+        # from M5 contract negotiation + M6 tea-party + M7 implementation
+        # is noise during review, not signal. meeting_only drops it.
+        #
+        # T-ab29 oscillation detection compensated for separately via
+        # `kinds: [review] tail: 2` added to the meeting seeds above:
+        # prior cycle verdicts come through as seed context instead of
+        # via full thread_history memory query. Cheaper signal path.
+        memory_scope: meeting_only
 
   # ─────────────────────────────────────────────────────────────────
   # M9 — Verify. Substrate-only check; no agents convene. Fires

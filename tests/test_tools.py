@@ -1132,3 +1132,331 @@ def test_exec_smoke_probe_dispatch_honors_timeout_override(
             "exec_smoke_probe",
             {"snippet": "import time; time.sleep(2)", "timeout_seconds": 0.3},
         )
+
+
+# ---------- T-ab35 tool-level milestone scoping ----------
+
+
+def test_t_ab35_no_scope_set_allows_cross_milestone_reads(
+    tmp_path: Path,
+) -> None:
+    """Without an active milestone scope, read_file works as before
+    on cross-milestone artifacts. The guard only fires when scope
+    is explicitly set + meeting is scoping/composition."""
+    # Write a story tagged to a different milestone
+    story_dir = tmp_path / ".wonderland" / "stories"
+    story_dir.mkdir(parents=True)
+    story_path = story_dir / "story-X-other.md"
+    story_path.write_text(
+        "## Story 001: Other\n\n**Milestone:** m99-other-milestone\n\nBody.\n"
+    )
+    tools = Tools(tmp_path)
+    # No scope, no meeting id → should read freely
+    content = tools.read_file(".wonderland/stories/story-X-other.md")
+    assert "Other" in content
+
+
+def test_t_ab35_blocks_cross_milestone_story_in_scoping_phase(
+    tmp_path: Path,
+) -> None:
+    """T-ab35: when active milestone is m4 and meeting is ``scoping``,
+    reading an m3-tagged story raises ToolError citing the scope drift."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    # Write a story tagged to m3 (sibling of active m4 scope)
+    story_dir = tmp_path / ".wonderland" / "stories"
+    story_dir.mkdir(parents=True)
+    (story_dir / "story-X-m3-sibling.md").write_text(
+        "## Story 001: M3 sibling\n\n"
+        "**Milestone:** m3-other-milestone\n\nBody.\n"
+    )
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id("scoping")
+    try:
+        tools = Tools(tmp_path)
+        with pytest.raises(ToolError, match="cross-milestone"):
+            tools.read_file(".wonderland/stories/story-X-m3-sibling.md")
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)
+
+
+def test_t_ab35_allows_active_milestone_story(tmp_path: Path) -> None:
+    """A story tagged to the active milestone reads fine even during
+    scoping. The guard is cross-milestone-specific."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    story_dir = tmp_path / ".wonderland" / "stories"
+    story_dir.mkdir(parents=True)
+    (story_dir / "story-X-active.md").write_text(
+        "## Story 001: Active scope\n\n**Milestone:** m4-active\n\nBody.\n"
+    )
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id("scoping")
+    try:
+        tools = Tools(tmp_path)
+        content = tools.read_file(".wonderland/stories/story-X-active.md")
+        assert "Active scope" in content
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)
+
+
+def test_t_ab35_allows_cross_milestone_in_decomposition_phase(
+    tmp_path: Path,
+) -> None:
+    """T-ab35 only guards scoping + composition. Later phases
+    (decomposition, consolidation, architecture, contract-negotiation)
+    iterate per-feature and self-scope via existing iteration
+    filters — the guard doesn't apply there."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    story_dir = tmp_path / ".wonderland" / "stories"
+    story_dir.mkdir(parents=True)
+    (story_dir / "story-X-m3-sibling.md").write_text(
+        "## Story 001: M3 sibling\n\n"
+        "**Milestone:** m3-other-milestone\n\nBody.\n"
+    )
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id("decomposition")
+    try:
+        tools = Tools(tmp_path)
+        # Cross-milestone read should succeed in decomposition phase
+        content = tools.read_file(".wonderland/stories/story-X-m3-sibling.md")
+        assert "M3 sibling" in content
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)
+
+
+def test_t_ab35_allows_cross_milestone_adr_read(tmp_path: Path) -> None:
+    """ADRs (architecture/) remain readable cross-scope — legitimate
+    foundation-context lookups. Only stories/features/tickets are
+    guarded."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    arch_dir = tmp_path / ".wonderland" / "architecture"
+    arch_dir.mkdir(parents=True)
+    (arch_dir / "adr-001-anything.md").write_text(
+        "# ADR-001\n\nSome architectural decision.\n"
+    )
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id("scoping")
+    try:
+        tools = Tools(tmp_path)
+        # ADR read should always succeed regardless of milestone scope
+        content = tools.read_file(".wonderland/architecture/adr-001-anything.md")
+        assert "ADR-001" in content
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)
+
+
+def test_t_ab35_allows_unattributable_story(tmp_path: Path) -> None:
+    """Stories without a Milestone: field stay readable (defensive
+    back-compat, matches seeds_fallback's T-ab9 behavior)."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    story_dir = tmp_path / ".wonderland" / "stories"
+    story_dir.mkdir(parents=True)
+    (story_dir / "story-X-legacy.md").write_text(
+        "## Story 001: Legacy story\n\nBody, no milestone tag.\n"
+    )
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id("scoping")
+    try:
+        tools = Tools(tmp_path)
+        content = tools.read_file(".wonderland/stories/story-X-legacy.md")
+        assert "Legacy story" in content
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)
+
+
+def test_t_ab46_list_files_hides_cross_milestone_stories(
+    tmp_path: Path,
+) -> None:
+    """T-ab46: list_files on .wonderland/stories/ during scoping/
+    composition with active scope should filter out sibling-milestone
+    files. Filenames carry concept slugs; visibility of those alone
+    biases agents toward 'already covered' reasoning."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    story_dir = tmp_path / ".wonderland" / "stories"
+    story_dir.mkdir(parents=True)
+    (story_dir / "story-1-active.md").write_text(
+        "## Story 001\n\n**Milestone:** m4-active\n"
+    )
+    (story_dir / "story-2-sibling.md").write_text(
+        "## Story 002\n\n**Milestone:** m3-sibling\n"
+    )
+    (story_dir / "story-3-legacy.md").write_text(
+        "## Story 003: no tag\n"  # legacy / unattributable
+    )
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id("scoping")
+    try:
+        tools = Tools(tmp_path)
+        result = tools.list_files(".wonderland/stories")
+        # Active milestone's story: visible
+        assert "story-1-active.md" in result
+        # Sibling milestone's story: hidden
+        assert "story-2-sibling.md" not in result
+        # Unattributable (legacy): visible by defensive default
+        assert "story-3-legacy.md" in result
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)
+
+
+def test_t_ab46_list_files_unfiltered_outside_scoping_phase(
+    tmp_path: Path,
+) -> None:
+    """T-ab46: when meeting is decomposition / implement / verify
+    (not scoping or composition), list_files returns everything.
+    The filter is scoped to the load-bearing phases only — the
+    per-feature iteration filters (T-ab17/19/20) handle scoping
+    downstream."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    story_dir = tmp_path / ".wonderland" / "stories"
+    story_dir.mkdir(parents=True)
+    (story_dir / "story-1-active.md").write_text(
+        "## Story 001\n\n**Milestone:** m4-active\n"
+    )
+    (story_dir / "story-2-sibling.md").write_text(
+        "## Story 002\n\n**Milestone:** m3-sibling\n"
+    )
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id(
+        "decomposition-some-feature"
+    )
+    try:
+        tools = Tools(tmp_path)
+        result = tools.list_files(".wonderland/stories")
+        # Both visible: not scoping/composition phase, filter no-op
+        assert "story-1-active.md" in result
+        assert "story-2-sibling.md" in result
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)
+
+
+def test_t_ab46_list_files_unfiltered_outside_substrate_dirs(
+    tmp_path: Path,
+) -> None:
+    """T-ab46: list_files on a source-tree directory (not under
+    .wonderland/stories|features|tickets) returns everything —
+    the filter only targets the artifact directories."""
+    import wonderland.workflow as wf
+    from wonderland.telemetry import (
+        set_current_meeting_id,
+        reset_current_meeting_id,
+    )
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.py").write_text("# a\n")
+    (src / "b.py").write_text("# b\n")
+
+    scope = wf._MilestoneScope(
+        slug="m4-active",
+        name="M4",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    meeting_token = set_current_meeting_id("scoping")
+    try:
+        tools = Tools(tmp_path)
+        result = tools.list_files("src")
+        assert "src/a.py" in result
+        assert "src/b.py" in result
+    finally:
+        wf.set_active_milestone_scope(None)
+        reset_current_meeting_id(meeting_token)

@@ -64,8 +64,8 @@ def load_api_key() -> str:
     return key
 
 
-def load_directive(repo_root: Path) -> tuple[str, dict]:
-    path = repo_root / "src" / "wonderland" / "closet" / "directives" / "notebook.yaml"
+def load_directive(repo_root: Path, name: str = "notebook") -> tuple[str, dict]:
+    path = repo_root / "src" / "wonderland" / "closet" / "directives" / f"{name}.yaml"
     if not path.exists():
         sys.exit(f"directive not found: {path}")
     data = yaml.safe_load(path.read_text())
@@ -92,6 +92,7 @@ def main():
     parser.add_argument("--model", required=True, help="e.g. claude-haiku-4-5-20251001")
     parser.add_argument("--out", required=True, help="output directory")
     parser.add_argument("--max-tokens", type=int, default=8192, help="max output tokens (default 8192)")
+    parser.add_argument("--directive", default="notebook", help="directive name in src/wonderland/closet/directives/ (sans .yaml)")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[3]
@@ -99,7 +100,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     api_key = load_api_key()
-    directive_body, directive_meta = load_directive(repo_root)
+    directive_body, directive_meta = load_directive(repo_root, args.directive)
 
     user_message = (
         "Build the following web app for me. Produce complete, working code "

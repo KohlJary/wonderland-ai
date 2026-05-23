@@ -101,8 +101,21 @@ class AgentMemory:
     async def record(self, utterance: Utterance) -> None:
         await self.episodic.record(utterance)
 
-    async def query_by_thread(self, thread_id: str, *, limit: int | None = None) -> list[Utterance]:
-        return await self.episodic.query_by_thread(thread_id, limit=limit)
+    async def query_by_thread(
+        self,
+        thread_id: str,
+        *,
+        limit: int | None = None,
+        branches: list[str] | None = None,
+    ) -> list[Utterance]:
+        # T-ab52: forward ``branches`` to the episodic store so the
+        # agent's compose_context can scope recall to the active
+        # branch's inheritance chain. Default None preserves prior
+        # behavior (all branches) for any caller that hasn't been
+        # audited yet.
+        return await self.episodic.query_by_thread(
+            thread_id, limit=limit, branches=branches
+        )
 
     async def query_by_speaker(self, name: str, *, limit: int | None = None) -> list[Utterance]:
         return await self.episodic.query_by_speaker(name, limit=limit)

@@ -284,6 +284,47 @@ meetings:
           when reads as "Marcus can do X." The substrate runs Alice
           solo on capability scoping; Caterpillar is filtered out.
 
+      **You MUST produce a kind=foundation M1 when the requirement
+      corpus contains ANY of:** persistence/storage constraints
+      (SQLite-only, Postgres, local-only file storage),
+      stack/language constraints (Python/Rich/Textual, React,
+      specific framework choices), build/deploy plumbing
+      requirements (5-minute clone-and-run, single-binary deploy,
+      Docker), scale/consistency contracts (sub-500 notes,
+      eventual consistency, ACID required), or dev environment
+      shape (TUI, CLI, web server + frontend split). These need a
+      coherent landing pass — schema designed, contracts frozen,
+      dev environment scaffolded — BEFORE capability milestones
+      consume them, because every capability milestone implicitly
+      depends on these decisions.
+
+      **Don't be confused by requirements tagged ``axis: both``.**
+      Constraints like "SQLite-only" are honestly cross-cutting
+      (capability work uses SQLite too), so Alice tags them
+      ``both`` per discovery directive. That tag means "both
+      lanes consume this requirement," NOT "no foundation
+      milestone needed." A foundation milestone can and should
+      consume ``axis: both`` constraints — they're the foundation
+      milestone's main input. The check is: does the requirement
+      shape match a foundation concern? If yes (persistence,
+      stack, build, scale, consistency, environment), produce a
+      foundation milestone to land it coherently, regardless of
+      how the requirement is axis-tagged.
+
+      **Observed failure mode (mvp-260522 + obol-260522 pilots):**
+      both projects had clear persistence + stack + build
+      constraints in their requirement corpus. Both produced ZERO
+      foundation milestones because all constraints were
+      ``axis: both``-tagged and the milestone planner read that
+      as "no foundation work needed." Result: M1 ended up doing
+      3-in-1 work (foundation + capability + skeleton) with no
+      Caterpillar-solo scoping pass on the infrastructure layer.
+      Don't be that pilot. The axis tag is descriptive (where
+      the requirement applies); the milestone kind is
+      prescriptive (where the WORK should land). They're
+      orthogonal — produce foundation milestones based on the
+      WORK shape, not the axis tag.
+
       **Foundation milestones consume INFRASTRUCTURE-shaped
       requirements only.** Requirement kinds that anchor in
       foundation:

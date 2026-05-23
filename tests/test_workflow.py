@@ -1586,6 +1586,350 @@ class TestResolveSeeds:
         )
         assert [t["slug"] for t in tickets] == ["alpha"]
 
+    def test_t_ab37_stale_in_progress_ticket_does_not_pull_in_feature(
+        self, tmp_path: Path
+    ) -> None:
+        """A ticket left IN_PROGRESS by a prior interrupted run
+        should NOT count as a feature-inclusion signal in a new run.
+        obol-260522 hit this: M0 implement pulled in an M2 feature
+        because a stuck IN_PROGRESS M2 ticket from a prior run
+        tripped the feature-level gate. With T-ab37, IN_PROGRESS
+        only counts when the transition into IN_PROGRESS happened
+        within the current run's window."""
+        from datetime import UTC, datetime, timedelta
+
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.telemetry import (
+            reset_current_run_started_at,
+            set_current_run_started_at,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-stale.md").write_text(
+            "## Feature 001: stale\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-stuck.md").write_text(
+            "## Ticket 001: stuck\n\n**Sources:** stale\n",
+            encoding="utf-8",
+        )
+
+        # Walk the feature + ticket into IN_PROGRESS BEFORE the
+        # "current run" started — simulates a prior interrupted run.
+        for st in (
+            FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED, FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "stale", st, by="test")
+        for st in (TicketState.QUEUED, TicketState.IN_PROGRESS):
+            ticket_transition(tmp_path, "stuck", st, by="test")
+
+        # The current run starts AFTER the stuck IN_PROGRESS transition.
+        run_started_at = datetime.now(UTC) + timedelta(seconds=1)
+
+        cap = WorkflowCapture()
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[
+                    _art("feature", slug="stale", title="Stale"),
+                ],
+            )
+        )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        token = set_current_run_started_at(run_started_at)
+        try:
+            features = _collect_per_item_items(
+                item_kind="feature",
+                # Feature is in IN_PROGRESS, which IS in the
+                # state_filter for the regular implement workflow —
+                # so we need to exclude IN_PROGRESS here to isolate
+                # the ticket-driven override path.
+                state_filter=["queued"],
+                capture=cap,
+                runner=_FakeRunner(),  # type: ignore[arg-type]
+            )
+        finally:
+            reset_current_run_started_at(token)
+        assert [f["slug"] for f in features] == [], (
+            "stale IN_PROGRESS ticket should NOT pull feature into "
+            "the new run's iteration (T-ab37); got "
+            + str([f["slug"] for f in features])
+        )
+
+    def test_t_ab37_in_window_in_progress_ticket_pulls_in_feature(
+        self, tmp_path: Path
+    ) -> None:
+        """The flip side of T-ab37: a ticket flipped to IN_PROGRESS
+        during THIS run (e.g. an early meeting's auto-transition)
+        still counts toward feature inclusion in later meetings of
+        the same run. Intra-run continuity must be preserved or
+        downstream meetings in the lane never see the feature
+        they're supposed to work on."""
+        from datetime import UTC, datetime, timedelta
+
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.telemetry import (
+            reset_current_run_started_at,
+            set_current_run_started_at,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-fresh.md").write_text(
+            "## Feature 001: fresh\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-active.md").write_text(
+            "## Ticket 001: active\n\n**Sources:** fresh\n",
+            encoding="utf-8",
+        )
+
+        # Run starts FIRST.
+        run_started_at = datetime.now(UTC) - timedelta(seconds=1)
+
+        # Then the substrate walks the ticket into IN_PROGRESS
+        # (simulates an earlier meeting in this run firing the
+        # auto-transition).
+        for st in (
+            FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED, FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "fresh", st, by="test")
+        for st in (TicketState.QUEUED, TicketState.IN_PROGRESS):
+            ticket_transition(tmp_path, "active", st, by="test")
+
+        cap = WorkflowCapture()
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[
+                    _art("feature", slug="fresh", title="Fresh"),
+                ],
+            )
+        )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        token = set_current_run_started_at(run_started_at)
+        try:
+            features = _collect_per_item_items(
+                item_kind="feature",
+                state_filter=["queued"],  # IN_PROGRESS excluded; only ticket override matters
+                capture=cap,
+                runner=_FakeRunner(),  # type: ignore[arg-type]
+            )
+        finally:
+            reset_current_run_started_at(token)
+        assert [f["slug"] for f in features] == ["fresh"], (
+            "in-window IN_PROGRESS ticket SHOULD pull feature into "
+            "iteration (intra-run continuity); got "
+            + str([f["slug"] for f in features])
+        )
+
+    def test_t_ab37_no_run_window_preserves_legacy_behavior(
+        self, tmp_path: Path
+    ) -> None:
+        """When run_started_at is unset (running outside a Runner,
+        e.g. scripts or unit tests not setting the contextvar), the
+        gate behaves pre-T-ab37 — any IN_PROGRESS ticket counts
+        toward feature inclusion. Defensive default: no regression
+        for callers that don't set up Runner context."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-legacy.md").write_text(
+            "## Feature 001: legacy\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-leg.md").write_text(
+            "## Ticket 001: leg\n\n**Sources:** legacy\n",
+            encoding="utf-8",
+        )
+
+        for st in (
+            FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED, FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "legacy", st, by="test")
+        for st in (TicketState.QUEUED, TicketState.IN_PROGRESS):
+            ticket_transition(tmp_path, "leg", st, by="test")
+
+        cap = WorkflowCapture()
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[
+                    _art("feature", slug="legacy", title="Legacy"),
+                ],
+            )
+        )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        # Do NOT set the contextvar. Legacy behavior should hold.
+        features = _collect_per_item_items(
+            item_kind="feature",
+            state_filter=["queued"],
+            capture=cap,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+        )
+        assert [f["slug"] for f in features] == ["legacy"], (
+            "no contextvar set → IN_PROGRESS counts unconditionally "
+            "(pre-T-ab37 behavior); got "
+            + str([f["slug"] for f in features])
+        )
+
+    def test_t_ab41_feature_with_all_done_tickets_excluded_from_lane(
+        self, tmp_path: Path
+    ) -> None:
+        """obol-260522-1 burned $0.58 on an M8 review pass for a
+        feature whose 13 tickets were all DONE. Feature state was
+        still IN_PROGRESS (carried from prior cycle), so the
+        feature-state gate admitted it; the existing
+        features_with_queued_tickets check found nothing actionable
+        and fell through to state-only admission. T-ab41 closes that
+        gap: features with tickets but zero actionable tickets get
+        dropped from the lane."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-done.md").write_text(
+            "## Feature 001: done\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-finished.md").write_text(
+            "## Ticket 001: finished\n\n**Sources:** done\n",
+            encoding="utf-8",
+        )
+
+        for st in (
+            FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED, FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "done", st, by="test")
+        for st in (
+            TicketState.QUEUED, TicketState.IN_PROGRESS, TicketState.DONE,
+        ):
+            ticket_transition(tmp_path, "finished", st, by="system")
+
+        cap = WorkflowCapture()
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[_art("feature", slug="done", title="Done")],
+            )
+        )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        features = _collect_per_item_items(
+            item_kind="feature",
+            state_filter=["queued", "in_progress"],
+            capture=cap,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+        )
+        assert [f["slug"] for f in features] == [], (
+            "feature with all-DONE tickets should be excluded from "
+            "the implement lane (T-ab41); got "
+            + str([f["slug"] for f in features])
+        )
+
+    def test_t_ab41_feature_with_zero_tickets_still_passes(
+        self, tmp_path: Path
+    ) -> None:
+        """Edge case: a feature with NO tickets at all (pre-
+        decomposition / design phase) should still pass the gate.
+        T-ab16's iterate_only_with_tickets is the opt-in filter for
+        when callers want to skip those; T-ab41 should not silently
+        break the default behavior."""
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.workflow import _collect_per_item_items
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "features" / "feature-001-fresh.md").write_text(
+            "## Feature 001: fresh\n", encoding="utf-8"
+        )
+
+        for st in (
+            FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED, FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "fresh", st, by="test")
+
+        cap = WorkflowCapture()
+        cap.observe(
+            _utt(
+                thread_id="composition",
+                artifacts=[_art("feature", slug="fresh", title="Fresh")],
+            )
+        )
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        features = _collect_per_item_items(
+            item_kind="feature",
+            state_filter=["queued", "in_progress"],
+            capture=cap,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+        )
+        assert [f["slug"] for f in features] == ["fresh"], (
+            "feature with zero tickets at all should still pass the "
+            "state gate (T-ab41 preserves T-ab16 opt-in semantics); "
+            "got " + str([f["slug"] for f in features])
+        )
+
     def test_request_changes_review_synthesizes_followup_tickets(
         self, tmp_path: Path
     ) -> None:
@@ -1614,6 +1958,7 @@ class TestResolveSeeds:
         from wonderland.workflow import (
             Meeting as MeetingCls,
             _apply_post_meeting_transitions,
+            _apply_review_verdict_routing,
         )
 
         wonderland = tmp_path / ".wonderland"
@@ -1701,7 +2046,7 @@ class TestResolveSeeds:
         class _FakeRunner:
             project_root = tmp_path
 
-        _apply_post_meeting_transitions(
+        _apply_review_verdict_routing(
             meeting=m8,
             runner=_FakeRunner(),  # type: ignore[arg-type]
             new_utterances=[review_utt],
@@ -1764,6 +2109,7 @@ class TestResolveSeeds:
         from wonderland.workflow import (
             Meeting as MeetingCls,
             _apply_post_meeting_transitions,
+            _apply_review_verdict_routing,
         )
 
         wonderland = tmp_path / ".wonderland"
@@ -1818,7 +2164,7 @@ class TestResolveSeeds:
         class _FakeRunner:
             project_root = tmp_path
 
-        _apply_post_meeting_transitions(
+        _apply_review_verdict_routing(
             meeting=m8,
             runner=_FakeRunner(),  # type: ignore[arg-type]
             new_utterances=[review_utt],
@@ -1857,6 +2203,7 @@ class TestResolveSeeds:
         from wonderland.workflow import (
             Meeting as MeetingCls,
             _apply_post_meeting_transitions,
+            _apply_review_verdict_routing,
         )
 
         wonderland = tmp_path / ".wonderland"
@@ -1909,7 +2256,7 @@ class TestResolveSeeds:
         class _FakeRunner:
             project_root = tmp_path
 
-        _apply_post_meeting_transitions(
+        _apply_review_verdict_routing(
             meeting=m8,
             runner=_FakeRunner(),  # type: ignore[arg-type]
             new_utterances=[review_utt],
@@ -1945,6 +2292,7 @@ class TestResolveSeeds:
         from wonderland.workflow import (
             Meeting as MeetingCls,
             _apply_post_meeting_transitions,
+            _apply_review_verdict_routing,
             _FUTURE_RUN_QUEUE_MARKER,
         )
 
@@ -2014,7 +2362,7 @@ class TestResolveSeeds:
         class _FakeRunner:
             project_root = tmp_path
 
-        _apply_post_meeting_transitions(
+        _apply_review_verdict_routing(
             meeting=m8,
             runner=_FakeRunner(),  # type: ignore[arg-type]
             new_utterances=[review_utt],
@@ -2028,6 +2376,194 @@ class TestResolveSeeds:
         assert (
             get_ticket_state(tmp_path, "future-fix") == TicketState.QUEUED
         )
+
+    def test_t_ab43_disk_reconciliation_routes_accept_when_bus_silent(
+        self, tmp_path: Path
+    ) -> None:
+        """obol-260522-1 surfaced: caterpillar wrote 2 accept reviews
+        to disk but caterpillar's episodic memory had ZERO accept
+        emissions on the bus. Tickets stuck IN_PROGRESS because
+        ``_find_accept_review`` walked an empty utterance list. T-ab43
+        reconciles by scanning .wonderland/reviews/ for verdict=accept
+        records whose mtime is within the meeting's window, and fires
+        ``_complete_tickets_on_accept_review`` per match."""
+        from datetime import UTC, datetime, timedelta
+
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.review import (
+            ReviewPayload,
+            ReviewRegistry,
+            ReviewVerdict,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            _apply_review_verdict_routing,
+        )
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-alpha.md").write_text(
+            "## Ticket 001: alpha\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+        for st in (
+            FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED, FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+        ticket_transition(tmp_path, "alpha", TicketState.QUEUED, by="op")
+        ticket_transition(
+            tmp_path, "alpha", TicketState.IN_PROGRESS, by="system"
+        )
+
+        # Meeting window starts NOW; the disk review is written next so
+        # its mtime is within the window.
+        meeting_started_at = datetime.now(UTC) - timedelta(seconds=1)
+
+        # Simulate the bug: caterpillar wrote an accept review directly
+        # to disk (via write_file tool or some path that bypasses bus
+        # emission). Use ReviewRegistry to write a proper accept record.
+        ReviewRegistry(tmp_path).write(
+            ReviewPayload(
+                title="xp ships clean",
+                target_files=["src/xp.py"],
+                verdict=ReviewVerdict.ACCEPT,
+                approvals=[
+                    "implementation matches the contract",
+                    "tests cover all scenarios",
+                ],
+            )
+        )
+
+        m8 = MeetingCls.model_validate({
+            "id": "review",
+            "label": "M8",
+            "name": "The Trial",
+            "goal": "review",
+            "roster": ["caterpillar"],
+            "per_item": "feature",
+            "seeds": [],
+        })
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        # No bus utterances — only disk has the verdict.
+        _apply_review_verdict_routing(
+            meeting=m8,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            new_utterances=[],
+            current_item_slug="xp",
+            meeting_started_at=meeting_started_at,
+        )
+        # Ticket transitioned to DONE via disk reconciliation.
+        assert (
+            get_ticket_state(tmp_path, "alpha") == TicketState.DONE
+        ), "T-ab43 should route from disk when bus is silent"
+
+    def test_t_ab43_skips_pre_meeting_disk_reviews(
+        self, tmp_path: Path
+    ) -> None:
+        """Reviews on disk from BEFORE the meeting started (e.g. from
+        a prior cycle) should NOT be re-routed by the reconciliation
+        pass — only mtime-in-window records count. Otherwise every
+        run would re-fire ticket completion on every prior accept
+        review."""
+        from datetime import UTC, datetime, timedelta
+
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            transition as feature_transition,
+        )
+        from wonderland.review import (
+            ReviewPayload,
+            ReviewRegistry,
+            ReviewVerdict,
+        )
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            get_state as get_ticket_state,
+            transition as ticket_transition,
+        )
+        from wonderland.workflow import (
+            Meeting as MeetingCls,
+            _apply_review_verdict_routing,
+        )
+
+        wonderland = tmp_path / ".wonderland"
+        (wonderland / "features").mkdir(parents=True)
+        (wonderland / "tickets").mkdir()
+        (wonderland / "features" / "feature-001-xp.md").write_text(
+            "## Feature 001: xp\n", encoding="utf-8"
+        )
+        (wonderland / "tickets" / "ticket-001-alpha.md").write_text(
+            "## Ticket 001: alpha\n\n**Sources:** xp\n",
+            encoding="utf-8",
+        )
+        for st in (
+            FeatureState.PROPOSED, FeatureState.IN_DESIGN,
+            FeatureState.DESIGNED, FeatureState.QUEUED,
+            FeatureState.IN_PROGRESS,
+        ):
+            feature_transition(tmp_path, "xp", st, by="test")
+        ticket_transition(tmp_path, "alpha", TicketState.QUEUED, by="op")
+        ticket_transition(
+            tmp_path, "alpha", TicketState.IN_PROGRESS, by="system"
+        )
+
+        # Write the disk review FIRST (simulates a prior cycle's review).
+        ReviewRegistry(tmp_path).write(
+            ReviewPayload(
+                title="stale prior cycle",
+                target_files=["src/xp.py"],
+                verdict=ReviewVerdict.ACCEPT,
+                approvals=["from a prior cycle"],
+            )
+        )
+        # Meeting window starts AFTER the disk write — disk review is
+        # out-of-window and should NOT be reconciled.
+        import time as _time
+        _time.sleep(0.05)
+        meeting_started_at = datetime.now(UTC)
+
+        m8 = MeetingCls.model_validate({
+            "id": "review",
+            "label": "M8",
+            "name": "The Trial",
+            "goal": "review",
+            "roster": ["caterpillar"],
+            "per_item": "feature",
+            "seeds": [],
+        })
+
+        class _FakeRunner:
+            project_root = tmp_path
+
+        _apply_review_verdict_routing(
+            meeting=m8,
+            runner=_FakeRunner(),  # type: ignore[arg-type]
+            new_utterances=[],
+            current_item_slug="xp",
+            meeting_started_at=meeting_started_at,
+        )
+        # Ticket stays IN_PROGRESS — pre-meeting disk reviews are
+        # out-of-window.
+        assert (
+            get_ticket_state(tmp_path, "alpha") == TicketState.IN_PROGRESS
+        ), "pre-meeting reviews must not trigger reconciliation"
 
     def test_roster_filter_narrows_per_iteration(self) -> None:
         """Meeting.apply_roster_filter narrows roster and
@@ -2120,6 +2656,7 @@ class TestResolveSeeds:
         from wonderland.workflow import (
             Meeting as MeetingCls,
             _apply_post_meeting_transitions,
+            _apply_review_verdict_routing,
         )
 
         wonderland = tmp_path / ".wonderland"
@@ -5043,3 +5580,147 @@ class TestInterviewWiring:
         # Round-1 shaping fired exactly once; review never did
         # because operator skipped before submitting answers.
         assert fake_alice.deliberate_calls == 1
+
+
+
+# ---------- T-ab53: implicit milestone derivation for tdd-implement ----------
+
+
+def _write_feature_with_milestone(
+    tmp_path: Path,
+    slug: str,
+    milestone: str | None,
+) -> None:
+    """Helper: write a feature to disk + transition through to QUEUED.
+    Used by T-ab53 tests to set up the queued-features-with-milestones
+    state the helper inspects."""
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.feature_lifecycle import FeatureState, transition
+
+    payload = FeaturePayload(
+        title=slug.replace("-", " ").title(),
+        description="d",
+        tickets=[f"{slug}-t1"],
+        stack_span="full-stack",
+        tier="v1",
+        sources=[f"src-{slug}"],
+        milestone=milestone,
+    )
+    FeatureRegistry(tmp_path).write(payload)
+    # Walk to QUEUED via legal transitions
+    transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+    transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+    transition(tmp_path, slug, FeatureState.DESIGNED, by="rabbit")
+    transition(tmp_path, slug, FeatureState.QUEUED, by="operator")
+
+
+class TestDeriveImplicitMilestoneForImplement:
+    """T-ab53: tdd-implement runs launched without ``--milestone``
+    should derive the milestone from the queued features when they
+    all share one. Closes the obol-260522-1 finding that every
+    implement utterance landed on PROJECT_BRANCH because the TUI
+    button has no UX for picking a milestone."""
+
+    def _runner(self, project_root: Path):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(project_root=project_root)
+
+    def test_returns_common_milestone_when_all_queued_share_one(
+        self, tmp_path: Path
+    ) -> None:
+        from wonderland.workflow import (
+            _derive_implicit_milestone_for_implement,
+        )
+
+        _write_feature_with_milestone(
+            tmp_path, "feature-alpha", "m3-ledger"
+        )
+        _write_feature_with_milestone(
+            tmp_path, "feature-bravo", "m3-ledger"
+        )
+
+        result = _derive_implicit_milestone_for_implement(
+            self._runner(tmp_path)
+        )
+        assert result == "m3-ledger"
+
+    def test_returns_none_when_features_span_multiple_milestones(
+        self, tmp_path: Path
+    ) -> None:
+        """Multi-milestone implement runs fall back to project-branch
+        (preserves prior behavior + dodges the parallel-lane race on
+        the global ``_active_branch``)."""
+        from wonderland.workflow import (
+            _derive_implicit_milestone_for_implement,
+        )
+
+        _write_feature_with_milestone(
+            tmp_path, "feature-alpha", "m3-ledger"
+        )
+        _write_feature_with_milestone(
+            tmp_path, "feature-bravo", "m4-budget"
+        )
+
+        result = _derive_implicit_milestone_for_implement(
+            self._runner(tmp_path)
+        )
+        assert result is None
+
+    def test_returns_none_when_no_queued_features(
+        self, tmp_path: Path
+    ) -> None:
+        """No queued features → nothing to scope to (workflow will
+        early-exit on the per_item collection step anyway)."""
+        from wonderland.workflow import (
+            _derive_implicit_milestone_for_implement,
+        )
+
+        result = _derive_implicit_milestone_for_implement(
+            self._runner(tmp_path)
+        )
+        assert result is None
+
+    def test_strips_guid_prefix_from_milestone_field(
+        self, tmp_path: Path
+    ) -> None:
+        """Feature ``milestone`` fields can be ``<guid>:<slug>``
+        (T-g4 GUID-aware) or just ``<slug>``. The helper normalizes
+        to the slug form so it matches the milestone registry's
+        slug-keyed lookup."""
+        from wonderland.workflow import (
+            _derive_implicit_milestone_for_implement,
+        )
+
+        _write_feature_with_milestone(
+            tmp_path,
+            "feature-alpha",
+            "01KS90A2H8KS1N3ST718E4MGED:m3-ledger",
+        )
+
+        result = _derive_implicit_milestone_for_implement(
+            self._runner(tmp_path)
+        )
+        assert result == "m3-ledger"
+
+    def test_returns_none_when_legacy_feature_has_no_milestone_field(
+        self, tmp_path: Path
+    ) -> None:
+        """Pre-T-ab5 features without a milestone field cannot be
+        safely inferred — bail rather than picking arbitrary slugs."""
+        from wonderland.workflow import (
+            _derive_implicit_milestone_for_implement,
+        )
+
+        _write_feature_with_milestone(
+            tmp_path, "feature-alpha", "m3-ledger"
+        )
+        # Second feature has no milestone — can't infer common.
+        _write_feature_with_milestone(
+            tmp_path, "feature-bravo", None
+        )
+
+        result = _derive_implicit_milestone_for_implement(
+            self._runner(tmp_path)
+        )
+        assert result is None

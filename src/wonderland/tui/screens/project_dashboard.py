@@ -29,6 +29,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+from rich.markup import escape as _rich_escape
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -528,6 +529,20 @@ class ProjectDashboardScreen(Screen[None]):
                                 id="ticket-action-mark-done",
                                 variant="success",
                             )
+                            # T-ab38: operator escape hatch for a
+                            # ticket stuck in IN_PROGRESS (e.g. a
+                            # prior run crashed mid-iteration, or
+                            # the operator wants to park the work).
+                            # IN_PROGRESS → PENDING via chain
+                            # transition; T-ab37's gate filter then
+                            # leaves the feature out of the next
+                            # implement run rather than auto-pulling
+                            # it.
+                            yield Button(
+                                "Reset to pending",
+                                id="ticket-action-reset-pending",
+                                variant="warning",
+                            )
 
             # Bottom row: Runs list + detail. Sits below the
             # Milestones/Features row so the operator's primary
@@ -1005,6 +1020,7 @@ class ProjectDashboardScreen(Screen[None]):
         # Hide per-ticket buttons when a feature is highlighted.
         btns["ticket_queue"].display = False
         btns["ticket_unqueue"].display = False
+        btns["ticket_reset_pending"].display = False
 
     def _action_buttons(self) -> dict[str, Button] | None:
         """Resolve every action button once for an action-refresh
@@ -1044,6 +1060,9 @@ class ProjectDashboardScreen(Screen[None]):
                 ),
                 "ticket_mark_done": self.query_one(
                     "#ticket-action-mark-done", Button
+                ),
+                "ticket_reset_pending": self.query_one(
+                    "#ticket-action-reset-pending", Button
                 ),
             }
         except Exception:  # noqa: BLE001 — pre-mount race
@@ -1104,9 +1123,17 @@ class ProjectDashboardScreen(Screen[None]):
         )
         can_unqueue = state == TicketState.QUEUED
         can_mark_done = state == TicketState.IN_PROGRESS
+        # T-ab38: "Reset to pending" parks a stuck IN_PROGRESS
+        # ticket so it stops counting as a feature-inclusion signal.
+        # Paired with T-ab37's gate filter (which already excludes
+        # pre-run IN_PROGRESS); together they make the "park this
+        # feature so it doesn't auto-pull into the next run" path
+        # discoverable + actionable.
+        can_reset_pending = state == TicketState.IN_PROGRESS
         btns["ticket_queue"].display = can_queue
         btns["ticket_unqueue"].display = can_unqueue
         btns["ticket_mark_done"].display = can_mark_done
+        btns["ticket_reset_pending"].display = can_reset_pending
 
     # ------------------------------------------------------------------ #
     # Artifacts tab (T83)
@@ -2449,8 +2476,17 @@ class ProjectDashboardScreen(Screen[None]):
             detail.update(f"[red]Read failed: {exc}[/red]")
             return
         badge = _STATE_BADGE.get(row.state, "[dim]?[/dim]")
-        header = f"[b]{row.title}[/b]   {badge}\n[dim]{row.slug}[/dim]\n\n"
-        detail.update(header + body)
+        # Escape user content (title / slug / body) before inserting into
+        # a Rich-markup-rendered Static. Ticket / feature bodies legitimately
+        # contain square-bracket sequences from copied tracebacks, log
+        # snippets, etc. (e.g. `[/b]` appearing inside an assertion message)
+        # which the markup parser would otherwise reject with a MarkupError
+        # and blank the detail pane.
+        header = (
+            f"[b]{_rich_escape(row.title)}[/b]   {badge}\n"
+            f"[dim]{_rich_escape(row.slug)}[/dim]\n\n"
+        )
+        detail.update(header + _rich_escape(body))
 
     def _render_ticket_detail(
         self, record, feature_row: _FeatureRow
@@ -2466,12 +2502,17 @@ class ProjectDashboardScreen(Screen[None]):
             detail.update(f"[red]Read failed: {exc}[/red]")
             return
         badge = _STATE_BADGE.get(feature_row.state, "[dim]?[/dim]")
+        # Escape user content (same reason as _render_feature_detail above).
+        # Verify-spawned tickets in particular embed assertion-message text
+        # from pytest tracebacks that contains `[/b]` and similar literal
+        # square-bracket sequences. obol-260522-1 hit this on a
+        # `test_failed_*` ticket whose body had `assert "Count:[/b] 1"`.
         header = (
-            f"[b]Ticket — {record.title}[/b]\n"
-            f"[dim]{record.slug}[/dim]\n"
-            f"Parent feature: [dim]{feature_row.slug}[/dim]   {badge}\n\n"
+            f"[b]Ticket — {_rich_escape(record.title)}[/b]\n"
+            f"[dim]{_rich_escape(record.slug)}[/dim]\n"
+            f"Parent feature: [dim]{_rich_escape(feature_row.slug)}[/dim]   {badge}\n\n"
         )
-        detail.update(header + body)
+        detail.update(header + _rich_escape(body))
 
     def _filter_state_for(self, button_id: str) -> FeatureState | None:
         for chip_id, _label, state in _FILTER_CHIPS:
@@ -2703,6 +2744,45 @@ class ProjectDashboardScreen(Screen[None]):
         elif button_id == "ticket-action-mark-done":
             target = TicketState.DONE
             verb = "marked done"
+        elif button_id == "ticket-action-reset-pending":
+            # T-ab38: IN_PROGRESS → PENDING is a multi-step legal
+            # transition (must walk through QUEUED). Use
+            # chain_transition to walk the audit log cleanly rather
+            # than the single-step transition path the other
+            # buttons share.
+            from wonderland.ticket_lifecycle import (
+                chain_transition as ticket_chain_transition,
+            )
+
+            try:
+                ticket_chain_transition(
+                    self.project.root_path,
+                    slug,
+                    TicketState.PENDING,
+                    by="operator",
+                    notes=(
+                        "Reset to pending via dashboard: operator "
+                        "parked a stuck IN_PROGRESS ticket so it "
+                        "doesn't auto-pull into the next implement "
+                        "run (T-ab37 gate + T-ab38 affordance)."
+                    ),
+                )
+                self.notify(
+                    f"Ticket {slug!r} reset to pending — the "
+                    "next implement run won't auto-pull its "
+                    "parent feature on its account.",
+                    timeout=5,
+                )
+                self._refresh_per_ticket_action_buttons(slug)
+                self._populate_features()
+                self._restore_tree_cursor_to_ticket(slug)
+            except TicketIllegalTransition as exc:
+                self.notify(
+                    f"Can't reset ticket: {exc}",
+                    severity="warning",
+                    timeout=6,
+                )
+            return
         else:
             target = TicketState.PENDING
             verb = "un-queued"
@@ -2843,11 +2923,20 @@ class ProjectDashboardScreen(Screen[None]):
     def _unsatisfied_blocked_by(self, ticket_slug: str) -> list[str]:
         """Return the slugs of blocked_by deps that haven't reached
         a satisfying state. Satisfied = ticket_lifecycle state ∈
-        {IN_PROGRESS, DONE}. PENDING / QUEUED / ABORTED / no-record
+        {QUEUED, IN_PROGRESS, DONE}. PENDING / ABORTED / no-record
         all count as still-blocking. Missing dep tickets (slug
         doesn't resolve to a file on disk) are skipped silently —
         Rabbit sometimes invents soft references that aren't real
         ticket slugs and we'd rather not block on those.
+
+        QUEUED counts as satisfied because the substrate processes
+        the dependency before the dependent within the same implement
+        run — if the blocker is already on the queue, queueing the
+        dependent now means both run in dependency order on the next
+        pass. Pre-this-fix QUEUED was treated as still-blocking,
+        forcing operators to wait an implement cycle for the blocker
+        to reach IN_PROGRESS before they could queue the dependent —
+        defeating the whole point of dependency-aware queueing.
         """
         from wonderland.ticket import (
             TicketRegistry,
@@ -2862,12 +2951,17 @@ class ProjectDashboardScreen(Screen[None]):
         if not deps:
             return []
         registry = TicketRegistry(self.project.root_path)
+        satisfied = (
+            TicketState.QUEUED,
+            TicketState.IN_PROGRESS,
+            TicketState.DONE,
+        )
         unsatisfied: list[str] = []
         for dep in deps:
             if registry.find_by_slug(dep) is None:
                 continue  # not a real ticket slug; skip
             state = get_ticket_state(self.project.root_path, dep)
-            if state not in (TicketState.IN_PROGRESS, TicketState.DONE):
+            if state not in satisfied:
                 unsatisfied.append(dep)
         return unsatisfied
 

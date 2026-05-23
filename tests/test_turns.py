@@ -296,6 +296,26 @@ def test_all_passed_in_succession_requires_full_cast_size() -> None:
     assert not s.all_passed_in_succession()
 
 
+def test_single_agent_succession_fires_after_one_pass() -> None:
+    """Single-agent cast: succession fires after 1 PASSED window
+    (the floor is ``len(cast)``, not a hard-coded minimum of 2).
+
+    T-ab49 added a ``max(2, ...)`` floor on the theory that
+    single-agent capability milestones needed a retry chance after
+    T-ab48 attribution rejections. The obol-260522-1 M6 rerun showed
+    the floor just doubled cost — alice passed twice in a row when
+    she had nothing more to add, instead of passing once. T-ab50
+    addressed the real root cause (alice was being told via framing
+    that she wasn't the lead). With that fixed, the natural
+    single-pass succession is correct again."""
+    s = _state(cast=("alice",))
+    _pass(s, "alice")
+    assert s.all_passed_in_succession(), (
+        "single-agent succession should fire after one pass — "
+        "the floor is len(cast)=1, not a hard-coded 2"
+    )
+
+
 def test_all_passed_in_succession_resets_after_act() -> None:
     """If anyone ACTED in the last len(cast) windows, the chain is
     broken even if the surrounding windows are passes."""

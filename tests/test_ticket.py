@@ -165,6 +165,44 @@ def test_payload_accepts_feature_and_story_sources() -> None:
     assert payload.sources == ["marcus-onboarding-flow", "story-007"]
 
 
+def test_payload_rejects_story_as_first_source() -> None:
+    """T-ab33: stories may appear in sources (as conceptual
+    realization) but the FIRST entry must be the structural parent
+    feature, not a story slug. obol-260522 M0 surfaced this: 6/13
+    tickets cited a story-* slug as the sole/first source, the
+    schema accepted them (stories ARE valid additional sources),
+    but the dashboard's per-feature grouping renders only tickets
+    whose first source is a feature slug — making 6/13 tickets
+    invisible."""
+    with pytest.raises(ValidationError, match="first entry must be the parent feature"):
+        TicketPayload(
+            title="t",
+            owner="tweedledum",
+            tier=TicketTier.V1,
+            estimate="1d",
+            description="d",
+            sources=["story-account-deduplication"],
+        )
+
+
+def test_payload_accepts_story_as_secondary_source() -> None:
+    """T-ab33: stories AFTER a feature slug are fine — that's the
+    canonical pattern (feature is the structural parent, story is
+    the conceptual realization)."""
+    payload = TicketPayload(
+        title="t",
+        owner="tweedledum",
+        tier=TicketTier.V1,
+        estimate="1d",
+        description="d",
+        sources=[
+            "data-schema-design-and-storage-layer-contract",
+            "story-account-deduplication",
+        ],
+    )
+    assert payload.sources[0] == "data-schema-design-and-storage-layer-contract"
+
+
 # ---------- render_ticket ----------
 
 
@@ -175,14 +213,14 @@ def test_render_ticket_includes_all_required_sections() -> None:
         tier=TicketTier.V1,
         estimate="1.5-3 days, 60% confident",
         description="Wire the translation provider into the message send path.",
-        sources=["story-007", "proposal-002"],
+        sources=["translation-pipeline-feature", "story-007", "proposal-002"],
         acceptance=["A→B message arrives translated", "translation latency p95 < 500ms"],
         risk="auth integration may bite — expand to 4d if so",
     )
     out = render_ticket(7, payload)
 
     assert "## Ticket 007: Implement message translation pipeline" in out
-    assert "**Sources:** story-007, proposal-002" in out
+    assert "**Sources:** translation-pipeline-feature, story-007, proposal-002" in out
     assert "**Owner:** tweedledum" in out
     assert "**Tier:** v1" in out
     assert "**Estimate:** 1.5-3 days, 60% confident" in out

@@ -258,6 +258,14 @@ class Runner:
         self.timeout_seconds = timeout_seconds
         self.telemetry = telemetry or Telemetry()
         self.run_id = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+        # T-ab36: stamp the run's start time so downstream attribution
+        # fallbacks (build_check ticket routing) can scope feature
+        # candidates to in-window state transitions only — manual
+        # operator overrides made before the run started become
+        # ineligible.
+        self.run_started_at = datetime.now(UTC)
+        from wonderland.telemetry import set_current_run_started_at
+        set_current_run_started_at(self.run_started_at)
         # The roster gates per-thread delivery at the bus. None = open
         # bus (every agent sees every thread, the original behavior).
         # When set, threads can be registered with subset rosters; the

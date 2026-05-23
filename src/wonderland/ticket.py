@@ -153,7 +153,20 @@ class TicketPayload(BaseModel):
         Tickets descend from features (and optionally from stories
         they realize); they don't descend from contracts, ADRs, or
         other artifact kinds. Surfaces an explicit error back to
-        Rabbit's response-parse retry loop so he relabels."""
+        Rabbit's response-parse retry loop so he relabels.
+
+        T-ab33: ALSO reject ``story-*`` as the FIRST entry. Story
+        slugs are legitimate additional sources (a ticket can cite
+        the story it realizes), but the FIRST entry must be the
+        parent feature slug. obol-260522 M0 surfaced this: Rabbit
+        decomposed 6 of 13 tickets citing the story slug as the
+        sole source — the schema allowed it (stories are valid
+        sub-parents), but the dashboard's per-feature grouping
+        renders only feature-anchored tickets, so 6/13 became
+        invisible. The rule: feature-first ordering encodes the
+        structural parent, story-secondary encodes the conceptual
+        realization. Both are useful citations; their order matters
+        for downstream consumers."""
         offenders = [
             s for s in v
             if any(s.startswith(p) for p in _INVALID_TICKET_SOURCE_PREFIXES)
@@ -168,6 +181,21 @@ class TicketPayload(BaseModel):
                 "ADRs, milestones, requirements, and other artifact kinds "
                 "are NOT valid sources for a ticket — drop them or replace "
                 "them with the appropriate feature/story slug."
+            )
+        # T-ab33: first source must be a feature, not a story. The
+        # dashboard groups tickets per-feature using the first
+        # source; story-first tickets become invisible. Stories CAN
+        # appear in sources (as the conceptual realization) but
+        # must come after the structural parent feature.
+        if v and v[0].startswith("story-"):
+            raise ValueError(
+                "TicketPayload.sources: first entry must be the parent "
+                f"feature slug, not a story slug (got {v[0]!r}). Stories "
+                "are valid as secondary sources — list them AFTER the "
+                "parent feature: ``sources: [<feature-slug>, "
+                f"{v[0]!r}, ...]``. Rationale: the dashboard groups "
+                "tickets per-feature using the first source, so story-"
+                "first tickets don't render under any feature."
             )
         return v
     acceptance: list[str] = Field(default_factory=list)

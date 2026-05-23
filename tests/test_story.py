@@ -384,3 +384,89 @@ def test_new_guid_creates_new_artifact(tmp_path: Path) -> None:
     second = registry.write(second_payload)
     assert second.number == first.number  # same file, slug match
     assert second.guid == first.guid  # back-compat preserves guid
+
+
+# ---------- T-ab48 — active-scope milestone validation ----------
+
+
+def test_t_ab48_rejects_story_attributed_to_sibling_milestone(
+    tmp_path: Path,
+) -> None:
+    """obol-260522-1 M6 design: alice wrote 3 stories attributed
+    to m5-kohl-debt-paydown-tracking during a run scoped to m6-csv-
+    and-ofx-import. The substrate accepted whatever milestone alice
+    declared, polluting M5's story pool with stories produced during
+    M6 and leaving M6 with zero stories of its own.
+
+    With T-ab48, StoryRegistry.write rejects writes whose milestone
+    field doesn't match the active scope."""
+    import wonderland.workflow as wf
+
+    scope = wf._MilestoneScope(
+        slug="m6-csv-and-ofx-import",
+        name="M6",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    try:
+        registry = StoryRegistry(tmp_path)
+        # Alice tries to write an M5-attributed story during M6 scope
+        with pytest.raises(ValueError, match="milestone attribution mismatch"):
+            registry.write(_payload(milestone="m5-kohl-debt-paydown-tracking"))
+    finally:
+        wf.set_active_milestone_scope(None)
+
+
+def test_t_ab48_allows_matching_milestone(tmp_path: Path) -> None:
+    """When alice's story milestone matches the active scope, write
+    succeeds normally. Also handles the ``<guid>:<slug>`` form."""
+    import wonderland.workflow as wf
+
+    scope = wf._MilestoneScope(
+        slug="m6-csv-and-ofx-import",
+        name="M6",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    try:
+        registry = StoryRegistry(tmp_path)
+        # Plain slug
+        registry.write(_payload(
+            title="M6 plain", milestone="m6-csv-and-ofx-import",
+        ))
+        # Guid-prefixed form
+        registry.write(_payload(
+            title="M6 prefixed",
+            milestone="01ABCDEFGHJK4NSY5Y3FG9Z58Z:m6-csv-and-ofx-import",
+        ))
+    finally:
+        wf.set_active_milestone_scope(None)
+
+
+def test_t_ab48_allows_unscoped_writes(tmp_path: Path) -> None:
+    """When no active scope is set (test fixtures, legacy backfill
+    paths, scripts), the validator is skipped — pre-T-ab48 behavior
+    holds. Also allows writes that omit the milestone field entirely
+    (legacy stories without T-ab7 attribution)."""
+    registry = StoryRegistry(tmp_path)
+    # No scope; declared milestone of any value is allowed
+    registry.write(_payload(title="A", milestone="m99-anything"))
+    # Even with a scope set, an omitted milestone passes (operator can
+    # backfill later — same defensive default seeds_fallback uses).
+    import wonderland.workflow as wf
+    scope = wf._MilestoneScope(
+        slug="m6-active",
+        name="M6",
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    try:
+        registry.write(_payload(title="B no milestone", milestone=None))
+    finally:
+        wf.set_active_milestone_scope(None)

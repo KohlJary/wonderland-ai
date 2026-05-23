@@ -42,13 +42,14 @@ def _fake_runner(project_root: Path | None) -> SimpleNamespace:
     return SimpleNamespace(project_root=project_root)
 
 
-def _scope() -> _MilestoneScope:
+def _scope(kind: str = "capability") -> _MilestoneScope:
     return _MilestoneScope(
         slug="m1-foundation",
         name="M1 — foundation",
         goal="Stand up the auth flow",
         done_when=("User can sign up", "User can log in"),
         consumes=frozenset({"user-signup", "user-login"}),
+        kind=kind,
     )
 
 
@@ -71,6 +72,65 @@ def test_existing_stories_block_empty_when_no_stories_dir(
     would see misleading "Stories already on disk:" with no entries."""
     runner = _fake_runner(tmp_path)
     assert _format_existing_stories_block(runner) == ""
+
+
+def test_existing_stories_block_filters_by_active_milestone(
+    tmp_path: Path,
+) -> None:
+    """T-ab34: when an active milestone scope is set, only list
+    stories whose ``**Milestone:**`` field matches. obol-260522 M4
+    surfaced this: Alice/Rabbit kept asking about M1-M2-M3 cross-
+    milestone composition because this block listed every story in
+    the project. Anti-duplicate framing has to stay scoped to what
+    THIS run can actually duplicate."""
+    import wonderland.workflow as wf
+
+    reg = StoryRegistry(tmp_path)
+    # Write a story for M4
+    m4_record = reg.write(StoryPayload(
+        title="Kohl reviews credit card payoff",
+        persona="Kohl, AI researcher",
+        situation="Month-end debt review.",
+        need="As Kohl, I want to see my payoff progress.",
+        acceptance=["payoff % visible"],
+        tier=StoryTier.CORE,
+        confusion_flags=["none"],
+        milestone="m4-credit-card-debt-payoff-tracking",
+    ))
+    # Write a story for M3
+    m3_record = reg.write(StoryPayload(
+        title="Kohl sets a monthly budget",
+        persona="Kohl, AI researcher",
+        situation="Planning next month.",
+        need="As Kohl, I want to set a budget.",
+        acceptance=["budget saved"],
+        tier=StoryTier.CORE,
+        confusion_flags=["none"],
+        milestone="m3-budgeting-and-monthly-summary",
+    ))
+
+    # With no active scope: both stories should appear
+    out_no_scope = _format_existing_stories_block(_fake_runner(tmp_path))
+    assert "Kohl reviews credit card payoff" in out_no_scope
+    assert "Kohl sets a monthly budget" in out_no_scope
+    assert "for this project" in out_no_scope
+
+    # With M4 active scope: only M4 story should appear
+    scope = _MilestoneScope(
+        slug="m4-credit-card-debt-payoff-tracking",
+        name="M4 — Credit Card Debt Payoff",
+        goal="Track debt paydown",
+        done_when=("Operator can mark debt",),
+        consumes=frozenset(),
+    )
+    wf.set_active_milestone_scope(scope)
+    try:
+        out_m4_scope = _format_existing_stories_block(_fake_runner(tmp_path))
+    finally:
+        wf.set_active_milestone_scope(None)
+    assert "Kohl reviews credit card payoff" in out_m4_scope
+    assert "Kohl sets a monthly budget" not in out_m4_scope
+    assert "for milestone ``m4-credit-card-debt-payoff-tracking``" in out_m4_scope
 
 
 def test_existing_stories_block_lists_stories_with_slugs(
@@ -300,13 +360,19 @@ def test_classify_foundation_when_consumes_are_infrastructure(
 ) -> None:
     """A milestone whose consumes are all constraint/integration/scope
     kinds is foundation-shape. validation2's M0 is the canonical
-    example — auth + schema + sync + LLM provider abstraction."""
+    example — auth + schema + sync + LLM provider abstraction.
+
+    T-ab50: pass kind="" to exercise the heuristic path (explicit
+    kind would short-circuit). Production paths set kind from the
+    milestone file's **Kind:** line; tests targeting the heuristic
+    specifically opt out via the empty-kind sentinel."""
     _write_requirement(tmp_path, "stack-react-sqlite", "constraint")
     scope = _MilestoneScope(
         slug="m0", name="M0 foundation",
         goal="Stand up auth + schema",
         done_when=("auth works", "schema isolates users"),
         consumes=frozenset({"stack-react-sqlite"}),
+        kind="",
     )
     assert (
         _classify_milestone_shape(scope, _fake_runner(tmp_path))
@@ -318,13 +384,16 @@ def test_classify_capability_when_consumes_include_situation(
     tmp_path: Path,
 ) -> None:
     """A milestone with at least one situation/persona consume is
-    capability-shape — Alice's natural lane."""
+    capability-shape — Alice's natural lane.
+
+    T-ab50: kind="" opts into the heuristic path."""
     _write_requirement(tmp_path, "marcus-logs-session", "situation")
     scope = _MilestoneScope(
         slug="m1", name="M1 session log",
         goal="Marcus logs a workout",
         done_when=("logs persist",),
         consumes=frozenset({"marcus-logs-session"}),
+        kind="",
     )
     assert (
         _classify_milestone_shape(scope, _fake_runner(tmp_path))
@@ -335,7 +404,9 @@ def test_classify_capability_when_consumes_include_situation(
 def test_classify_mixed_when_both_kinds_present(tmp_path: Path) -> None:
     """Mixed milestones (some situation, some constraint) default
     to Alice-led; Caterpillar still ships foundation stories per
-    his constitution. No lead-assignment override needed."""
+    his constitution. No lead-assignment override needed.
+
+    T-ab50: kind="" opts into the heuristic path."""
     _write_requirement(tmp_path, "marcus-logs-session", "situation")
     _write_requirement(tmp_path, "stack-react-sqlite", "constraint")
     scope = _MilestoneScope(
@@ -343,6 +414,7 @@ def test_classify_mixed_when_both_kinds_present(tmp_path: Path) -> None:
         goal="Marcus + schema",
         done_when=("both work",),
         consumes=frozenset({"marcus-logs-session", "stack-react-sqlite"}),
+        kind="",
     )
     assert (
         _classify_milestone_shape(scope, _fake_runner(tmp_path))
@@ -353,9 +425,54 @@ def test_classify_mixed_when_both_kinds_present(tmp_path: Path) -> None:
 def test_classify_returns_mixed_when_no_runner() -> None:
     """No runner = no project_root = can't classify. Mixed is the
     safe default (preserves Alice-led behavior for the runs where
-    classification can't fire)."""
-    scope = _scope()
+    classification can't fire).
+
+    T-ab50: kind="" opts into the heuristic path; without runner
+    we fall through to the mixed default."""
+    scope = _scope(kind="")
     assert _classify_milestone_shape(scope, None) == "mixed"
+
+
+def test_t_ab50_explicit_kind_wins_over_heuristic(
+    tmp_path: Path,
+) -> None:
+    """T-ab50: when the milestone's Kind: field is explicit
+    (capability or foundation), it short-circuits the consumes-based
+    heuristic. obol-260522-1 M6 surfaced the contradiction:
+    kind=capability (operator's explicit choice for the upload flow)
+    + consumes=[constraint requirements] → heuristic said foundation
+    → "M1 LEAD: Caterpillar" framing → alice (only one in the room
+    per T-ab6's kind-driven filter) read 'I'm not the lead' and
+    passed. Both pieces of substrate logic must read the same
+    source of truth — the explicit Kind field."""
+    # Infra-only consumes; without T-ab50 heuristic would say foundation
+    _write_requirement(tmp_path, "stack-react-sqlite", "constraint")
+
+    # Explicit capability wins even though consumes look foundation-shape
+    cap_scope = _MilestoneScope(
+        slug="m6", name="M6 csv-and-ofx-import",
+        goal="upload + parse + dedup",
+        done_when=("upload works",),
+        consumes=frozenset({"stack-react-sqlite"}),
+        kind="capability",
+    )
+    assert (
+        _classify_milestone_shape(cap_scope, _fake_runner(tmp_path))
+        == "capability"
+    )
+
+    # Explicit foundation also wins (back-compat for the normal case)
+    found_scope = _MilestoneScope(
+        slug="m1", name="M1 data layer",
+        goal="schema bootstrap",
+        done_when=("tables exist",),
+        consumes=frozenset({"stack-react-sqlite"}),
+        kind="foundation",
+    )
+    assert (
+        _classify_milestone_shape(found_scope, _fake_runner(tmp_path))
+        == "foundation"
+    )
 
 
 # ---------- _format_m1_lead_block ----------
@@ -382,10 +499,12 @@ def test_m1_lead_block_names_caterpillar_for_foundation(
     constitution alone wasn't strong enough to make Caterpillar
     take the lane."""
     _write_requirement(tmp_path, "stack-react-sqlite", "constraint")
+    # T-ab50: kind="" opts into the heuristic path for this test.
     scope = _MilestoneScope(
         slug="m0", name="M0",
         goal="g", done_when=("d",),
         consumes=frozenset({"stack-react-sqlite"}),
+        kind="",
     )
     block = _format_m1_lead_block(scope, _fake_runner(tmp_path))
     assert "M1 LEAD: Caterpillar" in block
@@ -404,11 +523,13 @@ def test_prepend_injects_lead_block_at_top_for_foundation(
     constitutional guidance was being out-weighted by the agents'
     default scoping-question instinct."""
     _write_requirement(tmp_path, "stack-react-sqlite", "constraint")
+    # T-ab50: kind="" opts into the heuristic path for this test.
     scope = _MilestoneScope(
         slug="m0", name="M0 foundation",
         goal="Stand up auth + schema",
         done_when=("auth works",),
         consumes=frozenset({"stack-react-sqlite"}),
+        kind="",
     )
     result = _prepend_milestone_framing(
         directive="The work.",

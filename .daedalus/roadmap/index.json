@@ -1861,6 +1861,186 @@
       "status": "backlog",
       "created_at": "2026-05-20T19:29:14.799989",
       "created_by": "daedalus"
+    },
+    {
+      "id": "7b324f04-53ef-470f-baa9-2b830478c5e9",
+      "title": "T-ab23: verify dedup staleness \u2014 repeat verify findings on the same feature silently drop via _route_blocking_review's slug dedup. mvp-demo-rerun-A had 51+ build-check-verify-failed reviews resolve to 1 quiet ticket. Should at least bump ticket status to 'still failing after N attempts' or surface a count badge so the operator sees the rot.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-05-21T07:58:37.056251",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "e0e52b6a-51c6-4e70-8c97-514b79c5b15e",
+      "title": "T-ab24: TUI surface for operator-attention artifacts \u2014 env-class verify failures route to .wonderland/operator-attention/*.md but the dashboard has no render path. Operator only sees a stderr line that scrolls past. Need a card/panel in the project dashboard listing pending operator-attention items with the suggested command (uv add fastapi etc) inline.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-21T07:58:43.675946",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "a5eb827f-412f-41f3-9504-39f5bf3edb02",
+      "title": "T-ab31: discovery.yaml needs axis discrimination directive \u2014 pilot mvp-260522 had 17/23 requirements tagged 'both' (default) + 0 tagged 'foundation' because Alice has no constitutional or directive guidance for how to differentiate. T-ab15 shipped the axis schema field; T-ab31 ships the directive that teaches Alice to USE it. Persistence constraints, scale limits, consistency contracts should land as foundation-only; personas + situations on capability. Pattern after T-ab13's milestone-plan foundation/capability discipline section.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-05-22T19:49:27.970220",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "cb813417-0518-448f-891c-56659f2c78ed",
+      "title": "T-ab35: tool-level milestone scoping during scoping + composition phases \u2014 block read_file on cross-milestone stories/features/tickets when active scope is set AND the active phase is scoping/composition. Allow cross-scope reads of ADRs + milestone artifacts (legitimate foundation-context lookups). Don't apply to later phases (decomposition+, consolidation+, architecture, contract-negotiation, implement, review, verify) because by then per-feature iteration filters scope work naturally. obol-260522 M4 surfaced: 4 design reruns with empty memory + scoped framing all stalled because agents navigated to M0/M2/M3 artifacts via read_file and got drawn into cross-milestone coherence concerns. Substrate's tool layer is the last unaddressed scoping vector.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-22T22:18:11.238088",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "23532a92-bde9-4def-8996-f3b6c10f6575",
+      "title": "T-ab36: time-scope build_check fallback to current-run window \u2014 _pick_feature_for_build_check_attribution filters candidates to features whose latest state transition happened at or after run_started_at. Excludes operator-parked features (manual workarounds applied before run). Contextvar plumbing in telemetry.py + Runner.__init__; graceful degradation when filter empties a bucket.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-22T23:06:55.952481+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "c0977fb2-6d87-4cfc-b77a-4ccead09253b",
+      "title": "T-ab37: time-scope IN_PROGRESS-counts-as-queued in feature-level gate \u2014 stale IN_PROGRESS tickets from prior interrupted runs were leaking features into new runs iteration. Mirror T-ab36 contextvar pattern; QUEUED stays time-independent (operator intent persists), IN_PROGRESS only counts when in-window.",
+      "priority": "P1",
+      "description": "",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-22T23:24:31.569057+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "ac188d51-b2a4-4f95-91d3-511b8c6744f0",
+      "title": "T-ab38: dashboard Reset to pending button for stuck IN_PROGRESS tickets \u2014 operator-park affordance paired with T-ab37 gate filter. chain_transition walks IN_PROGRESS \u2192 QUEUED \u2192 PENDING. Replaces the operator workaround of moving feature to READY_FOR_REVIEW.",
+      "priority": "P2",
+      "description": "",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-22T23:24:31.569065+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "f14e1657-eb0f-4640-ab19-0465fbad2772",
+      "title": "T-ab39: review phase memory_scope meeting_only + cycle-history seeds \u2014 M8 review is single biggest cost line in implement runs (/bin/bash.51-.75/feature observed on obol pilots). Apply T-ab25a memory_scope: meeting_only to drop cross-meeting deliberation chatter. Compensate for T-ab29 oscillation-detection signal loss by adding kinds:[review]/tail:2 to review meeting seeds.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-22T23:52:14.868718+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "2f2a01f0-9be9-4047-b377-9f42740bdf5d",
+      "title": "T-ab40: decouple review-verdict routing from meeting outcome \u2014 extract _apply_review_verdict_routing from _apply_post_meeting_transitions so accept/blocking verdicts fire regardless of MEETING_BUDGET / MAX_ROTATIONS outcomes. Fixes long-standing tickets-stuck-IN_PROGRESS bug when M8 overruns its /bin/bash.60 budget after the verdict landed.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T00:22:40.075427+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "ac0f7548-3966-4a75-9cdb-bdad9cfc188e",
+      "title": "T-ab41: skip features with all-terminal tickets from implement lanes \u2014 feature-level gate admitted a feature in IN_PROGRESS lifecycle state even when all its tickets were DONE, burning M8 review budget on already-shipped work. obol-260522-1 schema-bootstrap burned /bin/bash.58 on review-only pass. Filter: features with any tickets but zero actionable tickets drop out; features with zero tickets at all still pass (T-ab16 compat).",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T01:18:44.198004+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "f980e811-1c4f-4e6f-af1b-ae081115a4f1",
+      "title": "T-ab42: dashboard markup escape + verify-attribution prefers lane feature \u2014 fixes MarkupError on verify tickets whose body embeds pytest traceback with literal [/b] markup, and routes verify-spawned tickets to the lane feature whose iteration triggered the verify pass rather than scattering across the project via highest-numbered-preferred-state heuristic.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T01:28:56.003966+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "7f656313-a006-4527-89db-66d6722add8b",
+      "title": "T-ab43: post-meeting disk reconciliation for accept-verdict reviews \u2014 caterpillar wrote accept reviews to disk but bus utterances never landed, so _find_accept_review returned None and tickets stuck IN_PROGRESS. obol-260522-1 had 23 manual operator bulk-marks vs 0 accept-verdict completions despite 2 accept reviews on disk. Reconciliation scans .wonderland/reviews/ for verdict=accept records within meeting window when bus dispatch fires nothing.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T02:10:09.103474+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "239fd3cf-626e-4004-9d5c-1114d0afff3a",
+      "title": "T-ab44: set _current_meeting_id on phased meeting path \u2014 T-ab35 contextvar plumbing was only in _convene_one; tdd-design uses phased meetings via run_phased_meeting which never set the contextvar, so T-ab35 has been non-functional for design scoping+composition since it shipped. obol-260522-1 M5 design: 12 cross-milestone read_file calls all succeeded (M3+M4 stories+features), M5 produced 0 stories because agents focused on M3-M4 coherence. Fix: mirror set/reset around run_phased_meeting call.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T04:50:00.704694+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "e585f69d-bcf4-4baf-bfee-c691bf733a63",
+      "title": "T-ab45: scope-lock framing on scoping + composition directives \u2014 T-ab35/44 closed the tool layer but agents still reason cross-milestone via list_files / reviews / memory. obol-260522-1 M5: alice opened with Before I compose M4 and M5 features... \u2014 treated M4+M5 as one surface. Add hard-edge SCOPE LOCK prelude to composition convenor_directive AND synthesized milestone directive. Names specific drift patterns to avoid; tells cast to surface cross-milestone concerns as one sentence and move on.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T05:00:36.721760+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "fb23124b-0f12-41ba-8384-38d345cdf40d",
+      "title": "T-ab46: filter list_files to active milestone in scoping/composition \u2014 T-ab35 blocks read_file but filenames themselves leak concepts via list_files. Agents see story-XXX-kohl-views-budget filename, reason already covered, skip generating fresh M5 stories. Extend scope-detection helper to list_files; hide cross-milestone artifact paths silently from listings during scoping/composition.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T05:08:27.512213+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "b18134b6-50ed-49a3-aff3-10c58ed2a78e",
+      "title": "T-ab47: queue button treats QUEUED blocked_by deps as satisfied \u2014 dashboard _unsatisfied_blocked_by was only counting IN_PROGRESS+DONE as satisfied, forcing operators to wait an implement cycle before queueing dependents. Add QUEUED to satisfied set; substrate processes deps in order within same run.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T05:17:22.158111+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "44e47070-c7a2-430b-9f2d-87ff0e4dffcc",
+      "title": "T-ab48: StoryRegistry.write validates milestone matches active scope \u2014 alice in obol-260522-1 M6 design wrote 3 stories attributed to m5 (debt-tracking content correctly belonged to m5, but active scope was m6 csv-import). Substrate accepted whatever milestone alice declared. Reject mismatches at write time so alice retries with active scope.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T05:58:11.970293+00:00",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "453ce5e8-c3c4-4e62-ab9b-186644c3e375",
+      "title": "T-ab49: single-agent phase succession requires \u22652 PASSED windows \u2014 when T-ab6 narrows cast to single agent (alice for capability scoping), all_passed_in_succession fired after 1 pass, collapsing max_rotations=3 + coverage_check into one shot. obol-260522-1 M6 scoping ended after alice s rejected T-ab48 emission. Fix: bump succession floor to max(2, cast_size).",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "done",
+      "created_at": "2026-05-23T06:46:08.241010+00:00",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

@@ -362,6 +362,250 @@ class Tools:
                     f"file deletion is neither."
                 )
 
+    def _check_milestone_scope_allowed_read(
+        self, requested: str, full: Path,
+    ) -> None:
+        """T-ab35 — refuse cross-milestone reads of stories/features/
+        tickets during the scoping + composition phases of a milestone-
+        scoped workflow.
+
+        Observed failure: obol-260522 M4 design stalled across 4
+        reruns even with empty memory + scoped framing because agents
+        used ``read_file`` to navigate to M0/M2/M3 stories and
+        features, then got drawn into cross-milestone coherence
+        concerns instead of M4 feature composition. The substrate's
+        memory + framing fixes cover the IMPLICIT context layer (what
+        agents passively see); this guard closes the EXPLICIT context
+        layer (what they actively pull via tools).
+
+        Scope of the guard:
+          - **Only when** an active milestone scope is set AND the
+            current meeting id ends in ``scoping`` or ``composition``
+            (the early design phases where no per-feature anchor
+            exists yet). Later phases (decomposition, consolidation,
+            architecture, contract-negotiation, implement, review,
+            verify) iterate per-feature and self-scope via existing
+            iteration filters (T-ab17/19/20).
+          - **Only blocks** stories/features/tickets directories.
+            ADRs (architecture/), milestones/, requirements/, contract-
+            notes/, reviews/, rulings/ remain readable cross-scope —
+            those are legitimate foundation-context lookups.
+          - **Reads of the active milestone's own artifacts** are
+            always allowed.
+          - **Unattributable artifacts** (no parseable Milestone:
+            field, or Sources: that resolves to nothing) stay
+            readable — defensive default, similar to seeds_fallback.
+        """
+        from wonderland.telemetry import get_current_meeting_id
+        try:
+            from wonderland.workflow import get_active_milestone_scope
+            scope = get_active_milestone_scope()
+        except Exception:  # noqa: BLE001
+            scope = None
+        if scope is None:
+            return  # no scope set → no constraint
+        meeting_id = get_current_meeting_id() or ""
+        # Phase detection via meeting id suffix. tdd-design meetings
+        # have id ``scoping``, ``composition``, etc. Pipeline mode
+        # prefixes with ``pipe.<feature>.``; endswith covers both.
+        if not (
+            meeting_id == "scoping"
+            or meeting_id == "composition"
+            or meeting_id.endswith(".scoping")
+            or meeting_id.endswith(".composition")
+        ):
+            return  # outside the load-bearing phases → no constraint
+
+        try:
+            rel = full.resolve().relative_to(self._root.resolve())
+        except (ValueError, OSError):
+            return
+        rel_str = str(rel).replace("\\", "/")
+        wonderland_prefix = ".wonderland/"
+        if not rel_str.startswith(wonderland_prefix):
+            return  # source-tree reads aren't milestone-scoped
+        artifact_kind: str | None = None
+        for kind in ("stories", "features", "tickets"):
+            if rel_str.startswith(f"{wonderland_prefix}{kind}/"):
+                artifact_kind = kind
+                break
+        if artifact_kind is None:
+            return  # not a scope-guarded artifact kind
+
+        # Read the artifact's milestone attribution. Stories/features
+        # carry the explicit field (T-ab7); tickets follow their
+        # parent feature (T-ab33 ensures sources[0] is the feature).
+        import re
+        try:
+            body = full.read_text(encoding="utf-8")
+        except OSError:
+            return  # let the actual read attempt produce the error
+        artifact_milestone: str | None = None
+        if artifact_kind in ("stories", "features"):
+            m = re.search(r"^\*\*Milestone:\*\*\s*(.+?)$", body, re.MULTILINE)
+            if m:
+                val = m.group(1).strip()
+                # Strip guid prefix: ``<guid>:<slug>`` → ``<slug>``
+                artifact_milestone = (
+                    val.split(":", 1)[1] if ":" in val else val
+                )
+        else:  # tickets
+            m = re.search(r"^\*\*Sources:\*\*\s*(.+?)$", body, re.MULTILINE)
+            if m:
+                first_source = m.group(1).split(",")[0].strip()
+                if ":" in first_source:
+                    first_source = first_source.split(":", 1)[1]
+                # Resolve first_source (feature slug) → its milestone
+                from wonderland.feature import FeatureRegistry
+                try:
+                    feature_reg = FeatureRegistry(self._root)
+                    feat_record = feature_reg.find_by_slug(first_source)
+                    if feat_record is not None:
+                        feat_body = feat_record.read()
+                        fm = re.search(
+                            r"^\*\*Milestone:\*\*\s*(.+?)$",
+                            feat_body,
+                            re.MULTILINE,
+                        )
+                        if fm:
+                            val = fm.group(1).strip()
+                            artifact_milestone = (
+                                val.split(":", 1)[1] if ":" in val else val
+                            )
+                except Exception:  # noqa: BLE001
+                    pass
+
+        if artifact_milestone is None:
+            return  # unattributable → defensive default, allow read
+        if artifact_milestone == scope.slug:
+            return  # in-scope read → allow
+
+        # Cross-milestone read during scoping/composition → block.
+        raise ToolError(
+            f"refusing to read cross-milestone {artifact_kind[:-1]} "
+            f"{requested!r} during {meeting_id} phase of milestone "
+            f"``{scope.slug}``. This artifact attributes to "
+            f"``{artifact_milestone}``, which is a sibling milestone — "
+            f"reading it pulls cross-milestone concerns into your "
+            f"current scope (obol-260522 M4 documented this drift). "
+            f"Stay anchored on ``{scope.slug}``'s own "
+            f"stories/features/tickets and the milestone-level "
+            f"artifacts (ADRs, milestone files, requirements, "
+            f"contract-notes, reviews) which remain readable "
+            f"cross-scope. If you need this artifact for legitimate "
+            f"foundation context, surface a ``concern`` rather than "
+            f"pulling it directly."
+        )
+
+    def _artifact_milestone_or_none(self, full: Path) -> str | None:
+        """T-ab46 helper: parse the ``**Milestone:**`` slug from an
+        artifact path (story / feature). Tickets resolve via their
+        sources[0] feature. Returns None when the file isn't an
+        attributable artifact or when parsing fails — caller treats
+        None as "leave visible" (defensive default mirroring T-ab35).
+        """
+        import re
+        try:
+            rel = full.resolve().relative_to(self._root.resolve())
+        except (ValueError, OSError):
+            return None
+        rel_str = str(rel).replace("\\", "/")
+        kind: str | None = None
+        for k in ("stories", "features", "tickets"):
+            if rel_str.startswith(f".wonderland/{k}/"):
+                kind = k
+                break
+        if kind is None:
+            return None
+        try:
+            body = full.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        if kind in ("stories", "features"):
+            m = re.search(
+                r"^\*\*Milestone:\*\*\s*(.+?)$", body, re.MULTILINE,
+            )
+            if m:
+                val = m.group(1).strip()
+                return val.split(":", 1)[1] if ":" in val else val
+            return None
+        # tickets — follow sources[0] → feature
+        m = re.search(
+            r"^\*\*Sources:\*\*\s*(.+?)$", body, re.MULTILINE,
+        )
+        if not m:
+            return None
+        first_source = m.group(1).split(",")[0].strip()
+        if ":" in first_source:
+            first_source = first_source.split(":", 1)[1]
+        from wonderland.feature import FeatureRegistry
+        try:
+            feat_record = FeatureRegistry(self._root).find_by_slug(
+                first_source
+            )
+            if feat_record is None:
+                return None
+            feat_body = feat_record.read()
+            fm = re.search(
+                r"^\*\*Milestone:\*\*\s*(.+?)$",
+                feat_body,
+                re.MULTILINE,
+            )
+            if fm:
+                val = fm.group(1).strip()
+                return val.split(":", 1)[1] if ":" in val else val
+        except Exception:  # noqa: BLE001
+            return None
+        return None
+
+    def _filter_cross_milestone_paths(
+        self, paths: list[Path],
+    ) -> list[Path]:
+        """T-ab46 — drop cross-milestone artifact paths from a listing
+        result when the active meeting is scoping/composition with an
+        active milestone scope set.
+
+        Same conditions as ``_check_milestone_scope_allowed_read``;
+        same scope-detection contract. The difference is the response:
+        ``read_file`` raises ToolError to refuse explicitly;
+        ``list_files`` silently hides cross-milestone artifacts from
+        the listing so agents don't even see they exist (the filename
+        alone leaks the concept slug, which alice/cat then reason
+        about as "already covered" and skip generating fresh stories).
+
+        Paths that aren't under ``.wonderland/{stories,features,
+        tickets}/`` pass through untouched. Paths whose artifact is
+        unattributable (no Milestone: field, or sources don't resolve)
+        also pass through — defensive default mirrors T-ab35.
+        """
+        from wonderland.telemetry import get_current_meeting_id
+        try:
+            from wonderland.workflow import get_active_milestone_scope
+            scope = get_active_milestone_scope()
+        except Exception:  # noqa: BLE001
+            scope = None
+        if scope is None:
+            return paths
+        meeting_id = get_current_meeting_id() or ""
+        if not (
+            meeting_id == "scoping"
+            or meeting_id == "composition"
+            or meeting_id.endswith(".scoping")
+            or meeting_id.endswith(".composition")
+        ):
+            return paths
+
+        kept: list[Path] = []
+        for p in paths:
+            artifact_milestone = self._artifact_milestone_or_none(p)
+            if artifact_milestone is None:
+                # Not a guarded artifact OR unattributable → visible.
+                kept.append(p)
+                continue
+            if artifact_milestone == scope.slug:
+                kept.append(p)
+        return kept
+
     # ------------------------------------------------------------------ #
     # Operations
     # ------------------------------------------------------------------ #
@@ -407,6 +651,12 @@ class Tools:
             raise ToolError(f"file not found: {path}")
         if not full.is_file():
             raise ToolError(f"not a file: {path}")
+        # T-ab35: scoping/composition phases of milestone-scoped runs
+        # cannot read cross-milestone stories/features/tickets. Each
+        # phase has its own context window; cross-milestone artifact
+        # reads during scoping pull agents into "what about M0/M2/M3
+        # coherence" rabbit-holes (obol-260522 M4: 4 reruns stalled).
+        self._check_milestone_scope_allowed_read(path, full)
         try:
             data = full.read_bytes()
         except OSError as exc:
@@ -670,6 +920,17 @@ class Tools:
 
         # Filter to in-sandbox paths (rglob can follow weird symlinks).
         in_sandbox = [p for p in entries if p.resolve().is_relative_to(self._root)]
+
+        # T-ab46: hide cross-milestone artifact filenames during
+        # scoping/composition phases of a milestone-scoped workflow.
+        # Filenames carry concept slugs; agents that see "story-XXX-
+        # kohl-views-budget" in the listing reason "already have
+        # stories for budget" and skip generating fresh material —
+        # observed on obol-260522-1 M5 design where alice + cat
+        # repeatedly emitted 0 stories despite T-ab35 blocking the
+        # actual read_file calls. No-op outside the load-bearing
+        # scoping/composition phases or when no scope is set.
+        in_sandbox = self._filter_cross_milestone_paths(in_sandbox)
 
         truncated = len(in_sandbox) > MAX_LIST_ENTRIES
         if truncated:

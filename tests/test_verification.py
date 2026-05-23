@@ -27,16 +27,42 @@ from wonderland.verification import (
 # ---------- skipped-result semantics ----------
 
 
-def test_no_pyproject_returns_skipped(tmp_path: Path) -> None:
-    """A directory without pyproject.toml isn't a Python project —
-    the check should bow out gracefully so the substrate doesn't
-    start synthesizing tickets for projects that haven't set up
-    tests yet."""
+def test_no_python_signal_returns_skipped(tmp_path: Path) -> None:
+    """A directory with no Python signal at all (no config, no
+    tests/ dir) isn't a Python project — the check should bow out
+    gracefully so the substrate doesn't start synthesizing tickets
+    for projects that haven't set up tests yet."""
     result = check_pytest_collects(tmp_path)
     assert result.ok is False
     assert result.skipped is True
-    assert "pyproject.toml" in result.skip_reason
+    assert "no python project signal" in result.skip_reason.lower()
     assert result.findings == ()
+
+
+def test_tests_dir_without_config_does_not_silent_skip(
+    tmp_path: Path,
+) -> None:
+    """T-ab22 regression: mvp-demo-rerun-A shipped with tests/ +
+    requirements.txt and no pyproject.toml. Under the old detector
+    every verify run silently skipped, missing the dotenv missing-
+    dep + SQLAlchemy collation bugs. The new detector classifies
+    this as a real (if broken) Python project — either we run
+    pytest against it, or we surface "pytest not installed" as a
+    finding the operator can see."""
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text(
+        "def test_ok(): assert True\n"
+    )
+    (tmp_path / "requirements.txt").write_text("pytest\n")
+    result = check_pytest_collects(tmp_path, timeout=30.0)
+    # Either pytest runs and produces a real result, or it's
+    # missing and we surface a finding — but NEVER a silent skip.
+    if shutil.which("pytest") is None and shutil.which("uv") is None:
+        assert result.skipped is False
+        assert len(result.findings) == 1
+        assert "pytest not installed" in result.findings[0].title.lower()
+    else:
+        assert result.skipped is False, result.skip_reason
 
 
 def test_no_runner_on_path_returns_skipped(
@@ -51,6 +77,30 @@ def test_no_runner_on_path_returns_skipped(
     result = check_pytest_collects(tmp_path)
     assert result.skipped is True
     assert "pytest" in result.skip_reason
+
+
+def test_resolver_uses_requirements_txt_when_no_pyproject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T-ab22: tests_only projects with requirements.txt must get
+    those deps materialized into the ad-hoc venv before pytest runs,
+    otherwise we'd flag declared deps as missing (mvp-demo-rerun-A:
+    fastapi/sqlalchemy listed in requirements.txt but bare pytest
+    ran in Wonderland's venv that didn't have them)."""
+    from wonderland.verification import _resolve_pytest_command
+
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text("def test(): pass\n")
+    (tmp_path / "requirements.txt").write_text("fastapi\nsqlalchemy\n")
+
+    # Pretend uv is on PATH so we exercise the requirements branch.
+    monkeypatch.setattr(
+        shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None,
+    )
+    cmd = _resolve_pytest_command(tmp_path)
+    assert cmd is not None
+    assert "--with-requirements" in cmd
+    assert "requirements.txt" in cmd
 
 
 # ---------- pytest_collects integration ----------
@@ -153,6 +203,40 @@ def test_passes_fails_one_finding_per_failed_test(tmp_path: Path) -> None:
     # Locations carry the pytest test id format.
     locations = sorted(f.location for f in result.findings)
     assert all("::" in loc for loc in locations)
+
+
+@pytest.mark.skipif(
+    shutil.which("pytest") is None and shutil.which("uv") is None,
+    reason="needs a pytest runner on PATH",
+)
+def test_passes_finding_includes_traceback_in_request(
+    tmp_path: Path,
+) -> None:
+    """T-ab30: the per-finding request body should carry the test's
+    traceback section from pytest output, not just the one-line
+    FAILED summary. Without this, tweedles see ``assert ...`` in
+    the ticket and have to guess the cause — mvp-demo-rerun-A:
+    they latched onto an irrelevant ``dotenv missing`` from prior
+    chatter because the actual SQLite-threading traceback wasn't
+    in the ticket body."""
+    project = _write_minimal_project(
+        tmp_path,
+        test_body=(
+            "def test_distinctive():\n"
+            "    x = 41\n"
+            "    y = 1\n"
+            "    assert x + y == 99, 'unique-marker-for-traceback-test'\n"
+        ),
+    )
+    result = check_pytest_passes(project, timeout=60.0)
+    assert result.ok is False
+    assert len(result.findings) == 1
+    finding = result.findings[0]
+    # Traceback content should be in the request body — the assertion
+    # message + the failing line are distinctive enough to detect.
+    assert "unique-marker-for-traceback-test" in finding.request
+    # Request should also still contain the original directive.
+    assert "Run ``pytest" in finding.request
 
 
 @pytest.mark.skipif(

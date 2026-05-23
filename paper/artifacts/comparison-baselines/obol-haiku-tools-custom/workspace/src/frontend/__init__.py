@@ -1,0 +1,1 @@
+"""Finance TUI frontend package."""

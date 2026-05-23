@@ -845,6 +845,56 @@ async def test_team_window_continues_when_one_member_raises() -> None:
     assert passes[0].agent_id == "hatter"
 
 
+async def test_deliberation_crash_logs_warning(caplog) -> None:
+    """T-ab23: when an agent's deliberation raises, the substrate
+    treats it as PASS to keep the meeting alive — but it must log
+    the exception so silent crashes don't masquerade as deliberate
+    passes. Pre-fix: mvp-demo-rerun-A had 6 implement runs where
+    agents were crashing on verify-synthesized tickets and the
+    substrate emitted AgentPassEvent with $0 cost, looking
+    identical to legitimate 'agent had nothing to say' passes —
+    masking the real bug for days."""
+    import logging
+
+    class _RaisingAgent(FakePhaseAgent):
+        async def deliberate(self, context: Context) -> Utterance | None:
+            raise RuntimeError("synthetic deliberation crash for T-ab23")
+
+    runner = _make_runner(
+        cast=["hatter"],
+        scripts={},
+    )
+    runner.agents["hatter"] = _RaisingAgent("hatter")
+
+    meeting = _meeting(
+        roster=["hatter"],
+        phases=[
+            PhaseSpec(
+                name="clarify",
+                max_rotations=1,
+                team_groupings=[["hatter"]],
+            ),
+        ],
+    )
+    with caplog.at_level(logging.WARNING, logger="wonderland.meeting"):
+        events = await _drive(meeting, runner)
+
+    # The pass event still fires (meeting must stay alive)
+    passes = [e for e in events if isinstance(e, AgentPassEvent)]
+    assert len(passes) == 1
+    assert passes[0].agent_id == "hatter"
+
+    # AND the warning is logged with enough detail to debug
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) >= 1
+    msg = warnings[0].getMessage()
+    assert "agent deliberation crashed" in msg
+    assert "hatter" in msg
+    assert "clarify" in msg
+    assert "RuntimeError" in msg
+    assert "synthetic deliberation crash for T-ab23" in msg
+
+
 async def test_team_windows_recover_parallelism_via_gather() -> None:
     """Wall-clock smoke check: when two team members each take ~50ms
     to deliberate, the team window completes in ~50ms (parallel),

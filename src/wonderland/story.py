@@ -274,6 +274,49 @@ class StoryRegistry:
             payload if isinstance(payload, StoryPayload) else StoryPayload.model_validate(payload)
         )
 
+        # T-ab48: when an active milestone scope is set, the story's
+        # ``milestone`` field must match the active scope. Reject
+        # cross-milestone attribution at write time so agents can't
+        # silently produce stories for sibling milestones during a
+        # scoped design run. obol-260522-1 M6 surfaced: alice in M6
+        # design wrote 3 stories attributed to ``m5-kohl-debt-paydown-
+        # tracking`` (debt-tracking content correctly belongs to M5,
+        # but the active scope was M6 csv-import). The substrate
+        # accepted whatever milestone alice declared, polluting M5's
+        # story pool with stories produced during M6's design and
+        # leaving M6 with zero stories of its own. The fix is loud:
+        # the registry rejects the write; alice's retry loop surfaces
+        # the error; she re-emits with the active milestone.
+        #
+        # Skipped silently when no active scope is set (test fixtures,
+        # legacy back-fill paths). Stories without an explicit
+        # ``milestone`` field (legacy / pre-T-ab7) also pass through —
+        # operator can backfill the field later.
+        if validated.milestone:
+            try:
+                from wonderland.workflow import get_active_milestone_scope
+                scope = get_active_milestone_scope()
+            except Exception:  # noqa: BLE001
+                scope = None
+            if scope is not None:
+                declared = (
+                    validated.milestone.split(":", 1)[1]
+                    if ":" in validated.milestone
+                    else validated.milestone
+                )
+                if declared != scope.slug:
+                    raise ValueError(
+                        f"story milestone attribution mismatch: declared "
+                        f"``{declared}`` but active scope is "
+                        f"``{scope.slug}``. Stories written during a "
+                        f"milestone-scoped design run must belong to "
+                        f"that milestone — if this story's content "
+                        f"actually belongs to ``{declared}``, save it "
+                        f"for that milestone's design run; surface a "
+                        f"cross-milestone concern here rather than "
+                        f"writing a sibling milestone's story now."
+                    )
+
         slug = slugify(validated.title)
         # T-g2: identity-by-guid. Look up by guid first; fall back
         # to slug for back-compat with re-emissions that haven't

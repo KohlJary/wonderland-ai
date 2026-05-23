@@ -112,6 +112,33 @@ class VerificationResult:
 # ---------------------------------------------------------------------- #
 
 
+def _detect_python_project(project_root: Path) -> str:
+    """Classify the Python-project shape at ``project_root``. Returns:
+
+      - ``"configured"``: pyproject.toml, setup.py, or setup.cfg
+        present — a standard Python project layout the runner can
+        rely on for dependency resolution.
+      - ``"tests_only"``: no config file, but a ``tests/`` directory
+        exists with at least one ``.py`` file. The mvp-demo-rerun-A
+        pilot shipped exactly this shape (requirements.txt +
+        tests/ without pyproject.toml) and silently slipped past
+        every verify run because the previous detector required
+        pyproject. We treat this as a real (broken) Python project:
+        the operator clearly intends tests to run.
+      - ``"absent"``: no Python project signal at all. Verify still
+        skips for these — substrate doesn't synthesize tickets for
+        non-Python projects.
+    """
+    for marker in ("pyproject.toml", "setup.py", "setup.cfg"):
+        if (project_root / marker).is_file():
+            return "configured"
+    tests_dir = project_root / "tests"
+    if tests_dir.is_dir():
+        for _ in tests_dir.rglob("*.py"):
+            return "tests_only"
+    return "absent"
+
+
 def _resolve_pytest_command(project_root: Path) -> list[str] | None:
     """Pick the runner to use. Order of preference:
 
@@ -120,7 +147,17 @@ def _resolve_pytest_command(project_root: Path) -> list[str] | None:
          resolution + project-local venv automatically, which is
          what we want for Wonderland-generated projects (operator
          doesn't have to pre-sync deps).
-      2. ``pytest`` on PATH for projects that aren't uv-based.
+      2. ``uv run --with-requirements requirements.txt --with pytest pytest``
+         when no pyproject but a ``requirements.txt`` is present.
+         T-ab22: mvp-demo-rerun-A shipped this shape and the bare
+         ``pytest`` fallback ran in Wonderland's venv (no fastapi),
+         producing misleading missing-dep findings even though the
+         deps were declared. ``--with-requirements`` materializes
+         the project's deps into the ad-hoc venv first.
+      3. ``pytest`` on PATH for projects that aren't uv-based and
+         have no requirements file either (setup.py/setup.cfg only,
+         tests/ only). Last-ditch fallback; depends on the operator
+         having pre-installed deps into the current env.
 
     Returns the argv prefix to pass to subprocess (without the
     pytest flags), or None when neither is available.
@@ -134,7 +171,8 @@ def _resolve_pytest_command(project_root: Path) -> list[str] | None:
     from "wonderland operator pre-syncs" to "uv handles
     automatically." Aligned with the npm_build check below, which
     also auto-installs deps before invoking the build."""
-    if (project_root / "pyproject.toml").is_file() and shutil.which("uv"):
+    has_uv = shutil.which("uv") is not None
+    if (project_root / "pyproject.toml").is_file() and has_uv:
         # ``--with pytest`` ensures pytest is available even when the
         # project's pyproject.toml doesn't declare it as a dep
         # (skeletons that lean on uv's resolver shouldn't have to
@@ -142,6 +180,17 @@ def _resolve_pytest_command(project_root: Path) -> list[str] | None:
         # uv resolves the project deps + pytest into a single env,
         # auto-syncs as needed.
         return ["uv", "run", "--with", "pytest", "pytest"]
+    if (project_root / "requirements.txt").is_file() and has_uv:
+        # Tests-only project with requirements.txt. Tell uv to
+        # materialize those deps into the ad-hoc venv before running
+        # pytest, otherwise we'd run against an empty env and
+        # spuriously flag declared deps as missing.
+        return [
+            "uv", "run",
+            "--with-requirements", "requirements.txt",
+            "--with", "pytest",
+            "pytest",
+        ]
     if shutil.which("pytest"):
         return ["pytest"]
     return None
@@ -202,19 +251,49 @@ def check_pytest_collects(
     The check is bounded by ``timeout``; timeout itself counts as a
     finding (a code path that hangs at import time is a real bug
     the Tweedles need to address)."""
-    if not (project_root / "pyproject.toml").is_file():
+    shape = _detect_python_project(project_root)
+    if shape == "absent":
         return VerificationResult(
             check_name="pytest_collects",
             ok=False,
             skipped=True,
             skip_reason=(
-                "No pyproject.toml at project root — the implementation "
-                "phase didn't set up a Python project layout, or the "
-                "project is non-Python. Skipping pytest checks."
+                "No Python project signal at project root (no "
+                "pyproject.toml, setup.py, setup.cfg, or tests/ "
+                "directory). Skipping pytest checks."
             ),
         )
     cmd = _resolve_pytest_command(project_root)
     if cmd is None:
+        # When tests/ exists but pytest isn't installed, that's a
+        # broken Python setup, not "non-Python." Surface as a finding
+        # so the operator sees the gap instead of silently skipping —
+        # mvp-demo-rerun-A shipped with tests/ + requirements.txt
+        # and no config; the prior detector skipped silently, missing
+        # the dotenv missing-dep + SQLAlchemy collation bugs.
+        if shape == "tests_only":
+            return VerificationResult(
+                check_name="pytest_collects",
+                ok=False,
+                findings=(
+                    VerificationFinding(
+                        title="Python tests present but pytest not installed",
+                        concern=(
+                            "A ``tests/`` directory with Python files "
+                            "exists but neither ``uv`` nor ``pytest`` is "
+                            "on PATH. The substrate can't honestly "
+                            "verify Python correctness without a runner."
+                        ),
+                        request=(
+                            "Install pytest (``pip install pytest`` or "
+                            "``uv add --dev pytest``) so verification can "
+                            "exercise the test suite, or add a project "
+                            "config file (pyproject.toml) so uv can "
+                            "resolve dependencies automatically."
+                        ),
+                    ),
+                ),
+            )
         return VerificationResult(
             check_name="pytest_collects",
             ok=False,
@@ -310,27 +389,114 @@ _PYTEST_ERROR_LINE_RE = re.compile(
 )
 
 
+# T-ab30: section-header regex for pytest's traceback blocks.
+# Pytest formats the FAILURES / ERRORS sections with per-test
+# subheaders like:
+#   _____ TestClass.test_method _____
+#   _____ ERROR at setup of TestClass.test_method _____
+# We use this to extract the per-test traceback body for inclusion
+# in the finding's request body.
+_PYTEST_SECTION_HEADER_RE = re.compile(
+    r"^_{3,}\s+.+\s+_{3,}$|^={3,}\s+.+\s+={3,}$",
+    re.MULTILINE,
+)
+
+
+def _extract_test_traceback(output: str, test_id: str) -> str:
+    """Extract the per-test traceback section from pytest's output.
+
+    Given a test_id like ``tests/test_tags.py::TestX::test_y``,
+    finds the matching ``_____ TestX.test_y _____`` section in the
+    FAILURES / ERRORS portion of pytest output and returns the
+    body up to the next section header.
+
+    Returns empty string when no matching section is found
+    (e.g., pytest invocation didn't emit the verbose body, or the
+    test_id shape is unexpected). Caller falls back to summary-
+    only finding.
+
+    T-ab30 motivation: ``_parse_pytest_failures`` previously
+    captured only the one-line FAILED summary (``assert 500 ==
+    200``), dropping the actual traceback that explains the
+    failure. Tweedles received tickets with no debugging context
+    and either guessed wrong (mvp-demo-rerun-A: assumed dotenv
+    missing despite dep being present) or oscillated. Including
+    the traceback restores the signal that the no-parseable-
+    summary fallback path was inadvertently delivering already
+    (per ``project_tweedles_unstructured_traceback`` — Haiku can
+    diagnose from raw traceback).
+    """
+    # Convert "tests/foo.py::Class::method" → "Class.method".
+    # Top-level test (no class): "tests/foo.py::test_x" → "test_x".
+    parts = test_id.split("::")
+    if len(parts) < 2:
+        return ""
+    section_name = ".".join(parts[1:])
+
+    # Header may also appear in ERROR sections with the prefix
+    # "ERROR at setup of " or "ERROR at teardown of ".
+    header_re = re.compile(
+        rf"^_{{3,}}\s+(?:ERROR at (?:setup|teardown) of\s+)?"
+        rf"{re.escape(section_name)}\s+_{{3,}}$",
+        re.MULTILINE,
+    )
+    m = header_re.search(output)
+    if m is None:
+        return ""
+
+    start = m.end()
+    rest = output[start:]
+    next_section = _PYTEST_SECTION_HEADER_RE.search(rest)
+    if next_section:
+        body = rest[: next_section.start()]
+    else:
+        body = rest
+    return body.strip()
+
+
 def _parse_pytest_failures(output: str) -> list[VerificationFinding]:
     """Pull FAILED + ERROR lines from pytest's summary section into
     individual findings. Each failure becomes one finding with the
-    test id as the title and the summary line as the concern."""
+    test id as the title and the summary line as the concern. The
+    test's traceback body (when pytest emits one) is appended to
+    the request field so the synthesized ticket carries enough
+    context for the agent to diagnose without a local pytest re-run.
+    """
     findings: list[VerificationFinding] = []
     for m in _PYTEST_FAILED_LINE_RE.finditer(output):
         test_id, summary = m.group(1), m.group(2).strip()
+        request_lines = [
+            f"Run ``pytest {test_id}`` locally and address the "
+            f"failure. The test names the behavior the code is "
+            f"supposed to deliver.",
+        ]
+        traceback_body = _extract_test_traceback(output, test_id)
+        if traceback_body:
+            request_lines.append(
+                "\nThe pytest traceback for this test:\n\n"
+                f"```\n{_truncate_for_finding(traceback_body)}\n```"
+            )
         findings.append(
             VerificationFinding(
                 title=f"Test failed: {test_id}",
                 location=test_id,
                 concern=summary,
-                request=(
-                    f"Run ``pytest {test_id}`` locally and address the "
-                    f"failure. The test names the behavior the code is "
-                    f"supposed to deliver."
-                ),
+                request="".join(request_lines),
             )
         )
     for m in _PYTEST_ERROR_LINE_RE.finditer(output):
         test_id, summary = m.group(1), m.group(2).strip()
+        request_lines = [
+            f"Run ``pytest {test_id}`` locally and address the "
+            f"setup error. Fixture-level failures usually "
+            f"point at conftest.py or the test module's imports.",
+        ]
+        traceback_body = _extract_test_traceback(output, test_id)
+        if traceback_body:
+            request_lines.append(
+                "\nThe pytest traceback for this errored test:\n\n"
+                f"```\n{_truncate_for_finding(traceback_body)}\n```"
+            )
         findings.append(
             VerificationFinding(
                 title=f"Test errored: {test_id}",
@@ -340,11 +506,7 @@ def _parse_pytest_failures(output: str) -> list[VerificationFinding]:
                     f"Setup/fixture/import failure that prevents the "
                     f"assertion from being evaluated."
                 ),
-                request=(
-                    f"Run ``pytest {test_id}`` locally and address the "
-                    f"setup error. Fixture-level failures usually "
-                    f"point at conftest.py or the test module's imports."
-                ),
+                request="".join(request_lines),
             )
         )
     return findings
@@ -363,15 +525,23 @@ def check_pytest_passes(
       - ok=False, skipped=True when test infrastructure is absent.
       - ok=False, findings=[...] one per failed/errored test.
     """
-    if not (project_root / "pyproject.toml").is_file():
+    shape = _detect_python_project(project_root)
+    if shape == "absent":
         return VerificationResult(
             check_name="pytest_passes",
             ok=False,
             skipped=True,
-            skip_reason="No pyproject.toml at project root.",
+            skip_reason=(
+                "No Python project signal at project root (no "
+                "pyproject.toml, setup.py, setup.cfg, or tests/ "
+                "directory)."
+            ),
         )
     cmd = _resolve_pytest_command(project_root)
     if cmd is None:
+        # Stay silent here when tests_only — pytest_collects already
+        # surfaced the missing-runner finding; doubling up would just
+        # noise the same actionable item.
         return VerificationResult(
             check_name="pytest_passes",
             ok=False,

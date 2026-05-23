@@ -32,6 +32,7 @@ import re
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -200,6 +201,37 @@ class PhaseSpec(BaseModel):
             "silently to no-op (operator notices via absent nudges)."
         ),
     )
+    memory_scope: str = Field(
+        default="all",
+        description=(
+            "T-ab25a: what slice of episodic memory the agents in "
+            "this phase see when ``compose_context`` builds the "
+            "thread transcript. Values:\n"
+            "  - ``all`` (default): every utterance in the thread, "
+            "including seeds re-published from prior threads. "
+            "Original behavior; right for phases that need full "
+            "context (tea-party negotiating on past contracts, "
+            "review examining the just-completed implementation).\n"
+            "  - ``meeting_only``: non-seed utterances only — just "
+            "what happened in THIS meeting. Right for pure-"
+            "execution phases (implement: tweedles need the "
+            "ticket + contracts + recent rotations, not the "
+            "accumulated chatter from N prior iteration attempts). "
+            "mvp-demo-rerun-A surfaced this: 2165 seed utterances "
+            "vs 4 non-seeds in one implement thread → context "
+            "overflow → deliberation crashes at 203K tokens."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_memory_scope(self) -> "PhaseSpec":
+        valid = {"all", "meeting_only"}
+        if self.memory_scope not in valid:
+            raise ValueError(
+                f"phase {self.name!r}: memory_scope must be one of "
+                f"{sorted(valid)}, got {self.memory_scope!r}"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_team_groupings_no_overlap(self) -> "PhaseSpec":
@@ -233,6 +265,7 @@ class PhaseSpec(BaseModel):
             exit_condition_artifact=self.exit_condition_artifact,
             team_groupings=tuple(tuple(team) for team in self.team_groupings),
             coverage_check=self.coverage_check,
+            memory_scope=self.memory_scope,
         )
 
 
@@ -1632,6 +1665,70 @@ def resolve_seeds(
                     )
             kinded = scoped
 
+        # T-ab51: milestone-scope filter for story/feature seeds.
+        # T-ab9 only handled ``requirement`` (via scope.consumes); story
+        # and feature artifacts carry their own ``milestone`` field
+        # (T-ab5/T-ab7) and need the same gate. Without this, M6
+        # scoping for obol-260522-1 seeded 8 unbound stories from
+        # M2/M4/M5 (via ``[story], consumed_by: feature``) into alice's
+        # context — combined with the SCOPE LOCK directive forbidding
+        # cross-milestone work, she'd read 8 sibling-milestone stories
+        # with nothing to do with them and silence. 57K-token first
+        # attempt → $0.07/call burning context on stories that
+        # weren't even M6's to design.
+        #
+        # Mirrors T-ab34's existing-artifacts framing logic: read the
+        # artifact's ``milestone`` payload, strip optional ``<guid>:``
+        # prefix, compare to scope.slug. Artifacts with no milestone
+        # field stay visible (legacy back-compat — operator can
+        # backfill).
+        _MILESTONE_SCOPED_KINDS = ("story", "feature")
+        if scope is not None and any(
+            k in binding.kinds for k in _MILESTONE_SCOPED_KINDS
+        ):
+            def _artifact_milestone_in_scope(a) -> bool:
+                if a.kind not in _MILESTONE_SCOPED_KINDS:
+                    return True
+                ms = a.payload.get("milestone")
+                if not ms:
+                    return True  # legacy artifact without milestone field
+                ms_slug = ms.split(":", 1)[1] if ":" in ms else ms
+                return ms_slug == scope.slug
+
+            ms_scoped: list[Utterance] = []
+            for u in kinded:
+                target_artifacts = [
+                    a
+                    for a in u.content.artifacts
+                    if a.kind in _MILESTONE_SCOPED_KINDS
+                ]
+                if not target_artifacts:
+                    ms_scoped.append(u)
+                    continue
+                matching = [
+                    a for a in target_artifacts
+                    if _artifact_milestone_in_scope(a)
+                ]
+                if not matching:
+                    continue
+                kept = [
+                    a for a in u.content.artifacts
+                    if _artifact_milestone_in_scope(a)
+                ]
+                if len(kept) == len(u.content.artifacts):
+                    ms_scoped.append(u)
+                else:
+                    ms_scoped.append(
+                        u.model_copy(
+                            update={
+                                "content": u.content.model_copy(
+                                    update={"artifacts": kept}
+                                )
+                            }
+                        )
+                    )
+            kinded = ms_scoped
+
         # Consumption filter (binding.consumed_by): drop utterances
         # whose slug already appears in some downstream artifact's
         # ``Sources:`` line. Used to scope M2 composition to
@@ -2034,13 +2131,46 @@ def _collect_per_item_items(
             features_with_queued_tickets: set[str] = set()
             if get_ticket_state is not None and TicketState is not None:
                 ticket_to_feature = _ticket_to_feature_map(project_root)
+                # T-ab37: stale IN_PROGRESS tickets from prior
+                # interrupted runs were leaking features into new
+                # runs' iteration (obol-260522: M0 implement pulled
+                # in an M2 feature because the M2 feature had an
+                # IN_PROGRESS ticket from a prior crashed run, no
+                # UI to revert IN_PROGRESS → DESIGNED). QUEUED stays
+                # time-independent (operator intent persists across
+                # runs); IN_PROGRESS only counts when the latest
+                # transition into IN_PROGRESS happened within the
+                # current run's window.
+                from wonderland.telemetry import (
+                    get_current_run_started_at,
+                )
+                run_started_at = get_current_run_started_at()
                 for ticket_slug, feature_slug in ticket_to_feature.items():
                     tstate = get_ticket_state(project_root, ticket_slug)
-                    if tstate in (
-                        TicketState.QUEUED,
-                        TicketState.IN_PROGRESS,
-                    ):
+                    if tstate == TicketState.QUEUED:
                         features_with_queued_tickets.add(feature_slug)
+                    elif tstate == TicketState.IN_PROGRESS:
+                        if _ticket_in_progress_is_in_run_window(
+                            project_root, ticket_slug, run_started_at,
+                        ):
+                            features_with_queued_tickets.add(feature_slug)
+            # T-ab41: build the set of features that have ANY ticket on
+            # disk (regardless of state). Features in this set but NOT
+            # in features_with_queued_tickets have only-terminal tickets
+            # — DONE / ABORTED / stale IN_PROGRESS — and shouldn't be
+            # admitted into the implement lane because there's no actionable
+            # work for the team to do. obol-260522-1 surfaced this: a
+            # feature with 13 all-DONE tickets burned $0.58 on an M8
+            # review pass that had nothing to review.
+            #
+            # ``ticket_to_feature`` was set above inside the
+            # ``get_ticket_state is not None`` branch — re-derive here
+            # so the set is always defined even when the import failed.
+            features_with_any_tickets: set[str] = set()
+            if get_ticket_state is not None and TicketState is not None:
+                features_with_any_tickets = set(
+                    _ticket_to_feature_map(project_root).values()
+                )
             for item in items:
                 slug = item["slug"]
                 if slug in features_with_queued_tickets:
@@ -2048,6 +2178,19 @@ def _collect_per_item_items(
                     continue
                 state = get_state(project_root, slug)
                 if state is not None and state in allowed:
+                    # T-ab41: drop features whose tickets are all
+                    # terminal. Feature-state alone (e.g. IN_PROGRESS
+                    # carried over from a prior cycle) isn't enough
+                    # to admit; we need actionable tickets. Features
+                    # with NO tickets at all still pass — that case is
+                    # design-phase / pre-decomposition territory which
+                    # the existing iterate_only_with_tickets filter
+                    # (T-ab16) handles when opted in.
+                    if (
+                        slug in features_with_any_tickets
+                        and slug not in features_with_queued_tickets
+                    ):
+                        continue
                     filtered.append(item)
         else:
             for item in items:
@@ -2357,7 +2500,15 @@ async def _run_lane(
         # (e.g. once per feature in tdd-implement) so each lane gets
         # its own build_check pass with natural per-item attribution.
         if meeting.kind == "verify":
-            async for event in _run_verify_meeting(meeting, runner):
+            # T-ab42: plumb the lane's outer item slug (feature in
+            # tdd-implement's pipelined shape) so verify-spawned
+            # tickets attribute to the feature whose iteration
+            # triggered the verify pass, not whichever feature
+            # happens to have a file matching the failing test
+            # location.
+            async for event in _run_verify_meeting(
+                meeting, runner, lane_outer_slug=outer_slug,
+            ):
                 yield event
             i += 1
             continue
@@ -2750,6 +2901,21 @@ async def run_workflow(
     at a time. ``None`` preserves all existing workflows' behavior
     unchanged.
     """
+    # T-ab53: derive implicit milestone for tdd-implement runs that
+    # weren't launched with an explicit ``--milestone``. The TUI's
+    # "run implement" button doesn't pass one (no UX for it), so
+    # every implement run was landing on PROJECT_BRANCH and the
+    # branch mental model broke down — alice's project branch in
+    # obol-260522-1 accumulated 6.8 MB of caterpillar reviews +
+    # tweedles contracts from M3/M4/M5 implement work, all
+    # unscoped. Common case: operator queues features from one
+    # milestone at a time, so the implicit derivation finds a
+    # single milestone and scopes correctly. Multi-milestone
+    # implement runs fall back to None (preserves prior behavior
+    # rather than racing the global branch on parallel lanes).
+    if milestone_slug is None and workflow.name == "tdd-implement":
+        milestone_slug = _derive_implicit_milestone_for_implement(runner)
+
     # Set milestone scope at the top + clear in finally. The scope is
     # module-level so resolve_seeds (which has many call sites) can
     # read it without parameter threading. ``directive`` gets
@@ -2863,6 +3029,80 @@ def _maybe_fire_cross_feature_consolidation(
         sys.stderr.write(
             f"[cross-feature-consolidation] error: {exc}\n"
         )
+
+
+def _derive_implicit_milestone_for_implement(
+    runner: "Runner",
+) -> str | None:
+    """T-ab53: scan QUEUED + IN_PROGRESS features for their milestone
+    attribution; return the common slug iff all features share one
+    (operator's typical workflow — queue features from one milestone
+    at a time, hit run-implement).
+
+    Returns ``None`` when:
+      - no project_root on runner
+      - no QUEUED/IN_PROGRESS features (nothing to scope to)
+      - features span >1 milestone (would race the global branch
+        on parallel pipeline lanes — fall back to project_branch
+        preserves prior behavior)
+      - any in-scope feature has no milestone field (legacy /
+        pre-T-ab5; can't safely infer the common case)
+
+    Reads the file directly for the ``**Milestone:**`` field rather
+    than going through Pydantic so a single corrupt feature doesn't
+    abort the whole launch.
+    """
+    import re
+
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return None
+    try:
+        from wonderland.feature import FeatureRegistry
+        from wonderland.feature_lifecycle import (
+            FeatureState,
+            list_features_in_state,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+    queued = set(list_features_in_state(project_root, FeatureState.QUEUED))
+    queued.update(
+        list_features_in_state(project_root, FeatureState.IN_PROGRESS)
+    )
+    if not queued:
+        return None
+
+    reg = FeatureRegistry(project_root)
+    milestone_re = re.compile(
+        r"^\*\*Milestone:\*\*\s*(.+?)$", re.MULTILINE
+    )
+    milestones: set[str] = set()
+    for slug in queued:
+        record = reg.find_by_slug(slug)
+        if record is None:
+            continue
+        try:
+            text = record.read()
+        except OSError:
+            return None
+        m = milestone_re.search(text)
+        if not m:
+            # Legacy feature without milestone field — can't infer
+            return None
+        value = m.group(1).strip()
+        if not value or value == "—":
+            return None
+        # Strip optional ``<guid>:`` prefix
+        ms_slug = value.split(":", 1)[1] if ":" in value else value
+        milestones.add(ms_slug)
+        if len(milestones) > 1:
+            # Features span multiple milestones — bail
+            return None
+
+    if len(milestones) != 1:
+        return None
+    return next(iter(milestones))
 
 
 def _derive_branch_id(
@@ -3057,7 +3297,22 @@ def _classify_milestone_shape(
     (no project_root, no requirements dir, parse errors). Mixed is
     the safe fallback — keeps the existing default Alice-led
     behavior for runs where classification fails.
+
+    T-ab50: the explicit ``Kind:`` field on the milestone (read by
+    T-ab6's roster filter to narrow scoping cast) takes precedence
+    over the consumes-based heuristic. The two were disagreeing on
+    obol-260522-1 M6: kind=capability → cast=[alice] (per T-ab6),
+    but consumes had infra-flavored requirements → heuristic said
+    foundation → ``_format_m1_lead_block`` emitted "M1 LEAD:
+    Caterpillar" while alice was the only one in the room. Alice
+    read the framing, decided she wasn't the lead, passed; phase
+    exited silent. Same source of truth fixes the contradiction.
     """
+    # T-ab50: explicit kind wins. capability/foundation map straight
+    # through; "mixed" is the back-compat value for milestones whose
+    # kind field is unset/unknown (heuristic still runs below).
+    if scope.kind in ("capability", "foundation"):
+        return scope.kind
     if runner is None:
         return "mixed"
     project_root = getattr(runner, "project_root", None)
@@ -3185,6 +3440,24 @@ def _format_existing_stories_block(runner: "Runner | None") -> str:
     filename_re = re.compile(
         r"story-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
     )
+    # T-ab34: when an active milestone scope is set, filter to
+    # stories whose explicit ``**Milestone:**`` field matches.
+    # obol-260522 M4: Alice/Rabbit kept asking about M1-M4 cross-
+    # milestone composition because this block listed every story
+    # in the project. Anti-duplicate framing has to stay scoped to
+    # what this run can actually duplicate — sibling milestones'
+    # stories are not in scope for THIS run, so listing them
+    # invites scope creep instead of preventing duplication.
+    active_slug: str | None = None
+    try:
+        scope = get_active_milestone_scope()
+        if scope is not None:
+            active_slug = scope.slug
+    except Exception:  # noqa: BLE001
+        active_slug = None
+    milestone_re = re.compile(
+        r"^\*\*Milestone:\*\*\s*(.+?)$", re.MULTILINE
+    )
     for path in sorted(story_dir.glob("story-*.md")):
         m = filename_re.match(path.name)
         if not m:
@@ -3194,6 +3467,21 @@ def _format_existing_stories_block(runner: "Runner | None") -> str:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
+        # T-ab34: apply active-milestone filter when scope is set.
+        # Stories without a milestone field stay visible (legacy
+        # back-compat, operator can backfill).
+        if active_slug is not None:
+            ms_m = milestone_re.search(text)
+            if ms_m:
+                ms_value = ms_m.group(1).strip()
+                # Strip guid prefix when present: ``<guid>:<slug>``
+                ms_slug = (
+                    ms_value.split(":", 1)[1]
+                    if ":" in ms_value
+                    else ms_value
+                )
+                if ms_slug != active_slug:
+                    continue
         title_m = re.match(r"##\s*Story\s+\d+:\s*(.+?)$", text, re.MULTILINE)
         persona_m = re.search(
             r"^\*\*Persona:\*\*\s*(.+?)$", text, re.MULTILINE
@@ -3207,8 +3495,13 @@ def _format_existing_stories_block(runner: "Runner | None") -> str:
     if not rows:
         return ""
     bullets = "\n".join(rows)
+    scope_phrase = (
+        f" for milestone ``{active_slug}``"
+        if active_slug is not None
+        else " for this project"
+    )
     return (
-        f"**Stories already on disk for this project** (re-emit the "
+        f"**Stories already on disk{scope_phrase}** (re-emit the "
         f"same slug to amend, ``retract`` + replace for real "
         f"refinements, leave alone when the concept is already "
         f"captured — DO NOT ship a new story whose persona + need "
@@ -3247,6 +3540,24 @@ def _format_existing_tickets_block(runner: "Runner | None") -> str:
     filename_re = re.compile(
         r"ticket-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
     )
+    # T-ab34: when an active milestone scope is set, filter tickets
+    # to those whose primary feature belongs to the active milestone.
+    # Same rationale as the stories block: scope creep was bleeding
+    # in because sibling-milestone tickets were visible.
+    active_slug: str | None = None
+    primary_feature_milestone: dict[str, str] = {}
+    try:
+        scope = get_active_milestone_scope()
+        if scope is not None:
+            active_slug = scope.slug
+            project_root_local = getattr(runner, "project_root", None)
+            if project_root_local is not None:
+                primary_feature_milestone = (
+                    _compute_primary_milestone_per_feature(project_root_local)
+                )
+    except Exception:  # noqa: BLE001
+        active_slug = None
+    sources_re = re.compile(r"^\*\*Sources:\*\*\s*(.+?)$", re.MULTILINE)
     for path in sorted(ticket_dir.glob("ticket-*.md")):
         m = filename_re.match(path.name)
         if not m:
@@ -3256,14 +3567,36 @@ def _format_existing_tickets_block(runner: "Runner | None") -> str:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
+        # T-ab34: filter by parent feature's primary milestone when
+        # scope is active. T-ab33 enforces feature-first ordering in
+        # sources, so sources[0] is the parent feature slug.
+        if active_slug is not None:
+            sm = sources_re.search(text)
+            if sm:
+                first_source = sm.group(1).split(",")[0].strip()
+                # Strip guid prefix if present
+                if ":" in first_source:
+                    first_source = first_source.split(":", 1)[1]
+                feature_ms = primary_feature_milestone.get(first_source)
+                # Drop tickets whose parent feature attributes to
+                # another milestone. Unattributable tickets (no
+                # primary mapping) stay in — defensive, similar
+                # to seeds_fallback's feature-loader.
+                if feature_ms is not None and feature_ms != active_slug:
+                    continue
         title_m = re.match(r"##\s*Ticket\s+\d+:\s*(.+?)$", text, re.MULTILINE)
         title = title_m.group(1).strip() if title_m else "(untitled)"
         rows.append(f"  - ``{slug}`` — {title}")
     if not rows:
         return ""
     bullets = "\n".join(rows)
+    scope_phrase = (
+        f" for milestone ``{active_slug}``"
+        if active_slug is not None
+        else " for this project"
+    )
     return (
-        f"**Tickets already on disk for this project** (re-emit the "
+        f"**Tickets already on disk{scope_phrase}** (re-emit the "
         f"same slug to update, ``delete_file`` to prune duplicates, "
         f"leave alone when the work is already captured — DO NOT "
         f"ship a new ticket whose description duplicates an existing "
@@ -3477,13 +3810,20 @@ def _synthesize_milestone_directive(
         f"**Goal:** {scope.goal}\n\n"
         f"**Done when:**\n{done_lines}\n"
         f"{siblings_block}\n"
-        f"This run's scope is ONLY this milestone. Stories, "
-        f"features, and tickets you ship should serve these "
-        f"done-criteria and no others. Past milestones already "
-        f"shipped — don't redesign their work. Future milestones "
-        f"have their own scope — don't preempt them. Drift into "
-        f"adjacent milestone territory is scope creep; surface it "
-        f"as a concern rather than absorbing it.\n"
+        f"**SCOPE LOCK.** This run designs `{scope.slug}` only. "
+        f"Other milestones exist on disk; they are NOT your concern. "
+        f"If you find yourself thinking about M3↔M4 sequencing, "
+        f"M2 navigation, M7 Plaid auth, or any cross-milestone "
+        f"coordination — that's drift. Surface it ONCE as a single-"
+        f"sentence `concern` and move on. Do NOT compose features "
+        f"for sibling milestones; do NOT renegotiate other "
+        f"milestones' boundaries; do NOT ask 'should we hold this "
+        f"design until M3 ships X' — answer is always no, design "
+        f"this milestone's stories/features standalone and let the "
+        f"cross-milestone coupling get resolved by the per-feature "
+        f"iteration filters downstream (T-ab17/19/20). The "
+        f"milestone planner already sequenced the work; your job "
+        f"is to design this slice well, not to re-plan the project.\n"
     )
 
 
@@ -4902,6 +5242,47 @@ def _find_accept_review(
     return None
 
 
+def _ticket_in_progress_is_in_run_window(
+    project_root: Path,
+    ticket_slug: str,
+    run_started_at: datetime | None,
+) -> bool:
+    """T-ab37 helper: was this ticket's latest transition (which we
+    already know put it in IN_PROGRESS) made within the current
+    run's window?
+
+    The feature-level admission gate (``_filter_items_by_state``)
+    uses this to distinguish a freshly-touched IN_PROGRESS ticket
+    (operator's current run intent) from a stale IN_PROGRESS ticket
+    left over from a prior crashed or interrupted run. Without this
+    distinction, the gate pulls features from prior milestones'
+    work into the current run's iteration whenever a ticket was
+    left mid-flight — observed on obol-260522 where an M2 feature
+    rode along on an M0 implement pass via a stuck IN_PROGRESS
+    ticket.
+
+    Returns True when no run_started_at is known (defensive default:
+    preserve pre-T-ab37 behavior for non-Runner callers like scripts
+    and unit tests). Returns True when the ticket has no transition
+    history (shouldn't happen if the ticket reached IN_PROGRESS, but
+    we don't want to silently exclude on a data-shape edge case).
+    Returns True when the latest transition's timestamp is at or
+    after run_started_at. Otherwise False.
+    """
+    if run_started_at is None:
+        return True
+    try:
+        from wonderland.ticket_lifecycle import (
+            transitions_for as ticket_transitions_for,
+        )
+    except Exception:  # noqa: BLE001
+        return True
+    history = ticket_transitions_for(project_root, ticket_slug)
+    if not history:
+        return True
+    return history[-1].at >= run_started_at
+
+
 # Notes-pattern marker that the synthesize-followups path uses
 # when queueing tickets for the NEXT imp run. Tickets matching
 # this pattern are NOT meant for the current iteration's
@@ -5182,6 +5563,17 @@ def _synthesize_followup_ticket_from_finding(
     )
 
 
+# T-ab28: process-local memory of verify ticket slugs synthesized
+# during this run. Used by _route_blocking_review(fresh_per_cycle=True)
+# to dedup duplicate findings across multiple verify firings within
+# the same run (verify fires per feature lane in pipelined mode, so a
+# single run can see the same test failure from multiple lanes).
+# Module-level state == per-process == per-run because each wonderland
+# run is a fresh process. Could be refactored to a contextvar at run
+# entry if processes ever become long-lived.
+_THIS_PROCESS_VERIFY_SLUGS: set[str] = set()
+
+
 def _route_blocking_review(
     project_root: Path,
     *,
@@ -5190,6 +5582,7 @@ def _route_blocking_review(
     actor: str,
     meeting_id: str,
     auto_complete_in_flight_tickets: bool = True,
+    fresh_per_cycle: bool = False,
 ) -> None:
     """Request-changes path:
 
@@ -5209,6 +5602,15 @@ def _route_blocking_review(
       3. Lower-severity findings (suggestion / note) stay
          informational in the review artifact — no new tickets,
          no operator burden.
+
+    T-ab28 ``fresh_per_cycle``: when True, the synthesis loop
+    suffixes the title with ``(cycle N)`` if a ticket with the
+    derived slug already exists. Used by the verify (build_check)
+    path where each cycle's failures should produce visible new
+    tickets, not silently overwrite the prior cycle's
+    DONE/ABORTED ticket of the same slug. Caterpillar M8 reviews
+    keep the default False (re-emission semantics: same slug,
+    same ticket — corrects rather than accumulates).
 
     The feature itself doesn't need an explicit transition: with
     derived feature state, the rollup picks up the new QUEUED
@@ -5358,6 +5760,47 @@ def _route_blocking_review(
         )
         if payload is None:
             continue
+        # T-ab28: when fresh_per_cycle is set (verify path), distinguish
+        # between "same slug already on disk from a PRIOR run" (cycle
+        # bump → make a fresh visible ticket) and "same slug already
+        # synthesized earlier in THIS run" (intra-run dedup → skip).
+        # The verify meeting fires per feature lane in pipelined
+        # mode, so a single multi-feature run can see the same test
+        # failure from each lane's verify; we want one ticket per
+        # finding per run, not one per lane.
+        #
+        # _THIS_PROCESS_VERIFY_SLUGS is module-level state effectively
+        # scoped to "this run" because each wonderland run is a fresh
+        # process. If runs ever share a process this would leak; the
+        # primitive could be refactored to use a contextvar set at run
+        # entry. For now: process == run.
+        if fresh_per_cycle:
+            from wonderland.adr import slugify
+            base_title = payload.title
+            base_slug = slugify(base_title)
+
+            if base_slug in _THIS_PROCESS_VERIFY_SLUGS:
+                # Already synthesized this finding in THIS run from
+                # another feature lane's verify — drop the duplicate.
+                continue
+
+            if registry.find_by_slug(base_slug) is not None:
+                # Slug exists on disk from a PRIOR run — bump cycle
+                # suffix until both disk + this-run state are clear.
+                n = 2
+                while True:
+                    candidate = f"{base_title} (cycle {n})"
+                    candidate_slug = slugify(candidate)
+                    if (
+                        registry.find_by_slug(candidate_slug) is None
+                        and candidate_slug not in _THIS_PROCESS_VERIFY_SLUGS
+                    ):
+                        payload = payload.model_copy(update={"title": candidate})
+                        base_slug = candidate_slug
+                        break
+                    n += 1
+
+            _THIS_PROCESS_VERIFY_SLUGS.add(base_slug)
         try:
             record = registry.write(payload)
         except Exception:  # noqa: BLE001 — registry write
@@ -5478,11 +5921,134 @@ def _bump_feature_to_queued_if_needed(
 # ---------------------------------------------------------------------- #
 
 
+def _pick_feature_for_finding(
+    project_root: Path,
+    finding: dict,
+    *,
+    fallback_slug: str | None,
+) -> str | None:
+    """T-ab26: per-finding feature attribution.
+
+    Map a verify finding to the feature whose implementation
+    probably produced the failing code, by following:
+      finding.location → file path
+      → ImplementationRecord.files_touched containing that path
+      → ImplementationRecord.ticket_reference
+      → Ticket.sources[0] (the parent feature)
+
+    Returns ``fallback_slug`` when no implementation matches the
+    file path (likely a test file that no feature explicitly
+    declares ownership of, or a finding without a parseable
+    location). Without this, the substrate-level fallback
+    (``_pick_feature_for_build_check_attribution``) routes the
+    finding to "whichever feature was most recently active" —
+    correct for build-check failures that ARE about that feature's
+    code, wrong for cross-feature failures like the conftest /
+    test-infrastructure bugs surfaced by mvp-demo-rerun-A.
+
+    Implementation note: ``files_touched`` entries look like
+    ``"src/foo.py: brief description"`` per the Tweedle protocol,
+    so we split on the first colon to extract the path. The
+    finding's location field looks like ``"src/foo.py:42"``
+    (path:line), same split rule.
+    """
+    location = finding.get("location", "") or ""
+    if not location.strip():
+        return fallback_slug
+
+    # Extract the file path: "src/foo.py:42" → "src/foo.py"
+    file_path = location.split(":", 1)[0].strip()
+    if not file_path:
+        return fallback_slug
+
+    from wonderland.implementation import ImplementationRegistry
+    from wonderland.ticket import TicketRegistry
+
+    impl_reg = ImplementationRegistry(project_root)
+    ticket_reg = TicketRegistry(project_root)
+
+    # files_touched isn't on the ImplementationRecord directly (only
+    # the payload), so we read each implementation's markdown body
+    # and parse the "**Files:**" section. Format per the
+    # ``render_implementation`` helper: a list block of
+    # ``- path: description`` lines under ``**Files:**``.
+    for impl_record in impl_reg.list_implementations():
+        try:
+            body = impl_record.read()
+        except OSError:
+            continue
+        if "**Files:**" not in body:
+            continue
+        # Walk the lines starting after the **Files:** header until
+        # a blank line or next section.
+        in_files = False
+        files_entries: list[str] = []
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped == "**Files:**":
+                in_files = True
+                continue
+            if not in_files:
+                continue
+            if not stripped:
+                break  # end of section
+            if stripped.startswith("**") and stripped.endswith("**"):
+                break  # next header
+            if stripped.startswith("- "):
+                files_entries.append(stripped[2:])
+            else:
+                files_entries.append(stripped)
+
+        for entry in files_entries:
+            entry_path = entry.split(":", 1)[0].strip()
+            if not entry_path:
+                continue
+            # Match exact or suffix (one side might be relative,
+            # the other absolute, depending on Tweedle convention)
+            if (
+                entry_path == file_path
+                or file_path.endswith("/" + entry_path)
+                or entry_path.endswith("/" + file_path)
+            ):
+                ticket_ref = impl_record.ticket_reference.strip()
+                if not ticket_ref:
+                    continue
+                ticket = (
+                    ticket_reg.find_by_slug(ticket_ref)
+                    or ticket_reg.find_by_guid(ticket_ref)
+                )
+                if ticket is None:
+                    continue
+                # TicketRecord doesn't carry the payload; parse the
+                # **Sources:** line from the markdown body.
+                try:
+                    ticket_body = ticket.read()
+                except OSError:
+                    continue
+                for line in ticket_body.splitlines():
+                    s = line.strip()
+                    if not s.startswith("**Sources:**"):
+                        continue
+                    after = s.split("**Sources:**", 1)[1].strip()
+                    if not after:
+                        break
+                    first_source = after.split(",")[0].strip()
+                    if first_source:
+                        return first_source
+                    break
+
+    return fallback_slug
+
+
 def _pick_feature_for_build_check_attribution(
     project_root: Path,
+    *,
+    run_started_at: datetime | None = None,
 ) -> str | None:
     """Pick which feature should receive build_check follow-up
-    tickets when the workflow's verification check fails.
+    tickets when the workflow's verification check fails. **Used
+    as a fallback** when per-finding attribution can't locate
+    a more specific owner (see ``_pick_feature_for_finding``).
 
     Strategy: prefer features in the "implementation just finished"
     states (READY_FOR_REVIEW or IN_PROGRESS) since those are the
@@ -5492,22 +6058,51 @@ def _pick_feature_for_build_check_attribution(
     a non-tdd-implement workflow misconfigured to run the check).
 
     Within a state bucket, picks the highest-numbered feature (most
-    recent on disk). Tickets land on one feature; the operator can
-    move them to other features manually if the failure spans
-    multiple. The "one place to look" tradeoff is intentional for
-    V1 — V2 would parse pytest output for file paths and per-
-    feature attribute by source mapping.
+    recent on disk). T-ab26 made this the fallback; tickets now
+    attribute per-finding when the finding cites a file an
+    implementation touched.
+
+    T-ab36: when ``run_started_at`` is supplied (or available via
+    the ``_current_run_started_at`` contextvar), restrict each
+    preferred-state bucket to features whose **latest state
+    transition** occurred at or after ``run_started_at``. This
+    excludes features the operator manually moved into
+    READY_FOR_REVIEW earlier as a "park this feature" workaround
+    (no UI to revert IN_PROGRESS → DESIGNED), which would otherwise
+    win the fallback and steal verify tickets from the actually-
+    being-implemented feature. If the time filter empties a bucket,
+    fall through to the next preferred state — never block routing
+    on the filter alone.
     """
     from wonderland.feature import FeatureRegistry
     from wonderland.feature_lifecycle import (
         FeatureState,
         get_state,
+        transitions_for,
     )
+    from wonderland.telemetry import get_current_run_started_at
+
+    if run_started_at is None:
+        run_started_at = get_current_run_started_at()
 
     reg = FeatureRegistry(project_root)
     records = reg.list_features()
     if not records:
         return None
+
+    def _is_in_window(slug: str) -> bool:
+        """True iff the feature's latest transition is within the
+        current run's window. When no run_started_at is known, every
+        feature passes (no filter applied)."""
+        if run_started_at is None:
+            return True
+        history = transitions_for(project_root, slug)
+        if not history:
+            # No transitions logged at all — can't prove out-of-window,
+            # so allow. Future seeded-but-untouched features default-in.
+            return True
+        latest_at = history[-1].at
+        return latest_at >= run_started_at
 
     # State → priority for the "pick the most recently active" sort.
     preferred_states = [
@@ -5520,9 +6115,15 @@ def _pick_feature_for_build_check_attribution(
             r for r in records
             if get_state(project_root, r.slug) == state
         ]
-        if candidates:
+        in_window = [r for r in candidates if _is_in_window(r.slug)]
+        # T-ab36: only narrow to in-window when the filter produced
+        # at least one candidate. An empty in_window list means every
+        # candidate transitioned before run start — degrade to the
+        # broader bucket rather than skipping the state entirely.
+        bucket = in_window if in_window else candidates
+        if bucket:
             # Highest number = most recently written.
-            return max(candidates, key=lambda r: r.number).slug
+            return max(bucket, key=lambda r: r.number).slug
 
     # No feature in an active state — fall through to "any feature."
     return max(records, key=lambda r: r.number).slug
@@ -5615,11 +6216,24 @@ def _synthesize_build_check_review(
 async def _run_verify_meeting(
     meeting: "Meeting",
     runner: "Runner",
+    lane_outer_slug: str | None = None,
 ) -> AsyncIterator[Any]:
     """Execute a ``kind='verify'`` meeting. No agents convene; the
     substrate runs the meeting's ``build_check`` against the project,
     emits a structured BuildCheckEvent, and synthesizes a system
     review + follow-up tickets on failure.
+
+    T-ab42: ``lane_outer_slug`` is the feature slug of the iteration
+    that triggered this verify pass (in pipelined tdd-implement, verify
+    fires once per feature lane). When set, it becomes the default
+    attribution target for the synthesized review + the per-finding
+    fallback, replacing the meeting-level
+    ``_pick_feature_for_build_check_attribution`` heuristic which
+    picked highest-numbered-feature-in-preferred-state — that scatters
+    verify tickets across the project when multiple features touch
+    the same test files. The per-finding path-walk (T-ab26) still
+    overrides when a finding genuinely owns to a different feature
+    (e.g. a conftest.py change broke a sibling feature's test).
 
     Wraps the check in MeetingStart/End events so the timeline /
     dashboard renders verify meetings the same shape as regular
@@ -5713,7 +6327,11 @@ async def _run_verify_meeting(
     review_slug: str | None = None
     artifact_kinds: dict[str, int] = {}
     if any_failed and all_findings:
-        feature_slug = _pick_feature_for_build_check_attribution(
+        # T-ab42: prefer the lane's feature when set (verify fired
+        # for THIS feature's iteration); fall back to the heuristic
+        # only when verify ran outside a per-feature lane (e.g.
+        # standalone test-the-whole-project verify pass).
+        feature_slug = lane_outer_slug or _pick_feature_for_build_check_attribution(
             project_root
         )
         if feature_slug is not None:
@@ -5768,20 +6386,37 @@ async def _run_verify_meeting(
                 except Exception:  # noqa: BLE001 — routing is best-effort
                     code_findings = raw_findings
 
-                review_payload_dict = {
-                    "slug": review_slug,
-                    "title": f"Build check ({meeting.id}) failed",
-                    "verdict": "request-changes",
-                    "findings": code_findings,
-                }
+                # T-ab26: per-finding feature attribution. Group
+                # code findings by which feature their location
+                # implicates, then synthesize one review per group.
+                # Without this, all findings funnel to the meeting-
+                # level fallback feature; conftest / cross-feature
+                # test failures end up parked on a feature that
+                # has nothing to do with the failing code (mvp-
+                # demo-rerun-A: tag tests attributed to README
+                # feature because README was the active iteration).
+                from collections import defaultdict as _dd
+                findings_by_feature: dict[str, list[dict]] = _dd(list)
+                for f_dict in code_findings:
+                    target = _pick_feature_for_finding(
+                        project_root, f_dict, fallback_slug=feature_slug,
+                    ) or feature_slug
+                    findings_by_feature[target].append(f_dict)
+
                 # Skip the whole _route_blocking_review call when
                 # there are no code-class findings left — nothing
                 # for the Tweedles to do, the operator_attention
                 # artifact is the signal.
-                if code_findings:
+                for target_feature, grouped in findings_by_feature.items():
+                    review_payload_dict = {
+                        "slug": review_slug,
+                        "title": f"Build check ({meeting.id}) failed",
+                        "verdict": "request-changes",
+                        "findings": grouped,
+                    }
                     _route_blocking_review(
                         project_root,
-                        feature_slug=feature_slug,
+                        feature_slug=target_feature,
                         review_payload=review_payload_dict,
                         actor="wonderland-substrate",
                         meeting_id=meeting.id,
@@ -5794,6 +6429,14 @@ async def _run_verify_meeting(
                         # in_progress → done within 3 seconds of
                         # creation, before any pass worked them).
                         auto_complete_in_flight_tickets=False,
+                        # T-ab28: each verify cycle's failures get
+                        # their own visible ticket, not silently
+                        # overwriting prior cycles' DONE/ABORTED
+                        # same-slugged tickets. Recurring failures
+                        # stack as ``... (cycle 2)``, ``... (cycle 3)``
+                        # so the operator sees pathology by ticket
+                        # count, not by reading state-log archaeology.
+                        fresh_per_cycle=True,
                     )
                 # Re-emit a final event carrying the review_slug so
                 # consumers can link to the synthesized review.
@@ -6097,6 +6740,159 @@ def _apply_milestone_plan_snapshot(
     return deleted
 
 
+def _apply_review_verdict_routing(
+    *,
+    meeting: Meeting,
+    runner: Runner,
+    new_utterances: list[Utterance],
+    current_item_slug: str | None,
+    meeting_started_at: datetime | None = None,
+) -> None:
+    """T-ab40: process M8 review verdicts (blocking + accept) regardless
+    of meeting outcome.
+
+    Splits the review-verdict routing out of
+    ``_apply_post_meeting_transitions`` so accept-verdict ticket
+    transitions fire even when M8 exits with MEETING_BUDGET or
+    MAX_ROTATIONS rather than COMPLETE. The verdict itself is the
+    contract — it's a structured review utterance that landed on
+    disk under ``.wonderland/reviews/``. Whether the meeting wrapped
+    up under budget is orthogonal to whether the verdict counts.
+
+    Pre-T-ab40 the whole post-meeting transition block ran inside a
+    ``if outcome == 'COMPLETE'`` gate at the call site. M8 review
+    runs at a $0.60 budget; any tweedle follow-up after caterpillar's
+    verdict or tool-use overhead can push the meeting over budget,
+    landing outcome=MEETING_BUDGET. The verdict landed cleanly but
+    the ticket transitions silently didn't fire, leaving tickets
+    IN_PROGRESS forever and the feature unable to derive to
+    READY_FOR_REVIEW. Operator pain: "tickets that were processed
+    in the run don't get moved to done."
+
+    ``transition_iteration_to`` stays under the outcome=='COMPLETE'
+    gate via ``_apply_post_meeting_transitions``; only the
+    review-verdict ticket transitions move here.
+
+    The meeting-ID gate (T-ab21) is preserved: only meetings whose
+    id matches ``_IMPLEMENTATION_REVIEW_MEETING_IDS`` trigger this
+    path. tdd-design's M3.5 consolidation meeting also emits review
+    utterances for duplicate-ticket detection; those must NOT drive
+    implementation-stage ticket transitions.
+
+    Skipped silently if project_root is unavailable (FakeRunner test
+    fixtures) so the routing layer never breaks the meeting flow.
+    """
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    actor = "system"
+    _IMPLEMENTATION_REVIEW_MEETING_IDS = frozenset({"review", "m8"})
+    if not (
+        current_item_slug
+        and meeting.per_item == "feature"
+        and meeting.id in _IMPLEMENTATION_REVIEW_MEETING_IDS
+    ):
+        return
+    feature_slug = current_item_slug
+    blocking_reviews = _find_blocking_reviews(
+        new_utterances, feature_slug
+    )
+    if blocking_reviews:
+        for idx, review_payload in enumerate(blocking_reviews):
+            _route_blocking_review(
+                project_root,
+                feature_slug=feature_slug,
+                review_payload=review_payload,
+                actor=actor,
+                meeting_id=meeting.id,
+                auto_complete_in_flight_tickets=(idx == 0),
+            )
+        return
+    accept_review = _find_accept_review(new_utterances)
+    if accept_review is not None:
+        _complete_tickets_on_accept_review(
+            project_root,
+            feature_slug=feature_slug,
+            review_slug=accept_review,
+            actor=actor,
+            meeting_id=meeting.id,
+        )
+        return
+
+    # T-ab43: bus had no verdict utterance. Reconcile against disk —
+    # caterpillar may have written an accept review via write_file
+    # (bypassing _record_reviews + bus emission), or the bus utterance
+    # was silently dropped between agent emit and capture (T-ab23-shape
+    # silent crash). The disk record IS the contract; route from it.
+    if meeting_started_at is not None:
+        _reconcile_accept_reviews_from_disk(
+            project_root=project_root,
+            feature_slug=feature_slug,
+            mtime_floor=meeting_started_at,
+            actor=actor,
+            meeting_id=meeting.id,
+        )
+
+
+def _reconcile_accept_reviews_from_disk(
+    *,
+    project_root: Path,
+    feature_slug: str,
+    mtime_floor: datetime,
+    actor: str,
+    meeting_id: str,
+) -> None:
+    """T-ab43: when bus dispatch finds no verdict, fall back to disk.
+
+    obol-260522-1 surfaced: caterpillar wrote 2 accept reviews to
+    disk but caterpillar's episodic memory had zero accept emissions
+    on the bus. The disk records were valid (verdict=accept, proper
+    approvals); the bus utterance never landed for either. Without
+    the bus emit, ``_find_accept_review`` returned None and ticket
+    completion never fired, leaving tickets stuck IN_PROGRESS.
+
+    This reconciliation reads the ReviewRegistry post-meeting,
+    filters to verdict=accept records whose mtime is within the
+    current meeting's window, and fires
+    ``_complete_tickets_on_accept_review`` per match. mtime gating
+    prevents back-fill from re-routing reviews from prior cycles;
+    the lane-feature scoping (T-ab42 style) prevents over-eager
+    routing to features that don't own the review.
+
+    Only fires when no bus dispatch fired for this meeting — the
+    caller checks first. Idempotent against ticket-state machinery
+    (DONE → DONE is a silent no-op), so re-firing across reconciliation
+    passes can't corrupt state.
+    """
+    try:
+        from wonderland.review import ReviewRegistry, ReviewVerdict
+    except Exception:  # noqa: BLE001 — best-effort
+        return
+    registry = ReviewRegistry(project_root)
+    for record in registry.list_reviews():
+        if record.verdict != ReviewVerdict.ACCEPT:
+            continue
+        try:
+            mtime = datetime.fromtimestamp(
+                record.path.stat().st_mtime, tz=UTC
+            )
+        except OSError:
+            continue
+        if mtime < mtime_floor:
+            continue
+        # Disk record landed within this meeting's window. Route as
+        # accept. The lane feature attribution comes from the caller —
+        # this disk-fallback runs in the M8 dispatch path which is
+        # already scoped per-feature lane.
+        _complete_tickets_on_accept_review(
+            project_root,
+            feature_slug=feature_slug,
+            review_slug=record.slug,
+            actor=actor,
+            meeting_id=meeting_id,
+        )
+
+
 def _apply_post_meeting_transitions(
     *,
     meeting: Meeting,
@@ -6117,6 +6913,11 @@ def _apply_post_meeting_transitions(
     ``transition_emitted_to`` is handled per-utterance (see
     ``_apply_emission_transition_for_utterance``) to close the
     dashboard-backfill race; not duplicated here.
+
+    Review-verdict ticket transitions (M8 accept/blocking) used to
+    live here too but moved to ``_apply_review_verdict_routing``
+    under T-ab40 so they fire regardless of meeting outcome — the
+    verdict is the contract, not the meeting-cleanup state.
 
     Skipped silently if project_root is unavailable (FakeRunner
     test fixtures, etc.) so the transition layer never breaks the
@@ -6222,74 +7023,12 @@ def _apply_post_meeting_transitions(
             except IllegalTransitionError:
                 pass
 
-    # Review-verdict routing. Runs independently of
-    # ``transition_iteration_to`` so M8 can drop its now-redundant
-    # ``transition_iteration_to: ready_for_review`` (derivation
-    # handles the feature rollup once tickets are DONE).
-    #
-    # T-ab21 gate: discriminate by MEETING ID rather than feature
-    # lifecycle state. Only M8 review (tdd-implement.yaml's
-    # ``id: review``) and the legacy ``m8`` alias trigger ticket
-    # transitions. tdd-design's M3.5 consolidation (id:
-    # ``consolidation``) is per_item=feature and Caterpillar
-    # legitimately emits review utterances there for duplicate
-    # ticket detection, but those reviews must NOT drive
-    # implementation-stage ticket transitions.
-    #
-    # Earlier gate (_feature_in_implementation_state) used feature
-    # state as a proxy for "is this implementation-stage". The
-    # proxy was fragile: features stuck in ``designed`` state
-    # (because some upstream step didn't transition them to
-    # ``queued``) had their M8 accept verdicts silently swallowed,
-    # leaving tickets stuck in ``queued`` forever. Discriminating
-    # on meeting ID is unambiguous and resilient to feature-state
-    # bookkeeping gaps.
-    _IMPLEMENTATION_REVIEW_MEETING_IDS = frozenset({"review", "m8"})
-    if (
-        current_item_slug
-        and meeting.per_item == "feature"
-        and meeting.id in _IMPLEMENTATION_REVIEW_MEETING_IDS
-    ):
-        feature_slug = current_item_slug
-        blocking_reviews = _find_blocking_reviews(
-            new_utterances, feature_slug
-        )
-        if blocking_reviews:
-            # Process EVERY blocking review's findings, not just
-            # the first. Observed on obol-demo3 M1 where M8
-            # emitted two reviews (backend + frontend area) and
-            # the frontend review's change-required+bug finding
-            # never spawned a follow-up ticket because only the
-            # first (backend) review was processed. Cat splitting
-            # a feature review into per-area reviews is normal
-            # behavior and shouldn't drop downstream work.
-            #
-            # ``_route_blocking_review`` also marks the feature's
-            # in_progress tickets as done as a side effect; pass
-            # auto_complete_in_flight_tickets=False on all calls
-            # after the first so the mark-done sweep only fires
-            # once (the ticket transitions are idempotent — done
-            # → done is illegal and silently skipped — but the
-            # ledger writes are still wasted work).
-            for idx, review_payload in enumerate(blocking_reviews):
-                _route_blocking_review(
-                    project_root,
-                    feature_slug=feature_slug,
-                    review_payload=review_payload,
-                    actor=actor,
-                    meeting_id=meeting.id,
-                    auto_complete_in_flight_tickets=(idx == 0),
-                )
-            return
-        accept_review = _find_accept_review(new_utterances)
-        if accept_review is not None:
-            _complete_tickets_on_accept_review(
-                project_root,
-                feature_slug=feature_slug,
-                review_slug=accept_review,
-                actor=actor,
-                meeting_id=meeting.id,
-            )
+    # T-ab40: review-verdict routing moved out of this function into
+    # ``_apply_review_verdict_routing`` so accept/blocking verdicts
+    # fire regardless of meeting outcome (COMPLETE vs MEETING_BUDGET
+    # vs MAX_ROTATIONS). The verdict utterance is the contract,
+    # not the meeting cleanup state — see that function's docstring
+    # for the obol-260522 bug history that motivated the split.
 
 
 # Cap on follow-up rounds within a single interview. The interviewer
@@ -6870,6 +7609,26 @@ async def _run_one_meeting_inner(
         # artifact_count_before / new_utterances pattern).
         phased_artifact_count_before = len(capture.utterances)
 
+        # T-ab44: mirror _convene_one's contextvar plumbing on the
+        # phased path. T-ab35's tool-layer milestone-scope guard
+        # reads _current_meeting_id to decide whether the active
+        # meeting is scoping/composition. Without setting it here,
+        # the guard returned empty-string and silently no-op'd —
+        # observed on obol-260522-1 M5 design: caterpillar made 12
+        # cross-milestone read_file calls into M3 + M4 stories and
+        # features during M5 composition (all err=None), the design
+        # pass produced 0 M5 stories because agents focused on
+        # M3↔M4 coherence instead. The phased path uses
+        # ``run_phased_meeting`` from wonderland.meeting; meeting_id
+        # detection requires the same contextvar lifecycle the
+        # convene-one path already had. Reset happens after the
+        # `yield event \n return` at the bottom of this branch via
+        # the same finally pattern.
+        from wonderland.telemetry import (
+            reset_current_meeting_id as _reset_meeting_id_phased,
+            set_current_meeting_id as _set_meeting_id_phased,
+        )
+        _phased_meeting_token = _set_meeting_id_phased(meeting.id)
         async for event in run_phased_meeting(
             meeting=meeting,
             runner=runner,
@@ -6934,36 +7693,59 @@ async def _run_one_meeting_inner(
             # at proposed → M5's iterate_only_in_states: [in_design]
             # filters them all out → M5 hits "(no items)" skip.
             # Same dispatch-asymmetry shape that bit transition_emitted_to.
-            if (
-                isinstance(event, MeetingEndEvent)
-                and event.outcome == "COMPLETE"
-            ):
+            if isinstance(event, MeetingEndEvent):
                 phased_new_utterances = (
                     capture.utterances[phased_artifact_count_before:]
                 )
-                # Ticket source attribution runs BEFORE transitions
-                # so the corrected sources are visible to any
-                # downstream substrate logic that reads them.
-                _attribute_ticket_sources_to_iteration_feature(
+                # T-ab40: review-verdict routing fires regardless of
+                # meeting outcome — the verdict utterance is the
+                # contract, not the meeting cleanup state. M8 review
+                # overrunning its $0.60 budget shouldn't strand
+                # ticket transitions.
+                # T-ab43: derive the meeting's wall-clock start time
+                # from the elapsed_s on the end event so the disk-
+                # reconciliation fallback can mtime-gate disk reviews
+                # to this meeting's window.
+                from datetime import timedelta as _timedelta
+                _meeting_started_at = datetime.now(UTC) - _timedelta(
+                    seconds=event.elapsed_s
+                )
+                _apply_review_verdict_routing(
                     meeting=meeting,
                     runner=runner,
                     new_utterances=phased_new_utterances,
                     current_item_slug=current_item_slug,
-                    thread_id=thread_id,
+                    meeting_started_at=_meeting_started_at,
                 )
-                _apply_milestone_plan_snapshot(
-                    runner=runner,
-                    new_utterances=phased_new_utterances,
-                    primary_speaker=meeting.primary_speaker,
-                )
-                _apply_post_meeting_transitions(
-                    meeting=meeting,
-                    runner=runner,
-                    new_utterances=phased_new_utterances,
-                    current_item_slug=current_item_slug,
-                )
+                if event.outcome == "COMPLETE":
+                    # Ticket source attribution runs BEFORE transitions
+                    # so the corrected sources are visible to any
+                    # downstream substrate logic that reads them.
+                    _attribute_ticket_sources_to_iteration_feature(
+                        meeting=meeting,
+                        runner=runner,
+                        new_utterances=phased_new_utterances,
+                        current_item_slug=current_item_slug,
+                        thread_id=thread_id,
+                    )
+                    _apply_milestone_plan_snapshot(
+                        runner=runner,
+                        new_utterances=phased_new_utterances,
+                        primary_speaker=meeting.primary_speaker,
+                    )
+                    _apply_post_meeting_transitions(
+                        meeting=meeting,
+                        runner=runner,
+                        new_utterances=phased_new_utterances,
+                        current_item_slug=current_item_slug,
+                    )
 
             yield event
+        # T-ab44: reset the meeting_id contextvar matched to the
+        # set above. Generator-style branch — reaching this line
+        # means iteration completed cleanly; cancellation would
+        # propagate via GeneratorExit which Python handles.
+        _reset_meeting_id_phased(_phased_meeting_token)
         return
 
     async for event in _convene_one(
@@ -7095,11 +7877,17 @@ async def _convene_one(
     # contextvar here covers the legacy non-phased path's
     # orchestrator-driven calls as well.
     from wonderland.telemetry import (
+        reset_current_meeting_id,
         reset_current_thread_id,
+        set_current_meeting_id,
         set_current_thread_id,
     )
 
     telemetry_token = set_current_thread_id(thread_id)
+    # T-ab35: stamp the meeting id so tool guards can determine the
+    # active phase (scoping/composition need cross-milestone read
+    # discipline; later phases iterate per-feature and self-scope).
+    meeting_id_token = set_current_meeting_id(meeting.id)
     try:
         yield MeetingStartEvent(
             meeting=meeting,
@@ -7183,6 +7971,7 @@ async def _convene_one(
                 break
     finally:
         reset_current_thread_id(telemetry_token)
+        reset_current_meeting_id(meeting_id_token)
 
     if outcome in ("MEETING_BUDGET", "TIMEOUT", "ABORTED"):
         runner.mark_thread_complete(thread_id, f"meeting ended via {outcome}")
@@ -7207,6 +7996,21 @@ async def _convene_one(
     # T87 output transitions — fire on successful completion only.
     # Failed meetings (BUDGET / TIMEOUT / ABORTED) leave feature state
     # untouched so the operator can see what shipped vs. didn't.
+    # T-ab40: review-verdict routing fires regardless of meeting
+    # outcome. M8 review overrunning $0.60 budget shouldn't strand
+    # the accept-verdict ticket transitions; the verdict is the
+    # contract, not the meeting cleanup state.
+    # T-ab43: derive wall-clock meeting start so the disk-reconciliation
+    # fallback can mtime-gate disk reviews to this meeting's window.
+    from datetime import timedelta as _timedelta
+    _meeting_started_at = datetime.now(UTC) - _timedelta(seconds=elapsed)
+    _apply_review_verdict_routing(
+        meeting=meeting,
+        runner=runner,
+        new_utterances=new_utterances,
+        current_item_slug=current_item_slug,
+        meeting_started_at=_meeting_started_at,
+    )
     if outcome == "COMPLETE":
         # Ticket source attribution runs BEFORE transitions so the
         # corrected sources are visible to any downstream substrate
