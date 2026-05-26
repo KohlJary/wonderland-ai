@@ -550,7 +550,7 @@ The marker actively educates the model to use narrower tool args on retries. rea
 | G | post-pilot | Alice in M6 measurement | ~$1.20/pilot |
 | H (no-memory M7) | post-pilot experiment | Eliminate compose_context for implement | Unknown — possibly 50%+ |
 
-**Combined T-ab54 + T-ab57 estimated impact: $26-32/pilot reduction** on obol-260522-1's $92.64 baseline = **28-35% pilot cost drop.** Best per-pilot cost trajectory we've shipped on the substrate. (Earlier draft used $83 from mvp-demo2; obol-260522-1 is the correct baseline since it's the most recent pilot and reflects all prior substrate fixes already accumulated.)
+**Combined T-ab54 + T-ab57 estimated impact: $26-32/pilot reduction** on obol-260522-1's $92.64 baseline = **28-35% pilot cost drop.** Best per-pilot cost trajectory we've shipped on the substrate. (Earlier draft used $83 from mvp; obol-260522-1 is the correct baseline since it's the most recent pilot and reflects all prior substrate fixes already accumulated.)
 
 ---
 
@@ -597,7 +597,7 @@ Per-meeting impact:
 | T-ab57 | ~$12-18/pilot | 5K tool-result cap, all tool-using agents |
 | **Combined** | **~$26-32/pilot** | **28-35% on obol-260522-1's $92.64** |
 
-That's not "shaving" — that's a structural cost-trajectory improvement. The substrate moves from $92.64/pilot to projected **$61-67/pilot** for an equivalent workload. **Compounded with prior substrate fixes** (mvp-demo2 → mvp-demo-rerun-A → obol-260522-1 already showed ~35% reduction from earlier optimizations), the cumulative trajectory is roughly $130-150/pilot → $61-67/pilot ≈ 50-55% total cost reduction from the original substrate to post-T-ab57.
+That's not "shaving" — that's a structural cost-trajectory improvement. The substrate moves from $92.64/pilot to projected **$61-67/pilot** for an equivalent workload. **Compounded with prior substrate fixes** (mvp → mvp-demo-rerun-A → obol-260522-1 already showed ~35% reduction from earlier optimizations), the cumulative trajectory is roughly $130-150/pilot → $61-67/pilot ≈ 50-55% total cost reduction from the original substrate to post-T-ab57.
 
 The obol-260522-1 baseline is the correct one because the prior 35% had already shipped — every fix here is incremental on top of that. Comparing to single-shot baselines: single-shot wrote a comparable app for $2-3. Substrate at $61-67 is still 20-25× more expensive per app, but it ships test coverage + ADRs + contract notes + per-feature reviews + cross-ticket coherence checks that single-shot doesn't produce. The cost gap is what the multi-agent overhead actually pays for — and the gap is now sized as "5-15× single-shot for substantial quality artifacts" rather than "30×+ for the same."
 

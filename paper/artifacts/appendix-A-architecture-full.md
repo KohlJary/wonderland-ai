@@ -518,7 +518,7 @@ When the operator passes `--milestone <slug>` (or the TUI's
 
 This is what keeps M3 design from re-debating M1 features and
 what keeps Alice from drifting into M1-flavored stories during M2
-design. The mvp-demo2 pilot was the validation gate for these
+design. The mvp pilot was the validation gate for these
 fixes — M2 design without auto-synthesized directive wedged on
 Alice drift; with it, design recovered.
 
@@ -1117,23 +1117,39 @@ routing (`accept` → ticket IN_PROGRESS → DONE; `request-changes`
 
 ### M8 — "The Trial" (review, per feature)
 
-- **Roster:** Caterpillar, Tweedledee, Tweedledum
+- **Roster:** Caterpillar (solo, post-T-ab54)
 - **Goal:** review the feature's full deliverable —
   implementation, tests, cross-ticket coherence — produce a verdict
 - **Per-item:** feature
 - **Iterate only in states:** `[queued]`
 - **Meeting budget:** $0.60
 
-**Why Caterpillar primary:** review is coherence reading and
+**Why Caterpillar solo:** review is coherence reading and
 that's Caterpillar's identity. He reads the cohesive deliverable
 — not just individual files but the relationships between them.
 
-**Why both Tweedles on the roster:** defend or revise. If
-Caterpillar requests changes, the responsible Tweedle either
-revises in this meeting (small scope) or surfaces the change as
-a follow-up ticket (larger scope). They don't argue against valid
-concerns; M8's job is to enforce the team's collective standard
-for `ready_for_review`.
+**Why the roster is single-participant (post-T-ab54):** the
+mvp pilot ran Caterpillar + both Tweedles. Telemetry
+(see `caterpillar-m8-cost-analysis.md`) showed Tweedles paid
+full per-call cache-creation cost for each M8 window while
+engaging substantively in only ~20% of them — their other
+80% was silence-overhead. T-ab54 narrowed the roster to
+Caterpillar solo; M8 spend dropped from ~30% of total to
+~11% in redux with no review-quality regression observed
+in subsequent adversarial Theseus review. M8 is the
+canonical example of the substrate's principle that
+**single-participant meetings are an allowed and
+sometimes-correct configuration** — multi-voice friction is
+load-bearing for negotiation-shaped meetings (M5 is the
+canonical case) but not for solo-author-of-the-verdict
+meetings like review.
+
+**Tweedles can still buzz in via §III:** they're not on the
+standing roster but they're not silenced. Tweedle defense,
+when a contract question surfaces mid-review, shows up as
+concerns via §III selective engagement before Caterpillar's
+verdict lands. The substrate distinguishes "primary author
+of the verdict" from "may participate when domain-invoked."
 
 **Cross-ticket coherence first (the load-bearing check):** per
 analysis 040, the most expensive defects in feature work live
@@ -1189,16 +1205,19 @@ out of 5 should carry true.
 
 | Phase | Max rotations | Exit condition | Team grouping |
 |-------|---------------|----------------|---------------|
-| `review` | 2 | `review` | [[cat, dee, dum]] |
+| `review` | 2 | `review` | [[cat]] |
 
-**Why no separate "defend" phase:** previous shape had a defend
-phase running 1 rotation post-exit; on every recent run it tipped
-total spend over budget and stranded the lifecycle
-`ready_for_review` transition because defend hit MEETING_BUDGET
-before COMPLETE could fire. Tweedle defense, if relevant, shows
-up as concerns during the review phase before Caterpillar's
-verdict lands — the §III selectively-engaging rules let Tweedles
-buzz in without a standing roster slot.
+**Why no separate "defend" phase:** a previous shape had a
+defend phase running 1 rotation post-exit; on every recent
+run it tipped total spend over budget and stranded the
+lifecycle `ready_for_review` transition because defend hit
+MEETING_BUDGET before COMPLETE could fire. With the
+post-T-ab54 single-participant roster, defense is moot
+anyway — Tweedles aren't on the standing roster. When a
+contract question surfaces mid-review, the §III
+selectively-engaging rules let Tweedles buzz in
+without a standing roster slot, so domain expertise is
+available without paying the standing-window cost.
 
 **Feature transition is derived, not declared.** No
 `transition_iteration_to` on M8. Substrate routes verdicts to

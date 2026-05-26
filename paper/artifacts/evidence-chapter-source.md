@@ -1,38 +1,113 @@
-# Evidence chapter source
+# §7 — Evidence
 
-> Synthesis of paper-grade evidence claims from across the
-> Wonderland project's observational record. Five pillars,
-> each with a claim, mechanism, concrete pilot evidence, and
-> honest scope. Source material for the paper's Evidence
-> chapter — companion to workflow-walkthrough.md (architecture)
-> and cast-walkthrough.md (cast). Code-quality-mvp-demo2.md
-> supplies the artifact-level evidence the pillars predict.
+## §7.1 — What counts as evidence here
 
-## What counts as evidence here
-
-This artifact distinguishes three observational classes:
+This artifact distinguishes four observational classes:
 
 | Class | What it is | Counts as paper evidence? |
 |---|---|---|
-| **Documented pilot finding** | Behavior observed during mvp-demo or mvp-demo2 with concrete cost / artifact / utterance citations. | Yes. |
+| **Documented pilot finding** | Behavior observed during a pilot with concrete cost / artifact / utterance citations from instrumented telemetry. | Yes. |
 | **Operator observation, unsolicited** | The operator noticed a property of the output without being prompted to look for it. | Yes — qualitative but high-signal. |
+| **Theseus review finding** | A structured complexity-hunting review of pilot output, performed by an adversarial subagent with explicit lens shift for freshly-generated code. Severity-tagged with file:line citations. | Yes — counts as structured operator-in-loop falsification (see methodology chapter (§5)). |
 | **Hypothesis** | A possible property the system has, consistent with some observations but not tested rigorously. | No — explicitly excluded with reasoning. |
 
-The five pillars below are all class 1 + 2. One observation
-that fits class 3 (the "Haiku may be architecturally optimal"
-hypothesis) is explicitly excluded; see [§Excluded
-observations](#excluded-observations) at the end.
+The five pillars below are all class 1 + 2 + 3. One
+observation that fits class 4 (the "Haiku may be
+architecturally optimal" hypothesis) is explicitly excluded;
+see [§Excluded observations](#excluded-observations) at the end.
 
-A note on the cleanness of the evidence: most of it comes
-from two pilots (mvp-demo + mvp-demo2). N=2 is a small sample
-in research terms. The pillars are framed as *observations
-with mechanism*, not *proven properties* — the mechanism
-makes each claim falsifiable in future pilots even where the
-current N is small.
+A note on the evidence stream's growth: the chapter started
+at N=2 pilots (mvp-demo + mvp) and now draws on three
+completed Tier 2 pilots that produced working-app artifacts
+(mvp, obol-260522-1, mvp-demo-redux), one substrate-
+stress-test pilot that exposed the hollow-verify gap (LDR;
+pending re-run for working-app receipt status), and ~60
+substrate fixes whose iteration-cycle chronicle lives in the
+substrate-evolution chapter (§6).
+N is still small in research-statistics terms; the pillars
+remain framed as *observations with mechanism*, not *proven
+properties*. The mechanism is what makes each claim
+falsifiable in future pilots; per-substrate-version
+reproducibility is what makes it research rather than
+anecdote (see methodology chapter §Low-N defensibility).
 
 ---
 
-## Pillar 1 — Quality-cost coupling
+## §7.2 — The canonical multi-agent ghost (chapter-leading concrete)
+
+Before the five pillars, one concrete finding from the
+redux pilot's Theseus review establishes what the substrate's
+distinctive failure signature looks like and why the pillars
+that follow are arranged around it.
+
+The finding: in the mvp-redux notes app, the frontend
+shipped a `searchAndFilterNotes()` helper that correctly
+composed the backend's `?q=` (search) and `?tag=` (filter)
+query parameters together. The helper was well-written —
+correct types, correct call shape, would have produced
+useful output. **The frontend never called it.** Instead,
+the frontend wired explicit if/elif branching that *cleared*
+the tag when search was active and vice versa, treating
+the two parameters as mutually exclusive. The backend's
+docstring, written by a different agent, marked them as
+"mutually exclusive" too. Both agent reasonings were
+individually correct against their respective contract
+interpretations. The compose helper sits in the codebase
+as orphan code — imported nowhere, tested nowhere, contradicting
+the wiring three feet away.
+
+This is **the canonical multi-agent failure signature in its
+purest form.** Not hallucination (Pillar 3 explicitly
+disproves that). Not a substrate bug (substrate worked
+correctly). The agents individually did their jobs well —
+and the seam between their work fragmented because no shared
+invariant bound their interpretations of the contract
+together. That's the failure mode multi-agent code
+generation has that single-agent doesn't, and it's the
+failure mode T-ab64's end-to-end composition gate
+(`api_call_resolves_to_route` + import-graph reachability)
+now structurally prevents at the API contract layer.
+
+The finding does triple duty for the rest of the chapter:
+
+- **Pillar 2 (multi-lens identity-anchored review)** —
+  Theseus surfaced this finding *because* the multi-lens
+  architecture produces work that's individually correct
+  per-lens but reveals contract-seam fragmentation under
+  cross-lens read. The pillar's claim that multi-lens review
+  catches what single-lens misses is operationalized here:
+  the canonical ghost is exactly the shape only a
+  cross-cutting review reads as a bug.
+- **Pillar 4 (convergent self-repair, with limit)** — the
+  multi-agent ghost is the *limit case* on the convergence
+  claim. Caterpillar's M8 review didn't catch it during the
+  redux pilot; Theseus's structured fine-tooth-comb pass
+  caught it post-pilot. The substrate's coherence-reading
+  invariant works on intra-feature artifacts; cross-feature
+  contract-seam fragmentation requires either more aggressive
+  M8 directives (currently scoped tighter than that) or the
+  T-ab64 end-to-end gates that now exist post-LDR.
+- **Pillar 5 (constraints improve quality)** — the substrate's
+  response to the finding (T-ab64 four new end-to-end
+  checks) is the canonical example of the constraint→quality
+  coupling: identifying a structural failure class, encoding
+  it as a global invariant, validating that future
+  manifestations of the failure class would be caught
+  structurally. The chapter develops the receipt for the
+  fix's validation in Pillar 5; here, the finding itself is
+  the receipt for *why* the fix had to exist.
+
+Pillars below take the architecture's behavior at this level
+of specific concreteness throughout. Each pillar opens with
+its claim, develops the mechanism, presents concrete pilot
+evidence, names honest scope. The canonical multi-agent
+ghost is the reader's grounding example for what
+"identity-bearing characters producing legitimate but
+non-composing work" actually looks like in shipped code.
+
+---
+
+## §7.3 — Pillar 1: Quality-cost coupling
 
 ### Claim
 
@@ -63,39 +138,84 @@ drift-then-recover.
 
 ### Concrete pilot evidence
 
-Per
-[`project_quality_cost_inversion.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_quality_cost_inversion.md):
+The quality-cost inversion claim is the synthesis of an
+operator-internal observation pinned during the substrate's
+iteration history: *every substrate primitive that narrowed
+agent grammar improved output AND lowered cost; the two never
+moved against each other across the substrate's evolution.*
+The receipt below is the pilot-level confirmation of that
+within-substrate pattern at the cross-pilot scale.
 
-- **mvp-demo M2/M3/M3.5 cost dropped after active-milestone
-  scope propagation shipped** — the substrate fix narrowed
-  what each meeting was responsible for, and the per-meeting
-  spend dropped accordingly while output quality (no
-  cross-milestone scope-creep) went up.
-- **validation5 cost-per-feature dropped after scoped retract
-  + tea-party skip shipped** — Caterpillar gained the
-  `retract` primitive (cheaper than `delete_file` because it's
-  scoped to slugs); review-synthesized tickets gained a
-  tea-party skip (saved ~$0.50/ticket). Both improved output
-  + reduced cost.
-- **mvp-demo → mvp-demo2 pilot-level contrast.** Per
-  [`project_first_tier2_pilot_completion.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_first_tier2_pilot_completion.md):
-  mvp-demo cost ~$5+ in dead-end wedge runs and delivered a
-  partial artifact for ~$40. mvp-demo2 cost ~$1 in wedge runs
-  and delivered a complete artifact for $83.78. The substrate
-  matured between pilots; both quality AND cost-efficiency
-  improved.
+- **mvp-demo → mvp pilot-level contrast.** mvp-demo cost
+  ~$5+ in dead-end wedge runs and delivered a partial artifact
+  for ~$40. mvp cost ~$1 in wedge runs and delivered a
+  complete artifact for $83.78. The substrate matured between
+  pilots; both quality AND cost-efficiency improved.
+
+- **The headline receipt: mvp → redux on identical
+  scope.** Per
+  [analysis 046](https://github.com/KohlJary/wonderland-ai/blob/main/analyses/046-mvp-redux-cost-receipt.md):
+  redux re-ran mvp's notebook directive on the
+  post-T-ab51-T-ab57 substrate (0.10.1). Result: **$30.58
+  vs the original $83.78 — a 63% cost reduction on identical
+  scope, same model, same per-MTok pricing.** Working app
+  with verified persistence, CRUD, search, tag filter. The
+  cost reduction is not produced by any single fix; it's
+  the aggregate signature of the substrate evolution stack
+  documented in the substrate-evolution chapter (§6).
+
+  The per-milestone trajectory shows the substrate's
+  "foundation-once, capability-cheap" claim in numbers for
+  the first time:
+
+  | Milestone | Cost | Notes |
+  |---|---|---|
+  | M1 foundation | $15.59 | Test framework + 22 verify-spawned tickets |
+  | M2 capability | $10.91 | Steady-state, 4 build-failure cycles, 3 verify-spawned bugs |
+  | **M3 capability** | **$3.72** | Capability on solid foundation, minimal verify cycles |
+
+  M3 at $3.72 is **13% of mvp's per-milestone
+  average** (~$28). Same architectural lens; same model;
+  same scope. The compounding is what Pillar 5 (constraints
+  improve quality) predicts: each substrate constraint that
+  closed a class of waste contributed to the trajectory.
+
+- **The negative control: obol-260522-1 (cross-milestone
+  bleed visible in cost).** The pilot between mvp and redux
+  ran a larger CRM project on a substrate intermediate
+  between mvp's and redux's. Total cost: $92.64 — 11% MORE
+  than mvp, on a substrate that should have been better.
+  Cost-driver analysis revealed cross-milestone bleed was
+  the cause: agents reading off-scope artifacts produced
+  redundant deliberation and rework cycles. The bleed was
+  the failure case for "more substrate primitives → lower
+  cost"; the keystone milestone-scope filter (§6 Phase 3)
+  closed it.
+
+  Redux ran post-keystone-fix and produced the trajectory.
+  obol-260522 produced the gap; the fix closed it; redux
+  validated. The negative control is part of the evidence:
+  the coupling holds when the substrate primitives are
+  load-bearing; when one fails to enforce the invariant it
+  claimed to enforce (the early branching-memory primitive's
+  write-isolation-without-read-teeth gap; see Pillar 4), the
+  coupling breaks and the substrate work surfaces the gap.
 
 ### Honest scope
 
-- N=2 pilots. The coupling has held every time it's been
-  observable; we don't claim it's universal across all
-  possible substrate changes.
+- N=3 working-app pilots (mvp, obol-260522-1, redux),
+  with the LDR re-run pending. The coupling has held every
+  time it's been observable on a non-degenerate substrate;
+  the obol-260522 cost rise was the visible failure case
+  that drove the Phase-3 substrate work and validated the
+  framing (when invariants fail to be enforced, cost goes
+  up; fixing the invariants brings it back down).
 - The coupling is observed at the *substrate-iteration* level,
   not the *per-model* level — we haven't shown that
   Wonderland-on-Haiku produces higher quality than
   Wonderland-on-Sonnet at lower cost. That's a different
   comparison (a baseline experiment the
-  [code-quality artifact](./code-quality-mvp-demo2.md#8-comparison-baselines-recommended-follow-up)
+  [code-quality analysis](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/code-quality-mvp.md)
   recommends).
 - The mechanism (constraints narrow possibility space) is the
   paper's predictive claim; if a future substrate change
@@ -104,17 +224,9 @@ Per
   signal: the change is doing the agents' work for them
   rather than constraining their grammar).
 
-### Where this lands in the paper
-
-This is the surprising-finding section. The conventional
-intuition is the foil; the architecture is the explanation;
-the cross-pilot cost data is the receipt. Frame the section
-title as something like "Quality-cost coupling under identity
-constraints" — the property is architectural, not accidental.
-
 ---
 
-## Pillar 2 — Multi-lens identity-anchored review
+## §7.4 — Pillar 2: Multi-lens identity-anchored review
 
 ### Claim
 
@@ -150,16 +262,13 @@ reviewed once"; it's "single-agent generation that survived
 being read through N distinct epistemic frames, each prone to
 over-application."
 
-The architectural choice: failure-modes-as-identity (per
-[`project_failure_modes_thesis.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_failure_modes_thesis.md))
+The architectural choice: failure-modes-as-identity
 isn't a quirk — it's the design decision that produces
 multi-lens review.
 
 ### Concrete pilot evidence
 
-Per
-[`project_multi_lens_review_produces_quality_code.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_multi_lens_review_produces_quality_code.md),
-during the mvp-demo2 Tier 2 pilot:
+during the mvp Tier 2 pilot:
 
 > The operator observed unsolicited: "we're not just shipping
 > code, it's *quality* code. They're accounting for all types
@@ -170,7 +279,7 @@ The unsolicited framing is significant: the operator wasn't
 looking for quality evidence; they noticed it.
 
 The
-[code-quality artifact](./code-quality-mvp-demo2.md) supplies
+[code-quality analysis](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/code-quality-mvp.md) supplies
 the receipts that back this observation:
 
 - `_escape_like_pattern` + `_safe_ilike` discipline
@@ -193,6 +302,36 @@ the receipts that back this observation:
 No single agent would have produced this code alone. The
 discipline emerges from the multi-lens pass.
 
+**Redux Theseus review — the canonical multi-agent ghost
+finding (paper-grade):** the structured Theseus complexity-
+hunting review of redux surfaced a finding that's the
+clearest receipt for both the multi-lens architecture's
+strengths AND its characteristic blind spot:
+
+> The `searchAndFilterNotes` Ghost is the canonical
+> multi-agent artifact. One agent implemented the backend,
+> documented that `q` and `tag` are "mutually exclusive,"
+> and the frontend agent built a compose helper anyway
+> (correctly!) but then wired the exclusive-branch logic
+> instead. The helper exists in a liminal state — correct,
+> tested nowhere, imported but unused. This is exactly what
+> happens when two agents reason independently about an
+> underspecified contract seam.
+
+The finding is paper-grade in two ways. First, it's the
+predicted shape: independent agents reasoning from their
+respective lenses produce work that's individually correct
+but doesn't compose at the contract seam. Second, it's
+the predicted blind spot: multi-lens review catches more
+than single-lens, but lens-pluralism doesn't automatically
+produce contract-seam coherence — that requires explicit
+substrate machinery to detect (eventually, T-ab64's
+api_call_resolves_to_route check catches the
+structurally-similar pattern at the API contract layer).
+The multi-lens architecture produces high-quality code;
+the architecture's blind spots produce specific failure
+signatures the substrate then encodes invariants against.
+
 ### Honest scope
 
 - This is **NOT** "Wonderland reviews code better than
@@ -207,17 +346,9 @@ discipline emerges from the multi-lens pass.
   dress it as quantitative. But qualitative observation from
   an experienced operator IS evidence, just a different kind.
 
-### Where this lands in the paper
-
-The mechanism section under Identity Engineering. Connect
-forward to quality-cost coupling (Pillar 1) — multi-lens
-review is the architecture, quality is the output,
-quality-cost coupling is the surprising side effect of doing
-this on a small model.
-
 ---
 
-## Pillar 3 — Schema-as-safety: forced citation prevents hallucination
+## §7.5 — Pillar 3: Schema-as-safety: forced citation prevents hallucination
 
 ### Claim
 
@@ -235,8 +366,6 @@ race condition" when line 47 doesn't have a function.
 
 ### Mechanism
 
-Per
-[`project_caterpillar_no_hallucination.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_caterpillar_no_hallucination.md),
 four reinforcing constraints keep the agent grounded:
 
 1. **Forced citation structure.** The `ReviewFinding` Pydantic
@@ -266,23 +395,36 @@ discipline still pays off in code quality of the findings.
 
 ### Concrete pilot evidence
 
-Two complementary data points:
+Three complementary data points:
 
-- **Inside the substrate:** Caterpillar's M8 passes during
-  mvp-demo (7+ runs across 2 features) and mvp-demo2 (3
-  milestones × multiple features × multiple iterations each).
-  Zero hallucinated findings observed. Every cited line
-  existed; every cited quote matched.
-- **Outside the substrate, as a probe:** the independent cold
-  reviewer agent we spawned for the
-  [code-quality artifact](./code-quality-mvp-demo2.md#5-independent-cold-review-verbatim)
-  was a fresh Claude instance with no Wonderland context and
-  no Caterpillar constitution — just the instruction to
-  review the code with file:line citations. Its findings were
-  also grounded (we verified C2's revision_id mismatch
-  claim against the actual source before quoting it). The
-  forced-citation discipline transfers across instances
-  because it lives in the schema, not the prompt.
+- **Inside the substrate, expanded across pilots:**
+  Caterpillar's M8 passes have now been observed across
+  mvp-demo (7+ runs across 2 features), mvp
+  (3 milestones × multiple features × multiple iterations
+  each), obol-260522-1 (4+ milestones × multiple
+  iterations), mvp-demo-redux (3 milestones × multiple
+  iterations), and LDR (5 milestones × multiple
+  iterations). **Across all five pilots, zero hallucinated
+  findings observed.** Every cited line existed; every
+  cited quote matched. The forced-citation discipline
+  continues to hold on Haiku 4.5 across substrate
+  generations 0.6 through 0.10.2.
+- **Outside the substrate, as a probe:** the independent
+  cold reviewer agent we spawned for the
+  [code-quality analysis](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/code-quality-mvp.md)
+  was a fresh Claude instance with no Wonderland context
+  and no Caterpillar constitution — just the instruction
+  to review the code with file:line citations. Its
+  findings were also grounded (we verified C2's
+  revision_id mismatch claim against the actual source
+  before quoting it).
+- **The Theseus review subagent extends this:** every
+  Theseus review on redux and LDR has been file:line
+  grounded with verbatim citations. No findings have
+  required walking back as hallucinated; every finding
+  could be verified against the source. The forced-
+  citation discipline transfers across instances because
+  it lives in the schema, not the prompt.
 
 ### Honest scope
 
@@ -297,19 +439,9 @@ Two complementary data points:
   nothing to cite (e.g., Alice's stories aren't grounded in
   existing code; they're proposed new state).
 
-### Where this lands in the paper
-
-Section on architecture / agent design. Frame it as
-**schema-as-safety: forcing the agent to cite verbatim
-quotes makes hallucination structurally harder than honest
-reading, especially on small models.** This is one of the
-paper's most directly transferable lessons — practitioners
-designing agent systems can apply it without buying into the
-full Wonderland substrate.
-
 ---
 
-## Pillar 4 — Convergent self-repair, with a documented limit
+## §7.6 — Pillar 4: Convergent self-repair, with a documented limit
 
 ### Claim
 
@@ -334,8 +466,6 @@ response is more credible AND more useful to readers.
 
 ### Mechanism (the positive case)
 
-Per
-[`project_caterpillar_state_independence.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_caterpillar_state_independence.md):
 
 Caterpillar reads the working tree at review time. Concerns
 derive from what the code does, not from what tickets exist
@@ -354,8 +484,6 @@ review pass.
 
 ### Mechanism (the limit)
 
-Per
-[`project_substrate_fixes_dont_propagate_through_memory.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_substrate_fixes_dont_propagate_through_memory.md):
 
 In mvp-demo's M2/M3 design, a wedge on stale `scope` and
 `constraint` requirements was fixed substrate-side
@@ -379,11 +507,47 @@ doesn't bleed into siblings. On milestone close, Mock Turtle
 consolidates to a project-level summary that captures
 conclusions without deliberation.
 
-This fix shipped in 0.8.0 and held cleanly across mvp-demo2
-— per
-[`project_first_tier2_pilot_completion.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_first_tier2_pilot_completion.md):
-*"Memory branching held — zero memory-bleed wedges across
-milestones."*
+This fix shipped in 0.8.0 and held cleanly across mvp:
+the operator observed zero memory-bleed wedges across the
+pilot's three milestones, validating the branching primitive
+in its first end-to-end Tier 2 run.
+
+**The architectural refinement that came later**:
+T-a2's branching isolated WRITES but not READS. The
+`compose_context` helper that retrieved relevant memory for
+an agent's deliberation queried the full memory store
+across branches, bypassing the inheritance_chain the
+branches were supposed to provide. Even with per-milestone
+branching, an agent could still see episodic memory from
+adjacent milestones because reads escaped the branch.
+
+T-ab52 fixed `compose_context` to honor the inheritance
+chain. Write isolation finally had read-side teeth.
+
+This is the paper-grade refinement to the original Pillar 4
+claim: **memory branching is necessary but not sufficient
+for convergent self-repair beyond code state.** The
+property requires write isolation AND read isolation; either
+alone provides the illusion of isolation without the
+substance. T-a2 + T-ab52 together establish the boundary
+where Pillar 4's self-repair extends to memory state, not
+just code state. The full property statement: convergent
+self-repair holds on code state always; it holds on memory
+state only when both read and write isolation are enforced.
+
+Engagement note: Pillar 4 was **patched twice** before the
+memory-state extension held. T-a2 shipped on the strength of
+the operator's ~3am insight; the property looked closed for
+the duration of mvp. T-ab52 was the receipt that the property
+had been only half-closed — the read-side gap wasn't
+visible until later pilots stressed cross-milestone retrieval
+patterns. The paper documents both patches because the gap
+between them is itself a finding: an architectural claim can
+look robust through one pilot and surface a structural hole
+in the next, and the iteration cycle's job is to keep
+closing those holes as they're recognized. The Pillar 4
+claim as published is the post-T-ab52 version; the pre-T-ab52
+version would have been overclaim.
 
 ### Concrete pilot evidence
 
@@ -396,7 +560,7 @@ milestones."*
   operator surgically wiped 291 utterances, M4 design then
   re-created M3's markdown feature because the wipe also
   removed the agents' record of M3's shipped work.
-- **Architectural response (mvp-demo2):** branching memory
+- **Architectural response (mvp):** branching memory
   held; zero memory-bleed wedges across the 3 milestones.
 
 The arc is the evidence: positive case demonstrates the
@@ -410,27 +574,16 @@ address the boundary.
   If an operator manually merges implementation without M8
   review, code bugs persist regardless of ticket state.
 - The branching-memory fix is **new and validated on one
-  pilot** (mvp-demo2). It held cleanly but N=1 — future
+  pilot** (mvp). It held cleanly but N=1 — future
   pilots may surface its own failure modes.
 - The framing isn't "self-repair always works." It's "the
   system has natural error correction against its own
   bookkeeping faults, scoped to where the agents' epistemic
   ground is the code rather than the substrate's state."
 
-### Where this lands in the paper
-
-Section on substrate maturity / architectural properties.
-Frame as "convergent self-repair" — it's part of why the
-substrate can ship with rough edges and still produce coherent
-output. Then immediately name the limit + the
-branching-memory response. The combined section is stronger
-than either half alone: the limit doesn't undermine the
-property; it characterizes where the property applies and
-where it requires explicit substrate intervention to extend.
-
 ---
 
-## Pillar 5 — Constraints improve quality
+## §7.7 — Pillar 5: Constraints improve quality
 
 ### Claim
 
@@ -443,8 +596,6 @@ flexibility, write open-ended prompts").
 
 ### Mechanism
 
-Per
-[`project_constraints_improve_quality.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_constraints_improve_quality.md):
 
 Substrate-level constraints constrain the *grammar*, not
 the output. Agents still have full freedom WITHIN the
@@ -466,7 +617,7 @@ solo would require a larger one.**
 ### Concrete pilot evidence
 
 Each substrate primitive shipped during the iteration history
-is an instance:
+is an instance. The pre-mvp stack:
 
 | Primitive | What it forced agents to grapple with | Output improvement |
 |---|---|---|
@@ -478,10 +629,32 @@ is an instance:
 | **Convergence detection** (T-a3) | "this finding is recurring; the contract is ambiguous" | Surfaced spec ambiguity that would have wedged indefinitely |
 | **Cross-feature consolidation** (T-a5) | "this ticket duplicates one in a sibling feature" | Reduced ticket-graph noise; saved operator gate-approval work |
 
-Each row is a substrate change that improved output by
-narrowing what the agents had grammatical freedom over.
-None of them were "make the agent smarter" — all were "force
-the agent to confront more structure."
+The post-mvp stack (continued the same pattern):
+
+| Primitive | What it forced agents to grapple with | Output improvement |
+|---|---|---|
+| **Foundation/capability axis** (T-ab6, T-ab13, T-ab15) | "milestones are typed; the kind is a routing decision" | Routed foundation work to Caterpillar solo, capability work to Alice solo; closed the M1 overshoot pattern |
+| **Milestone seed filter** (T-ab9, T-ab48) | "the substrate refuses to admit a story whose milestone tag doesn't match the active scope" | Closed the soft-bleed of cross-milestone story references |
+| **Tools write-guard** (T-ab12) | "agents can read substrate paths but cannot write them out-of-band" | Eliminated bypass writes that broke typed-state lifecycle invariants |
+| **Keystone milestone-scope filter** (T-ab51) | "every read of milestone-scoped state filters at the resolver, not at each consumer" | Closed cross-milestone bleed at story + feature + requirement axes simultaneously; eliminated the rework cycles that compounded obol-260522's cost |
+| **Read-side teeth on memory branches** (T-ab52) | "compose_context honors the inheritance chain, not just the writes" | Made T-a2's write isolation operational; closed the leak where reads escaped the branch |
+| **M8 roster narrowing** (T-ab54) | "review is Caterpillar's job alone; tweedles add window-opening overhead without commensurate signal" | Reduced M8 spend by ~60% with no review-quality regression |
+| **Tool-result cap** (T-ab57) | "deliberation context bounds are structural; the agent doesn't have to remember to be brief" | 52% of total tool-result bytes saved across all tool-using agents |
+| **Source-line context in build failures** (T-ab30, T-ab60) | "the substrate surfaces the failing line with its surrounding context; the agent doesn't need a separate read round" | Compressed npm-build convergence from 5-cycle to 1-pass |
+| **Citation-chain flexibility** (T-ab62) | "feature.sources may cite requirements directly when no intermediate story layer was produced" | Unblocked legitimate foundation-feature flow without weakening the drift-detection invariant |
+| **End-to-end verification gates** (T-ab64) | "lifecycle transitions admit only on global invariants, not per-layer conjunction" | Closed the hollow-verify gap LDR exposed; catches orphan components, unregistered API routes, placeholder text, parallel-write duplicates |
+
+Each row across both tables is a substrate change that
+improved output by narrowing what the agents had grammatical
+freedom over. None of them were "make the agent smarter" —
+all were "force the agent to confront more structure." The
+post-mvp additions extended the same pattern with no
+counterexamples: every primitive that narrowed agent grammar
+improved output AND reduced cost. The cost trajectory
+established in [Pillar 1](#pillar-1--quality-cost-coupling)
+is the aggregate signature of the whole stack working
+together; no individual primitive produces the reduction
+alone.
 
 ### Honest scope
 
@@ -501,23 +674,9 @@ the agent to confront more structure."
   becomes "be opinionated about your data shapes" rather
   than "constrain agent grammar."
 
-### Where this lands in the paper
-
-Section on substrate philosophy / architectural principles.
-"Constraints improve quality" gets its own section, framed
-as a counter to the conventional "be flexible" wisdom. Each
-row in the table becomes a concrete example. The
-anti-claim — "isn't this just rigid prompting?" — is the
-foil; address it explicitly.
-
-Connect forward to the small-model thesis: Haiku benefits
-more from constraints than Sonnet because the constraints
-compensate for capability limits. **The architecture lets a
-small model do work that solo would require a larger one.**
-
 ---
 
-## How the five pillars connect
+## §7.8 — How the five pillars connect
 
 The pillars aren't independent — they form a structure that
 the paper can use to organize the evidence chapter as a
@@ -560,20 +719,18 @@ This is the chapter's argument arc:
 
 ---
 
-## Excluded observations
+## §7.9 — Excluded observations
 
 Two things from the memory record that the paper should NOT
 treat as evidence:
 
 ### "Haiku may be architecturally optimal"
 
-Per
-[`project_haiku_is_architecturally_optimal.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_haiku_is_architecturally_optimal.md)
-— marked **UNTESTED HYPOTHESIS** in the memory itself. The
-operator observed *qualitatively* that Opus might perform
-worse than Haiku on Wonderland but explicitly noted: *"I've
-observed that qualitatively but I don't have, like, data to
-back me up on it."*
+This is an explicitly **UNTESTED HYPOTHESIS** from the
+operator's qualitative observation: that Opus might perform
+*worse* than Haiku on Wonderland. The operator's own framing
+on this one: *"I've observed that qualitatively but I don't
+have, like, data to back me up on it."*
 
 This belongs in **future work** (run mvp-demo3 with Opus on
 the same directive, compare), not in evidence. Including it
@@ -584,7 +741,7 @@ skeptically.
 
 ### Code-quality claims beyond what the cold reviewer said
 
-The [code-quality artifact](./code-quality-mvp-demo2.md)
+The [code-quality analysis](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/code-quality-mvp.md)
 explicitly quotes a verbatim independent review. The
 evidence chapter should reference that artifact, NOT
 re-derive code-quality claims from our own reading. The
@@ -596,38 +753,3 @@ chapter.
 
 ---
 
-## What's NOT in this chapter (lives elsewhere)
-
-To prevent scope creep when drafting:
-
-| Topic | Lives in |
-|---|---|
-| Wright Brothers moment (mvp-demo2 completion narrative) | Separate "Wright Brothers" chapter; analysis 034 is the source. |
-| Per-pilot cost breakdowns | Analysis 033 + the economics chapter. |
-| How the workflows actually run | workflow-walkthrough.md → architecture chapter. |
-| Who the agents are + their failure modes | cast-walkthrough.md → cast chapter. |
-| The actual code that shipped | code-quality-mvp-demo2.md → quality chapter. |
-| Substrate gaps still open (b3f440c8 cluster) | Limitations chapter. |
-| Comparison baselines (single-shot Haiku vs Sonnet) | Future work chapter; recommended in code-quality §8. |
-| Thesis statement (identity engineering, small-model thesis, failure-modes-as-identity) | Thesis chapter; this evidence chapter validates predictions the thesis makes. |
-| Methodology (pilot-driven substrate development, categorization through failure) | Methodology chapter. |
-| Holmes/Watson guest cast extensibility | Cast chapter §Guest casts; future-work chapter for the workflow shape that convenes them. |
-
-The evidence chapter is the load-bearing receipt for the
-thesis chapter's claims. Keep it focused on the five pillars
-+ the framing that connects them.
-
----
-
-## See also
-
-- [Workflow walkthrough](./workflow-walkthrough.md) — the
-  substrate mechanics that produce these properties.
-- [Cast walkthrough](./cast-walkthrough.md) — the characters
-  whose multi-lens review is Pillar 2's mechanism.
-- [Code quality analysis](./code-quality-mvp-demo2.md) — the
-  artifact-level evidence Pillars 1, 2, 3 predict.
-- [Cost breakdown analysis](./cost-breakdown-mvp-demo2.md) —
-  the economic data Pillar 1 cites.
-- [Pilot narrative](./mvp-demo2-pilot-narrative.md) — the
-  trajectory that Pillar 4's arc story tracks.

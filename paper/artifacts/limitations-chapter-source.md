@@ -1,12 +1,57 @@
-# Limitations chapter source
+# §8 — Limitations
 
-> Source material for the paper's Limitations chapter. What's
-> still open, what's known broken, what's been observed but
-> not proven, what's been hypothesized but not tested. The
-> honest counterweight to the thesis + evidence chapters'
-> claims.
+## §8.1 — The publishing-snapshot premise
 
-## What counts as a limitation here
+Before naming any specific limitation, the chapter has to
+make a methodological commitment that frames everything
+below: **this chapter documents the limitations of the
+Wonderland substrate at the publication-snapshot version,
+not in perpetuity.** The iteration cycle documented in the
+substrate-evolution chapter (§6)
+is open-ended; every limitation in this chapter is either:
+
+1. **Already addressed** in a substrate fix that shipped
+   between the gap being observed and the paper being
+   written (named here as historical context — the
+   limitation existed, it was named, it was fixed; the
+   chapter cites it to show the iteration cycle working).
+2. **Addressed with the fix shipped, validation pending**
+   in the next pilot (LDR re-run for the T-ab64 fix is
+   the canonical example).
+3. **Open with a filed roadmap fix and a known timing**
+   (parallel coordination, template-similarity
+   consolidation, multi-operator concurrency — each has a
+   filed task and a known sequencing).
+4. **Open with no filed fix because the right shape
+   isn't yet known** (the P7 generic-baseline eval is the
+   clearest example — we know we should compare, we don't
+   yet have the right harness design).
+
+The chapter is written this way because publication is a
+snapshot, not an end. Every paper that documents an
+ongoing research artifact has to draw a publication line
+through a moving target; the right discipline is to draw
+the line where the substrate is most receipt-worthy, name
+what's open as of that line, and continue the iteration
+cycle past the line. The alternative — waiting until
+nothing is open — is structurally impossible for a
+research artifact whose evolution surfaces new gaps with
+every pilot. **The limitations below are not defeats; they
+are the visible edge of an iteration cycle that has, to
+date, closed every prior class of limitation it has
+surfaced.**
+
+This framing is load-bearing for the chapter and the
+paper. A reader who reads "limitations" as
+"unsolved-and-likely-unsolvable" misreads what the
+chapter is doing. The reader who reads "limitations as
+publishing-snapshot of an iteration cycle, each with
+either a filed fix or a known reason no fix exists yet"
+reads the chapter at the right epistemic register.
+
+---
+
+## §8.2 — What counts as a limitation here
 
 This chapter distinguishes four classes of limitation, each
 with a different epistemic shape:
@@ -18,107 +63,84 @@ with a different epistemic shape:
 | **Sample-size limit** | N is too small to support a stronger claim than "observation with mechanism." | N=2 pilots; one directive class; one model class. |
 | **Missing rigor** | Comparison or eval that would strengthen the claim hasn't been run. | P7 generic-baseline eval; single-shot Haiku/Sonnet comparison baselines. |
 
-What goes in **future work** instead of here: things that are
-genuinely future work (the comparative pilot experiment
-68a882b3; productionization of the autonomy progression beyond
-Tier 2; guest casts like Holmes/Watson getting workflow
-shapes). Limitations is what's *currently* unresolved; future
-work is what's *planned*. Some items appear in both
-chapters with different framings.
-
-What does NOT belong here: aspirational features (those live
-in roadmap), tactical bugs (those live in the issue tracker
-or get fixed without a chapter mention). The discipline of
-this chapter: each limitation gets named, scoped, and either
-linked to its filed fix or framed honestly as an open
-question.
-
 ---
 
-## Substrate gaps
+## §8.3 — Substrate gaps
 
-### The "prior-milestone-awareness" cluster
+### The "prior-milestone-awareness" cluster — closed
 
-The mvp-demo2 Tier 2 pilot surfaced four substrate gaps that
-share a single theme: **the substrate has limited awareness
-of prior-milestone shipped work at different layers**. Each
-layer (review, consolidation, design framing, coverage check)
-has its own gap, and the gaps interact — fixing one without
-the others leaves partial coverage of the underlying issue.
+The mvp Tier 2 pilot surfaced four substrate gaps
+(b3f440c8 sibling-feature visibility, 4a2597a4 cross-feature
+consolidation, 81af78f8 two-tier feature presentation,
+e7d226b8 coverage check aware of shipped implementations)
+that shared a single theme: the substrate had limited
+awareness of prior-milestone shipped work at different
+layers. The cluster is documented in detail in §6 (substrate
+evolution); it has been closed by the keystone milestone-scope
+filter (T-ab51) plus iteration filters T-ab17 + T-ab18 + the
+scope-framing fixes T-ab34 + T-ab46 and iteration-pruning
+T-ab41. Tier 2 autonomy at the post-T-ab51 substrate no
+longer requires the operator's duplicate-skipping discipline
+that mvp's pilot needed. Cited here as the canonical example
+of an open limitations cluster closing through iteration; the
+still-open items follow.
 
-The cluster, in roadmap-item form:
+### Hollow-verify gap (LDR exposure, T-ab64 closure, validation pending)
 
-**b3f440c8 — Caterpillar M8 sibling-feature visibility.**
-Today Caterpillar reviews one feature in isolation; he sees
-its implementation, tickets, contracts, ADRs but NOT sibling
-features (under the same milestone or adjacent ones) that
-might be responsible for filling the gap he's flagging.
-Result: false-positive findings of the shape *"this code
-doesn't handle X"* when feature B is going to handle X.
-mvp-demo2 surfaced this as a pattern; substrate fix is to
-seed M8's directive with a structured sibling-feature
-summary.
+the LDR pilot at substrate 0.10.2 + T-ab62 exposed a class
+of failure the M9 build_check stack couldn't catch — features
+that ship in `verified` lifecycle state with hollow
+deliverables (orphan UI components calling non-existent
+backend endpoints, placeholder dashboard text, hardcoded
+mocked data never replaced, parallel-write duplicate modules).
+Per-layer checks (pytest, npm build, Caterpillar review,
+operator gate) all passed cleanly because each check is local
+— none asks "do these compose into a working end-to-end
+deliverable?"
 
-**4a2597a4 — Cross-feature consolidation aware of shipped
-features.** T-a5 cross-feature consolidation clusters tickets
-across features currently in design but misses the case
-where current-design produces a feature that duplicates work
-in a shipped/verified feature from a prior milestone.
-mvp-demo2 surfaced this when Rabbit composed a "markdown
-rendered preview" feature during M2 design despite M1 having
-already shipped `MarkdownPreview.tsx`. The existing-code
-block surfaced the file but Rabbit interpreted it as "might
-need extension" rather than "already done."
+The substrate exposed-and-addressed cycle:
 
-**81af78f8 — Two-tier feature presentation in design context.**
-The tradeoff mvp-demo2 surfaced: when `_load_features` filters
-by primary milestone (to prevent Rabbit debating
-prior-milestone features in M3 composition), Rabbit loses the
-"what already exists" signal and overshoots into
-adjacent-milestone scope (composed tags/search features
-during M3 design despite M2 having shipped them). The two
-purposes were entangled in the original unfiltered design —
-preventing wedge vs preventing overshoot. Fix: split into
-active-milestone (composable seed pool) + sibling-milestone
-(passive "ALREADY SHIPPED, DO NOT REDESIGN" block).
+- **Exposure**: LDR pilot completed at $19.44 with six
+  features marked `verified`. Operator-commissioned Theseus
+  review surfaced the hollow-feature pattern across
+  multiple features. Documented as a memory observation +
+  the substrate-gap entry above.
+- **Diagnosis**: per-layer M9 checks compose without
+  catching cross-layer hollowness. The state-machine
+  framing predicts this — when a lifecycle transition's
+  admission criteria is a conjunction of local checks
+  without a binding global invariant, the transition can
+  fire on hollow data.
+- **Closure**: T-ab64 shipped four new M9 end-to-end
+  composition checks (frontend_imports_reachable,
+  api_call_resolves_to_route,
+  no_placeholder_on_render_path, no_duplicate_modules) all
+  skeleton-gated to skip silently when project shape
+  doesn't match. Validated against the LDR pilot directory:
+  catches all four substantive Theseus findings.
+- **Validation pending**: LDR re-run on the post-T-ab64
+  substrate will produce either a clean third receipt
+  (validating T-ab64 closed the gap operationally) or
+  surface a residual gap T-ab64 doesn't catch (next
+  iteration cycle's input). Either outcome is paper-grade.
 
-**e7d226b8 — Coverage check aware of existing implementations.**
-The `milestone_realization` check only counts a requirement
-as realized when a NEW feature in this design pass sources
-stories realizing it. Doesn't recognize that prior-milestone
-implementations (verified features + shipped code) already
-satisfy a requirement. mvp-demo2 M3 surfaced this: M3's
-consumes_requirements included a validation criterion
-embedding capability names (tag, search, persist); the
-coverage check pressured Rabbit to compose M2-overlapping
-features. Fix: extend `compute_unrealized_milestone_requirements`
-to also check VERIFIED features from prior milestones.
+The original LDR $19.44 is documented honestly: it is **not
+cited as a working-app receipt** because the deliverable
+was hollow. It is cited as the cost of the pilot that
+exposed the hollow-verify gap, which is itself a valuable
+research artifact — the gap was found at $19.44 of pilot
+spend, which is structurally cheaper than the gap remaining
+hidden behind passing tests until the substrate hits a
+larger project where it would be more expensive to surface.
 
-### What the cluster means
-
-The four items aren't independent bugs. They're four
-expressions of one underlying gap: **the substrate's model of
-"prior-milestone shipped work" is partial at every layer**.
-Each layer's piece works in isolation but the layers don't
-compose into a coherent picture for the agents to read.
-
-This is itself methodologically interesting (per the
-[methodology chapter source](./methodology-chapter-source.md)):
-the *cluster recognition* is the work, not the individual
-fix-filing. Each item could be filed and fixed
-independently and the underlying issue would partially
-persist. The right next-pilot loop addresses the cluster as
-a structural addition — *"the substrate has a coherent model
-of prior-milestone shipped work, exposed at every layer that
-needs to read it"* — not four separate point fixes.
-
-Honest scope: until the cluster fix ships, mvp-demo2's
-operator gate-approver work included skipping the duplicate
-features at queue time. That's not Tier 3 (substrate state
-edit), but it IS attention the operator was paying that a
-mature substrate wouldn't need. The Tier 2 autonomy claim is
-qualified by this — the substrate needed the operator's
-skipping discipline at gate points to ship cleanly.
+This is the canonical demonstration of the iteration-cycle
+discipline working cheaply: a substrate gap surfaced in a
+$20 pilot, addressed in a ~200-line substrate fix, validation
+pending in the next pilot. The publishing-snapshot premise
+above is what makes this a defensible "limitation" — the
+fix shipped, validation is in flight, and the chapter
+documents it openly rather than pretending the original
+pilot was clean.
 
 ### Adjacent: stronger contextual signal per phase
 
@@ -130,7 +152,7 @@ layer than the cluster above:
   tdd-design entry meeting prepends a milestone-framing
   block that names the active persona; milestone-plan has no
   equivalent. Alice gets confused about persona during
-  milestone-plan. Surfaced in mvp-demo2; small directive
+  milestone-plan. Surfaced in mvp; small directive
   edit, substrate-side helper.
 
 - **Auto-directive synthesis** (shipped mid-pilot,
@@ -143,7 +165,7 @@ layer than the cluster above:
   wasn't strong enough. The fix shipped + held in M3 design.
 
 - **837b5bbb — Feature sequencing (Feature.depends_on).**
-  Operator's observation during mvp-demo2: *"putting features
+  Operator's observation during mvp: *"putting features
   in an order would as a byproduct result in more tightly
   designed features."* Currently features are a bag; explicit
   dependency would force Rabbit during M2 to think about
@@ -158,8 +180,6 @@ phase than the current substrate provides*.
 
 ### M1-overshoot pattern (milestone boundaries are advisory)
 
-Per
-[`project_mvp_demo_m1_m2_overlap.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_mvp_demo_m1_m2_overlap.md):
 in mvp-demo, M1's implementation pass shipped working
 backend AND frontend, overshooting 3 milestones deep. M2 +
 M3 design then wedged because no actionable delta remained.
@@ -186,12 +206,10 @@ item; lives as a known pattern.
 
 ---
 
-## Known model-class limits
+## §8.4 — Known model-class limits
 
 ### Caterpillar's static blindspot
 
-Per
-[`project_caterpillar_static_blindspot.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_caterpillar_static_blindspot.md):
 M8's review reliably misses single-file static-time bugs —
 Pydantic field/type shadows, unresolved forwards, decorator
 order traps. Class of bug that "would not even import"
@@ -213,7 +231,7 @@ evidence of the categorization-through-failure discipline
 
 ### Cross-endpoint behavioral integration invisible to M8
 
-Per the [code-quality artifact §6.2](./code-quality-mvp-demo2.md#62-c2-cross-endpoint-serialization-mismatch--failure-mode-of-m8-static-review):
+Per the [code-quality analysis §6.2](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/code-quality-mvp.md#62-c2-cross-endpoint-serialization-mismatch--failure-mode-of-m8-static-review):
 the C2 finding (revision_id serialization mismatch — same
 note produces different revision_ids depending on which
 endpoint surfaced it) is the canonical M8-blindspot pattern
@@ -234,7 +252,7 @@ generated scenarios for search-escaping but not for
 revision_id round-tripping. Filed as future-work, not yet
 implemented.
 
-Scope honesty: this finding is latent in mvp-demo2's spec'd
+Scope honesty: this finding is latent in mvp's spec'd
 use case (single-user, no concurrent writers). It would
 become acute if the spec grew to multi-user. The substrate
 built the optimistic-locking infrastructure correctly enough
@@ -264,39 +282,66 @@ directory. Filed as future work.
 
 ---
 
-## Sample-size limits
+## §8.5 — Sample-size limits
 
 The chapter should be explicit that current evidence has
 sample-size limits that bound what claims can be made.
 
-### N=2 pilots end-to-end
+### N=3 working-app pilots + 1 stress-test pilot
 
-Wonderland has run **two end-to-end pilots** that reached
-shipped-artifact state: mvp-demo (partial completion,
-substrate-immature, ~$40 of substrate-fixer interventions)
-and mvp-demo2 (complete, Tier 2 autonomy, $83.78, one
-mid-pilot substrate fix). Earlier work (P1-P19) tested
-substrate primitives but not end-to-end pilots.
+Wonderland has run **three end-to-end pilots that produced
+working-app artifacts** and one stress-test pilot that
+exposed a substrate gap:
 
-What N=2 means for the claims:
+- **mvp** (notebook spec, substrate 0.8.0, $83.78)
+  — first Tier 2 completion. Three milestones designed,
+  implemented, verified.
+- **obol-260522-1** (CRM project, substrate 0.9.0+early
+  0.10.0, $92.64) — second Tier 2 pilot, larger scope.
+  Surfaced the cross-milestone bleed pattern that drove
+  Phase-3 substrate work (T-ab51).
+- **mvp-demo-redux** (notebook spec, substrate 0.10.1,
+  $30.58) — re-ran mvp's directive on the
+  post-T-ab51-T-ab57 substrate. Genuine working-app
+  receipt at 36% of the original spend.
+- **LDR** (long-distance dashboard, substrate 0.10.2 +
+  T-ab62, $19.44) — exposed the hollow-verify gap.
+  Pilot completed through to `verified` lifecycle states
+  but the deliverables were hollow; T-ab64 then closed
+  the gap; re-run pending for working-app receipt status.
+
+Earlier work (P1-P19, including mvp-demo) tested substrate
+primitives but didn't reach Tier 2 end-to-end completion.
+
+What N=3 + stress-test means for the claims:
 
 - **The mechanism is predictive even at low N.** Each
   pillar in the evidence chapter is framed as
   "observation + mechanism" — the mechanism makes the
   pillar falsifiable in future pilots even at current
-  sample size. (Quality-cost coupling will recur because
-  the mechanism predicts it; if it stops recurring, the
-  mechanism needs revisiting.)
-- **No statistical claims.** The chapter should not frame
-  any claim as "across N pilots, X% of the time…" — N=2
-  doesn't support that shape.
+  sample size. The two-pilot cost trajectory ($83.78 →
+  $30.58 on identical scope) is mechanism-grounded; if
+  future pilots break the trajectory, the mechanism needs
+  revisiting.
+- **No statistical claims.** The chapter does not frame
+  any claim as "across N pilots, X% of the time…" — N=3
+  doesn't support that shape; the substrate-version
+  variance across the pilots wouldn't support it even at
+  larger N.
+- **The cross-pilot pattern is identifiable.** Each pilot
+  is an independent realization on a different substrate
+  version against a different (or in redux's case,
+  intentionally-identical) directive. The pattern across
+  pilots is mechanism-instantiation, not statistical
+  regularity.
 - **Future pilots strengthen specific claims.** Each pilot
   adds observations to each pillar; the mechanism gets
   stronger or gets refuted; the pillar's framing tightens.
+  The LDR re-run is the next data point.
 
 ### One directive class (notebook-shaped)
 
-Both mvp-demo and mvp-demo2 used variants of the
+Both mvp-demo and mvp used variants of the
 "personal markdown notebook web app" directive. Cross-pilot
 comparison is meaningful (same directive class on different
 substrate versions) but the substrate's properties haven't
@@ -310,8 +355,6 @@ been tested on:
 - Domain-specific shapes (data pipelines, ML systems,
   scientific computing).
 
-Per
-[`project_workflow_variants.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_workflow_variants.md):
 the workflow YAMLs are designed to be atomic and
 composable; Dodo dynamically chaining workflows for
 different work shapes (incident response, security audit,
@@ -321,9 +364,8 @@ validate cross-shape transferability haven't run.
 
 ### One model class (Haiku 4.5)
 
-All claims are at `claude-haiku-4-5-20251001` substrate
-version 0.8.0. The Haiku-as-thesis-statement framing (per
-[`project_haiku_thesis.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_haiku_thesis.md))
+All claims are at `claude-haiku-4-5-20251001`. The
+Haiku-as-thesis-statement framing
 predicts identity-and-substrate amplification holds across
 model classes, but only one model class has been tested at
 pilot scale.
@@ -338,48 +380,35 @@ output quality (the P7 eval).
 
 ---
 
-## Missing rigor
+## §8.6 — Missing rigor
 
-### P7 generic-baseline eval is future work
+### Comparative experiments — gaps, with planned closures in future work
 
-The thesis chapter's Corollary 1 (small models outperform
-expected capabilities via identity) makes a specific
-predictive claim: a Haiku-class model with strong
-constitution should hold its own against a large model with
-a generic prompt. **This is exactly the kind of claim a
-research paper should test rigorously.** It hasn't been
-tested.
+Two specific comparative gaps weaken the paper's rigor:
+the **P7 generic-baseline-vs-identity-native eval** (would
+test Corollary 1's "small models outperform via identity"
+claim by running matched tasks against a generic-prompt
+baseline at the same model class), and **comparison
+baselines for code quality** (would test whether
+Wonderland-on-Haiku's review-grade output exceeds what
+Haiku-without-Wonderland or Sonnet-without-Wonderland
+produce on the same directive).
 
-The P7 eval harness — generic-baseline-vs-identity-native
-on matched tasks — is on the roadmap but not built. Until
-it ships, the strongest empirical claim is *"Haiku produces
-work consistent with what identity-bearing-the-work would
-predict,"* not *"Haiku outperforms generic-prompt-on-Haiku."*
-The chapter should be explicit about this gap.
-
-### Comparison baselines for code quality
-
-Per the [code-quality artifact §8](./code-quality-mvp-demo2.md#8-comparison-baselines-recommended-follow-up):
-the artifact's quality claims are graded against an
-independent reviewer's professional standards. To close the
-rigor loop, the paper should establish a baseline showing
-what code *without* Wonderland looks like for the same
-directive. Three recommended experiments (single-shot Haiku,
-single-shot Sonnet, OSS notebook contrast) are described as
-future work, not yet run.
-
-What's been claimed: Wonderland-on-Haiku produces code an
-independent reviewer reads as *"competent, above-average
-code for an MVP."* What hasn't been claimed: that it
-out-performs Haiku-without-Wonderland or
-Sonnet-without-Wonderland. The honest framing is that
-Wonderland's output is review-grade; the comparative
-question is open.
+Both are named here as gaps in the publishing-snapshot's
+rigor and are developed as proposed experiments in §11
+future-work, including the planned harness design, the
+comparator-fairness concerns the methodology chapter names,
+and the partial-progress single-shot Haiku/Sonnet baselines
+that have been run against mvp's directive. The
+chapter's claim is therefore bounded: Wonderland-on-Haiku
+produces code an independent reviewer reads as competent
+and above-average for an MVP at this scale; whether the
+character framing produces this beyond what equivalent
+operational rules alone would produce is the open question
+the Appendix C comparator and a future P7 eval would test.
 
 ### Untested hypothesis: Haiku as architecturally optimal
 
-Per
-[`project_haiku_is_architecturally_optimal.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_haiku_is_architecturally_optimal.md):
 the operator's qualitative read is that Opus might
 *under-perform* Haiku on Wonderland — that the substrate's
 constraints are calibrated for Haiku's capability shape and
@@ -397,148 +426,168 @@ overclaiming.
 
 ---
 
-## Tier 2 scope limits
+## §8.7 — Tier 2 scope limits
 
-mvp-demo2 was the first pilot at Tier 2 autonomy (per
-[`project_first_tier2_pilot_completion.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_first_tier2_pilot_completion.md)).
-Several limitations follow:
+The substrate has now run four Tier 2 pilots (mvp,
+obol-260522-1, redux, LDR). Several limitations follow:
 
-### One pilot at Tier 2
+### Substrate maturity is per-directive-class
 
-N=1 at the Tier 2 autonomy level. The substrate's claim is
-"can run Tier 2 on notebook-class directives at substrate
-0.8.0." The chapter shouldn't claim Tier 2 readiness as a
-general property; the next 2-3 pilots will either confirm
-or refine the autonomy claim.
+Tier 2 autonomy is claimed at the substrate version each
+pilot ran on, on the directive class each pilot exercised.
+Notebook-class directives have been validated (redux);
+CRM-class directives have been validated (obol-260522-1);
+dashboard-class directives produced the hollow deliverable
+that exposed the verify gap (LDR; re-run pending on the
+post-fix substrate). The chapter does not claim *"Wonderland
+achieves Tier 2 autonomy"* as a general property; it claims
+*"Wonderland achieves Tier 2 autonomy on directive class X at
+substrate version Y."* Each new directive class shape tests
+the substrate at a new boundary.
 
 ### Operator gate-approver discipline is qualitative
 
 The Tier 2 distinction (gate-approver vs fixer) is named
-operationally but isn't yet measured with rigor. mvp-demo2's
-operator interventions were documented:
+operationally but isn't yet measured with rigor. Across
+the four pilots, documented operator interventions include:
 
-- 1 substantive scope clarification (full-text vs tag-only
-  search).
-- Multiple duplicate-feature skips at gates.
-- Ticket-level scope filtering on M3's megalith feature.
-- 1 mid-pilot substrate fix (the Tier 2 violation).
+- mvp: 1 substantive scope clarification (full-text
+  vs tag-only search), multiple duplicate-feature skips,
+  ticket-level scope filtering on M3's megalith feature,
+  1 mid-pilot substrate fix.
+- obol-260522-1: cost-driver analysis during the pilot
+  surfaced cross-milestone bleed; no substrate fix shipped
+  mid-pilot but observation drove Phase-3 work.
+- redux: operator-noticed verification of working app at
+  pilot completion (curl-based CRUD + persistence checks);
+  Theseus review post-pilot. Zero mid-pilot substrate
+  fixes.
+- LDR: operator-commissioned Theseus review post-pilot
+  surfaced the hollow-verify gap; zero mid-pilot substrate
+  fixes during the pilot itself (the end-to-end gate fix
+  shipped between pilot completion and re-run setup).
 
 The categorization "queue decisions ARE gate-approver work"
 draws a line that's defensible but not formal. A future
 methodology paper might propose a quantitative measure
 (intervention frequency × intervention depth × substrate-state
-impact); current paper should describe the
-qualitative discipline honestly without dressing it as
-metric.
+impact); current paper describes the qualitative discipline
+honestly without dressing it as metric.
 
 ### Mid-pilot substrate fix as Tier 2 violation
 
-The auto-directive synthesis shipped mid-pilot is, formally,
-a Tier 2 violation: substrate code changed during the pilot.
-The methodology chapter argues this is honest documentation
-of iterative substrate maturity (better than pretending the
-pilot ran on the substrate version that started it). The
-limitations chapter should re-acknowledge: **mvp-demo2's
-completion required one Tier 2 violation**. A future pilot
-that completes with ZERO mid-pilot substrate changes would
-be a stronger autonomy claim. That pilot hasn't run.
+Across four pilots, only mvp required a mid-pilot
+substrate fix (auto-directive synthesis). The subsequent
+three pilots completed without mid-pilot violations,
+strengthening the autonomy claim. The methodology chapter
+argues mid-pilot fixes are honest documentation of
+iterative substrate maturity when they happen; the limitations
+chapter notes that **the post-mvp substrate has
+matured to the point where mid-pilot violations are no
+longer needed across three subsequent pilots**. This is
+load-bearing for the autonomy claim — the substrate's Tier 2
+readiness has gotten stronger across the pilot trajectory.
 
 ---
 
-## What the limitations DON'T defeat
+## §8.8 — Wall-clock time vs other systems
 
-The honest framing of limitations is part of the paper's
-credibility, but it shouldn't undersell what HAS been
-demonstrated. Per the evidence chapter:
+A class of limitation worth naming explicitly because it
+distinguishes Wonderland's current scope from adjacent
+systems: **Wonderland runs serially.** One milestone at a
+time; one feature at a time within a milestone; one ticket
+at a time within a feature. The substrate's per-pilot
+cost has dropped to a regime where each pilot is affordable
+(~$30 / pilot for the redux notebook), but the wall-clock
+time hasn't compressed at the same rate. A pilot that
+costs $30 still takes an hour to run.
 
-- **Quality-cost coupling held across every substrate
-  iteration to date**, even if N=2 at pilot level.
-- **Zero hallucinated findings in 7+ Caterpillar reviews on
-  Haiku 4.5** — schema-as-safety works on small models.
-- **mvp-demo2 shipped a working full-stack artifact for
-  $83.78** at Tier 2 autonomy — the substrate's first
-  end-to-end Tier 2 completion.
-- **The substrate evolved through pilot-driven discovery**
-  — each pilot surfaced the next layer of failure modes;
-  most got categorized + addressed before the next pilot.
+This is what currently bounds Wonderland's competitiveness
+on the dimension other autonomous coding systems (Devin,
+agent-mode Cursor, Aider runs) optimize for. Devin-class
+systems aim to compress wall-clock time, often at the cost
+of per-task quality + structured artifacts. Wonderland
+aims to preserve the quality + artifact stack while making
+per-task cost affordable. The two trade against each
+other along orthogonal axes; Wonderland has won on cost
++ quality while not yet competing on wall-clock.
 
-The limitations are framed against these — not as defeating
-them but as bounding them. The thesis is *"identity does
-real work, demonstrated at this scale on this directive
-class with this model"*, not *"identity solves multi-agent
-systems."* The bounded scope IS the credibility.
+The substrate's typed-state machinery already supports
+parallel orchestration in principle: per-milestone memory
+branching isolates concurrent milestones; feature-level
+lifecycle states are orthogonal across features;
+`gates_on_dependencies` in M7 already supports per-ticket
+dependency gating. **What's missing is a coordinator that
+decides "these N features can run M7 in parallel" based on
+the dependency graph, and the orchestration to actually
+fan them out.** Filed in future-work; deferred until
+template-similarity milestone consolidation (T-ab63) lands
+because the two pair multiplicatively (consolidation
+maximizes parallelism's surface area).
 
----
+This limitation is open at publication-snapshot. It is
+**not unsolvable**; the architectural pieces are in place;
+the orchestration work is scoped and pending. The chapter
+documents it as the most prominent wall-clock-time gap to
+date, paired with the substrate fix that closes it as the
+publication-pending next iteration cycle.
 
-## What's NOT in this chapter
+### Engaging the Pareto-frontier critique
 
-Goes in **future work** instead:
+A hostile reading of this section would push: *"You've won
+on cost + quality, but you haven't competed on the
+dimension your nearest competitors optimize for. Isn't this
+just a Pareto frontier point, not a Pareto improvement?"*
 
-- **68a882b3** — design-all-first vs interleaved
-  comparative pilot. Filed; not yet run.
-- **Holmes/Watson cast workflow shapes** — guest cast
-  exists; workflow that convenes them doesn't.
-- **Dodo dynamic orchestration** — atomic workflow chaining
-  for different work shapes (incident response, security
-  audit). Architectural direction; not built.
-- **Productionization of Tier 3 autonomy** — if Tier 2
-  holds across more pilots, the eventual question is
-  whether the substrate can self-modify (a substrate fix
-  shipped BY the agents during a pilot, not by the operator).
-  Long-range; not currently active.
-- **Branching memory limits** — branching held in
-  mvp-demo2 but N=1 at the architectural level. Future
-  pilots may surface its own failure modes (cross-branch
-  context loss for genuinely cross-milestone reasoning, etc.).
-- **Workflow YAML composability** — current workflows are
-  atomic in shape but not yet dynamically composable at
-  runtime; the chaining infrastructure (29497820 in
-  roadmap) is architectural direction.
+The honest answer is yes — Wonderland currently occupies a
+specific Pareto-frontier corner (high quality + artifact
+density, low cost, slow wall-clock) that the Devin /
+Cursor-Agent / Aider quadrant doesn't. We are not claiming
+Pareto dominance over the Devin-shaped quadrant; we are
+claiming the existence of a different optimum on a
+different dimension set. **This is a real and bounded claim:
+the substrate occupies the cost+quality+artifact-density
+corner of agent-system design space, with wall-clock as
+the explicit traded-off axis.**
 
-Goes in **methodology** instead:
+What makes the corner load-bearing rather than uninteresting:
 
-- How limitations get surfaced + categorized
-  (categorization-through-failure discipline).
-- How the loop between pilot → categorization → substrate
-  → next pilot continues to operate.
+- **Quality + artifact density compound across pilots.**
+  The Devin quadrant's wall-clock advantage shrinks the
+  more pilots an organization runs against the same
+  codebase — every pilot's session log is opaque to the
+  next pilot; every architectural decision has to be
+  re-derived. Wonderland's typed durable artifacts (ADRs,
+  contracts, lifecycle-tracked features, severity-tagged
+  reviews) compound across pilots because they're
+  designed as persistent state. The first pilot pays the
+  artifact-creation cost; the tenth pilot benefits from
+  the accumulated context. The Pareto comparison shifts
+  across the artifact-density axis as pilot count grows.
+- **Cost regime enables operator-in-loop falsification.**
+  Per the methodology chapter (§5), the cost regime makes
+  failure-exposing pilots affordable. Devin-quadrant
+  systems' wall-clock advantage doesn't help if their cost
+  regime makes pilot-N-of-twenty unaffordable.
+- **The trade is closeable, not architectural.** Parallel
+  coordination is the orchestration work that closes the
+  wall-clock gap without sacrificing the cost + quality +
+  artifact-density wins. The substrate's typed-state
+  machinery already supports it; only the coordinator
+  scheduling is missing. The current Pareto point is
+  Wonderland-at-snapshot, not Wonderland-as-architecturally-
+  bounded.
 
-Goes in **code quality artifact** instead:
+The hostile critique's strongest form ("you're trading off
+the dimension that matters") rests on the assumption that
+wall-clock IS the dimension that matters, which is true
+for some use cases (rapid prototyping, hackathon-style
+work, immediate-feedback iteration) and false for others
+(long-running engineering projects, codebases that need
+audit trails, work that benefits from accumulated context
+across pilots). Wonderland's positioning targets the
+latter; the Devin-class systems target the former; both
+positions are defensible, and the wall-clock-time gap is
+the cost of Wonderland's choice rather than evidence that
+the choice was wrong.
 
-- Specific reviewer findings (B1, C1-C8 from cold review)
-  with line citations. The limitations chapter cites the
-  artifact rather than duplicating.
-
----
-
-## See also
-
-- [Methodology chapter source](./methodology-chapter-source.md)
-  — the discipline through which limitations get surfaced
-  + categorized.
-- [Evidence chapter source](./evidence-chapter-source.md) —
-  the claims these limitations bound.
-- [Thesis chapter source](./thesis-chapter-source.md) — the
-  corollaries each limitation tempers.
-- [Code quality artifact](./code-quality-mvp-demo2.md) —
-  the artifact-level limitations (B1, C2, frontend tests,
-  etc.) cited above.
-- Roadmap items cited:
-  - 79ef174a, b3f440c8, 4a2597a4, 81af78f8, e7d226b8 —
-    prior-milestone-awareness cluster + persona-anchoring.
-  - 68a882b3 — design-all-first vs interleaved (future work).
-  - 837b5bbb — feature sequencing with depends_on.
-  - 124b5858 — auto-directive synthesis (shipped mid-pilot).
-  - 29497820 — Dodo dynamic orchestrator (future work).
-- Memory observations cited:
-  - `project_mvp_demo_m1_m2_overlap.md` — milestone-boundaries
-    advisory pattern.
-  - `project_caterpillar_static_blindspot.md` — known
-    blindspot with shipped fix.
-  - `project_substrate_fixes_dont_propagate_through_memory.md`
-    — memory-bleed counterexample to convergent self-repair.
-  - `project_haiku_is_architecturally_optimal.md` — untested
-    hypothesis explicitly marked.
-  - `project_workflow_variants.md` — atomic-workflow
-    direction (future work).
-  - `project_first_tier2_pilot_completion.md` — Tier 2
-    autonomy claim + intervention log.

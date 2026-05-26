@@ -1,9 +1,9 @@
-# Pilot comparison — mvp-demo-rerun-A vs mvp-demo2
+# Pilot comparison — mvp-demo-rerun-A vs mvp
 
 > Source material for the paper's cost-trajectory argument. Two
 > end-to-end Wonderland pilots, ~3 weeks apart, same operator,
 > same Haiku 4.5 model, same project shape (markdown notebook
-> web app), measured head-to-head. mvp-demo2 (May 18, 2026) is
+> web app), measured head-to-head. mvp (May 18, 2026) is
 > the baseline — first end-to-end Tier 2 autonomous pilot,
 > $83.78. mvp-demo-rerun-A (May 20, 2026) ships the same shape
 > with the foundation/capability axis primitive + per-artifact
@@ -20,7 +20,7 @@
 
 ## 1. Disposition (TL;DR)
 
-| | mvp-demo-rerun-A | mvp-demo2 | Δ |
+| | mvp-demo-rerun-A | mvp | Δ |
 |---|---|---|---|
 | **Project total** | **$56.40** | **$83.78** | **−33%** |
 | **$ / milestone** | **$18.80** | **$27.93** | **−33%** |
@@ -32,7 +32,7 @@
 
 **Less code, more tests:** A shipped 33% fewer application LOC for
 the same feature count, and 9% more test LOC. Test:app ratio
-jumped from 0.47 (mvp-demo2) to 0.75 (A).
+jumped from 0.47 (mvp) to 0.75 (A).
 
 **Operator-iteration overhead in A:** 68% more runs (37 vs 22) and
 66% more meetings (288 vs 173) — substrate fixes that landed
@@ -46,7 +46,7 @@ steady-state with all current substrate pre-shipped: **~$52
 
 ### 2.1 Per-workflow cost
 
-| Workflow | A | mvp-demo2 |
+| Workflow | A | mvp |
 |---|---|---|
 | `discovery` | $0.00 / 0 runs | $0.11 / 1 run |
 | `milestone-plan` | $0.20 / 1 run | $0.17 / 1 run |
@@ -58,22 +58,22 @@ steady-state with all current substrate pre-shipped: **~$52
 A reused the discovery from a prior pilot (the `discovery` row
 shows $0.00). The tdd-design phase was actually *cheaper* in
 absolute terms ($12.44 vs $14.31) despite running 3 more times —
-each design run averaged $1.56 vs mvp-demo2's $2.86 (−45% per
+each design run averaged $1.56 vs mvp's $2.86 (−45% per
 design run).
 
 The `tdd-decompose` row (operator-launched per-feature
 re-decomposition for stuck features) ran 4× in A vs 1× in
-mvp-demo2 — overhead from operator surgery on partial features,
+mvp — overhead from operator surgery on partial features,
 not steady-state cost.
 
 The `tdd-implement` phase dominates both pilots and shows the
 sharpest drop: **$42.65 vs $69.05 (−38%)** despite A running
-implementation 24× vs mvp-demo2's 14× — meaning per-implementation-
+implementation 24× vs mvp's 14× — meaning per-implementation-
 run cost is **$1.78 vs $4.93 (−64%)**.
 
 ### 2.2 Per-meeting efficiency (the load-bearing number)
 
-| | A | mvp-demo2 | Δ |
+| | A | mvp | Δ |
 |---|---|---|---|
 | Total meetings | 288 | 173 | +66% |
 | Implementation meetings | 190 | 116 | +64% |
@@ -105,7 +105,7 @@ What drove the per-meeting drop:
 
 ### 3.1 Comparable volume, different structure
 
-| | A | mvp-demo2 | Δ |
+| | A | mvp | Δ |
 |---|---|---|---|
 | Milestones | 3 | 3 | — |
 | Features | 11 | 11 | — |
@@ -129,7 +129,7 @@ The substantial drops in `contract-notes` (−67%) and
 
 - **Contract-notes**: M5's `iterate_only_with_tickets` filter
   (T-ab16) skipped per-feature contract negotiation when a
-  feature had zero tickets. mvp-demo2 burned ~$2-3 of M5
+  feature had zero tickets. mvp burned ~$2-3 of M5
   iterations on dead-end features that contributed no
   implementable contracts. A skipped them at the iteration
   filter and produced contract notes only for features that
@@ -154,7 +154,7 @@ architectural decisions even when ticket counts are low.
 
 ## 4. Code shipped
 
-| | A | mvp-demo2 | Δ |
+| | A | mvp | Δ |
 |---|---|---|---|
 | Application LOC | 2,288 | 3,390 | **−33%** |
 | Test LOC | 1,717 | 1,577 | **+9%** |
@@ -163,7 +163,7 @@ architectural decisions even when ticket counts are low.
 | Test files | 7 | 8 | −12% |
 
 A shipped a **tighter, more test-covered codebase** than
-mvp-demo2 — same feature count, 33% less application code, 9%
+mvp — same feature count, 33% less application code, 9%
 more test code. Test:app ratio jumped from 0.47 to 0.75.
 
 The LOC reduction tracks the cost reduction (both ~33%) — fewer
@@ -191,7 +191,7 @@ same scope. Substrate-level changes that drove this:
 ## 5. Operator iteration overhead
 
 A had substantially more runs (37 vs 22) and meetings (288 vs
-173) than mvp-demo2 — a 60-68% increase across both metrics.
+173) than mvp — a 60-68% increase across both metrics.
 
 **Source of the overhead:**
 
@@ -219,7 +219,7 @@ have absorbed cleanly.
 Estimated overhead: **~$4.50** in extra design + implementation runs.
 
 **Projected steady-state** (A's cost minus that estimated overhead):
-**$51.90** — **−38% vs mvp-demo2 baseline**.
+**$51.90** — **−38% vs mvp baseline**.
 
 ---
 
@@ -237,9 +237,9 @@ Estimated overhead: **~$4.50** in extra design + implementation runs.
 
 ### 6.2 What differs (legitimate complications)
 
-- **mvp-demo2 attribution is fuzzy**: pre-T-ab5 (feature.milestone
+- **mvp attribution is fuzzy**: pre-T-ab5 (feature.milestone
   field), per-feature ticket attribution wasn't enforced in
-  mvp-demo2's substrate. Project-wide totals are reliable; per-
+  mvp's substrate. Project-wide totals are reliable; per-
   milestone attribution requires care
 - **A absorbed substrate fixes mid-pilot**: every iteration landed
   the substrate work, so A's later milestones (M3) ran on more
@@ -252,7 +252,7 @@ Estimated overhead: **~$4.50** in extra design + implementation runs.
 ### 6.3 Per-meeting cost as the most reliable cross-pilot metric
 
 Per-ticket cost requires reliable per-feature ticket attribution,
-which mvp-demo2 doesn't have cleanly (pre-substrate-fix). Per-
+which mvp doesn't have cleanly (pre-substrate-fix). Per-
 meeting cost is computed from total impl cost / total impl
 meetings, both of which are reliably countable in both pilots'
 run logs. The **$0.22 vs $0.60 per-meeting** number is the
@@ -313,7 +313,7 @@ This pairs with the quality-cost coupling finding (every
 substrate fix in this session improved BOTH cost AND output
 quality, never the conventional cost↔quality tradeoff). The
 two-pilot comparison is a longitudinal receipt for the same
-claim mvp-demo2 → obol-demo3 → A established cross-pilot.
+claim mvp → obol-demo3 → A established cross-pilot.
 
 ---
 
@@ -331,7 +331,7 @@ claim mvp-demo2 → obol-demo3 → A established cross-pilot.
    iteration?** A→A2 with all current substrate pre-landed
    should hit ~$52. What does A2→A3 look like as the next
    round of substrate fixes lands?
-4. **Cross-domain validation:** mvp-demo2 and A are both
+4. **Cross-domain validation:** mvp and A are both
    markdown notebook apps. Does the cost reduction generalize
    to other domains (TUI tools, CLI utilities, internal admin
    apps)?
@@ -342,9 +342,9 @@ the v1.0.0 validation story.
 
 ---
 
-*Generated 2026-05-20 from the mvp-demo2 + mvp-demo-rerun-A run
+*Generated 2026-05-20 from the mvp + mvp-demo-rerun-A run
 logs. See `projects/mvp-demo2/.wonderland/runs/` and
-`projects/mvp-demo-rerun-A/.wonderland/runs/` for raw per-run
+`projects/mvp-demo2-demo-rerun-A/.wonderland/runs/` for raw per-run
 status + telemetry. Analysis script saved at
 `scripts/analyze_pilot_comparison.py` (TODO: extract from
 ad-hoc one-off into the repo).*

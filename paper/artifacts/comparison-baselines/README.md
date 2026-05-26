@@ -1,7 +1,7 @@
 # Comparison baselines — A / B1 / B2 vs Wonderland
 
 > Three baselines run on `claude-haiku-4-5-20251001` against the
-> same notebook directive that mvp-demo2 produced. The variable
+> same notebook directive that mvp produced. The variable
 > being tested is **substrate + scaffolding**, not the model.
 > Two comparison axes: **code quality** (where baselines compete
 > fairly) and **artifact trail** (where baselines structurally
@@ -17,7 +17,7 @@
 | **A** — single-shot, no tools | "User pastes directive into claude.ai" | One inference call, max 8192 output tokens, minimal system prompt | $0.0417 | One backend file (truncated) + 4 frontend files, ZERO tests, ZERO configs |
 | **B1** — custom tool loop | "User builds a minimal agent with filesystem tools" | 60-turn agent loop, write_file/read_file/list_files/run_bash tools, $5 budget cap | $1.4616 | 39 source files, 15 tests, hit iteration cap before verifying |
 | **B2** — Claude Code subagent | "User runs Claude Code on the same model" | General-purpose subagent with Haiku model + Claude Code's full toolset, 87 tool calls in 6.4 min | ~$1.50–3 (subagent billing approximate; usage reports 73,843 tokens) | 24 source files, 17 tests, all passing per subagent's own verification |
-| **Wonderland** — mvp-demo2 | The actual substrate + cast | Full pilot: discovery + milestone-plan + 3 × (design + implement) with operator gate-approval | **$83.78** | 49 source files (3,371 app + 1,577 test LOC), 61 tests, [682 markdown trail artifacts](../../../demo/mvp/wonderland-trail/) |
+| **Wonderland** — mvp | The actual substrate + cast | Full pilot: discovery + milestone-plan + 3 × (design + implement) with operator gate-approval | **$83.78** | 49 source files (3,371 app + 1,577 test LOC), 61 tests, [682 markdown trail artifacts](../../../demo/mvp/wonderland-trail/) |
 
 All four runs are reproducible — A and B1 via [`run_single_shot.py`](./run_single_shot.py) + [`run_tool_loop.py`](./run_tool_loop.py); B2 by spawning a Claude Code subagent on Haiku; Wonderland via the substrate at version 0.8.0 against `src/wonderland/closet/directives/notebook.yaml`.
 
@@ -67,7 +67,7 @@ class of problem for another, not solving either deliberately.
 
 **Wonderland: all 6 capabilities + the escape discipline.**
 Live-verified during cross-checking (see §9 of
-[code-quality-mvp-demo2.md](../code-quality-mvp-demo2.md)):
+[code-quality-mvp.md](../code-quality-mvp.md)):
 literal `%` search returns 1 (correctly).
 
 ### A subtler finding from this exercise: schema-name divergence
@@ -145,7 +145,7 @@ Spot-check of disciplines that emerged in the Wonderland output but not in the b
 | Inline contract/ticket references | n/a | None | None | **39** references across 8 source files — same contract (`contract-note-01KRY0B8`) cited from backend `models.py` AND frontend `api.ts` |
 | Severity-tagged tests | n/a | n/a (no tests) | None | 24 tests tagged with Hatter's vocabulary (`breakage` / `silent-wrongness` / `degradation` / `curiosity`) |
 
-Independent cold reviewer's verdict on Wonderland's `demo/mvp/` (see [code-quality artifact](../code-quality-mvp-demo2.md) for the full review): *"competent, above-average code for an MVP. Backend has notably good security discipline around LIKE-wildcard escaping and an over-engineered-but-thoughtful audit/revision design. Tests are unusually self-aware about edge cases. … no security blockers."*
+Independent cold reviewer's verdict on Wonderland's `demo/mvp/` (see [code-quality artifact](../code-quality-mvp.md) for the full review): *"competent, above-average code for an MVP. Backend has notably good security discipline around LIKE-wildcard escaping and an over-engineered-but-thoughtful audit/revision design. Tests are unusually self-aware about edge cases. … no security blockers."*
 
 No independent review has been run on A / B1 / B2 outputs. The discipline gaps above are observable directly without one.
 
@@ -159,7 +159,7 @@ This is the axis the user surfaced mid-pilot and that reshapes the comparison's 
 
 By construction, single-shot agents (with or without tools) produce code. They do not produce:
 
-| Artifact class | Wonderland (mvp-demo2 pilot) | A / B1 / B2 |
+| Artifact class | Wonderland (mvp pilot) | A / B1 / B2 |
 |---|---:|---|
 | `requirements/` — operator answers structured with `kind`, `confidence`, verbatim quotes | **21** | 0 |
 | `milestones/` — trajectory with `consumes_requirements` linkage | **3** | 0 |
@@ -231,7 +231,7 @@ For a more complex project the gap should widen, because each substrate primitiv
 - **Longer trajectory** → more milestones where the substrate's branching memory + Mock Turtle consolidation matter, vs single-agent baselines whose context window is the only memory they have.
 - **More implementation surface** → more places where static-time bugs (e.g. squathero3's Pydantic field-shadow bug per [`project_caterpillar_static_blindspot.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_caterpillar_static_blindspot.md)) get caught by M9's verify build-checks, vs baselines that ship the bug into the working tree.
 
-Per pilot evidence: the `squathero` family of pilots (more complex than mvp-demo / mvp-demo2 — migrations, multiple architectural domains, ~11 ADRs in a single M4 pass) consistently surfaced substrate primitives the simpler notebook directive didn't stress. The Caterpillar `verify_imports` tool, the M3.5 ticket-consolidation pass, the convergence-failure detection — all earned their place on more complex pilots, then carried forward to the simpler ones for free.
+Per pilot evidence: the `squathero` family of pilots (more complex than mvp-demo / mvp — migrations, multiple architectural domains, ~11 ADRs in a single M4 pass) consistently surfaced substrate primitives the simpler notebook directive didn't stress. The Caterpillar `verify_imports` tool, the M3.5 ticket-consolidation pass, the convergence-failure detection — all earned their place on more complex pilots, then carried forward to the simpler ones for free.
 
 **The notebook comparison establishes a floor.** The gap widens approximately monotonically with directive complexity, because each piece of substrate-machinery that looks like overhead on a small project becomes load-bearing on a large one. Future-work item 68a882b3 (design-all-first vs interleaved comparative pilot) and the cross-shape-transferability section of the future-work chapter are the open follow-ups that would quantify this.
 
@@ -335,7 +335,7 @@ biggest blind spot. Filed in the
 - **N=1 directive class.** All four runs targeted variants of the notebook directive. Different work shapes (CLI tools, TUI projects, ML pipelines, security-critical systems) may have different baselines-vs-Wonderland economics. The future-work chapter's cross-shape-transferability section is the open follow-up.
 - **One model class (Haiku 4.5).** The comparison's variable is substrate/scaffolding at fixed model. A Sonnet baseline would test whether higher-capability models compensate for missing substrate; that's a separate experiment (also recommended in the code-quality artifact §8.2).
 - **Single-shot baselines didn't get multi-turn refinement.** B1 hit iteration cap; an operator running it in a tight loop, reading output, and re-prompting could plausibly close some gaps. The point isn't that no human can produce disciplined code with a single agent — it's that *the substrate produces it without operator intervention*.
-- **Wonderland had operator gate-approval.** mvp-demo2 was a Tier 2 autonomy pilot — operator skipped duplicates at gate points and approved transitions. The baselines had no equivalent. A fair criticism: a baseline run with operator-equivalent intervention (manually editing output, re-running) might close more gaps than the unattended versions reported here.
+- **Wonderland had operator gate-approval.** mvp was a Tier 2 autonomy pilot — operator skipped duplicates at gate points and approved transitions. The baselines had no equivalent. A fair criticism: a baseline run with operator-equivalent intervention (manually editing output, re-running) might close more gaps than the unattended versions reported here.
 - **Claude Code (B2) billing isn't directly trackable** from the parent session — costs there are an estimate based on the subagent's reported tool-call count, not measured token-by-token.
 - **The "production-scale extrapolation" section is mechanism-based, not empirical.** No bug-class incident was observed in production for these baselines (because they're not in production); the claim is that the gap-to-incident mapping is well-established in the software-engineering literature for each named pattern.
 
@@ -348,7 +348,7 @@ biggest blind spot. Filed in the
 - [`single-shot-haiku-4-5/`](./single-shot-haiku-4-5/) — A baseline output.
 - [`haiku-tools-custom/`](./haiku-tools-custom/) — B1 baseline output (metadata + transcript + workspace).
 - [`haiku-claude-code/`](./haiku-claude-code/) — B2 baseline output (TBD).
-- [`../code-quality-mvp-demo2.md`](../code-quality-mvp-demo2.md) — independent cold review of the Wonderland output.
+- [`../code-quality-mvp.md`](../code-quality-mvp.md) — independent cold review of the Wonderland output.
 - [`../../../demo/mvp/wonderland-trail/`](../../../demo/mvp/wonderland-trail/) — the artifact trail that's the second axis's receipt.
 - [`../evidence-chapter-source.md`](../evidence-chapter-source.md) — the five pillars this comparison extends.
 - [`../thesis-chapter-source.md`](../thesis-chapter-source.md) — the corollaries this comparison sharpens.
@@ -427,7 +427,7 @@ claims were verified by running its committed workspace.)
   `tsc --noEmit`. The tsc errors don't block production
   bundling but would block any CI pipeline running `tsc`.
 
-### Wonderland — mvp-demo2 demo/mvp/
+### Wonderland — mvp demo/mvp/
 
 - ✓ **All 61 tests pass** (verified during code-quality
   artifact prep).
@@ -435,7 +435,7 @@ claims were verified by running its committed workspace.)
   leaner than the baselines, 629ms — fewer transitive
   dependencies because the substrate doesn't pull in
   unneeded scaffolding).
-- ✗ Real bugs flagged by the [independent cold reviewer](../code-quality-mvp-demo2.md):
+- ✗ Real bugs flagged by the [independent cold reviewer](../code-quality-mvp.md):
   - **B1**: silent `If-Match` bypass when client omits header
     (latent at single-user v1 scope; acute at multi-user v2).
   - **C2**: revision_id serialization mismatch between

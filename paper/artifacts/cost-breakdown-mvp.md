@@ -1,6 +1,6 @@
 # Analysis 033 — Mvp-demo2 cost breakdown
 
-Detailed economic analysis of the first end-to-end Tier 2 autonomous pilot (mvp-demo2). Captures per-workflow, per-agent, and per-meeting spend; identifies efficiency hotspots; surfaces adjustable patterns. Source artifact for the paper's economics section.
+Detailed economic analysis of the first end-to-end Tier 2 autonomous pilot (mvp). Captures per-workflow, per-agent, and per-meeting spend; identifies efficiency hotspots; surfaces adjustable patterns. Source artifact for the paper's economics section.
 
 **Pilot context**: 3 milestones (data layer + search/tags + persistence), 22 workflow runs, 4320 LLM calls, ~5000 lines of code shipped, 61 passing tests. Total spend: **$83.78**.
 
@@ -114,9 +114,9 @@ Caterpillar costs $0.0219/call vs Tweedles' $0.0191/call. Caterpillar has 1/4 th
 
 Anticipated finding: that some agents might over-emit due to characteristic failure modes (Hatter over-applying edge cases = more output tokens). Data doesn't support — Hatter has the HIGHEST cache hit rate (89%) and a middle-of-pack per-call cost. His verbosity isn't driving cost; substrate caching absorbs it.
 
-## 6. Economic comparison: mvp-demo (pilot 1) vs mvp-demo2 (pilot 2)
+## 6. Economic comparison: mvp-demo (pilot 1) vs mvp (pilot 2)
 
-| Metric | mvp-demo (pilot 1) | mvp-demo2 (pilot 2) |
+| Metric | mvp-demo (pilot 1) | mvp (pilot 2) |
 |---|---|---|
 | Total spend | $40.14 | $83.78 |
 | Total calls | unknown (no telemetry) | 4320 |
@@ -127,7 +127,7 @@ Anticipated finding: that some agents might over-emit due to characteristic fail
 | Working app shipped | No (M1 partial) | Yes (3 milestones) |
 | Per-effective-milestone | N/A (incomplete) | $27.93 |
 
-**Mvp-demo2 spent 2x what mvp-demo did but shipped a working app vs none.** Per-effective-milestone (mvp-demo2): ~$28. Mvp-demo never reached "effective milestone" because of substrate wedges. The headline isn't "mvp-demo2 was cheaper" — it's "mvp-demo2 was the first to actually complete, at a per-milestone rate that lets a 5-milestone pilot land in the $80-150 range."
+**Mvp-demo2 spent 2x what mvp-demo did but shipped a working app vs none.** Per-effective-milestone (mvp): ~$28. Mvp-demo never reached "effective milestone" because of substrate wedges. The headline isn't "mvp was cheaper" — it's "mvp was the first to actually complete, at a per-milestone rate that lets a 5-milestone pilot land in the $80-150 range."
 
 ## 7. Paper-grade observations
 
@@ -143,7 +143,7 @@ Anticipated finding: that some agents might over-emit due to characteristic fail
 
 6. **Per-agent cost variance is narrow** — $0.0107 (Rabbit cheapest) to $0.0375 (Queen most expensive per call) is a 3.5x range. No agent is dramatically misconfigured.
 
-7. **Quality-cost coupling validated economically.** The substrate fixes that improved quality (branching memory, coverage check exemptions, auto-directive synthesis) also reduced wedge waste — mvp-demo2 has ~$1 of wedge waste vs mvp-demo's ~$5+, while shipping more.
+7. **Quality-cost coupling validated economically.** The substrate fixes that improved quality (branching memory, coverage check exemptions, auto-directive synthesis) also reduced wedge waste — mvp has ~$1 of wedge waste vs mvp-demo's ~$5+, while shipping more.
 
 ## 8. Adjustable patterns for next-pilot economic optimization
 

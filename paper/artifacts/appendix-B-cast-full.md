@@ -78,8 +78,8 @@ workflows. Same character, four different meeting frames.
 | Cheshire Cat | Architect | discovery I2, milestone-plan, tdd-design M4 |
 | Caterpillar | Reviewer | tdd-design M1/M3.5, tdd-implement M8 |
 | Mad Hatter | Adversarial test designer | tdd-implement M6 |
-| Tweedledee | Implementation — frontend | tdd-design M5, tdd-implement M7/M8 |
-| Tweedledum | Implementation — backend | tdd-design M5, tdd-implement M7/M8 |
+| Tweedledee | Implementation — frontend | tdd-design M5, tdd-implement M7 (M8 via §III selective engagement only, post-T-ab54) |
+| Tweedledum | Implementation — backend | tdd-design M5, tdd-implement M7 (M8 via §III selective engagement only, post-T-ab54) |
 | Queen of Hearts | Security | tdd-design M4 |
 | Dormouse | SRE / production | (not yet in any workflow — production-pilot territory) |
 | Dodo | Orchestrator | substrate-injected on every meeting |

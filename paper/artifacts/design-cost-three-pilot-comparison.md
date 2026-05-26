@@ -4,9 +4,9 @@
 > shape (web/TUI app with persistence + UI surfaces). Three end-to-end
 > design phases measured back to back:
 >
-> - **mvp-demo2** (2026-05-18) — first end-to-end Tier 2 pilot; no
+> - **mvp** (2026-05-18) — first end-to-end Tier 2 pilot; no
 >   per-milestone scoping primitives; the substrate baseline.
-> - **mvp-demo-rerun-A** (2026-05-20) — same scope as mvp-demo2,
+> - **mvp-demo-rerun-A** (2026-05-20) — same scope as mvp,
 >   ships with foundation/capability axis + iteration scope filters
 >   (T-ab5 through T-ab21) live; M3 troubleshooting cycles inflated.
 > - **obol-260522** (2026-05-22) — fresh corpus (personal-finance
@@ -17,7 +17,7 @@
 >   in §6.2.
 >
 > Headline: **design-phase cost-per-milestone dropped from $4.77
-> (mvp-demo2) to $4.15 (rerun-A) to $1.80 (obol) — a 62% reduction
+> (mvp) to $4.15 (rerun-A) to $1.80 (obol) — a 62% reduction
 > over four days of substrate iteration**, driven primarily by
 > fewer meetings per milestone (18 → 28 → 11) as scope-discipline
 > primitives prevented wasted iteration cycles.
@@ -26,7 +26,7 @@
 
 ## 1. Disposition (TL;DR)
 
-| | obol-260522 (M4 excl) | rerun-A | mvp-demo2 |
+| | obol-260522 (M4 excl) | rerun-A | mvp |
 |---|---|---|---|
 | **Milestones substrate-designed** | **4** | 3 | 3 |
 | **tdd-design cost (total)** | **$7.18** | $12.44 | $14.31 |
@@ -36,7 +36,7 @@
 | **$ / call** | $0.0104 | $0.0112 | $0.0136 |
 | **Calls / meeting** | 16 | 13 | 19 |
 
-**Cost-per-milestone delta:** obol is **62% cheaper than mvp-demo2**
+**Cost-per-milestone delta:** obol is **62% cheaper than mvp**
 and **57% cheaper than rerun-A**, despite designing one more milestone.
 
 **Per-call cost is comparable** across all three (within ~30%; same
@@ -44,7 +44,7 @@ model, similar cache discipline) — the savings are not "the LLM got
 cheaper to call." They come from **calling it fewer times**.
 
 **Per-meeting cost** is comparable between obol and rerun-A and both
-are noticeably cheaper than mvp-demo2 — substrate read-discipline
+are noticeably cheaper than mvp — substrate read-discipline
 ports from rerun-A carry forward.
 
 **The biggest delta is meetings-per-milestone (11 vs 28 vs 18).** That
@@ -58,7 +58,7 @@ fewer features cross-emitted then rejected and re-emitted.
 
 ### 2.1 By workflow (full design lifecycle: discovery + milestone-plan + tdd-design + tdd-decompose)
 
-| Workflow | obol-260522 (M4 excl) | rerun-A | mvp-demo2 |
+| Workflow | obol-260522 (M4 excl) | rerun-A | mvp |
 |---|---|---|---|
 | `discovery` | $0.09 / 1 run | $0.00 / 0 runs * | $0.11 / 1 run |
 | `milestone-plan` | $0.48 / 1 run | $0.20 / 1 run | $0.17 / 1 run |
@@ -67,10 +67,10 @@ fewer features cross-emitted then rejected and re-emitted.
 | **TOTAL design phase** | **$7.76** | **$13.76** | **$14.73** |
 
 \* rerun-A reused the discovery interview from a prior pilot, so its
-discovery row is structurally $0; mvp-demo2 ran a fresh one.
+discovery row is structurally $0; mvp ran a fresh one.
 
 **Total design-phase savings:**
-- obol vs mvp-demo2: **−47%** ($14.73 → $7.76)
+- obol vs mvp: **−47%** ($14.73 → $7.76)
 - obol vs rerun-A: **−44%** ($13.76 → $7.76)
 - Per milestone (normalizing for obol's 4 vs others' 3): **−60%**
   (≈$1.94/milestone vs ≈$4.59/milestone vs ≈$4.91/milestone)
@@ -114,13 +114,13 @@ per milestone**, **28 meetings per milestone**. First-attempt-only
 3 milestones ≈ **$3.05 per milestone**, **18 meetings per
 milestone** — still 70% more per milestone than obol.
 
-#### mvp-demo2
+#### mvp
 
 | Milestone | Cost | Runs | Meetings | Calls |
 |---|---|---|---|---|
 | (label varies by run; substrate ran multi-milestone passes) | $14.31 | 5 | 54 | 1,051 |
 
-mvp-demo2 ran on the pre-T-ab5 substrate that didn't carry an
+mvp ran on the pre-T-ab5 substrate that didn't carry an
 explicit milestone field on design runs — most directives lack the
 ``milestone ``...`` `` marker, so per-milestone attribution from
 status.json isn't clean. Project-total numbers are reliable; only
@@ -134,12 +134,12 @@ milestone**, **18 meetings per milestone**.
 
 ### 3.1 Per-call efficiency is roughly steady (~$0.01-$0.014/call)
 
-| | obol | rerun-A | mvp-demo2 |
+| | obol | rerun-A | mvp |
 |---|---|---|---|
 | $ / call | $0.0104 | $0.0112 | $0.0136 |
 
 Per-call cost is *similar* across all three pilots — same model,
-similar cache behavior, similar prompt sizes per call. mvp-demo2
+similar cache behavior, similar prompt sizes per call. mvp
 runs slightly higher per call (≈+30% vs obol) because read-
 discipline directives and Lever A cache amplification hadn't yet
 landed.
@@ -150,29 +150,29 @@ more carefully** story — and it's a modest lever in absolute terms
 
 ### 3.2 Calls-per-meeting is roughly steady (13-19)
 
-| | obol | rerun-A | mvp-demo2 |
+| | obol | rerun-A | mvp |
 |---|---|---|---|
 | calls / meeting | 16 | 13 | 19 |
 
 Per-meeting LLM-call counts cluster in the same range across all
-three pilots. mvp-demo2 ran slightly more calls per meeting (some
+three pilots. mvp ran slightly more calls per meeting (some
 extra rotations on phase exit), but the differences are small.
 
 ### 3.3 Meetings-per-milestone is where the big delta lives
 
-| | obol | rerun-A | mvp-demo2 |
+| | obol | rerun-A | mvp |
 |---|---|---|---|
 | meetings / milestone | **11** | **28** | **18** |
 
-obol design ran **40% fewer meetings per milestone than mvp-demo2
+obol design ran **40% fewer meetings per milestone than mvp
 and 60% fewer than rerun-A**. This is the load-bearing number.
 
 What drove it:
 - **T-ab17 active-milestone iteration filter** — per-feature
-  meetings only iterate over the in-scope features. mvp-demo2
+  meetings only iterate over the in-scope features. mvp
   iterated each phase over the full project's feature set.
 - **T-ab18 cross-emission rejection** — features emitted for
-  the wrong milestone get rejected at write time. mvp-demo2
+  the wrong milestone get rejected at write time. mvp
   shipped cross-emissions, then either ate them as scope creep
   or burned cycles unwinding.
 - **T-ab19 architecture skip on no in-scope tickets** — M4
@@ -201,7 +201,7 @@ effect is the meetings-per-milestone drop.
 
 ### 4.1 Counts shipped
 
-| | obol (M4 excl) | rerun-A | mvp-demo2 |
+| | obol (M4 excl) | rerun-A | mvp |
 |---|---|---|---|
 | Milestones planned | 5 | 3 | 3 |
 | Milestones substrate-designed | 4 | 3 | 3 |
@@ -214,18 +214,18 @@ effect is the meetings-per-milestone drop.
 | Reviews | 9 (design pre-impl) | 86 (post-impl) | 52 (post-impl) |
 
 (Reviews row is noisy across pilots because obol hasn't completed
-implementation; rerun-A and mvp-demo2 counts include implementation-
+implementation; rerun-A and mvp counts include implementation-
 review cycles. Use the other rows for design-volume comparison.)
 
 ### 4.2 Same feature count, fewer tickets per feature
 
 Same 11 features in each pilot. obol shipped **50 tickets (4.5/feature)**
-vs rerun-A's **103 tickets (9.4/feature)** vs mvp-demo2's **80
+vs rerun-A's **103 tickets (9.4/feature)** vs mvp's **80
 tickets (7.3/feature)**.
 
 obol shipped **53% fewer tickets per feature than rerun-A** and
-**38% fewer than mvp-demo2**. Combined with the per-ticket
-implementation cost from the prior rerun-A vs mvp-demo2 analysis
+**38% fewer than mvp**. Combined with the per-ticket
+implementation cost from the prior rerun-A vs mvp analysis
 (~$0.53/ticket on rerun-A's substrate), the projected implementation
 cost downstream is substantially lower.
 
@@ -244,7 +244,7 @@ meeting when there is.
 Three pilots, four days, same model, same operator:
 
 ```
-mvp-demo2 (May 18)          rerun-A (May 20)            obol-260522 (May 22)
+mvp (May 18)          rerun-A (May 20)            obol-260522 (May 22)
 ─────────────────           ─────────────────           ────────────────────
 $4.77 / milestone           $4.15 / milestone           $1.80 / milestone
 18 mtgs / milestone         28 mtgs / milestone *       11 mtgs / milestone
@@ -256,7 +256,7 @@ $14.31 total                $12.44 total                $7.18 total
 The substrate-iteration → cost-reduction trend is monotonic on
 per-milestone cost across three independently-run pilots. The
 rerun-A intermediate point is important: rerun-A's project-total
-cost was lower than mvp-demo2 (the rerun-A vs mvp-demo2 artifact
+cost was lower than mvp (the rerun-A vs mvp artifact
 documented the −33% headline), but the per-milestone cost dropped
 only modestly (−13%, $4.77 → $4.15) because of the M3 troubleshooting
 overhead. obol's per-milestone drop (−57% vs rerun-A) shows the May
@@ -302,24 +302,24 @@ cleanly on a future pilot with T-ab34 + T-ab35 active from the
 start — that's the validation for the substrate-fix claim, separate
 from the per-milestone cost claim made here.
 
-### 6.3 mvp-demo2's per-milestone attribution
+### 6.3 mvp's per-milestone attribution
 
-mvp-demo2 ran on pre-T-ab5 substrate where the design workflow
+mvp ran on pre-T-ab5 substrate where the design workflow
 didn't carry an explicit per-milestone field on runs. The status.json
 `directive` field doesn't reliably surface which milestone a given
-design pass targeted. Per-milestone numbers for mvp-demo2 above are
+design pass targeted. Per-milestone numbers for mvp above are
 aggregated (5 runs / 3 milestones gives the average) rather than
 broken down per-milestone. Project-total numbers and per-meeting
 numbers are reliable.
 
 ### 6.4 Different project shapes
 
-- **mvp-demo2 + rerun-A**: markdown notebook web app (Python +
+- **mvp + rerun-A**: markdown notebook web app (Python +
   FastAPI + SQLite + React + Vite + TypeScript)
 - **obol-260522**: personal-finance TUI (Python + SQLite, no
   frontend stack)
 
-Project shape differs across the comparison. mvp-demo2 + rerun-A
+Project shape differs across the comparison. mvp + rerun-A
 share shape; obol diverges. The cost reduction argument is across
 *operator + model + workflow shape* rather than *project shape*;
 the matching workflow shape (gated milestone-per-pass) is what
@@ -345,7 +345,7 @@ trajectory; future pilots harden the cross-shape generalization.
 ## 7. Open questions for the obol downstream + next pilot
 
 1. **Does obol implementation track the design-phase savings?**
-   The rerun-A vs mvp-demo2 implementation comparison hit −38% on
+   The rerun-A vs mvp implementation comparison hit −38% on
    per-implementation-run cost. If obol implementation hits the
    same trajectory (substrate fixes that landed mid-rerun-A are
    pre-shipped in obol), per-feature implementation cost should
@@ -360,7 +360,7 @@ trajectory; future pilots harden the cross-shape generalization.
    exclusion above transforms from "honest accounting" to
    "validated substrate-fix receipt."
 4. **What's the next iteration-discipline lever?** obol's
-   meetings-per-milestone is 11; mvp-demo2's was 18; rerun-A
+   meetings-per-milestone is 11; mvp's was 18; rerun-A
    first-attempt was 18 (28 with overhead). Is there a structural
    floor below 11 meetings per milestone for full 6-phase
    tdd-design? Or did the May 22 stack get close to the floor?
@@ -368,8 +368,8 @@ trajectory; future pilots harden the cross-shape generalization.
 ---
 
 *Generated 2026-05-22 from the three pilots' run logs and telemetry.
-See `projects/{obol-260522,mvp-demo-rerun-A,mvp-demo2}/.wonderland/runs/`
+See `projects/{obol-260522,mvp-demo-rerun-A,mvp}/.wonderland/runs/`
 + `telemetry/` for raw per-run data. Excludes the 6 obol M4 reruns
-(rationale: §6.2). Pairs with `pilot-comparison-rerun-A-vs-mvp-demo2.md`
-which has the upstream rerun-A → mvp-demo2 comparison + the steady-
+(rationale: §6.2). Pairs with `pilot-comparison-rerun-A-vs-mvp.md`
+which has the upstream rerun-A → mvp comparison + the steady-
 state projection that obol independently confirms.*

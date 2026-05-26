@@ -1,4 +1,4 @@
-# Code quality analysis — mvp-demo2 shipped artifact
+# Code quality analysis — mvp shipped artifact
 
 > Source material for the paper's quality argument. The cost
 > story is interesting; the cost-AT-quality story is the one
@@ -37,7 +37,7 @@ The three punchlines worth pulling out of that disposition:
    participating only as gate-approver.
 2. **Reviewer recommends shipping the artifact at the spec'd
    scope.** "Single user, no authentication" was the directive
-   ([analysis 034](../../src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md));
+   ([analysis 034](https://github.com/KohlJary/wonderland-ai/blob/main/src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md));
    reviewer's verdict is ship-it-at-that-scope.
 3. **Reviewer's blocker + concerning findings are
    latent-at-v1, acute-at-v2.** Both B1 (silent `If-Match`
@@ -430,7 +430,7 @@ This is what passes Caterpillar's M8 cross-ticket coherence
 check: every component referenced in the design is actually
 imported, rendered, and reachable from the entry point. The
 mvp-demo (first pilot) failed M8 in two places with
-orphaned components; mvp-demo2 doesn't.
+orphaned components; mvp doesn't.
 
 ---
 
@@ -812,7 +812,7 @@ independent senior reviewer (also Claude) describes as
 *"competent, above-average code for an MVP"* with *"real
 engineering taste in the search-escaping and
 timestamp-normalization layers."* Cost: $83.78
-([analysis 033](../../src/wonderland/closet/analyses/033-mvp-demo2-cost-breakdown.md)).
+([analysis 033](https://github.com/KohlJary/wonderland-ai/blob/main/src/wonderland/closet/analyses/033-mvp-demo2-cost-breakdown.md)).
 
 The framing the paper should use: not *"Haiku can write
 code"* (it can; everyone knows) but *"Haiku produces code with
@@ -839,7 +839,7 @@ operator noticed this pattern unsolicited during the pilot.
 ### 7.3. The quality-cost coupling thesis is reinforced
 
 Substrate fixes that improved output also reduced wedge waste.
-mvp-demo had ~$5+ of dead-end run cost; mvp-demo2 had ~$1.
+mvp-demo had ~$5+ of dead-end run cost; mvp had ~$1.
 Code quality observed by independent reviewer is genuinely
 above-MVP-average; cost was $83.78 ($28 per effective
 milestone). Per memory:
@@ -910,7 +910,7 @@ quality for less attention, no Wonderland needed."* Test the
 rebuttal directly. ~$1-2 of inference.
 
 Hypothesis: Sonnet single-shot produces something
-shape-comparable to mvp-demo2 in CRUD scope but lacks the
+shape-comparable to mvp in CRUD scope but lacks the
 multi-lens discipline (no anti-bypass docstrings on escape
 helpers, no severity-tagged tests citing scenario artifacts,
 no cross-file contract citations). Sonnet's output will be
@@ -1028,7 +1028,7 @@ this artifact:**
    environment would pass `npm_build` only if the missing
    deps happen not to be touched by the bundler's
    tree-shake. Filed in the
-   [limitations](./limitations-chapter-source.md) as a
+   limitations (§8) as a
    substrate gap.
 
    Mitigation in verification: clean reinstall
@@ -1047,8 +1047,8 @@ output is shipping-shaped, and the rough edges that get
 called "fine for dev" surface as actual incidents in the
 first non-trivial use, not just on production deployment.
 
-The methodology chapter's [operator-noticed-findings as
-research-grade signal](./methodology-chapter-source.md#operator-noticed-findings-as-a-research-grade-signal)
+The methodology chapter's operator-noticed-findings as
+research-grade signal (§5)
 applies here too — these bugs surfaced during a verification
 the operator was running to *poke at the app for paper
 purposes*, not during a structured eval. They're more
@@ -1059,15 +1059,15 @@ for them.
 
 ## See also
 
-- [Cost breakdown analysis](./cost-breakdown-mvp-demo2.md) —
+- Cost breakdown analysis (Appendix E.1) —
   per-workflow + per-agent spend.
-- [Pilot narrative](./mvp-demo2-pilot-narrative.md) — how it
+- Pilot narrative (Appendix D) — how it
   was built, what shipped per milestone.
-- [Workflow walkthrough](./workflow-walkthrough.md) — the
+- Workflow walkthrough (Appendix A) — the
   substrate mechanics that produced this output.
-- [Cast walkthrough](./cast-walkthrough.md) — the characters
+- Cast walkthrough (Appendix B) — the characters
   whose multi-lens review shaped it.
-- [Limitations chapter source](./limitations-chapter-source.md)
+- Limitations chapter source (§8)
   — both bugs found here are linked from there as
   empirically-validated substrate gaps.
 - The actual code lives at `demo/mvp/` (curated paper-reader

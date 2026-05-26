@@ -40,7 +40,7 @@
 | haiku-tools-custom (mvp) | 47 | **10** | 13/15 |
 | **TOTAL ACROSS BASELINES** | **146** | **30** | — |
 
-**30 blocker-class bugs across 4 single-shot baselines that ship code without any review pass.** Categories match what Caterpillar catches in the Wonderland pilots. The web-app baselines surface more findings because of additional attack surface (XSS, CORS, frontend state-management races) — those categories don't exist on TUI scope but Caterpillar's discipline transferred there too in mvp-demo2/rerun-A.
+**30 blocker-class bugs across 4 single-shot baselines that ship code without any review pass.** Categories match what Caterpillar catches in the Wonderland pilots. The web-app baselines surface more findings because of additional attack surface (XSS, CORS, frontend state-management races) — those categories don't exist on TUI scope but Caterpillar's discipline transferred there too in mvp/rerun-A.
 
 ---
 
@@ -116,7 +116,7 @@ This is the kind of spec-vs-delivery gap that an adversarial review would catch 
 
 ## 4. Baseline 3 — `haiku-claude-code` (mvp scope: markdown notebook web app, Claude Code)
 
-**Setup:** Claude Code with Haiku 4.5. ~526 LOC Python (FastAPI + SQLite), 7 .tsx files (React/Vite). Same prompt as mvp-demo2 pilot.
+**Setup:** Claude Code with Haiku 4.5. ~526 LOC Python (FastAPI + SQLite), 7 .tsx files (React/Vite). Same prompt as mvp pilot.
 
 ### 4.1 Findings summary
 
@@ -151,7 +151,7 @@ The `cascade='all'` on the m2m relationship is the kind of bug that's impossible
 
 ## 5. Baseline 4 — `haiku-tools-custom` (mvp scope: markdown notebook web app, custom tool-loop)
 
-**Setup:** Custom Haiku 4.5 tool-loop. ~663 LOC Python, 9 .tsx/.ts files, includes `integration_test.py` and a checked-in `notebook.db`. Same prompt as mvp-demo2.
+**Setup:** Custom Haiku 4.5 tool-loop. ~663 LOC Python, 9 .tsx/.ts files, includes `integration_test.py` and a checked-in `notebook.db`. Same prompt as mvp.
 
 ### 5.1 Findings summary
 
@@ -291,11 +291,11 @@ Across both project scopes, the custom tool-loop baselines surface more blockers
 
 ## 9. Implications for the paper
 
-The substrate-cost arguments (rerun-A vs mvp-demo2 at 33% cheaper; obol-260522-1 design at 60% cheaper per milestone) already make the cost case. This artifact closes a complementary gap on the QUALITY side: the substrate's most expensive single component (Caterpillar's M8 review at ~$0.50/feature) is justified by the bug-class evidence here — single-shot baselines ship the same bug shapes unfixed.
+The substrate-cost arguments (rerun-A vs mvp at 33% cheaper; obol-260522-1 design at 60% cheaper per milestone) already make the cost case. This artifact closes a complementary gap on the QUALITY side: the substrate's most expensive single component (Caterpillar's M8 review at ~$0.50/feature) is justified by the bug-class evidence here — single-shot baselines ship the same bug shapes unfixed.
 
 The quality-cost coupling claim (every substrate fix has improved BOTH output AND lowered cost) extends naturally: the substrate ALSO catches bugs that baselines ship. Three independent receipts:
 
-1. **Cost trajectory** (rerun-A vs mvp-demo2 vs obol design): -33%, -60% per milestone
+1. **Cost trajectory** (rerun-A vs mvp vs obol design): -33%, -60% per milestone
 2. **Bug categories caught** (this artifact): all 13 Caterpillar categories surface in un-reviewed baselines
 3. **Multi-lens identity-anchored review produces quality code** (operator memory observation): user noticed unsolicited that substrate code accounts for edge cases / security holes they wouldn't have thought of solo
 
@@ -318,6 +318,6 @@ extended with XSS / CORS / frontend-state-management for the
 web-app baselines. Pilot findings counted from the 29 review records
 in `projects/obol-260522-1/.wonderland/reviews/`. Pairs with
 `obol-baselines-vs-wonderland.md` (cost comparison) and
-`pilot-comparison-rerun-A-vs-mvp-demo2.md` (intra-mvp cost
+`pilot-comparison-rerun-A-vs-mvp.md` (intra-mvp cost
 comparison) — this artifact is the quality counterpart on the same
 baseline shapes.*

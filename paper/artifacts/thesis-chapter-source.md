@@ -1,75 +1,176 @@
-# Thesis chapter source
+# §2 — Thesis
 
-> Source material for the paper's Thesis chapter. Extends the
-> canonical [THESIS.md](../../THESIS.md) (5 corollaries, written
-> pre-mvp-demo2) with what's been learned through the
-> Tier 2 autonomous pilot — most notably a sixth corollary
-> (substrate constraint amplifies identity) and updated
-> evidence citations across the existing five.
->
-> Companion to [evidence-chapter-source.md](./evidence-chapter-source.md);
-> the thesis makes architectural claims; the evidence chapter
-> validates the predictions those claims make.
+## §2.1 — The central claim
 
-## Note on this artifact vs THESIS.md
+Wonderland is one architectural claim observed at two scales.
 
-THESIS.md is the canonical thesis statement that ships with
-the repo for casual readers ("what is this project?"). It was
-written when the most recent pilot evidence was analyses 027
-and 034 (tdd-serial-phased-first-run, NOT mvp-demo2 — the
-analyses directory got renumbered after THESIS.md was
-written).
+The **local scale** is empirical: every substrate primitive
+that narrows agent grammar improves output AND lowers cost.
+Across the substrate's iteration history, every primitive
+shipped to date that constrained how agents could speak,
+what they could cite, what they could write, improved the
+quality of what they produced AND reduced the total cost of
+producing it. The cost trajectory across pilots is the
+aggregate signature; §7 develops the full receipt.
 
-This artifact is for paper writers. Longer, more
-academic-register, with updated pilot evidence citations and a
-new sixth corollary that emerged from substrate work after
-THESIS.md was committed. The five original corollaries are
-preserved structurally; their evidence sections are updated.
+The **global scale** is architectural: Wonderland is built
+around **taking identity seriously as the organizing
+principle**. The cast is small and named. Each character has
+a constitution it inhabits across runs. Each constitution
+names a characteristic failure mode (§VIII) — the way THIS
+character, specifically, fails. The substrate's invariants
+are the operationalization of those identities: every
+constraint encodes a way some named identity could fail to
+act in character. State-as-primary — typed durable artifacts
+with lifecycle state machines, citation chains, structural
+invariants — exists because identities only carry judgment
+across runs if the artifacts their judgment was applied to
+survive between runs.
 
-THESIS.md could benefit from being updated to incorporate the
-sixth corollary and the mvp-demo2 evidence citations, but that's
-a separate editing pass — the canonical statement and the paper
-chapter source are allowed to drift slightly without harm.
+### Why these are the same claim
+
+The local coupling holds because the constraints that produce
+it ARE the identity-substrate's invariants made operational.
+When the substrate narrows what an agent can say or how they
+can cite, it isn't narrowing arbitrary grammar — it's
+encoding what it means to be Caterpillar (citation
+discipline), or Alice (persona grounding), or the Tweedles
+(contract negotiation between equals). The cost goes down
+because agents don't have to derive that discipline
+turn-by-turn; the constraint already encoded it. The quality
+goes up because deliberation happens within a smaller, more
+legible space.
+
+You can't reliably get the local coupling without the global
+commitment, because constraints that don't encode identity
+drift toward generic procedural rules that agents reason
+around. The global commitment without the local coupling
+would be aesthetic dressing — names and constitutions
+producing nothing measurable. The paper's argument is that
+these are inseparable: **identity engineering as organizing
+principle produces a measurable coupling between substrate
+constraint and quality+cost, because that's what taking
+identity seriously at scale looks like when you measure it.**
+
+The contrast that makes the global commitment non-trivial:
+in conventional multi-agent setups, an agent is *role + tools
++ goals* — a function defined by what it should do. In
+Wonderland, an agent is *character + voice + persistent
+persona + named failure modes* — a function defined by who
+it *is*, which then constrains what it does. The difference
+is whether judgment is **constituted** (Wonderland) or
+**re-derived from a system prompt each turn** (conventional).
+
+The contrast that makes the local commitment non-trivial:
+the substrate side has its own structural shape that
+distinguishes it from conventional agent frameworks.
+**State is primary; agents are LLM-driven transition
+functions over typed durable artifacts.** Conventional
+multi-agent framings center the agents — orchestrators call
+agent functions, agents return results, results get stitched
+together by code outside the agents, state (when it exists)
+is scratch space passed between calls. Wonderland inverts
+that. The primary thing is the artifact layer — typed
+durable objects (requirements, stories, features, tickets,
+milestones, contracts, reviews, implementations) with
+lifecycle state machines, citation chains between them, and
+structural invariants enforced at the substrate level.
+Agents are how transitions happen, not what the system is.
+Concretely: when an agent emits an utterance, the utterance
+mutates typed state. A feature transitions `proposed →
+in_design`. A ticket transitions `pending → queued`. The
+transition is gated by structural invariants — does the
+citation resolve to a real upstream artifact? Does the
+milestone tag match the active scope? Does the verification
+check pass end-to-end? The agent's role is to produce a
+candidate transition; the substrate decides whether the
+transition is admissible.
+
+The structural definition (state-primary, agents as
+transitions) and the architectural commitment (identity as
+organizing principle) compose into the unified claim because
+typed durable artifacts with lifecycle invariants are
+precisely the surfaces on which constituted identities
+accumulate and carry their work. The artifact layer is what
+gives identity somewhere to be. Strip the typed-state
+commitment and identity collapses to prompt-stylistic; strip
+the identity commitment and the typed-state primitives
+collapse to generic workflow scaffolding. The unified claim
+is that *neither half stands alone*, and *the same
+substrate-iteration history that produced the empirical
+coupling produced a system organized around identity at
+every layer* — because those are the same fact viewed at
+different magnifications.
+
+### Falsifier
+
+The unified claim has a unified falsifier: a project built
+without taking identity seriously as the organizing principle,
+accumulating substrate constraints over a comparable
+iteration history, produces (a) the same coupling between
+constraint and quality+cost, (b) the same
+characteristic-failure-mode discipline across its agent
+cast, AND (c) the same artifact density per agent-tax dollar
+at the working-app scale. If a non-identity-organized
+project produces all three, the organizing-principle claim
+is decoration — the coupling is doing all the work and
+identity is post-hoc rationalization. If it produces none,
+the coupling IS what taking identity seriously looks like
+when measured.
+
+**The falsifier has one face that is operationalized at
+next-pilot scope and two faces that aren't.** The
+methodology-chapter falsifier table (§5) pre-registers the
+cost-trajectory face (c) as a per-pilot prediction: the next
+pilot's cost trajectory continues the $83.78 → $30.58
+direction at the per-feature level, or refutes the coupling
+mechanism. Faces (a) artifact density and (b)
+characteristic-failure-mode discipline require the
+comparator framework §5 names as a research program — a
+non-identity-organized project built up to comparable
+substrate maturity, measured against the same artifact-set
+and failure-mode rubrics. This face of the unified claim
+remains honest-failure noted rather than pre-registered,
+because no cheap version of the test exists. **The
+discipline the unified claim commits to is that the cost
+trajectory's continued behavior is the next-pilot signal
+the unified claim makes operational**; if that signal
+breaks, the unified claim's empirical leg breaks
+regardless of whether the research program for (a) and (b)
+has shipped yet.
+
+The narrower agent-level comparator pre-registered in
+Appendix C tests a hygiene hypothesis at single-agent scope
+(whether Caterpillar's literary register affects M8 review
+output beyond what the operational rules alone produce); it
+is **not load-bearing for the unified claim above**, because
+identity engineering as organizing principle isn't ablatable
+at the single-agent level — it's framework-scope or nothing.
+
+### Six corollaries develop the unified claim
+
+The six corollaries that structure this chapter develop the
+unified claim at its two scales. Corollaries 1–4 develop the
+local mechanism — what identity-bearing agents contribute,
+how the contributions compose into shipped artifacts, how
+the system degrades visibly when something is wrong, why the
+substrate produces friction-as-design rather than
+consensus-as-design. Corollaries 5–6 develop the global
+architecture — friction-as-the-substrate, substrate
+constraint amplifies identity. They are not separate claims
+that happen to compose; they are facets of the unified
+claim that the chapter develops one at a time so each can be
+inspected against pilot evidence.
+
+The paper's house word for the category Wonderland occupies
+is **substrate** — not standard terminology, but it captures
+the load-bearing distinction: the artifact layer is what the
+agents grow on, not scratch space they pass through. §1.1
+named the categorical gap; §10 develops it.
 
 ---
 
-## The architectural claim
-
-**Identity does real work.**
-
-An agent with a constitution it inhabits across many threads
-behaves differently from an agent reconstructed from a system
-prompt each turn. It accumulates judgment. It develops
-calibrated views of its colleagues. It refuses to cross domain
-boundaries because the boundary is part of who it is, not a
-policy applied from outside.
-
-The contrast that makes this claim non-trivial: in conventional
-multi-agent setups, an agent is *role + tools + goals* — a
-function defined by what it should do. In Wonderland, an agent
-is *character + voice + persistent persona + named failure
-modes* — a function defined by who it *is*, which then
-constrains what it does. The difference is whether judgment is
-**constituted** (Wonderland) or **re-derived from a system
-prompt each turn** (conventional).
-
-This is a specific, testable claim. Its falsifier is a
-generic-baseline-vs-identity-native eval that produces
-matched-on-task comparisons between Wonderland-on-Haiku and a
-generic-prompt-on-the-same-model baseline. That harness lives
-in roadmap item P7 and is still future work. Until the eval
-ships, the [analyses/](../../src/wonderland/closet/analyses/)
-directory carries the qualitative observations as the system
-gets built out.
-
-What HAS been demonstrated through the iteration history:
-six corollaries that follow from the architectural claim,
-each with concrete pilot evidence. They are the structure of
-the chapter.
-
----
-
-## Corollary 1 — Identity lets smaller models outperform their expected capabilities
+## §2.2 — Corollary 1: Identity lets smaller models outperform their expected capabilities
 
 ### Claim
 
@@ -108,7 +209,7 @@ otherwise have to do via raw inference.
 
 ### Concrete pilot evidence
 
-- **Early evidence (THESIS.md cites):** analysis 004
+- **Early evidence:** analysis 004
   (Showcase 1, /health endpoint) — three of four agents
   correctly chose silence on a concrete operational directive
   because their constitutions named padding, false certainty,
@@ -116,17 +217,17 @@ otherwise have to do via raw inference.
   against. No external policy intervened; the team's silence
   *was* the settlement.
 
-- **New evidence (mvp-demo2):** the Tier 2 autonomous pilot
+- **New evidence (mvp):** the Tier 2 autonomous pilot
   completed end-to-end on Haiku 4.5 — 3 milestones designed,
   implemented, and verified for $83.78
-  ([analysis 034](../../src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md),
-  [cost breakdown](./cost-breakdown-mvp-demo2.md)). An
+  ([analysis 034](https://github.com/KohlJary/wonderland-ai/blob/main/src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md),
+  cost breakdown ([analysis](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/cost-breakdown-mvp.md))). An
   independent cold reviewer (a fresh Claude instance, no
   Wonderland context) called the resulting code *"competent,
   above-average code for an MVP"* with *"real engineering
   taste in the search-escaping and timestamp-normalization
   layers"*
-  ([code quality artifact](./code-quality-mvp-demo2.md)).
+  (see [code-quality analysis](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/code-quality-mvp.md)).
   Haiku produced this output. The constitutions did most of
   the load-bearing judgment work.
 
@@ -137,7 +238,24 @@ otherwise have to do via raw inference.
   Haiku-class model, where fabrication is the standard
   failure mode. The constitution's forced-citation discipline
   did the work the model wouldn't have done on its own
-  ([Evidence Pillar 3](./evidence-chapter-source.md#pillar-3--schema-as-safety-forced-citation-prevents-hallucination)).
+  (developed as the schema-as-safety property in §7 (§7):
+  forced-citation review structure makes hallucination
+  harder than honest reading for small models).
+
+- **Substrate-stack cost trajectory:** the strongest receipt
+  for Haiku-with-strong-constraints isn't that Haiku ships
+  working code — it's that the cost-per-pilot drops
+  monotonically as substrate constraints compound across
+  iterations. The full per-pilot trajectory + per-milestone
+  decomposition is developed as the
+  quality-cost coupling property in §7 (§7):
+  every substrate primitive that narrows agent grammar
+  improves output AND lowers cost. Identity-bearing-the-work,
+  when given a better substrate to operate on, gets cheaper
+  AND produces higher-quality artifacts. The
+  constraint→quality+cost coupling is the load-bearing
+  observation; Corollary 6 develops the architectural reason
+  it isn't a coincidence.
 
 ### Honest scope
 
@@ -153,7 +271,7 @@ otherwise have to do via raw inference.
 
 ---
 
-## Corollary 2 — Failure modes are part of identity
+## §2.3 — Corollary 2: Failure modes are part of identity
 
 ### Claim
 
@@ -219,7 +337,7 @@ deliberating, and that's the load-bearing thing.
   named the failure modes they would otherwise slip into. The
   silence was the settlement; no external policy intervened.
 
-- **mvp-demo2 (multi-lens review producing unrequested
+- **mvp (multi-lens review producing unrequested
   quality):** the operator observed unsolicited mid-pilot:
   *"we're not just shipping code, it's quality code. They're
   accounting for all types of shit I never would have thought
@@ -231,22 +349,11 @@ deliberating, and that's the load-bearing thing.
   sanitization, and severity-tagged tests citing scenario
   GUIDs was the §VIII pattern at work, observable in the
   shipped artifact
-  ([code quality artifact §3](./code-quality-mvp-demo2.md#3-pattern-receipts--whats-genuinely-good)).
-
-### Where this lands in the paper
-
-This is the **load-bearing differentiating claim**. Lead with
-it after the architectural claim itself. The Sephirah/Qlipha
-framing is the intellectual anchor that distinguishes
-Wonderland from "list of anti-patterns for agents." Connect
-forward to Evidence Pillar 2 (multi-lens identity-anchored
-review) — failure-modes-as-identity is the design choice;
-multi-lens review is the operational consequence; quality is
-the output.
+  (see [code-quality analysis §3](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/code-quality-mvp.md#3-pattern-receipts--whats-genuinely-good)).
 
 ---
 
-## Corollary 3 — Character-shaped agents degrade visibly, not silently
+## §2.4 — Corollary 3: Character-shaped agents degrade visibly, not silently
 
 ### Claim
 
@@ -292,7 +399,7 @@ spec's absence affects what they can do.
 
 ### Concrete pilot evidence
 
-- **THESIS.md original:** analysis 027
+- **Original observation:** analysis 027
   (pomodoro-degradation-and-event-leak). Tweedles noticed
   the directive referenced artifacts that didn't exist,
   flagged the mismatch as a `concern`, reached for the
@@ -309,8 +416,10 @@ spec's absence affects what they can do.
   Caterpillar's review re-surfaced those findings because
   the code state was the ground truth, not the ticket graph.
   Substrate damage was recoverable through the next review
-  pass
-  ([Evidence Pillar 4](./evidence-chapter-source.md#pillar-4--convergent-self-repair-with-a-documented-limit)).
+  pass (developed as the convergent-self-repair property in §7 (§7):
+  Caterpillar reads the working tree at review time, so
+  substrate bookkeeping bugs don't propagate into shipped
+  artifacts).
 
 - **Newer evidence + limit:** the recovery property has a
   documented limit — it operates on *code state*, not on
@@ -321,18 +430,9 @@ spec's absence affects what they can do.
   surfacing this limit is part of the corollary's honest
   framing, not a refutation of it.
 
-### Where this lands in the paper
-
-The recovery-pattern story (analysis 027 → Caterpillar's
-self-repair → branching memory as the response to the
-self-repair's limit) is a tight three-act arc. Use it to make
-the case that visible degradation isn't accidental
-robustness; it's a property of building characters who notice
-when their environment fails them.
-
 ---
 
-## Corollary 4 — Production shape as a derived property
+## §2.5 — Corollary 4: Production shape as a derived property
 
 ### Claim
 
@@ -378,7 +478,7 @@ shape no individual character is targeting.
 
 ### Concrete pilot evidence
 
-- **THESIS.md original:** analyses 034 + 035
+- **Original observation:** analyses 034 + 035
   (tdd-serial-phased runs) shipped accessibility coverage that
   the directive never requested. The team produced an
   explicit deaf-user persona (Priya, *"29, deaf software
@@ -388,7 +488,7 @@ shape no individual character is targeting.
   and a persona-grounded view of "who actually uses this
   software" includes users with disabilities by default.
 
-- **mvp-demo2 (the same property, code-shaped):**
+- **mvp (the same property, code-shaped):**
   - **39 contract/ticket/ruling references scattered across 8
     source files** — inline citations from production code
     back to the design artifacts that justified it. No
@@ -423,20 +523,9 @@ shape no individual character is targeting.
   load the spec doesn't include). The property is shape, not
   scope-judgment.
 
-### Where this lands in the paper
-
-This is the corollary that pairs most directly with the
-[code-quality artifact](./code-quality-mvp-demo2.md). Quote
-the cold reviewer's verdict (*"competent, above-average code
-for an MVP"*) and the specific receipts (LIKE escape
-discipline, DOMPurify, severity-tagged tests). The artifact
-makes this corollary unusually citable — most thesis-level
-claims live in qualitative description; this one has a
-verbatim independent review.
-
 ---
 
-## Corollary 5 — Friction is the substrate
+## §2.6 — Corollary 5: Friction is the substrate
 
 ### Claim
 
@@ -490,7 +579,7 @@ the result of friction, not the friction itself.
 
 ### Concrete pilot evidence
 
-The [workflow walkthrough](./workflow-walkthrough.md)
+The workflow walkthrough (Appendix A)
 documents this corollary at meeting-by-meeting granularity.
 Every meeting's roster + convener directive is engineered
 friction:
@@ -505,32 +594,33 @@ friction:
 - **tdd-design M5** — Tweedledee + Tweedledum + Alice. The
   pair negotiates the contract; Alice grounds when the
   contract drifts from user-recognition.
-- **tdd-implement M8** — Caterpillar + both Tweedles. The
-  Tweedles defend or revise; Caterpillar reads for coherence;
-  the verdict is the friction-resolved output.
+- **tdd-implement M8** — Caterpillar solo (post-T-ab54).
+  Review is coherent-reading-of-a-deliverable, and that's
+  a single-lens job; the Tweedles paid full window-overhead
+  for only ~20% engagement when they were on the roster.
+  T-ab54 narrowed M8 to Caterpillar alone. The Tweedles can
+  still buzz in via §III selective engagement when a contract
+  question surfaces, but they're not on the standing roster.
 
-Each meeting could have shipped fewer voices and would have
-been cheaper per-meeting. The substrate is opinionated about
-which voices belong in each meeting *because* the friction
-between them produces the output shape.
-
-### Where this lands in the paper
-
-This is the architectural-philosophy section. Position
-against the "consensus and reflection" wisdom in the agent
-literature. The §VIII meta-move (friction-as-character) is
-what distinguishes Wonderland's engineered friction from
-"agents argue more." Both Pillar 2 (multi-lens review) and
-Pillar 5 (constraints improve quality) follow from this
-architectural commitment.
+Each multi-voice meeting could in principle have shipped
+fewer voices, and would have been cheaper per-meeting. The
+substrate is opinionated about which voices belong in each
+meeting *because* the friction between them produces the
+output shape — when friction is the mechanism. M8 is the
+counterexample that proves the substrate isn't running
+multi-agent dogma: when the work is one identity's coherent
+read, the substrate ships the meeting with one
+participant. **Single-participant meetings are an allowed
+and sometimes-correct configuration**; the substrate's
+roster discipline is content-aware, not formula-driven.
 
 ---
 
-## NEW Corollary 6 — Substrate constraint amplifies identity
+## §2.7 — Corollary 6: Substrate constraint amplifies identity
 
 ### Claim
 
-What's been learned since THESIS.md was written:
+What the substrate's iteration history has surfaced:
 **substrate constraints don't impose discipline on agents
 from outside; they let identity carry more of the discipline
 from inside.** Every substrate primitive shipped to date that
@@ -539,13 +629,13 @@ The substrate compounds with identity rather than competing
 with it.
 
 This is the substrate corollary that the original five didn't
-have because mvp-demo + mvp-demo2 hadn't run yet when
-THESIS.md was written. It's evidence-graded enough now to
-promote to thesis-level.
+have because mvp-demo + mvp hadn't run yet when the prior
+corollaries were formulated. It's evidence-graded enough now
+to promote to thesis-level.
 
 ### Mechanism
 
-Per [Evidence Pillar 5](./evidence-chapter-source.md#pillar-5--constraints-improve-quality):
+Per the constraints-improve-quality observation in §7 (§7):
 substrate-level constraints constrain the *grammar*, not the
 output. Agents still have full freedom WITHIN the structure,
 but the structure forces them to confront questions they'd
@@ -568,8 +658,8 @@ are scaffolding that makes capability legible.
 ### Concrete pilot evidence
 
 Each substrate primitive shipped through the iteration history
-is an instance. The full table lives in
-[Evidence Pillar 5](./evidence-chapter-source.md#concrete-pilot-evidence-4);
+is an instance. The full table lives in §7's
+constraints-improve-quality concrete-evidence section (§7);
 abbreviated here:
 
 - **Snapshot semantics** (P15) → forced agents to think
@@ -587,38 +677,76 @@ abbreviated here:
   hallucination structurally harder than honest reading on
   small models.
 
+The pattern continued through the post-mvp substrate
+stack — each fix narrowing agent grammar, catching a class
+of failure that previously slipped through, AND lowering
+cost by eliminating the rework cycles those failures would
+have triggered. The per-fix walkthrough lives in §6's
+substrate-evolution chronicle; the substrate primitives
+tabulated against their grammar-narrowing effect live in
+§7 Pillar 5.
+
 The surprising consequence: **quality and cost moved together,
 not against each other**, every time a substrate primitive
-shipped
-([Evidence Pillar 1](./evidence-chapter-source.md#pillar-1--quality-cost-coupling)).
-This inverts the conventional ML/agent intuition. It's the
-clearest evidence that the substrate isn't a tax on the
-identity-bearing work — it's the medium in which
-identity-bearing work becomes more legible to the system.
+shipped (the quality-cost coupling property in §7 (§7)
+develops the full receipt). This inverts the conventional
+ML/agent intuition. It's the clearest evidence that the
+substrate isn't a tax on the identity-bearing work — it's
+the medium in which identity-bearing work becomes more
+legible to the system.
 
-### Where this lands in the paper
-
-After Corollary 5 (friction is the substrate). The
-relationship: C5 names friction-as-substrate; C6 names how
-substrate constraints (which ARE friction in operational form)
-compound with character identity rather than competing with
-it. Together they make the architectural case for opinionated
-substrate over flexible agent prompting.
-
-This is the corollary that pushes back hardest against the
-field's conventional wisdom. *"Give LLMs flexibility, write
-open-ended prompts, let them figure it out"* is the dominant
-advice; Wonderland's evidence runs the opposite direction.
-Frame it explicitly as a counter-claim; address the obvious
-rebuttal ("isn't this just rigid prompting?") — no, rigid
-prompting constrains the OUTPUT; substrate constraints
-constrain the GRAMMAR. Agents still have freedom within
-structure, but the structure forces them to confront
-questions they'd otherwise paper over.
+The cost trajectory developed in §7 Pillar 1 is what the
+constraint→quality+cost coupling produces in aggregate
+across substrate generations. The trajectory isn't an
+unrelated optimization narrative bolted onto the thesis;
+it's the architectural commitment's empirical signature.
 
 ---
 
-## Closing frame
+## §2.8 — The author is authoring the substrate in real-time
+
+A consequence of the operator-in-loop falsification
+mechanism the methodology chapter (§5) develops as
+load-bearing, named here at the close of the thesis because
+it bears on how the rest of the paper should be read:
+**the author of this paper is authoring the substrate in
+real-time, not describing a substrate that exists outside
+the authoring.** Every editorial pass on the paper, every
+cross-reference normalization, every falsification
+commitment made explicit, every claim softened from
+'demonstrated' to 'proposed' — these are substrate
+operations on a substrate-component the operator is
+mid-construction of. The paper isn't a snapshot of a
+finished thing observed from outside; it's an artifact
+produced by the substrate-evolution cycle continuing to
+run, with the paper itself as the artifact under
+construction.
+
+The publication snapshot the limitations chapter (§8)
+commits to is not just a snapshot of code + analyses +
+memory pins; it's a snapshot of an author mid-construction.
+The next iteration cycle past publication will continue
+to author the substrate, and arguably the next paper. The
+substrate doesn't pause for documentation; the
+documentation is one of the substrate's outputs, produced
+by the same iteration cycle that produces its code and
+its artifacts.
+
+This is consistent with — and an instance of — the
+worldview-as-integral commitment §1.4 develops: the author
+isn't applying a worldview to a substrate from outside;
+the author-with-worldview is one of the substrate's
+constitutive components, evolving alongside the substrate
+the author is building. Strip the worldview and you don't
+get neutrality; you get a different author-component
+authoring a different substrate. The unified claim §2
+develops at two scales has the author as part of the
+substrate it claims; the §4.7 cast-chapter walk of Daedalus
+makes the recursive arrangement concrete.
+
+---
+
+## §2.9 — Closing frame
 
 > *Failures are how software gets built.*
 
@@ -655,82 +783,14 @@ engineering** as a research direction:
   (Corollary 3) and produces production-shaped output by
   default (Corollary 4).
 
-Identity engineering is the discipline; Wonderland is one
-instance; the paper is the case for the discipline being
-worth pursuing beyond this instance.
+We propose identity engineering as the research direction;
+Wonderland is one instance; the paper is the case for the
+direction being worth pursuing beyond this instance.
+Whether it constitutes a *distinct* discipline (vs.
+prompt-engineering-with-richer-prompts, vs. multi-agent
+systems work) is what the comparative experiments in §9
+would answer. Distinctness is proposed here, not yet
+demonstrated.
 
 ---
 
-## Notes for the paper writer
-
-A few editorial framings worth preserving from THESIS.md +
-extending:
-
-1. **The Sephirah/Qlipha analogy in Corollary 2 is too good
-   to drop.** Readers who think "failure modes" = "list of
-   anti-patterns" will read past the corollary. The
-   Kabbalistic framing makes the depth of the claim legible —
-   every virtue has a characteristic shadow; naming the
-   shadow is part of constituting the virtue. Keep it.
-
-2. **The literary lineage matters.** The cast is named after
-   Carroll's Alice and Wonderland characters (Cheshire Cat,
-   Caterpillar, Mad Hatter, Queen of Hearts, etc.) because
-   literary characters carry intentions in a way "the X
-   agent" doesn't. The recovery pattern in Corollary 3 works
-   because the agents *have* characters; the production-shape
-   property in Corollary 4 works because the characters carry
-   assumptions about what shape work takes for them. Don't
-   defang the literary framing as quirky branding — it's the
-   point.
-
-3. **The P7 generic-baseline eval is still future work.**
-   When the paper discusses Corollary 1, be explicit that
-   the strongest empirical claim is "Haiku produces work
-   consistent with what identity-bearing-the-work would
-   predict," not "Haiku outperforms generic-prompt-on-Haiku."
-   Comparative pilot is on the roadmap; acknowledging the
-   gap is more credible than overclaiming.
-
-4. **The thesis chapter and the evidence chapter should
-   cross-reference, not duplicate.** Each corollary in the
-   thesis chapter cites the evidence pillar(s) that validate
-   it; each pillar in the evidence chapter cites the
-   corollary it follows from. Together they form the load
-   path: architectural claim → corollaries (thesis chapter)
-   → pillars (evidence chapter) → artifacts (code-quality,
-   workflow walkthrough, cast walkthrough, pilot narratives).
-
-5. **THESIS.md itself.** The canonical statement in
-   `THESIS.md` predates mvp-demo2 and the sixth corollary.
-   Worth a future editing pass to align — but the chapter
-   source and the canonical statement are allowed to drift
-   slightly without harm. The chapter source is the more
-   detailed paper-shaped version; THESIS.md is the
-   ship-with-the-repo summary.
-
----
-
-## See also
-
-- [THESIS.md](../../THESIS.md) — canonical thesis statement
-  (pre-mvp-demo2, 5 corollaries).
-- [evidence-chapter-source.md](./evidence-chapter-source.md)
-  — the five pillars that validate the predictions these
-  corollaries make.
-- [workflow-walkthrough.md](./workflow-walkthrough.md) — the
-  engineered-friction mechanism (Corollary 5) at meeting
-  granularity.
-- [cast-walkthrough.md](./cast-walkthrough.md) — the
-  failure-modes-as-identity pattern (Corollary 2) at character
-  granularity.
-- [code-quality-mvp-demo2.md](./code-quality-mvp-demo2.md) —
-  the production-shape property (Corollary 4) at code
-  granularity.
-- [analysis 004](../../src/wonderland/closet/analyses/004-first-race.md)
-  — silence-as-settlement evidence for Corollaries 1 + 2.
-- [analysis 027](../../src/wonderland/closet/analyses/027-pomodoro-degradation-and-event-leak.md)
-  — visible-degradation evidence for Corollary 3.
-- [analysis 034](../../src/wonderland/closet/analyses/034-mvp-demo2-autonomous-pilot.md)
-  — mvp-demo2 completion narrative; new pilot evidence
-  across all six corollaries.

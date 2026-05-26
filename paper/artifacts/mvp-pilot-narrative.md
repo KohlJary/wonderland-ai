@@ -12,7 +12,7 @@
 
 This is the showcase for what Wonderland looks like running end-to-end
 without operator hand-fixing the substrate. It supersedes the earlier
-Geocities pilot ([analysis 028](./028-pomodoro-end-to-end.md), referenced
+Geocities pilot ([analysis 028](https://github.com/KohlJary/wonderland-ai/blob/main/analyses/028-pomodoro-end-to-end.md), referenced
 from the project README) as the headline demonstration — that was a
 single-directive run; this is multi-milestone autonomous operation.
 
@@ -21,7 +21,7 @@ single-directive run; this is multi-milestone autonomous operation.
 ## What got built
 
 A personal markdown notebook web app. The directive came from the
-``notebook`` directive ([analysis source](../directives/notebook.yaml)):
+``notebook`` directive ([analysis source](https://github.com/KohlJary/wonderland-ai/blob/main/src/wonderland/closet/directives/notebook.yaml)):
 
 > Build a personal markdown notebook web app. Single user, no
 > authentication. Capture markdown notes, tag them for organization,
@@ -173,7 +173,7 @@ memory, file edits to milestone consumes_requirements, killing
 processes mid-stream. The pilot eventually shipped a partial
 artifact for ~$40 with significant fixer-level operator participation.
 
-**Between mvp-demo and mvp-demo2**, six substrate improvements
+**Between mvp-demo and mvp**, six substrate improvements
 landed:
 
 - **T-a1**: MilestoneRegistry audit log on every unlink
@@ -191,7 +191,7 @@ landed:
 
 All shipped as part of release **0.8.0**.
 
-The result: mvp-demo2 completed end-to-end with operator
+The result: mvp completed end-to-end with operator
 participating primarily as gate-approver. Zero killed runs. Zero
 memory surgery. Zero hand-edited tickets. **One** mid-pilot
 substrate fix (auto-directive synthesis), which counts as a Tier
@@ -219,7 +219,7 @@ the next pilot's failure mode.
 ### 3. Quality and cost move together
 
 Substrate fixes that improved output also reduced wedge waste.
-Mvp-demo had ~$5+ of dead-end run cost; mvp-demo2 had ~$1. Code
+Mvp-demo had ~$5+ of dead-end run cost; mvp had ~$1. Code
 quality observed by operator was better (sql escape discipline,
 edge case handling), and the per-effective-milestone cost ($28)
 was a real number — not an abstraction.
@@ -267,13 +267,13 @@ uv run pytest tests/    # 61 tests, all passing
 
 ## See also
 
-- [Cost breakdown analysis](./033-mvp-demo2-cost-breakdown.md) —
+- [Cost breakdown analysis](https://github.com/KohlJary/wonderland-ai/blob/main/src/wonderland/closet/analyses/033-mvp-demo2-cost-breakdown.md) —
   per-workflow + per-agent spend, efficiency hotspots, optimization
   levers
-- [Release notes 0.8.0](../../../../release-notes/0.8.0.md) — the
+- [Release notes 0.8.0](https://github.com/KohlJary/wonderland-ai/blob/main/release-notes/0.8.0.md) — the
   substrate improvements that enabled this pilot's completion
-- [Branching memory design](../../../../.daedalus/design-memory-branching.md)
+- [Branching memory design](https://github.com/KohlJary/wonderland-ai/blob/main/.daedalus/design-memory-branching.md)
   — T-a2 architecture proposal (the load-bearing fix)
-- [Paper notes](../../../../paper/) — source material for the
+- [Paper notes](https://github.com/KohlJary/wonderland-ai/tree/main/paper/) — source material for the
   Wonderland paper draws on this analysis + the cost breakdown
   + multiple memory observations
