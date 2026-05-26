@@ -405,9 +405,8 @@ have been partially run. The
 [comparison-baselines analysis](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/comparison-baselines/README.md)
 documents what shipped from each baseline against the same
 notebook directive that mvp + redux ran. Findings include
-the
-[adversarial-review-of-baselines](https://github.com/KohlJary/wonderland-ai/blob/main/paper/artifacts/comparison-baselines/adversarial-review-of-baselines.md):
-30 blocker-class bugs across 4 single-shot baselines that
+the adversarial-review-of-baselines (Appendix D): 30
+blocker-class bugs across 4 single-shot baselines that
 ship code without any review pass. Categories match what
 Caterpillar catches in the Wonderland pilots.
 

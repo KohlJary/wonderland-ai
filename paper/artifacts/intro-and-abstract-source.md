@@ -86,8 +86,8 @@ inference at any model class (Haiku, Sonnet, Opus) does
 not produce working full-stack applications from the
 notebook directive. The artifacts ship with missing
 endpoints, orphan UI components, security holes, no
-tests, and accessibility omissions. The
-adversarial-review-of-baselines analysis documented 30
+tests, and accessibility omissions. The adversarial-
+review-of-baselines analysis (Appendix D) documented 30
 blocker-class bugs across 4 single-shot baselines that
 ship code without any review pass. The relevant
 competitor class is not single-shot inference; it's
