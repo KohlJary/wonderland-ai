@@ -55,7 +55,7 @@
 | Appendix A | Architecture full walkthrough | `appendix-A-architecture-full.md` | 1451 | Full per-meeting walkthrough (was §3 in pre-compression draft; now the deep-reference companion to §3's body summary) |
 | Appendix B | Cast full registry | `appendix-B-cast-full.md` | 778 | Full per-character walkthrough (was §4 in pre-compression draft; now the deep-reference companion to §4's body summary) |
 | Appendix C | Caterpillar comparator experiment (pre-registered) | `appendix-C-caterpillar-comparator-experiment.md` | 385 | New (pre-registered narrow comparator design for identity-engineering claim; **not executed for this paper** — design is ready for follow-up paper or other researcher) |
-| Appendix D | Adversarial review of single-shot baselines | `appendix-D-adversarial-review-of-baselines.md` | 323 | Stable; load-bearing receipt for §1's "single-shot doesn't produce working code" claim |
+| Appendix D | Adversarial review of single-shot baselines | `appendix-D-adversarial-review-of-baselines.md` | 417 | Two-study structure: §§2-5 tool-augmented Haiku × 4; §6 pure single-shot model-class sweep (Haiku/Sonnet/Opus). Load-bearing receipt for §1.1's "single-shot at any model class doesn't produce working code" claim |
 | Appendix E | Economics | `cost-breakdown-mvp.md` + `design-cost-three-pilot-comparison.md` | ~530 | Stable |
 | Appendix F | Code quality | `code-quality-mvp.md` | 1075 | Stable (artifact-level analysis referenced from §7) |
 | Appendix G | Comparison baselines | `comparison-baselines/README.md` + `adversarial-review-of-baselines.md` | substantial | Stable; cited from §2 + §10 |

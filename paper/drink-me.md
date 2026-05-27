@@ -81,18 +81,41 @@ The intuition is wrong on two counts.
 
 ### First: single-shot baselines don't produce working code
 
-Per the comparison-baselines analysis, single-shot
-inference at any model class (Haiku, Sonnet, Opus) does
-not produce working full-stack applications from the
-notebook directive. The artifacts ship with missing
-endpoints, orphan UI components, security holes, no
-tests, and accessibility omissions. The adversarial-
-review-of-baselines analysis (Appendix D) documented 30
-blocker-class bugs across 4 single-shot baselines that
-ship code without any review pass. The relevant
-competitor class is not single-shot inference; it's
-**agentic coding systems that pay an agent tax**
-(Devin, Cursor Agent, Aider, Claude Code as
+Per the comparison-baselines analysis (Appendix D §6),
+single-shot inference at every model class we tested —
+Haiku 4.5, Sonnet 4.6, and Opus 4.7 — fails to deliver a
+runnable full-stack application from the notebook
+directive. All three runs hit `max_tokens=8192` and
+truncated mid-file. The Opus 4.7 backend is genuinely the
+strongest single-shot deliverable of any baseline (correct
+HTTP status codes, parameterized queries, env-var DB
+override, real test suite) — but the model still ran out
+of output tokens before completing the frontend, shipping
+an `api.ts` truncated mid-function and five React
+components that never received a code block. The failure
+mode is structural: the artifact "complete full-stack
+notebook" exceeds what fits in a single 8K-token output,
+regardless of which model writes it.
+
+Tool-augmented baselines (Claude Code's harness, custom
+60-turn agent loops) lift the token-budget ceiling — they
+can iterate until the app is complete. But they then ship
+the bug categories Caterpillar catches in Wonderland's
+review phase. Appendix D §§2-5 documents **30 blocker-
+class bugs across 4 tool-augmented Haiku baselines** that
+ship code without any review pass: silent CORS holes
+(`allow_origins=['*']` + `allow_credentials=True`),
+production databases shipped as deliverables, `Float` for
+currency end-to-end, `cascade='all'` m2m relationships
+that corrupt shared data, `app.dependency_overrides`
+mutated at module import time. The trade is real:
+single-shot has a structural ceiling on completeness;
+tool-augmented removes the ceiling but reintroduces the
+unreviewed-bug-category problem.
+
+The relevant competitor class is therefore not single-
+shot inference; it's **agentic coding systems that pay an
+agent tax** (Devin, Cursor Agent, Aider, Claude Code as
 orchestrator).
 
 ### Second: artifact density per agent-tax dollar is the right metric
@@ -602,6 +625,7 @@ future work make the scope honest. The reader's job is
 to evaluate whether the evidence supports the claims;
 the paper's job is to make the evidence visible enough
 that the evaluation is possible.
+
 
 ---
 
@@ -1398,6 +1422,7 @@ prompt-engineering-with-richer-prompts, vs. multi-agent
 systems work) is what the comparative experiments in §9
 would answer. Distinctness is proposed here, not yet
 demonstrated.
+
 
 ---
 
@@ -3560,6 +3585,7 @@ whether the original claim held. Either outcome is
 publishable; the discipline of falsifier-listing is what
 makes either outcome legible.
 
+
 ---
 
 # §6 — Substrate evolution
@@ -4378,6 +4404,7 @@ the case for the discipline being worth pursuing beyond
 this instance; this chapter is the receipt for the
 discipline functioning.
 
+
 ---
 
 # §7 — Evidence
@@ -5132,6 +5159,7 @@ above-average for an MVP" with specific praise + one blocker
 + several concerns. That's the claim. Inflating it to "high
 quality" or "production-ready" overstates and undermines the
 chapter.
+
 
 ---
 
@@ -7598,7 +7626,3 @@ as the canonical identifier.
   [Carroll-Alice] / [Carroll-Looking-Glass] as appropriate
   at first character introduction.
 - Sephirah/Qlipha in §2 corollary 2 carries [Scholem-Kabbalah].
-
-
----
-
