@@ -629,15 +629,57 @@ meetings:
       describing the redundancy + retract only the specific dupes
       you can name. Leave the originals when in doubt.
 
+      **Near-duplicate patterns to MERGE** (T-ab63). The LDR-rerun
+      pilot shipped these pairs in M1's foundation feature; they
+      are textually different but functionally identical and should
+      be collapsed. Use them as templates for what to look for:
+
+        - ``Backend: User model + signup endpoint with bcrypt password hashing``
+          vs ``Backend: User model + SQLite schema + password hashing``
+          → same component (User model + hashing), different verb
+          framings (endpoint exposure vs schema initialization).
+          MERGE — these describe the same disk footprint.
+
+        - ``Backend: signin endpoint + /api/me + session middleware``
+          vs ``Backend: Session middleware + signed cookies + /api/me + /api/signout``
+          → same component (session middleware + auth-aware routes),
+          one ticket per phrasing. MERGE.
+
+        - ``Frontend: /signup and /signin routes + forms wired to backend``
+          vs ``Frontend: /signup and /signin routes + forms + integration``
+          → same component (signup/signin routes + forms), "wired
+          to backend" and "integration" are synonyms. MERGE.
+
+        - ``Backend: POST /api/signup endpoint + validation`` and
+          ``Backend: POST /api/signin endpoint + password verification``
+          as separate tickets when a sibling already covers
+          ``User model + signup endpoint``: the per-endpoint slices
+          duplicate the grouped one's acceptance. MERGE the
+          per-endpoint ones into the grouped sibling.
+
+      **Decision rule**: if two tickets cover the same primary
+      component on disk (the same file or pair of files) with
+      different verb framings — definition vs initialization, endpoint
+      vs middleware, wired vs integrated, grouped-multi vs per-item-
+      slice — they ARE near-duplicates. Merge them. The hard rule
+      against over-pruning still holds: name the specific pair and
+      the shared component in writing. Hesitation here ships
+      duplicate implementation work to M7 (two tweedles building
+      overlapping code).
+
       **Aim for 3-7 tickets per feature after consolidation.** A
       feature with 8+ tickets after M3.5 is probably actually two
       features that should split back at M2 (flag as a concern; M2
-      is closed but the operator can re-run design).
+      is closed but the operator can re-run design) — OR has the
+      near-duplicate pattern above and needs merging.
 
       **Silence is okay if there's nothing to consolidate** — a
       feature with 3 well-scoped tickets and no merge-or-deps work
       to do is fine to leave untouched. Don't manufacture
-      consolidation just because the meeting opened.
+      consolidation just because the meeting opened. But "I see
+      a near-duplicate pair but am not sure if it counts" is NOT
+      silence territory — ship it as a `concern` naming the pair
+      so the operator can flag.
 
     seeds:
       - from: any

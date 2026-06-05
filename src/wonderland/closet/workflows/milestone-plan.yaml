@@ -299,13 +299,16 @@ meetings:
       cookie handling, migration runner all have to be reverse-
       engineered from "Kohl can sign up." mvp-demo-redux and the
       LDR pilot both shipped milestones literally NAMED "Foundation:
-      ..." in their titles but tagged ``kind: capability``, and
-      the operator had to manually flip them before downstream
-      design could route correctly. **If your milestone title
-      contains the word "Foundation," the kind should almost
-      certainly be foundation. If you find yourself writing a
-      done-when condition that reads "developer can ..." or
-      "project gains the ability to ...," the kind is foundation.**
+      ..." in their titles but tagged ``kind: capability``, requiring
+      operator intervention before downstream design routed
+      correctly. **T-ab65's substrate autopromote now handles this
+      silently: if the title starts with "Foundation:" OR the slug
+      contains "foundation", the substrate ratifies that signal by
+      setting ``kind: foundation`` regardless of what you proposed.
+      You don't need to learn a routing-meta-language — write
+      natural titles and the substrate makes the right routing
+      decision. If you genuinely intend capability work, keep
+      "foundation" out of both the title prefix and the slug.**
 
       Both kinds are equally valid; the question is what the
       milestone primarily DELIVERS:

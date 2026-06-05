@@ -32,6 +32,7 @@ sequence without an extra index file.
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -415,21 +416,33 @@ class MilestoneRegistry:
             else MilestonePayload.model_validate(payload)
         )
 
-        # T-ab14 — kind-consistency check. Catches the failure modes
-        # the milestone-plan directive (T-ab13) doesn't reliably
-        # prevent on its own:
+        # T-ab14 + T-ab65 — kind-consistency check. Catches the
+        # failure modes the milestone-plan directive (T-ab13)
+        # doesn't reliably prevent on its own:
         #   1. kind=foundation with user-facing success_criterion in
         #      consumes — directive said don't do this; agents
-        #      sometimes still do.
+        #      sometimes still do. RAISES.
         #   2. kind=capability when consumes are all foundation-
         #      appropriate (no success_criterion, no behavior) AND
         #      name signals foundation — observed in mvp-demo-rerun
         #      where M1 "Persistence and API foundation" was tagged
         #      capability, breaking T-ab6's roster filter downstream.
-        # Raises ValueError so the substrate's emission path surfaces
-        # the message back to the agent who emitted, giving Rabbit a
-        # retry path with a specific correction.
-        self._validate_kind_consistency(validated)
+        #      RAISES.
+        #   3. T-ab65: kind=capability when title starts with
+        #      "Foundation:" OR slug contains "foundation" —
+        #      LDR-rerun pilot showed checks 1+2 miss the case
+        #      where the agent cites at least one capability-axis
+        #      requirement alongside the foundation-axis ones,
+        #      satisfying check 2's escape. AUTOPROMOTES (silently
+        #      sets kind=foundation + logs) rather than rejects:
+        #      v2 of LDR-rerun showed agents adapt around reject-mode
+        #      by changing titles to avoid the trigger, while the
+        #      milestone shape stays foundation. Autopromote
+        #      ratifies the agent's literal-word signal into the
+        #      right kind tag, avoiding retry-cost.
+        # Checks 1+2 raise; check 3 returns the (possibly-promoted)
+        # payload. Caller must use the returned value to persist.
+        validated = self._validate_kind_consistency(validated)
 
         # T-g2: guid-first lookup; slug fallback for back-compat
         # (milestones predate guid; existing milestones on disk match
@@ -474,6 +487,7 @@ class MilestoneRegistry:
             deferred=validated.deferred,
             confidence=validated.confidence,
             path=target,
+            kind=validated.kind,
         )
 
     def delete_by_slug(self, slug: str) -> bool:
@@ -552,7 +566,7 @@ class MilestoneRegistry:
 
     def _validate_kind_consistency(
         self, payload: MilestonePayload
-    ) -> None:
+    ) -> MilestonePayload:
         """T-ab14 + T-ab15 — enforce milestone.kind ↔ consumes-axis
         coherence.
 
@@ -588,9 +602,28 @@ class MilestoneRegistry:
         """
         from wonderland.coverage import _parse_requirement_axis
 
+        # T-ab65 autopromote helper — applied at every early-return
+        # so the caller always receives a (possibly-mutated) payload.
+        def _maybe_autopromote(p: MilestonePayload) -> MilestonePayload:
+            if p.kind != MilestoneKind.CAPABILITY:
+                return p
+            title_signals = re.match(
+                r"^foundation:", p.name.strip(), re.IGNORECASE
+            )
+            slug_signals = "foundation" in p.slug.lower()
+            if not (title_signals or slug_signals):
+                return p
+            reason = "title-prefix" if title_signals else "slug"
+            sys.stderr.write(
+                f"[milestone-autopromote] slug={p.slug!r} "
+                f"kind: capability → foundation "
+                f"(signal: foundation in {reason})\n"
+            )
+            return p.model_copy(update={"kind": MilestoneKind.FOUNDATION})
+
         req_root = self._root.parent / "requirements"
         if not req_root.is_dir():
-            return
+            return _maybe_autopromote(payload)
         req_axes: dict[str, str] = {}
         filename_re = re.compile(
             r"requirement-(?:[0-9A-HJKMNP-TV-Z]{8}|\d{1,4})-(.+)\.md"
@@ -619,7 +652,7 @@ class MilestoneRegistry:
                 consumed_axes.append((slug, axis))
 
         if not consumed_axes:
-            return
+            return _maybe_autopromote(payload)
 
         # Check 1: foundation milestone consuming capability-axis.
         if payload.kind == MilestoneKind.FOUNDATION:
@@ -666,6 +699,30 @@ class MilestoneRegistry:
                     f"capability-axis requirement(s) that justify "
                     f"capability framing."
                 )
+
+        # T-ab65 Check 3: autopromote on foundation-signal in title
+        # or slug. Originally implemented as reject-and-retry but
+        # LDR-rerun v2 showed agents adapt around reject-mode by
+        # moving "Foundation" out of the title-prefix position
+        # (renamed to "Auth + Session Foundation" while slug stayed
+        # m1-auth-session-foundation and kind stayed capability).
+        # Autopromote is more aligned with the substrate's "state
+        # is primary; agents propose, substrate ratifies" principle:
+        # the literal word "Foundation:" in the title prefix OR
+        # "foundation" in the slug IS the agent's intent signal;
+        # substrate translates that signal into the right kind tag
+        # rather than forcing the agent to learn the routing-meta-
+        # language.
+        #
+        # Trigger: title starts with "Foundation:" (case-insensitive,
+        # colon-anchored — natural English doesn't use "Foundation:"
+        # as a prefix outside the routing convention, so essentially
+        # zero false positives) OR slug contains "foundation"
+        # (agent-chosen tokens; "foundation" in a slug is always the
+        # routing keyword, not metaphor). Autopromote happens at
+        # every early-return via _maybe_autopromote — this final
+        # call is for the path where checks 1+2 ran cleanly.
+        return _maybe_autopromote(payload)
 
     def _path_for(self, order: int, slug: str) -> Path:
         """Legacy filename — kept for back-compat with pre-T-g3 callers.

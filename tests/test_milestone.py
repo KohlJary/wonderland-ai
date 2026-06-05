@@ -3,6 +3,7 @@ update-by-slug registry semantics, derived status."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -343,3 +344,214 @@ def test_derive_status_deferred_overrides_everything() -> None:
         feature_states=["verified", "verified"],
     )
     assert s is MilestoneStatus.DEFERRED
+
+
+# --------------------------------------------------------------------- #
+# T-ab65 — title-based foundation kind enforcement (check 3)
+# --------------------------------------------------------------------- #
+
+
+def _write_axis_requirement(req_dir: Path, slug: str, axis: str) -> None:
+    """Helper: drop a requirement file with the specified Axis line
+    so the kind-consistency validator's req_root gate activates.
+
+    Filename id slot is 8 chars per T-g3's Crockford-style pattern
+    (``[0-9A-HJKMNP-TV-Z]{8}``)."""
+    req_dir.mkdir(parents=True, exist_ok=True)
+    # Crockford base32 excludes I, L, O, U — derive an 8-char id from
+    # the slug with safe-character substitution.
+    alphabet = set("0123456789ABCDEFGHJKMNPQRSTVWXYZ")
+    raw = (slug.upper() + "ABCDEFGH")[:8]
+    safe_id = "".join(c if c in alphabet else "X" for c in raw)
+    (req_dir / f"requirement-{safe_id}-{slug}.md").write_text(
+        f"""## Requirement 001: {slug}
+
+**GUID:** {safe_id}00000000000000000HW
+**Slug:** {slug}
+**Kind:** constraint
+**Axis:** {axis}
+**Confidence:** operator_stated
+
+**Body:**
+
+Test requirement for the validator gate.
+""",
+        encoding="utf-8",
+    )
+
+
+def _setup_project_with_reqs(
+    tmp_path: Path, reqs: list[tuple[str, str]]
+) -> Path:
+    """Sets up ``.wonderland/requirements/`` with one or more
+    axis-tagged requirements so the kind-validator's req_root gate
+    activates. ``reqs`` is a list of (slug, axis) pairs. Returns
+    ``tmp_path`` — caller passes it to ``MilestoneRegistry`` which
+    adds ``.wonderland/milestones`` internally."""
+    req_dir = tmp_path / ".wonderland" / "requirements"
+    for slug, axis in reqs:
+        _write_axis_requirement(req_dir, slug, axis)
+    return tmp_path
+
+
+# T-ab65 is autopromote-mode: capability-kind milestones whose
+# title starts with "Foundation:" OR whose slug contains "foundation"
+# get silently promoted to kind=foundation. LDR-rerun v2 showed
+# reject-mode let agents adapt around the check by avoiding the
+# title pattern; autopromote ratifies the agent's literal-word
+# signal instead of forcing them to learn the routing-meta-language.
+
+
+def _read_kind_on_disk(record_path: Path) -> str:
+    """Read the persisted Kind field from a milestone file (matches
+    the substrate's parser by reading the **Kind:** line)."""
+    text = record_path.read_text(encoding="utf-8")
+    m = re.search(r"^\*\*Kind:\*\*\s*(\S+)", text, re.MULTILINE)
+    return m.group(1).strip().lower() if m else ""
+
+
+def test_t_ab65_autopromotes_foundation_titled_capability_kind(
+    tmp_path: Path,
+) -> None:
+    """T-ab65: a milestone whose name starts with 'Foundation:'
+    auto-promotes to kind=foundation, even if the agent tagged
+    capability. Mirrors LDR-rerun M1 case — capability-axis cite
+    alongside foundation-axis ones lets check 2 stay quiet; check
+    3 ratifies the title signal."""
+    root = _setup_project_with_reqs(
+        tmp_path,
+        [("stack-constraint", "foundation"), ("v1-ship-criteria", "capability")],
+    )
+    reg = MilestoneRegistry(root)
+    record = reg.write(
+        _payload(
+            slug="m1-auth",
+            name="Foundation: Email+password auth, sessions",
+            consumes_requirements=["stack-constraint", "v1-ship-criteria"],
+        )
+    )
+    assert record.kind.value == "foundation"
+    assert _read_kind_on_disk(record.path) == "foundation"
+
+
+def test_t_ab65_autopromotes_when_slug_contains_foundation(
+    tmp_path: Path,
+) -> None:
+    """LDR-rerun v2 case: agents moved "Foundation" out of title
+    prefix (renamed to "Auth + Session Foundation") but the slug
+    stayed ``m1-auth-session-foundation``. Slug check catches this
+    loophole — substrate identifiers don't use 'foundation' for any
+    reason other than the routing keyword."""
+    root = _setup_project_with_reqs(
+        tmp_path,
+        [("stack-constraint", "foundation"), ("v1-ship-criteria", "capability")],
+    )
+    reg = MilestoneRegistry(root)
+    record = reg.write(
+        _payload(
+            slug="m1-auth-session-foundation",
+            name="Auth + Session Foundation",
+            consumes_requirements=["stack-constraint", "v1-ship-criteria"],
+        )
+    )
+    assert record.kind.value == "foundation"
+    assert _read_kind_on_disk(record.path) == "foundation"
+
+
+def test_t_ab65_accepts_foundation_titled_foundation_kind(
+    tmp_path: Path,
+) -> None:
+    """Title + kind agree on foundation — no promotion needed, no
+    change. (Drop the capability-axis cite since foundation-kind
+    milestones can't consume it per check 1.)"""
+    from wonderland.milestone import MilestoneKind
+
+    root = _setup_project_with_reqs(
+        tmp_path, [("stack-constraint", "foundation")]
+    )
+    reg = MilestoneRegistry(root)
+    record = reg.write(
+        _payload(
+            slug="m1-auth",
+            name="Foundation: Email+password auth, sessions",
+            kind=MilestoneKind.FOUNDATION,
+            consumes_requirements=["stack-constraint"],
+        )
+    )
+    assert record.kind.value == "foundation"
+
+
+def test_t_ab65_accepts_non_foundation_titled_capability_kind(
+    tmp_path: Path,
+) -> None:
+    """Capability-titled, capability-slugged, capability-kind —
+    nothing changes."""
+    root = _setup_project_with_reqs(
+        tmp_path, [("kohl-signin", "capability")]
+    )
+    reg = MilestoneRegistry(root)
+    record = reg.write(
+        _payload(
+            slug="m1-signin",
+            name="Sign-up and sign-in user flow",
+            consumes_requirements=["kohl-signin"],
+        )
+    )
+    assert record.kind.value == "capability"
+
+
+def test_t_ab65_case_insensitive_title_match(tmp_path: Path) -> None:
+    """Title regex is case-insensitive — ``foundation:`` or
+    ``FOUNDATION:`` both trigger autopromote."""
+    root = _setup_project_with_reqs(
+        tmp_path,
+        [("stack", "foundation"), ("ship-criteria", "capability")],
+    )
+    reg = MilestoneRegistry(root)
+    record = reg.write(
+        _payload(
+            slug="m1",
+            name="foundation: lowercase variant",
+            consumes_requirements=["stack", "ship-criteria"],
+        )
+    )
+    assert record.kind.value == "foundation"
+
+
+def test_t_ab65_no_promote_when_neither_signal(tmp_path: Path) -> None:
+    """No 'foundation' in slug, no 'Foundation:' in title — nothing
+    autopromotes. Tests that the autopromote is genuinely scoped
+    to the signal patterns."""
+    root = _setup_project_with_reqs(
+        tmp_path, [("kohl-signin", "capability")]
+    )
+    reg = MilestoneRegistry(root)
+    record = reg.write(
+        _payload(
+            slug="m1-signin-flow",
+            name="Sign-up and sign-in flow",
+            consumes_requirements=["kohl-signin"],
+        )
+    )
+    assert record.kind.value == "capability"
+
+
+def test_t_ab65_no_promote_on_mid_title_foundation(
+    tmp_path: Path,
+) -> None:
+    """The title regex anchors to start — 'Foundation' appearing
+    mid-string without colon prefix doesn't trigger. (Captures the
+    metaphorical-use case: 'Build a foundation-shaped feature' is
+    legitimately capability work.)"""
+    root = _setup_project_with_reqs(
+        tmp_path, [("kohl-signin", "capability")]
+    )
+    reg = MilestoneRegistry(root)
+    record = reg.write(
+        _payload(
+            slug="m1-feature",
+            name="Sign-up feature on the foundation layer",
+            consumes_requirements=["kohl-signin"],
+        )
+    )
+    assert record.kind.value == "capability"
