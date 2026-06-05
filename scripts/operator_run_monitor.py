@@ -33,6 +33,7 @@ from pathlib import Path
 POLL_SECONDS = 2.0
 EVENTS = "events.jsonl"
 PENDING_INTERVIEW = "pending_interview.json"
+PENDING_QUESTION = "pending_question.json"
 
 
 def _emit(line: str) -> None:
@@ -90,6 +91,26 @@ def _interview_summary(pending_path: Path, last_mtime: float | None) -> tuple[di
     return payload, mtime
 
 
+def _question_summary(pending_path: Path, last_mtime: float | None) -> tuple[dict | None, float | None]:
+    """Identical shape to _interview_summary but for pending_question.json
+    — the in-meeting operator-question bridge. Discovered 2026-06-05:
+    each in-meeting question_to_operator that goes unanswered eats
+    600s (default _DEFAULT_QUESTION_TIMEOUT_SECONDS) of wall-clock.
+    Surface them in the monitor stream so Claude Code can answer them
+    inline same way it handles interviews."""
+    if not pending_path.exists():
+        return None, last_mtime
+    mtime = pending_path.stat().st_mtime
+    if last_mtime is not None and mtime <= last_mtime:
+        return None, last_mtime
+    time.sleep(0.1)
+    try:
+        payload = json.loads(pending_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None, last_mtime
+    return payload, mtime
+
+
 def watch(project_root: Path) -> int:
     runs_dir = project_root / ".wonderland" / "runs"
     # per-run state: {run_id: {"events_offset": int, "interview_mtime": float|None, "started": bool, "ended": bool}}
@@ -101,7 +122,13 @@ def watch(project_root: Path) -> int:
             run_id = run_dir.name
             st = state.setdefault(
                 run_id,
-                {"events_offset": 0, "interview_mtime": None, "started": False, "ended": False},
+                {
+                    "events_offset": 0,
+                    "interview_mtime": None,
+                    "question_mtime": None,
+                    "started": False,
+                    "ended": False,
+                },
             )
             if st["ended"]:
                 continue
@@ -118,6 +145,23 @@ def watch(project_root: Path) -> int:
                     f"  label={interview.get('label','?')}"
                     f"  questions={len(interview.get('questions', []))}"
                     f"  batch={interview.get('batch_id','?')[:8]}"
+                )
+            question, new_q_mtime = _question_summary(run_dir / PENDING_QUESTION, st["question_mtime"])
+            if question:
+                st["question_mtime"] = new_q_mtime
+                # Truncate question body for the notification line; full
+                # text stays in pending_question.json for the operator to
+                # read via the Read tool when responding.
+                body = (question.get("question") or "").replace("\n", " ")
+                if len(body) > 200:
+                    body = body[:200] + "…"
+                options = question.get("options") or []
+                opts_str = f"  options={len(options)}" if options else ""
+                _emit(
+                    f"QUESTION_TO_OPERATOR  {run_id}  "
+                    f"asking={question.get('asking_agent','?')}  "
+                    f"qid={question.get('question_id','?')[:8]}{opts_str}  "
+                    f"body={body!r}"
                 )
             if ended:
                 import datetime
