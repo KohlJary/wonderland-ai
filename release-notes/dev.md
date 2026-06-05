@@ -2,6 +2,18 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+## Feature kind inherits milestone kind under foundation milestones (T-ab67)
+
+LDR-rerun M1 design across v3/v4/v5/v6 all shipped features tagged `kind: capability` even though the parent milestone was `kind: foundation`. Same routing-disconnect that T-ab50/T-ab65 fixed at the milestone layer, just one layer down: agents default to `FeatureKind.CAPABILITY` without thinking about the field, so M3 decomposition framing stays capability-shape (user-flow tickets) inside what should be foundation work (infra tickets).
+
+**Fix:** at feature emission (`FeatureRegistry.write`), if the active milestone scope has `kind == "foundation"` AND the agent emitted a non-foundation feature kind, autopromote the feature to `kind: foundation`. Logged to stderr as `[feature-autopromote] title=... kind: X → foundation (parent milestone Y is foundation)`. Same autopromote pattern + design rationale as T-ab65 — substrate ratifies the agent's milestone-shape intent into the feature-shape tag rather than forcing them to re-derive.
+
+Capability milestones unchanged: features within them keep whatever the agent emitted (no implicit downgrade).
+
+4 new tests in `test_feature.py` covering autopromote under foundation milestone, no-op under capability milestone, no-op when explicit foundation kind already set, and back-compat when no active scope exists.
+
+Compounds with T-ab50/T-ab65: explicit `Kind: foundation` on the milestone (autopromoted by T-ab65 on title or slug signal) now propagates all the way to feature kind, which downstream M3 decomposition reads as "this is infra work; ship developer-as-user infra tickets, not user-flow slices." Closes the next layer of the foundation-routing pipeline that the original T-ab50 fix opened at the milestone layer.
+
 ## Stale-expectation pruning + thread-state instrumentation (T-ab66)
 
 LDR-rerun v5 pilot wall-clock blowup: 25.8 min total runtime vs ~6 min for comparable v3/v4 runs. Phase-gap analysis of `events.jsonl` timestamps showed **19.2 minutes of pure dead-time across two stuck phases**: one decompose (582s gap) + one consolidate (571s gap). Both same shape: an agent shipped a `question` speech act that the roster never engaged with, the thread sat with an open expectation, and the wall-clock safety net fired twice (once per dodo-nudge cycle).

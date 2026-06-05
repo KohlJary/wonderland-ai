@@ -294,3 +294,89 @@ def test_registry_empty_dir_returns_empty_list(tmp_path: Path) -> None:
     reg = FeatureRegistry(tmp_path)
     assert reg.list_features() == []
     assert reg.next_number() == 1
+
+
+# ---------- T-ab67 — feature.kind inherits milestone.kind ----------
+
+
+def test_t_ab67_feature_kind_autopromotes_under_foundation_milestone(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """T-ab67: a feature emitted under a foundation milestone gets
+    kind=foundation regardless of what the agent emitted. Same shape
+    as T-ab65's milestone autopromote, one layer down."""
+    from wonderland.feature import FeatureKind
+    from types import SimpleNamespace
+
+    # Stub get_active_milestone_scope() to return a foundation scope.
+    fake_scope = SimpleNamespace(slug="m1-auth", kind="foundation")
+    import wonderland.workflow as wf
+    monkeypatch.setattr(wf, "get_active_milestone_scope", lambda: fake_scope)
+
+    reg = FeatureRegistry(tmp_path)
+    record = reg.write(_payload(title="User signup"))
+    # Read back from disk to confirm persistence
+    text = record.path.read_text(encoding="utf-8")
+    assert "**Kind:** foundation" in text
+    # And the in-memory record reflects the promoted kind via the
+    # parsed back-read
+    assert reg.find_by_slug("user-signup") is not None
+
+
+def test_t_ab67_feature_kind_unchanged_under_capability_milestone(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Capability milestone: features keep whatever kind the agent
+    emitted. Default is capability, so default features stay capability."""
+    from types import SimpleNamespace
+
+    fake_scope = SimpleNamespace(slug="m3-time-card", kind="capability")
+    import wonderland.workflow as wf
+    monkeypatch.setattr(wf, "get_active_milestone_scope", lambda: fake_scope)
+
+    reg = FeatureRegistry(tmp_path)
+    record = reg.write(_payload(title="Sign in flow"))
+    text = record.path.read_text(encoding="utf-8")
+    assert "**Kind:** capability" in text
+
+
+def test_t_ab67_explicit_foundation_kind_stays_foundation_no_op(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """If the agent already shipped kind=foundation, autopromote is
+    a no-op (the kind already matches the milestone's foundation)."""
+    from wonderland.feature import FeatureKind
+    from types import SimpleNamespace
+
+    fake_scope = SimpleNamespace(slug="m1-auth", kind="foundation")
+    import wonderland.workflow as wf
+    monkeypatch.setattr(wf, "get_active_milestone_scope", lambda: fake_scope)
+
+    reg = FeatureRegistry(tmp_path)
+    payload = FeaturePayload(
+        title="Auth schema",
+        description="d",
+        tickets=["t1"],
+        stack_span=StackSpan.BACKEND,
+        tier=TicketTier.V1,
+        sources=["seed-story"],
+        kind=FeatureKind.FOUNDATION,
+    )
+    record = reg.write(payload)
+    text = record.path.read_text(encoding="utf-8")
+    assert "**Kind:** foundation" in text
+
+
+def test_t_ab67_no_active_scope_no_promote(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When there's no active milestone scope (ad-hoc run, not
+    milestone-scoped), no autopromote fires — back-compat for runs
+    without a milestone scope."""
+    import wonderland.workflow as wf
+    monkeypatch.setattr(wf, "get_active_milestone_scope", lambda: None)
+
+    reg = FeatureRegistry(tmp_path)
+    record = reg.write(_payload(title="Standalone feature"))
+    text = record.path.read_text(encoding="utf-8")
+    assert "**Kind:** capability" in text

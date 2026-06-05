@@ -282,6 +282,41 @@ class FeatureRegistry:
             else FeaturePayload.model_validate(payload)
         )
 
+        # T-ab67 — feature.kind inherits milestone.kind for foundation
+        # milestones. v3/v4/v5/v6 LDR-rerun all shipped features tagged
+        # ``kind: capability`` under M1 milestones tagged
+        # ``kind: foundation``. The default FeaturePayload.kind is
+        # CAPABILITY (back-compat); agents emit features without thinking
+        # hard about the kind field. The result: T-ab50/T-ab65's
+        # milestone-layer foundation routing didn't propagate to the
+        # feature layer, so feature-shape framing in M3 decomposition
+        # stayed capability-shape (user-flow tickets) even under
+        # foundation milestones (which should produce infra tickets).
+        #
+        # Autopromote pattern, same shape as T-ab65: if the active
+        # milestone is foundation, ratify that signal at the feature
+        # layer too. Capability milestones are unaffected — features
+        # within them stay whatever the agent emitted.
+        try:
+            from wonderland.workflow import get_active_milestone_scope
+            _ab67_scope = get_active_milestone_scope()
+        except Exception:  # noqa: BLE001 — best-effort
+            _ab67_scope = None
+        if (
+            _ab67_scope is not None
+            and getattr(_ab67_scope, "kind", None) == "foundation"
+            and validated.kind != FeatureKind.FOUNDATION
+        ):
+            import sys
+            sys.stderr.write(
+                f"[feature-autopromote] title={validated.title!r} "
+                f"kind: {validated.kind.value} → foundation "
+                f"(parent milestone {_ab67_scope.slug!r} is foundation)\n"
+            )
+            validated = validated.model_copy(
+                update={"kind": FeatureKind.FOUNDATION}
+            )
+
         # T-ab18 — reject cross-milestone feature emissions during
         # milestone-scoped runs. When the run is scoped to milestone
         # X and the feature's milestone field names a different
