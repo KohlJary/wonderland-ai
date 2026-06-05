@@ -530,3 +530,60 @@ async def test_monitor_observes_dodo_relay_and_ack(tmp_path) -> None:
 
     await monitor.stop()
     await memory.close()
+
+
+# ---------- T-ab66 — stale-expectation pruning ----------
+
+
+async def test_t_ab66_stale_question_pruned_unblocks_quiescent() -> None:
+    """T-ab66: a question that sits open past
+    ``expectation_stale_seconds`` gets auto-closed at quiescence-check
+    time, letting the thread transition QUIESCENT via the no-open-
+    expectations path rather than STUCK via the open-expectations
+    path. LDR-rerun v5 receipt: ~580s wall-clock spent on threads
+    where one agent's question never got engaged."""
+    bus = InMemoryCaucus()
+    monitor = ThreadMonitor(
+        bus,
+        quiescence_seconds=0.5,
+        expectation_stale_seconds=0.1,
+        check_interval=0.05,
+    )
+    await monitor.start()
+
+    # Question opens an expectation; nobody answers.
+    await bus.publish(_u(act=SpeechAct.QUESTION, body="by when?", speaker="white_rabbit"))
+
+    # Wait long enough for the expectation to age past 0.1s. The next
+    # wall-clock check at 0.5s will prune it and transition QUIESCENT.
+    [change] = await _drain_until(monitor, count=1, timeout=2.0)
+    assert change.to_state is ThreadState.QUIESCENT
+    # The thread's open_expectations should now be empty (pruned).
+    info = monitor.thread_info("t")
+    assert info is not None
+    assert info.open_expectations == {}
+
+    await monitor.stop()
+
+
+async def test_t_ab66_fresh_question_still_stuck() -> None:
+    """T-ab66: a question that hasn't aged past the stale threshold
+    still gates the thread to STUCK — pruning only applies to ages
+    beyond ``expectation_stale_seconds``. Confirms the prune is age-
+    bounded, not unconditional."""
+    bus = InMemoryCaucus()
+    monitor = ThreadMonitor(
+        bus,
+        quiescence_seconds=0.1,
+        expectation_stale_seconds=10.0,  # never reaches before quiescence check
+        check_interval=0.05,
+    )
+    await monitor.start()
+
+    await bus.publish(_u(act=SpeechAct.QUESTION, body="by when?", speaker="white_rabbit"))
+
+    [change] = await _drain_until(monitor, count=1)
+    assert change.to_state is ThreadState.STUCK
+    assert "open expectation" in change.reason
+
+    await monitor.stop()

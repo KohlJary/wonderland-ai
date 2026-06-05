@@ -2,6 +2,29 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+## Stale-expectation pruning + thread-state instrumentation (T-ab66)
+
+LDR-rerun v5 pilot wall-clock blowup: 25.8 min total runtime vs ~6 min for comparable v3/v4 runs. Phase-gap analysis of `events.jsonl` timestamps showed **19.2 minutes of pure dead-time across two stuck phases**: one decompose (582s gap) + one consolidate (571s gap). Both same shape: an agent shipped a `question` speech act that the roster never engaged with, the thread sat with an open expectation, and the wall-clock safety net fired twice (once per dodo-nudge cycle).
+
+Root cause: `_check_state_after_idle_transition` gates QUIESCENT on `open_expectations` being empty AND `_all_members_idle` being True. When one agent asks a question, the asked agent enters AWAITING_RESPONSE state (deliberating). `_all_members_idle` returns False. Turn-based quiescence path returns None. Wall-clock at 300s is the only exit, then nudge, then wait another 300s for the next check, then DEADLOCKED — total ~580s per stuck thread.
+
+**Fix:**
+
+1. **Stale-expectation pruning** in `ThreadMonitor._prune_stale_expectations`. Open expectations older than `expectation_stale_seconds` (default 60s, instance-configurable) get auto-closed before the quiescence gate evaluates. Treated as "silently rejected by the roster," logged to stderr (`[expectation-stale-prune] thread=... speech_act=... speaker=... age=Ns`), and removed from tracking. Turn-based quiescence then proceeds normally.
+
+2. **Thread-state transition instrumentation** in `ThreadMonitor._transition`. Every state change emits `[thread-state] thread=... from → to  reason=...` to stderr. The `reason` already distinguishes turn-based (`"no open expectations; all members idle"`) from wall-clock (`"no open expectations; silent Ns"`), so post-run analysis can confirm which path drove each exit. Diagnostic-only — surfaces what was previously only in non-persisted `ThreadStateChange` events.
+
+The fix is grounded in the substrate's existing design intent (turn-based primary + wall-clock safety net) — it just plugs the hole where unanswered questions silently routed exits through the wall-clock path. Aligns with `feedback_no_wall_clock_in_turn_based.md`: continuous-time primitives doing load-bearing exit work in a turn-based venue is the bug, not the fix.
+
+22 thread_monitor tests pass (20 existing + 2 new). The new tests cover: stale question gets pruned and unblocks QUIESCENT; fresh question still gates to STUCK (prune is age-bounded, not unconditional).
+
+Expected outcome on next pilot: M1 design wall-clock drops from ~25 min back to ~5-6 min (matching v3/v4) since the same-shape stuck-question pattern would prune at 60s instead of waiting 580s. Plus every future pilot's events log now visibly shows which quiescence path fired.
+
+Not yet shipped (deferred to T-ab66 follow-ups if pilots surface them):
+
+- Empty-scope phase skip on consolidate (similar to T-ab19's M4 skip). Not load-bearing for v5's specific pattern — all 4 consolidate threads had non-zero `member_engagements`; the stuck ones had open-expectation-keyed gates, not empty-scope-keyed.
+- Audit of every workflow YAML's per-phase quiescence_seconds to identify other primary-exit-via-wall-clock spots. Defer until instrumentation captures next pilot's data.
+
 ## Ticket near-duplicate templates in M3.5 consolidation directive (T-ab63 — pass 1)
 
 LDR-rerun M1-foundation pilot's tdd-design pass shipped 11 tickets where ~5 were near-duplicate pairs that M3.5 consolidation didn't merge:

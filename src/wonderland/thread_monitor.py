@@ -61,6 +61,21 @@ _EXPECTATION_ACTS: frozenset[SpeechAct] = frozenset(
     }
 )
 
+# T-ab66: open expectations (question/concern/proposal/deference)
+# that sit unengaged for this long get auto-closed at quiescence-
+# check time. LDR-rerun v5 stuck-phase analysis: 4-parallel decompose
+# had one thread whose lone agent asked a question their counterpart
+# never engaged. The open expectation kept the thread out of
+# QUIESCENT (gate at line 316) and out of fast turn-based STUCK
+# (gate at line 314 needs all_members_idle, which is False while the
+# asked agent is still in AWAITING_RESPONSE). The fallback wall-clock
+# safety net then fired twice (once per nudge cycle), eating ~580s
+# wall time. Pruning stale expectations lets turn-based quiescence
+# proceed naturally — the asked-but-not-answered question is treated
+# as silently rejected, the thread proceeds, the run completes
+# cleanly. Logged on prune so the audit trail shows what happened.
+_EXPECTATION_STALE_SECONDS: float = 60.0
+
 
 class ThreadState(StrEnum):
     RUNNING = "running"
@@ -122,6 +137,7 @@ class ThreadMonitor:
         quiescence_seconds: float = 300.0,
         check_interval: float = 1.0,
         deadlock_after_nudges: int = 2,
+        expectation_stale_seconds: float = _EXPECTATION_STALE_SECONDS,
         agent_name: str = "thread_monitor",
     ) -> None:
         self._bus = bus
@@ -136,6 +152,7 @@ class ThreadMonitor:
         self._quiescence_seconds = quiescence_seconds
         self._check_interval = check_interval
         self._deadlock_after_nudges = deadlock_after_nudges
+        self._expectation_stale_seconds = expectation_stale_seconds
         self._agent_name = agent_name
 
         self._threads: dict[str, ThreadInfo] = {}
@@ -259,6 +276,42 @@ class ThreadMonitor:
             if change is not None:
                 self._transitions.put_nowait(change)
 
+    def _prune_stale_expectations(
+        self, info: ThreadInfo, now: datetime
+    ) -> None:
+        """T-ab66: drop open_expectations older than the stale threshold.
+
+        Open expectations gate both QUIESCENT and STUCK transitions.
+        When a question/concern sits unengaged longer than
+        ``_EXPECTATION_STALE_SECONDS``, treat it as silently rejected
+        and remove it from tracking so the thread can proceed via the
+        normal quiescence path. Without this, agents who ask questions
+        the roster doesn't engage with leave the meeting stuck on
+        wall-clock timeouts (LDR-rerun v5: ~580s per stuck thread).
+
+        Mutates info.open_expectations in place. Logs each pruned
+        expectation to stderr so the audit trail surfaces the silent
+        rejection.
+        """
+        if not info.open_expectations:
+            return
+        stale_ids = []
+        for expect_id, expect in info.open_expectations.items():
+            age = (now - expect.timestamp).total_seconds()
+            if age >= self._expectation_stale_seconds:
+                stale_ids.append((expect_id, expect, age))
+        if not stale_ids:
+            return
+        import sys
+        for expect_id, expect, age in stale_ids:
+            sys.stderr.write(
+                f"[expectation-stale-prune] thread={info.thread_id!r} "
+                f"speech_act={expect.speech_act.value!r} "
+                f"speaker={expect.speaker.name!r} "
+                f"age={age:.1f}s — treating as silently rejected\n"
+            )
+            del info.open_expectations[expect_id]
+
     def _all_members_idle(self, thread_id: str) -> bool:
         """True iff every member of the thread's roster is IDLE.
 
@@ -313,6 +366,10 @@ class ThreadMonitor:
             return None
         if not self._all_members_idle(thread_id):
             return None
+        # T-ab66: prune expectations that have aged past the stale
+        # threshold so a stuck-on-unanswered-question thread can
+        # proceed to QUIESCENT instead of waiting wall-clock.
+        self._prune_stale_expectations(info, datetime.now(UTC))
         if info.open_expectations:
             if (
                 info.state is ThreadState.STUCK
@@ -458,6 +515,10 @@ class ThreadMonitor:
         if elapsed < self._quiescence_seconds:
             return None
 
+        # T-ab66: prune expectations that have aged past the stale
+        # threshold so a stuck-on-unanswered-question thread can
+        # transition to QUIESCENT via the no-expectations path below.
+        self._prune_stale_expectations(info, now)
         if info.open_expectations:
             # Stuck — and possibly deadlocked if nudge threshold exceeded.
             if info.state is ThreadState.STUCK and info.nudge_count >= self._deadlock_after_nudges:
@@ -487,6 +548,19 @@ class ThreadMonitor:
     ) -> ThreadStateChange:
         from_state = info.state
         info.state = to_state
+        # T-ab66 instrumentation: log thread-state transitions to stderr
+        # so post-run analysis can identify which quiescence path fired
+        # (turn-based "all members idle" vs wall-clock "silent {N}s").
+        # The reason text already distinguishes them; this just surfaces
+        # them where they're greppable from run logs. ThreadStateChange
+        # events aren't persisted to events.jsonl, so without this
+        # surface there's no way to tell which path drove a phase exit.
+        import sys
+        sys.stderr.write(
+            f"[thread-state] thread={info.thread_id!r} "
+            f"{from_state.value} → {to_state.value}  "
+            f"reason={reason!r}\n"
+        )
         return ThreadStateChange(
             thread_id=info.thread_id,
             from_state=from_state,
