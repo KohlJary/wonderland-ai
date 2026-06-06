@@ -54,6 +54,61 @@ from wonderland.ticket_lifecycle import (
 
 
 _SOURCES_RE = re.compile(r"^\*\*Sources?:\*\*\s*(.+?)$", re.MULTILINE)
+_TITLE_RE = re.compile(r"^## Ticket \d+:\s*(.+?)$", re.MULTILINE)
+
+# T-ab63 pass 2: title-similarity threshold for cross-feature
+# consolidation. ldr-final M1 design shipped 5 schema tickets / 5
+# hashing tickets / 5 session-middleware tickets across 5 different
+# features — exact-upstream-source clustering missed them because
+# each was decomposed from a different feature's stories. Title
+# tokens overlap ≥0.5 Jaccard on these obvious dups after aggressive
+# normalization. Threshold of 0.65 to avoid false positives on
+# tickets like "test signup endpoint" + "test signin endpoint"
+# where 3 of 4 tokens overlap but the work is legitimately distinct.
+_TITLE_SIMILARITY_THRESHOLD: float = 0.65
+
+# Stopwords stripped from title tokens before computing similarity —
+# these are scaffolding words that appear across most tickets and
+# would inflate similarity scores without signaling actual overlap.
+_TITLE_STOPWORDS: frozenset[str] = frozenset({
+    "a", "an", "and", "or", "the", "to", "for", "with", "in", "on",
+    "of", "via", "by", "from", "into", "as", "is", "be", "this", "that",
+    # Substrate-conventional words that show up everywhere:
+    "implement", "add", "create", "define", "setup", "set", "up", "configure",
+})
+
+
+def _normalize_title_tokens(title: str) -> frozenset[str]:
+    """Lower-case + tokenize a ticket title, strip stopwords.
+    Returns a frozenset of meaningful tokens for Jaccard similarity.
+
+    Tokenization: split on non-alphanumeric, lowercase, filter
+    stopwords and 1-char tokens. Punctuation stripped. Preserves
+    technical terms like ``passlib``, ``sqlite``, ``api/signup``."""
+    # Split on non-alphanumeric (handles slashes in /api/signup,
+    # hyphens, colons in section headers, etc.)
+    raw_tokens = re.split(r"[^a-z0-9_]+", title.lower())
+    return frozenset(
+        t for t in raw_tokens
+        if len(t) > 1 and t not in _TITLE_STOPWORDS
+    )
+
+
+def _title_jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+    """Jaccard similarity between two token sets. 0 when either empty."""
+    if not a or not b:
+        return 0.0
+    intersection = a & b
+    union = a | b
+    return len(intersection) / len(union) if union else 0.0
+
+
+def _parse_ticket_title(ticket_md: str) -> str:
+    """Extract the H2 title text from a ticket markdown.
+
+    Returns empty string when no H2 is found (malformed file)."""
+    m = _TITLE_RE.search(ticket_md)
+    return m.group(1).strip() if m else ""
 
 
 def _parse_ticket_sources(ticket_md: str) -> list[str]:
@@ -194,12 +249,14 @@ def find_cross_feature_duplicates(
             continue
         ticket_info[record.slug] = (parent, upstream)
 
+    # ---- Pass 1: cluster by EXACT upstream source set (T-a5) ----
     # Cluster: upstream_set → list[(ticket_slug, parent_feature)]
     clusters: dict[frozenset[str], list[tuple[str, str]]] = defaultdict(list)
     for ticket_slug, (parent, upstream) in ticket_info.items():
         clusters[upstream].append((ticket_slug, parent))
 
     decisions: list[ConsolidationDecision] = []
+    consolidated_slugs: set[str] = set()
     for upstream, members in clusters.items():
         # Need ≥2 members AND ≥2 distinct parent features to count
         # as a cross-feature duplicate cluster.
@@ -228,6 +285,104 @@ def find_cross_feature_duplicates(
             kept_parent_feature=winner_parent,
             retracted_slugs=retracted,
             upstream_sources=upstream,
+        ))
+        consolidated_slugs.add(winner_slug)
+        consolidated_slugs.update(retracted)
+
+    # ---- Pass 2: cluster by title-TOKEN Jaccard similarity (T-ab63 pass 2) ----
+    # ldr-final M1 design shipped 31 tickets where ~25 were near-
+    # duplicates with DIFFERENT upstream sources (each feature's M3
+    # decomposed from its own stories, but the resulting tickets
+    # described the same component — 5 schema tickets, 5 hashing
+    # tickets, 5 session-middleware tickets). Pass 1's exact-source
+    # clustering missed them entirely. Pass 2 catches them via title-
+    # token Jaccard ≥ _TITLE_SIMILARITY_THRESHOLD across different
+    # parent features.
+    #
+    # Skips tickets already consolidated by Pass 1 (no double-jeopardy).
+    # Each Pass 2 cluster: ≥2 tickets, ≥2 distinct parents, all-pairs
+    # Jaccard ≥ threshold (transitive closure of pairwise threshold
+    # ensures no chain-of-weak-links cluster).
+    titles: dict[str, tuple[str, frozenset[str]]] = {}  # slug → (parent, tokens)
+    for record in tickets:
+        if record.slug in consolidated_slugs:
+            continue
+        if record.slug not in ticket_info:
+            # Either orphan (no parent) or ticket_info skipped it
+            # earlier — re-read parent and title here.
+            try:
+                text = record.path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            sources = _parse_ticket_sources(text)
+            parent = _ticket_parent_feature(sources, feature_slugs)
+            if parent is None:
+                continue
+            title_text = _parse_ticket_title(text)
+        else:
+            parent, _upstream = ticket_info[record.slug]
+            try:
+                text = record.path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            title_text = _parse_ticket_title(text)
+        tokens = _normalize_title_tokens(title_text)
+        if len(tokens) < 2:
+            # Title too short / generic to cluster on
+            continue
+        titles[record.slug] = (parent, tokens)
+
+    # Greedy clustering: walk slugs in registry order, for each
+    # unassigned slug, find all OTHER unassigned slugs with Jaccard
+    # ≥ threshold against it. That's the cluster seed.
+    assigned: set[str] = set()
+    title_slugs_ordered = list(titles.keys())  # registry-stable order
+    for seed_slug in title_slugs_ordered:
+        if seed_slug in assigned:
+            continue
+        seed_parent, seed_tokens = titles[seed_slug]
+        cluster_members: list[tuple[str, str, frozenset[str]]] = [
+            (seed_slug, seed_parent, seed_tokens)
+        ]
+        for cand_slug in title_slugs_ordered:
+            if cand_slug == seed_slug or cand_slug in assigned:
+                continue
+            cand_parent, cand_tokens = titles[cand_slug]
+            if _title_jaccard(seed_tokens, cand_tokens) >= _TITLE_SIMILARITY_THRESHOLD:
+                cluster_members.append((cand_slug, cand_parent, cand_tokens))
+        if len(cluster_members) < 2:
+            continue
+        cluster_parents = {p for _slug, p, _toks in cluster_members}
+        if len(cluster_parents) < 2:
+            # All in same feature — M3.5 within-feature consolidation
+            # was supposed to handle this. We could surface it but
+            # the current contract is cross-feature only.
+            continue
+        # Mark all assigned
+        for slug, _p, _t in cluster_members:
+            assigned.add(slug)
+        # Pick winner: longest title (most-specific) wins; tie-break
+        # by alphabetical slug for determinism.
+        cluster_members.sort(
+            key=lambda x: (-len(x[2]), x[0])
+        )
+        winner_slug, winner_parent, winner_tokens = cluster_members[0]
+        retracted = tuple(
+            slug for slug, _p, _t in cluster_members[1:]
+        )
+        # Build a synthetic "upstream sources" for the cluster: union
+        # of all members' upstream sets. Used by the ConsolidationDecision
+        # for audit / forensics, not for the cluster-identification.
+        synthetic_upstream: frozenset[str] = frozenset()
+        for slug, _p, _t in cluster_members:
+            if slug in ticket_info:
+                _parent, upstream = ticket_info[slug]
+                synthetic_upstream = synthetic_upstream | upstream
+        decisions.append(ConsolidationDecision(
+            kept_slug=winner_slug,
+            kept_parent_feature=winner_parent,
+            retracted_slugs=retracted,
+            upstream_sources=synthetic_upstream,
         ))
 
     return decisions

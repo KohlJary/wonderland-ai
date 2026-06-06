@@ -238,3 +238,142 @@ def test_no_features_no_decisions(tmp_path: Path) -> None:
     assert decisions == []
     applied = consolidate_cross_feature_duplicates(tmp_path)
     assert applied == []
+
+
+# ---------- T-ab63 pass 2 — title-similarity clustering ----------
+
+
+def _write_ticket_titled(
+    project_root: Path, slug: str, title: str, sources: list[str],
+    guid: str,
+) -> None:
+    """Like _write_ticket but separates title text from slug. Needed
+    for title-similarity tests where conceptually-equivalent tickets
+    have distinct slugs but overlapping title tokens."""
+    tic_dir = project_root / ".wonderland" / "tickets"
+    tic_dir.mkdir(parents=True, exist_ok=True)
+    body = (
+        f"## Ticket 001: {title}\n\n"
+        f"**GUID:** {guid}\n"
+        f"**Sources:** {', '.join(sources)}\n"
+        f"**Owner:** tweedledum\n"
+        f"**Tier:** v1\n"
+        f"**Stack span:** backend\n"
+        f"**Estimate:** 0.5d\n\n"
+        f"**Description:**\n\nx\n"
+    )
+    (tic_dir / f"ticket-{guid}-{slug}.md").write_text(body, encoding="utf-8")
+
+
+def test_t_ab63p2_title_similarity_catches_ldr_final_pattern(
+    tmp_path: Path,
+) -> None:
+    """T-ab63 pass 2: title-token Jaccard catches near-duplicates that
+    EXACT upstream-source clustering misses. Mirrors ldr-final M1
+    design's 5 schema tickets across 5 different features: each
+    decomposed from different upstream stories (so exact-source
+    clusters miss them), but their titles share 'sqlite + schema +
+    migration + users + partner_profile + tables' token overlap.
+    """
+    _write_feature(tmp_path, "feat-a", ["story-aa"], guid="01AAAAAA")
+    _write_feature(tmp_path, "feat-b", ["story-bb"], guid="01BBBBBB")
+    _write_feature(tmp_path, "feat-c", ["story-cc"], guid="01CCCCCC")
+
+    # Three tickets, three different features, three different
+    # upstream stories — but all about "SQLite schema migration for
+    # users and partner_profile tables". Title-Jaccard ≥ 0.6.
+    _write_ticket_titled(
+        tmp_path, "schema-1",
+        "SQLite schema migration for users and partner_profile tables",
+        ["feat-a", "story-aa"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "schema-2",
+        "SQLite schema and migration: users + partner_profile",
+        ["feat-b", "story-bb"], guid="01TKT002",
+    )
+    _write_ticket_titled(
+        tmp_path, "schema-3",
+        "Migration for users and partner_profile SQLite schema",
+        ["feat-c", "story-cc"], guid="01TKT003",
+    )
+
+    decisions = find_cross_feature_duplicates(tmp_path)
+    # Should detect one cluster covering all 3 schema tickets
+    assert len(decisions) == 1
+    decision = decisions[0]
+    all_slugs = {decision.kept_slug, *decision.retracted_slugs}
+    assert all_slugs == {"schema-1", "schema-2", "schema-3"}
+    # The retracted set should be 2 of the 3
+    assert len(decision.retracted_slugs) == 2
+
+
+def test_t_ab63p2_title_similarity_respects_threshold(
+    tmp_path: Path,
+) -> None:
+    """Pass 2 doesn't cluster tickets with weak title overlap. E.g.,
+    'test signup' and 'test signin' share only 'test' but should
+    stay separate (they're testing different things)."""
+    _write_feature(tmp_path, "feat-a", ["story-aa"], guid="01AAAAAA")
+    _write_feature(tmp_path, "feat-b", ["story-bb"], guid="01BBBBBB")
+    _write_ticket_titled(
+        tmp_path, "signup-test", "Test signup endpoint behavior",
+        ["feat-a", "story-aa"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "signin-test", "Test signin endpoint behavior",
+        ["feat-b", "story-bb"], guid="01TKT002",
+    )
+    decisions = find_cross_feature_duplicates(tmp_path)
+    # Two tickets share 'test endpoint behavior' but differ on
+    # 'signup' vs 'signin' — Jaccard should be ~0.5, below threshold
+    # of 0.6. Stay distinct.
+    assert decisions == []
+
+
+def test_t_ab63p2_title_similarity_requires_distinct_parents(
+    tmp_path: Path,
+) -> None:
+    """Two near-duplicate tickets under the SAME feature don't trigger
+    Pass 2 (that's M3.5 within-feature consolidation territory).
+    Pass 2 is cross-feature only by design."""
+    _write_feature(tmp_path, "feat-a", ["story-aa"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "schema-a1",
+        "SQLite schema migration for users table",
+        ["feat-a", "story-aa"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "schema-a2",
+        "SQLite schema migration users table setup",
+        ["feat-a", "story-aa"], guid="01TKT002",
+    )
+    decisions = find_cross_feature_duplicates(tmp_path)
+    # Same parent feature → not a Pass 2 cluster
+    assert decisions == []
+
+
+def test_t_ab63p2_pass1_consolidated_tickets_excluded_from_pass2(
+    tmp_path: Path,
+) -> None:
+    """A ticket already clustered by Pass 1 (exact upstream-source
+    match) shouldn't be re-clustered by Pass 2. Avoids double-jeopardy
+    in the decision list."""
+    _write_feature(tmp_path, "feat-a", ["story-x"], guid="01AAAAAA")
+    _write_feature(tmp_path, "feat-b", ["story-x"], guid="01BBBBBB")
+    # Two tickets with IDENTICAL upstream sources — Pass 1 catches
+    _write_ticket_titled(
+        tmp_path, "schema-1",
+        "SQLite schema migration users partner_profile",
+        ["feat-a", "story-x"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "schema-2",
+        "SQLite schema migration users partner_profile",
+        ["feat-b", "story-x"], guid="01TKT002",
+    )
+    decisions = find_cross_feature_duplicates(tmp_path)
+    assert len(decisions) == 1
+    # Both tickets in one cluster
+    all_slugs = {decisions[0].kept_slug, *decisions[0].retracted_slugs}
+    assert all_slugs == {"schema-1", "schema-2"}

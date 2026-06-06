@@ -2,6 +2,25 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+## T-ab63 pass 2 — title-similarity clustering for cross-feature ticket dedup
+
+ldr-final M1 design (first end-to-end pilot post-T-ab66/67/69/70) shipped 31 tickets where ~25 were near-duplicates: 5 schema tickets, 5 password-hashing tickets, 5 session-middleware tickets, etc., each composed under a different M3 lane. Existing T-a5 cross-feature consolidation missed them because it clusters by EXACT match on upstream source sets — each ticket cited its own feature's stories, so the upstream sets differed across the obvious dups.
+
+**Fix:** add a second clustering pass to `find_cross_feature_duplicates` using **title-token Jaccard similarity**:
+
+- Tokenize titles: lowercase, split on non-alphanumeric (preserving underscores in identifiers like `partner_profile`), strip stopwords (`a`, `and`, `for`, `with`, `via`, `implement`, `add`, `create`, `define`, `setup`, etc.)
+- Compute pairwise Jaccard on the resulting token sets
+- Threshold: 0.65 (conservative — avoids false positives like "test signup endpoint" vs "test signin endpoint" where 3/4 tokens overlap but the work is distinct)
+- Cluster requires ≥2 tickets across ≥2 distinct parent features (cross-feature only — within-feature dups are M3.5's territory)
+- Tickets already consolidated by Pass 1 (exact-source) get excluded from Pass 2 (no double-jeopardy)
+- Winner: longest title (most-specific) wins; tie-break by alphabetical slug
+
+Validated against ldr-final's actual schema tickets: Pass 2 would have clustered T006/T017/T021 (Jaccard 0.71-1.00) — 3 of the 5 obvious dups. T013 falls out due to `partnerprofile` vs `partner_profile` vocabulary inconsistency (would need stemming or substring matching to catch); T029 falls out due to short title (only 5 meaningful tokens). Limits of pure-token Jaccard without stemming, but the strongest cluster still gets caught.
+
+4 new tests covering: title-similarity catches ldr-final pattern, threshold respect, same-parent skip, Pass1-then-Pass2 ordering. 13 cross_feature tests pass (9 existing + 4 new).
+
+If next pilot still ships many uncaught dups, the next escalation is stemming (porter/snowball) for token normalization — would catch user/users, migration/migrations, partnerprofile/partner_profile via root-form matching.
+
 ## FeatureRecord.kind + bus-artifact bug + scope-question pre-composition (T-ab69 + T-ab70)
 
 LDR-rerun v10 (2026-06-05): 3 features composed kind=capability under an M1 milestone tagged kind=foundation. ZERO `[feature-autopromote]` events fired. Downstream M3 decomposition routed through Alice's capability flow, generating user-flow-shaped tickets instead of infra-shaped tickets.
