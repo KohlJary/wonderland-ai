@@ -244,6 +244,23 @@ meetings:
       settled. Ask EARLY; compose AFTER the operator has confirmed
       scope.
 
+      **T-ab70 follow-up — once the operator has answered, COMMIT.
+      The answer IS the permission to compose features.** Observed
+      in ldr-final v2 (2026-06-06): after the operator answered 4
+      scope questions in a row, Rabbit kept emitting concerns + new
+      questions instead of composing features. The meeting ran 42
+      minutes producing ZERO features. Ask early — yes. Ask
+      DECISIVELY — once. After the operator's answer lands, your
+      next emission MUST be a `feature` decision (not another
+      `concern`, not another `question_to_operator`, not another
+      `nudge`). Treat the operator's answer as a binding contract:
+      the scope is now locked, the composition can proceed.
+      Repeated questions on the same scope axis after an answer
+      arrived is a wasted rotation; it doesn't make the next
+      composition cleaner, it just delays it. If after the operator's
+      answer there's a NEW scope question on a DIFFERENT axis you
+      hadn't asked about, ship that — once. Otherwise: compose.
+
       **Rabbit, ship features.** Read the stories in your context and
       compose them into features — units a stakeholder can describe
       in one sentence. Features come in two kinds; pick the right
