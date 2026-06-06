@@ -633,3 +633,158 @@ def _simple(title: str) -> TicketPayload:
         estimate="1d",
         description="placeholder description",
     )
+
+
+# ---------- T-ab73 — ticket milestone scope-lock at write ----------
+
+
+def _scope(slug: str = "m1-auth-foundation"):
+    """Build a minimal _MilestoneScope for setting active milestone."""
+    import wonderland.workflow as wf
+
+    return wf._MilestoneScope(
+        slug=slug,
+        name=slug.upper(),
+        goal="g",
+        done_when=("d",),
+        consumes=frozenset(),
+    )
+
+
+def _seed_feature(
+    project_root: Path,
+    slug: str,
+    milestone: str,
+) -> None:
+    """Write a minimal feature file by direct FeatureRegistry.write
+    so the ticket validator can resolve the parent. Bypasses the
+    feature's own milestone validator by clearing active scope
+    while writing."""
+    import wonderland.workflow as wf
+    from wonderland.feature import FeaturePayload, FeatureRegistry, StackSpan
+
+    prior = wf.get_active_milestone_scope()
+    wf.set_active_milestone_scope(None)
+    try:
+        FeatureRegistry(project_root).write(
+            FeaturePayload(
+                title=slug.replace("-", " "),
+                description="parent feature",
+                stack_span=StackSpan.BACKEND,
+                milestone=milestone,
+                personas=["dev"],
+                tickets=[],
+                tier=TicketTier.V1,
+                sources=["dev-setup-story"],
+            )
+        )
+    finally:
+        wf.set_active_milestone_scope(prior)
+
+
+def test_t_ab73_rejects_ticket_via_cross_milestone_parent_feature(
+    tmp_path: Path,
+) -> None:
+    """ldr-final-final M1 design surfaced: M3 decomposition lanes
+    shipped 3 of 5 consolidated tickets crossing into M2 (partner
+    profile) and M6 (dashboard frontend) territory, sourced from
+    the M1 auth feature but specifying work that belongs to
+    downstream milestones.
+
+    With T-ab73, TicketRegistry.write rejects writes whose parent
+    feature (sources[0]) belongs to a milestone other than the
+    active scope."""
+    import wonderland.workflow as wf
+
+    _seed_feature(tmp_path, "m2-partner-profile-feature", "m2-partner-profile")
+
+    wf.set_active_milestone_scope(_scope("m1-auth-foundation"))
+    try:
+        registry = TicketRegistry(tmp_path)
+        with pytest.raises(ValueError, match="milestone-scope mismatch"):
+            registry.write(
+                TicketPayload(
+                    title="frontend partner profile form",
+                    owner="tweedledee",
+                    tier=TicketTier.V1,
+                    estimate="1d",
+                    description="form",
+                    sources=["m2-partner-profile-feature"],
+                )
+            )
+    finally:
+        wf.set_active_milestone_scope(None)
+
+
+def test_t_ab73_allows_ticket_via_active_milestone_feature(
+    tmp_path: Path,
+) -> None:
+    """The validator only rejects mismatches — tickets sourced from
+    a parent feature inside the active scope pass through unchanged.
+    """
+    import wonderland.workflow as wf
+
+    _seed_feature(tmp_path, "m1-auth-feature", "m1-auth-foundation")
+
+    wf.set_active_milestone_scope(_scope("m1-auth-foundation"))
+    try:
+        registry = TicketRegistry(tmp_path)
+        record = registry.write(
+            TicketPayload(
+                title="bcrypt password hashing",
+                owner="tweedledum",
+                tier=TicketTier.V1,
+                estimate="0.5d",
+                description="bcrypt setup",
+                sources=["m1-auth-feature"],
+            )
+        )
+        assert record.slug == "bcrypt-password-hashing"
+    finally:
+        wf.set_active_milestone_scope(None)
+
+
+def test_t_ab73_no_active_scope_skips_check(tmp_path: Path) -> None:
+    """When no active milestone scope is set (test fixtures, legacy
+    flows, scripts), the validator is skipped — pre-T-ab73 behavior
+    holds. Same back-compat shape as T-ab48 for stories."""
+    _seed_feature(tmp_path, "m2-partner-profile-feature", "m2-partner-profile")
+
+    registry = TicketRegistry(tmp_path)
+    record = registry.write(
+        TicketPayload(
+            title="any work item",
+            owner="tweedledee",
+            tier=TicketTier.V1,
+            estimate="1d",
+            description="d",
+            sources=["m2-partner-profile-feature"],
+        )
+    )
+    assert record.slug == "any-work-item"
+
+
+def test_t_ab73_unresolvable_parent_skips_check(tmp_path: Path) -> None:
+    """When sources[0] cites a feature that doesn't exist on disk,
+    the scope check is silently skipped — phantom-source detection
+    is T-ab33's territory, not ours. T-ab73 only enforces the
+    cross-milestone gate when the parent IS resolvable."""
+    import wonderland.workflow as wf
+
+    wf.set_active_milestone_scope(_scope("m1-auth-foundation"))
+    try:
+        registry = TicketRegistry(tmp_path)
+        record = registry.write(
+            TicketPayload(
+                title="orphan ticket",
+                owner="tweedledee",
+                tier=TicketTier.V1,
+                estimate="1d",
+                description="d",
+                sources=["never-existed-feature"],
+            )
+        )
+        assert record.slug == "orphan-ticket"
+    finally:
+        wf.set_active_milestone_scope(None)
+

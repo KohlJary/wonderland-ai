@@ -180,6 +180,13 @@ class FeatureRecord:
     so a stale 'capability' here routed foundation milestones through
     Alice's capability flow. Filled at write() time from the validated
     (possibly-autopromoted) payload."""
+    milestone: str | None = None
+    """T-ab73: ticket-scope validation needs to read a feature's
+    milestone via the parent registry lookup. Same shape as ``kind``
+    above — was missing, so TicketRegistry.write couldn't decide
+    whether a sourced feature belongs to the active milestone.
+    Filled at write() time from the validated payload and parsed
+    from disk on ``_record_from_path``."""
 
     def read(self) -> str:
         return self.path.read_text(encoding="utf-8")
@@ -428,6 +435,7 @@ class FeatureRegistry:
             title=validated.title,
             path=full_path,
             kind=validated.kind,
+            milestone=validated.milestone,
         )
 
     @staticmethod
@@ -445,10 +453,32 @@ class FeatureRegistry:
         # parser shape; back-compat falls through to CAPABILITY for
         # files predating the kind field.
         kind = FeatureRegistry._kind_from_file(path)
+        # T-ab73: parse Milestone so TicketRegistry.write can resolve
+        # the parent feature's milestone for cross-milestone scope-lock.
+        # Same pattern as kind — back-compat falls through to None.
+        milestone = FeatureRegistry._milestone_from_file(path)
         return FeatureRecord(
             number=number, guid=guid, slug=slug, title=title, path=path,
-            kind=kind,
+            kind=kind, milestone=milestone,
         )
+
+    @staticmethod
+    def _milestone_from_file(path: Path) -> str | None:
+        """T-ab73: parse the ``**Milestone:**`` line from a feature file.
+        Default None for back-compat with pre-T-ab5 files. Strips the
+        em-dash placeholder that render_feature uses when the payload
+        had no milestone field set."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        m = re.search(r"^\*\*Milestone:\*\*\s*(.+)$", text, re.MULTILINE)
+        if not m:
+            return None
+        value = m.group(1).strip()
+        if not value or value == "—":
+            return None
+        return value
 
     @staticmethod
     def _kind_from_file(path: Path) -> FeatureKind:

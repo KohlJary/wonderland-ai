@@ -367,6 +367,19 @@ meetings:
       # directive's full surface.
       - from: any
         kinds: [milestone]
+      # T-ab72 — requirement bodies, T-ab9 scope-filtered to the
+      # active milestone's consumes_requirements. M2 composition
+      # without this saw the milestone artifact name a requirement
+      # slug (e.g. "kohl-can-sign-up-...") but never the body —
+      # ldr-final-final M1 (2026-06-06) shipped operator questions
+      # asking what the requirement said + a Cat question re-asking
+      # for the session mechanism that was already specified in
+      # discovery's I3 answers. Cost: 2 operator-cycles per run for
+      # information already on disk + a measurable redundancy floor.
+      # With T-ab9's narrowing, M2 pulls only this milestone's
+      # consumed requirements (typically 1-3), not the full corpus.
+      - from: any
+        kinds: [requirement]
       # consumed_by: feature scopes M2 to *uncomposed* stories. On
       # cross-run design passes (operator iterating tdd-design 5–10×
       # against the same project, the workflow's economic argument),
@@ -522,6 +535,17 @@ meetings:
       # the milestone's done-when, not the project-level directive.
       - from: any
         kinds: [milestone]
+      # T-ab72 — requirement bodies (T-ab9 scope-filtered to active
+      # milestone's consumes_requirements). Decomposition without
+      # them: ldr-final-final M3 lanes shipped tickets for M2's
+      # partner-profile + M6's dashboard frontend because Rabbit
+      # had only feature titles to reason from and reached for
+      # plausible adjacent slugs that don't exist on disk (phantom
+      # "kohl-can-set-their-partner-location" citation). With the
+      # requirement bodies visible, decomposition can ground in
+      # what the active milestone's done-when actually says.
+      - from: any
+        kinds: [requirement]
       - from: scoping
         kinds: [story]
       - from: composition
@@ -710,6 +734,12 @@ meetings:
       # means for this feature's tickets.
       - from: any
         kinds: [milestone]
+      # T-ab72 — requirement bodies (T-ab9 scope-filtered).
+      # Consolidation reasons about which tickets are in scope vs
+      # out of scope — that judgment needs the requirement body,
+      # not just the slug listed in the milestone.
+      - from: any
+        kinds: [requirement]
       # Feature binding stays on its own so the iteration-kind slice
       # keeps only THIS lane's feature artifact (current_item_slug
       # match against feature.payload.slug).
@@ -810,6 +840,12 @@ meetings:
       # not the project-level directive's full surface.
       - from: any
         kinds: [milestone]
+      # T-ab72 — requirement bodies (T-ab9 scope-filtered).
+      # ADR's tradeoff weighing relies on what the requirements
+      # specify (e.g. "signed cookies" vs "JWT" is already pinned
+      # by I3's scope-interview answer — Cat shouldn't be asking).
+      - from: any
+        kinds: [requirement]
       # Operator's literal launching prompt. Even when project
       # context names the stack, the directive carries intent for
       # *this* run — what feature, what scope. Cat reads both:
@@ -953,6 +989,12 @@ meetings:
       # milestone's done-when, not the project-level surface.
       - from: any
         kinds: [milestone]
+      # T-ab72 — requirement bodies (T-ab9 scope-filtered). M5
+      # contract negotiation needs the requirement's specification
+      # to know what the contract has to satisfy beyond the
+      # feature title.
+      - from: any
+        kinds: [requirement]
       - from: any
         kinds: [directive]
       - from: composition

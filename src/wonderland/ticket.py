@@ -506,6 +506,66 @@ class TicketRegistry:
             payload if isinstance(payload, TicketPayload) else TicketPayload.model_validate(payload)
         )
 
+        # T-ab73: when an active milestone scope is set, a ticket
+        # whose parent feature (sources[0]) belongs to a different
+        # milestone is a scope leak — reject at write time so
+        # Rabbit's retry loop surfaces the error rather than letting
+        # the substrate accept silently. ldr-final-final M1 design
+        # surfaced this: M3 decomposition lanes shipped 3 of 5
+        # consolidated tickets crossing into M2 (partner profile)
+        # and M6 (dashboard frontend) territory, sourced from the
+        # M1 auth feature but specifying work that belongs to
+        # downstream milestones. T-ab48 fixed this for stories
+        # (they carry an explicit ``milestone`` field); tickets
+        # inherit milestone via the parent feature, so the check
+        # resolves the parent feature first then compares its
+        # milestone to the active scope.
+        #
+        # Skipped silently when:
+        #   - no active scope (test fixtures, legacy flows)
+        #   - no sources (older payloads / orphans — caught by other
+        #     validators)
+        #   - parent feature can't be resolved (the phantom-source
+        #     case is T-ab33's territory, not ours)
+        #   - parent feature has no milestone field (legacy back-fill)
+        if validated.sources:
+            try:
+                from wonderland.workflow import get_active_milestone_scope
+                scope = get_active_milestone_scope()
+            except Exception:  # noqa: BLE001
+                scope = None
+            if scope is not None:
+                from wonderland.feature import FeatureRegistry
+
+                parent_source = validated.sources[0]
+                parent_slug = (
+                    parent_source.split(":", 1)[1]
+                    if ":" in parent_source
+                    else parent_source
+                )
+                feature_registry = FeatureRegistry(self._root.parent.parent)
+                parent_feature = feature_registry.find_by_slug(parent_slug)
+                if parent_feature is not None and parent_feature.milestone:
+                    parent_milestone = (
+                        parent_feature.milestone.split(":", 1)[1]
+                        if ":" in parent_feature.milestone
+                        else parent_feature.milestone
+                    )
+                    if parent_milestone != scope.slug:
+                        raise ValueError(
+                            f"ticket milestone-scope mismatch via parent feature: "
+                            f"ticket title=``{validated.title}`` cites "
+                            f"feature ``{parent_slug}`` whose milestone is "
+                            f"``{parent_milestone}``, but active scope is "
+                            f"``{scope.slug}``. Tickets decompose features "
+                            f"belonging to the active milestone — if this "
+                            f"ticket's work actually belongs to "
+                            f"``{parent_milestone}``, save it for that "
+                            f"milestone's design run. Cross-milestone tickets "
+                            f"shipped from an M3 decomposition lane were the "
+                            f"3-of-5 scope leak observed in ldr-final-final M1."
+                        )
+
         slug = slugify(validated.title)
         # T-g2: guid-first lookup; slug fallback for back-compat.
         existing = self.find_by_guid(validated.guid)

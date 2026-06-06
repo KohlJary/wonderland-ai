@@ -2,6 +2,30 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+## T-ab72 — requirement seed binding extended to M2/M3/M3.5/M4/M5
+
+Finding from ldr-final fresh-pilot M1 design (2026-06-06, `tdd-design-m1-20260606T131014`): two operator questions fired that should have been answerable from discovery's I3 scope-interview output — Rabbit asked whether to pause composition until requirements were visible; Cat asked which session mechanism (signed cookies vs JWT) even though I3 had pinned it.
+
+Root cause traced to `tdd-design.yaml` seed bindings: M1 (scoping) had `from: any, kinds: [requirement]`, but M2 (composition), M3 (decomposition), M3.5 (consolidation), M4 (architecture), M5 (contract-negotiation) did NOT. Every downstream meeting saw the active milestone's `Consumes requirements:` section as a slug list but the requirement file body never arrived in seeds — only the milestone artifact pointer.
+
+`format_utterance` correctly renders `u.content.body` (line 169 of agent.py), and seeds_fallback's `disk_seeds_for_kinds` correctly reads the file body into `body=` (line 758). The wire was working; the bindings just weren't requesting requirements past M1.
+
+**Fix:** added `from: any, kinds: [requirement]` to M2/M3/M3.5/M4/M5 seed blocks in `tdd-design.yaml`. T-ab9's milestone-scope filter narrows to the active milestone's `consumes_requirements` (typically 1-3 slugs), so context size doesn't explode.
+
+Substrate gap of the "only one meeting in the workflow had the binding" shape — same family as T-ab69 (FeatureRecord missing `kind` field) and T-ab73 below (FeatureRecord missing `milestone` field). The data was on disk; the readers just weren't asking for it.
+
+## T-ab73 — ticket-level milestone scope-lock at write
+
+Finding from same fresh pilot: 3 of 5 M3.5-consolidated tickets in the `01KTEH8A-` cluster crossed milestone boundaries — `frontend-dashboard-page-structure` (M6 territory), `backend-partner-profile-endpoints` (M2), and `frontend-sign-up-and-sign-in-routes` (fuzzy M1+UI). The directive explicitly said "no dashboard, no /partner-setup UI"; the M3 decomposition lane's LLM jumped from "decompose this M1 auth feature" to "the end-to-end auth user journey" and shipped tickets crossing 3 milestones. One ticket also cited a phantom requirement (`kohl-can-set-their-partner-location-display-name-and-location` doesn't exist on disk).
+
+Existing scope-lock primitives gate features (T-ab18) and stories (T-ab48) at write time, but tickets had no equivalent gate. Tickets carry no explicit `milestone` field — they inherit it via the parent feature (sources[0]). The validator needs to resolve the parent feature, read its milestone, compare to active scope.
+
+**Fix:** added `TicketRegistry.write` validator (mirrors T-ab48 shape). When active milestone scope is set + sources[0] resolves to a feature whose milestone differs, raises `ValueError`. Back-compat: skipped when no scope, no sources, or unresolvable parent (phantom-source detection is T-ab33's territory). 4 new tests cover the reject + accept + back-compat cases.
+
+Required a parallel fix on `FeatureRecord` — it had no `milestone` field, so the lookup wouldn't work. Added `milestone: str | None = None`, populated by `write()` from the validated payload and parsed from disk via new `_milestone_from_file` static (same pattern as T-ab69's `_kind_from_file`). Same "data was on disk, the in-memory record didn't surface it" shape as T-ab69.
+
+## T-ab71 — schema gate on empty-body `question_to_operator`
+
 ## T-ab71 — schema gate on empty-body `question_to_operator`
 
 ldr-final v3 (2026-06-06) M3 decomposition fired 3 `question_to_operator` utterances with empty body / empty options across three feature-decomposition meetings. Each burned an operator-answer cycle: the operator can't divine what to clarify when the question payload is empty, so any answer is throwing-a-dart-in-the-dark, and the next M3 meeting (next feature) repeats the pattern. The earlier rotation (M2 composition) had fired a real scope question correctly — the empty firings were a separate failure mode, not a re-ask of the same question.
