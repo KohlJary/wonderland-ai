@@ -2,6 +2,30 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+## FeatureRecord.kind + bus-artifact bug + scope-question pre-composition (T-ab69 + T-ab70)
+
+LDR-rerun v10 (2026-06-05): 3 features composed kind=capability under an M1 milestone tagged kind=foundation. ZERO `[feature-autopromote]` events fired. Downstream M3 decomposition routed through Alice's capability flow, generating user-flow-shaped tickets instead of infra-shaped tickets.
+
+Investigation surfaced **three latent bugs in the same shape as the MilestoneRecord.kind bug fixed earlier:**
+
+1. **`FeatureRecord` had no `kind` field at all.** `FeatureRegistry.write` returned a record with title/slug/path but no kind. So even when T-ab67 autopromoted `validated.kind` inside `write()` (and the disk file got the new kind via `render_feature(validated)`), the FeatureRecord returned to callers carried the default `kind=capability`.
+
+2. **`white_rabbit._record_features` (the agent path that emits features to the bus) read `payload.kind.value`** — the original pre-autopromote kind — when building the bus artifact. So the bus payload was stale even when the disk wasn't. M3's `per_item_roster_filter` reads the bus payload's kind to decide whether to route to Alice (capability) or Caterpillar (foundation). Stale capability bus payload → Alice routed → wrong-shape tickets.
+
+3. **`_record_from_path` didn't parse Kind from disk.** So when other code paths read existing features (after first-write), the record's kind was always the CAPABILITY default. Persistent state divergence.
+
+**T-ab69 fix:** add `kind: FeatureKind = FeatureKind.CAPABILITY` to `FeatureRecord` dataclass. `FeatureRegistry.write` populates it from `validated.kind` (post-autopromote). `_record_from_path` parses the disk file's `**Kind:**` line via new `_kind_from_file` helper (defaults to CAPABILITY for pre-kind back-compat). `white_rabbit._record_features` reads `record.kind.value` instead of `payload.kind.value` when building the bus artifact.
+
+Plus a `[feature-write-debug]` stderr line on every feature.write call surfacing the active scope view and the resulting kind — diagnostic instrumentation analogous to `[thread-state]` from T-ab66. Helps the next pilot reveal whether `get_active_milestone_scope()` is reliably set or not.
+
+**T-ab70 — scope-clarification questions belong BEFORE the first feature decision.** Pure directive change in `tdd-design.yaml` composition phase. Adds an explicit rule: if Rabbit has ANY uncertainty about scope after reading context, ship `question_to_operator` as the very first rotation output. Late scope-correction (during M3/M3.5) can't undo wrong-shape composition. Concrete LDR-rerun v10 example cited so the agent sees the consequence pattern.
+
+23 feature tests pass (4 new T-ab67 tests still pass + 19 existing). 369 tests pass across feature + milestone + thread_monitor + workflow sweeps.
+
+Compounds with T-ab67: now when autopromote fires (or the agent emits foundation directly), the kind propagates through the disk file, the FeatureRecord, AND the bus artifact. M3's per_item_roster_filter sees the right kind. Downstream decomposition routes correctly. Plus Rabbit is taught to ask scope questions early so the operator can shape composition rather than reshape consolidation.
+
+Next pilot should validate: `[feature-write-debug]` lines show scope correctly during composition, features come back kind=foundation under foundation milestones, M3 decomposition routes through Caterpillar.
+
 ## Feature kind inherits milestone kind under foundation milestones (T-ab67)
 
 LDR-rerun M1 design across v3/v4/v5/v6 all shipped features tagged `kind: capability` even though the parent milestone was `kind: foundation`. Same routing-disconnect that T-ab50/T-ab65 fixed at the milestone layer, just one layer down: agents default to `FeatureKind.CAPABILITY` without thinking about the field, so M3 decomposition framing stays capability-shape (user-flow tickets) inside what should be foundation work (infra tickets).

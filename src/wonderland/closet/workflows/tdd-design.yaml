@@ -224,6 +224,26 @@ meetings:
       design THIS milestone's features well, not to re-plan the
       project.
 
+      **T-ab70 — scope clarification belongs BEFORE the first feature
+      decision.** If you have ANY uncertainty about milestone scope
+      after reading your context (e.g., "is this v1 or fast-follow,"
+      "should this include work that touches sibling milestones,"
+      "is the done-when language asking for end-user flow or
+      developer-as-user flow"), ship a `question_to_operator` AS
+      YOUR VERY FIRST ROTATION OUTPUT. Do NOT compose features first
+      and then ask scope-correction questions during M3 decomposition
+      or M3.5 consolidation — by that point the substrate has
+      already routed downstream work through whatever shape the
+      features took. Late scope-correction can't undo a wrong
+      composition; it can only tighten the tickets around it.
+      Observed in LDR-rerun v10 (2026-06-05): Rabbit composed
+      features with end-user-flow shape under a foundation milestone,
+      then asked the operator a scope-clarification question during
+      consolidation. The operator's "M1 is pure foundation" answer
+      arrived in seconds, but the wrong-shape features were already
+      settled. Ask EARLY; compose AFTER the operator has confirmed
+      scope.
+
       **Rabbit, ship features.** Read the stories in your context and
       compose them into features — units a stakeholder can describe
       in one sentence. Features come in two kinds; pick the right

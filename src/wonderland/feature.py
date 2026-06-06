@@ -172,6 +172,14 @@ class FeatureRecord:
     slug: str
     title: str
     path: Path
+    kind: FeatureKind = FeatureKind.CAPABILITY
+    """T-ab69: was missing from FeatureRecord, causing the autopromoted
+    kind in FeatureRegistry.write to never reach callers (notably
+    white_rabbit._record_features which builds the bus artifact). The
+    bus artifact's kind drives downstream M3 per_item_roster_filter —
+    so a stale 'capability' here routed foundation milestones through
+    Alice's capability flow. Filled at write() time from the validated
+    (possibly-autopromoted) payload."""
 
     def read(self) -> str:
         return self.path.read_text(encoding="utf-8")
@@ -302,12 +310,28 @@ class FeatureRegistry:
             _ab67_scope = get_active_milestone_scope()
         except Exception:  # noqa: BLE001 — best-effort
             _ab67_scope = None
+        # T-ab69 diagnostic: log every feature.write's scope view so
+        # we can correlate against expected autopromote firings. v10
+        # had 3 features composed capability under foundation milestone
+        # with ZERO autopromote events — need to know whether scope
+        # was None, scope.kind was wrong, or some other path.
+        import sys
+        _ab69_scope_repr = (
+            f"slug={_ab67_scope.slug!r} kind={getattr(_ab67_scope, 'kind', None)!r}"
+            if _ab67_scope is not None
+            else "None"
+        )
+        sys.stderr.write(
+            f"[feature-write-debug] title={validated.title!r} "
+            f"feature.kind={validated.kind.value} "
+            f"feature.milestone={validated.milestone!r} "
+            f"scope={_ab69_scope_repr}\n"
+        )
         if (
             _ab67_scope is not None
             and getattr(_ab67_scope, "kind", None) == "foundation"
             and validated.kind != FeatureKind.FOUNDATION
         ):
-            import sys
             sys.stderr.write(
                 f"[feature-autopromote] title={validated.title!r} "
                 f"kind: {validated.kind.value} → foundation "
@@ -403,6 +427,7 @@ class FeatureRegistry:
             slug=slug,
             title=validated.title,
             path=full_path,
+            kind=validated.kind,
         )
 
     @staticmethod
@@ -415,9 +440,31 @@ class FeatureRegistry:
         title = FeatureRegistry._title_from_file(path, fallback=slug)
         guid = FeatureRegistry._guid_from_file(path)
         number = FeatureRegistry._number_from_file(path, id_part)
+        # T-ab69: parse Kind so callers reading existing features see
+        # the persisted kind, not the default. Mirrors the milestone
+        # parser shape; back-compat falls through to CAPABILITY for
+        # files predating the kind field.
+        kind = FeatureRegistry._kind_from_file(path)
         return FeatureRecord(
             number=number, guid=guid, slug=slug, title=title, path=path,
+            kind=kind,
         )
+
+    @staticmethod
+    def _kind_from_file(path: Path) -> FeatureKind:
+        """T-ab69: parse the ``**Kind:**`` line from a feature file.
+        Default CAPABILITY for back-compat with pre-kind files."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return FeatureKind.CAPABILITY
+        m = re.search(r"^\*\*Kind:\*\*\s*(\S+)", text, re.MULTILINE)
+        if not m:
+            return FeatureKind.CAPABILITY
+        try:
+            return FeatureKind(m.group(1).strip().lower())
+        except ValueError:
+            return FeatureKind.CAPABILITY
 
     @staticmethod
     def _number_from_file(path: Path, id_part: str) -> int:

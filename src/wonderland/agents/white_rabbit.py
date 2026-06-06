@@ -751,7 +751,16 @@ class WhiteRabbit(WonderlandAgent):
                         # the bus payload is None, the filter
                         # never narrows, and Alice stays in
                         # foundation-feature iterations.
-                        "kind": payload.kind.value,
+                        #
+                        # T-ab69: read from record.kind (post-T-ab67-
+                        # autopromote) rather than payload.kind (pre-
+                        # autopromote). Was the latent bug behind v10's
+                        # capability-routed features under a foundation
+                        # milestone — disk had the right kind, bus
+                        # artifact had the stale agent-emitted kind,
+                        # M3 per_item_roster_filter routed to Alice
+                        # capability flow.
+                        "kind": record.kind.value,
                         "tickets": list(payload.tickets),
                     },
                 )
