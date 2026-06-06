@@ -260,6 +260,13 @@ class QueenResponse(BaseModel):
                 "ruling in `rulings`. Choose a different decision (concern/"
                 "question/etc.) or include the rulings you intended to issue."
             )
+        # T-ab71: empty-body operator question wastes the cycle.
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "QueenResponse: decision='question_to_operator' requires a "
+                "non-empty `body`. Formulate the question or pick a different "
+                "decision (concern / question / silence)."
+            )
 
 
 _OUTPUT_PROTOCOL = """\

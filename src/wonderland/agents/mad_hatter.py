@@ -156,6 +156,13 @@ class HatterResponse(BaseModel):
                 "scenario in `scenarios`. Choose a different decision (concern/"
                 "question/etc.) or include the scenarios you intended to issue."
             )
+        # T-ab71: empty-body operator question wastes the cycle.
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "HatterResponse: decision='question_to_operator' requires a "
+                "non-empty `body`. Formulate the question or pick a different "
+                "decision (concern / question / silence)."
+            )
 
 
 _OUTPUT_PROTOCOL = """\

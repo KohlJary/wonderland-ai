@@ -268,6 +268,23 @@ class RabbitResponse(BaseModel):
                 "one milestone in `milestones`. You own the canonical plan; "
                 "ship it or choose a different decision."
             )
+        # T-ab71: empty-body question_to_operator is uninterpretable.
+        # ldr-final v3 surfaced 3 of these from M3 decomposition meetings:
+        # Rabbit hit ambiguity, picked question_to_operator, but emitted
+        # no body — operator can't divine intent, so the question burns
+        # an operator-answer cycle without resolving anything. Each
+        # downstream decomposition meeting repeats the pattern.
+        # Forcing non-empty body kicks the LLM back to either (a)
+        # actually formulate the question or (b) pick a different
+        # decision (concern / feature / ticket / silence).
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "RabbitResponse: decision='question_to_operator' requires a "
+                "non-empty `body` — the question itself. An empty body wastes "
+                "an operator-answer cycle since the operator can't divine "
+                "what to clarify. If you don't have a concrete question, pick "
+                "a different decision (concern / feature / ticket / silence)."
+            )
 
 
 _OUTPUT_PROTOCOL = """\

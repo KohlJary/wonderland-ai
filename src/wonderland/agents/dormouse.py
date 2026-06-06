@@ -188,6 +188,14 @@ class DormouseResponse(BaseModel):
                 "(concern/question/etc.) or include the observations you "
                 "intended to issue."
             )
+        # T-ab71: same gate as Rabbit/Cat — empty operator question is
+        # uninterpretable and wastes a cycle.
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "DormouseResponse: decision='question_to_operator' requires a "
+                "non-empty `body`. An empty question can't be answered; pick "
+                "a different decision or formulate the actual question."
+            )
 
 
 _OUTPUT_PROTOCOL = """\

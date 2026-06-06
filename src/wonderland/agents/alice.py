@@ -288,6 +288,13 @@ class AliceResponse(BaseModel):
                 "(target_kind, target_slug, reason) of an artifact "
                 "being removed from this run's deliverables."
             )
+        # T-ab71: empty-body operator question wastes the cycle.
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "AliceResponse: decision='question_to_operator' requires a "
+                "non-empty `body`. Formulate the question or pick a "
+                "different decision (concern / question / silence)."
+            )
 
 
 _OUTPUT_PROTOCOL = """\

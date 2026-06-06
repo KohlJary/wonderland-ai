@@ -260,6 +260,16 @@ class CatResponse(BaseModel):
                 "ordering proposal; choose a different decision if you "
                 "have nothing to propose."
             )
+        # T-ab71: empty-body question_to_operator wastes an operator
+        # cycle. Same gate as RabbitResponse — force the LLM to either
+        # formulate the question or pick a different decision.
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "CatResponse: decision='question_to_operator' requires a "
+                "non-empty `body`. An empty question can't be answered; "
+                "pick concern / reframe / silence instead, or formulate "
+                "the actual question."
+            )
 
 
 _OUTPUT_PROTOCOL = """\

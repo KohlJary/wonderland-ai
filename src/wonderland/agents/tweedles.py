@@ -402,6 +402,13 @@ class TweedleResponse(BaseModel):
                 "dormouse, tweedledee, tweedledum. (Dodo is always in the "
                 "meeting; no need to invite him.)"
             )
+        # T-ab71: empty-body operator question wastes the cycle.
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "TweedleResponse: decision='question_to_operator' requires a "
+                "non-empty `body`. Formulate the question or pick a different "
+                "decision (concern / question / silence)."
+            )
 
 
 def _build_protocol(side: ImplementationSide, sibling_name: str, with_tools: bool = False) -> str:

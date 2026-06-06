@@ -322,6 +322,33 @@ def test_parse_rejects_invalid_decision() -> None:
         parse_rabbit_response('{"decision": "cut", "body": "..."}')
 
 
+def test_parse_rejects_empty_body_operator_question() -> None:
+    """T-ab71: ldr-final v3 surfaced Rabbit firing `question_to_operator`
+    with an empty body across three M3 decomposition meetings. Each
+    burned an operator-answer cycle without giving the operator anything
+    to clarify. Schema gate forces the LLM to either formulate the
+    question or pick a different decision."""
+    with pytest.raises(RabbitResponseParseError):
+        parse_rabbit_response(
+            '{"decision": "question_to_operator", "body": ""}'
+        )
+    # Whitespace-only body is the same failure mode.
+    with pytest.raises(RabbitResponseParseError):
+        parse_rabbit_response(
+            '{"decision": "question_to_operator", "body": "   \\n  "}'
+        )
+
+
+def test_parse_accepts_non_empty_operator_question() -> None:
+    """T-ab71: counter-test — the gate only rejects empty bodies."""
+    response = parse_rabbit_response(
+        '{"decision": "question_to_operator", '
+        '"body": "should M1 ship one foundation feature or three?"}'
+    )
+    assert response.decision == "question_to_operator"
+    assert response.body.startswith("should M1 ship")
+
+
 def test_parse_rejects_missing_json() -> None:
     with pytest.raises(RabbitResponseParseError):
         parse_rabbit_response("just text")

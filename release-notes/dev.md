@@ -2,6 +2,16 @@
 
 Active changes accumulating toward the next cut. On release, copy this file to `release-notes/<version>.md` and wipe back to header-only.
 
+## T-ab71 — schema gate on empty-body `question_to_operator`
+
+ldr-final v3 (2026-06-06) M3 decomposition fired 3 `question_to_operator` utterances with empty body / empty options across three feature-decomposition meetings. Each burned an operator-answer cycle: the operator can't divine what to clarify when the question payload is empty, so any answer is throwing-a-dart-in-the-dark, and the next M3 meeting (next feature) repeats the pattern. The earlier rotation (M2 composition) had fired a real scope question correctly — the empty firings were a separate failure mode, not a re-ask of the same question.
+
+Root cause: every agent's response schema permits `decision="question_to_operator"` with `body=""`. No `model_post_init` rule rejects empty-body operator questions. The LLM can default-fill the field as empty string and the substrate ships it unconditionally.
+
+**Fix:** added `model_post_init` gate across every agent that has the decision in its protocol — Alice, Caterpillar, Cheshire Cat, Dormouse, Mad Hatter, Queen of Hearts, Tweedledee / Tweedledum, White Rabbit. Empty (or whitespace-only) body on `question_to_operator` raises `ValueError` at parse time, kicking the LLM back through the retry path — either it formulates the question, or it picks a different decision (concern / question / silence). 2 new Rabbit-schema tests cover the rejection + the non-empty-body accept.
+
+The user's observation that "agents keep re-asking the same scope question" turned out to be three separate empty questions across three meetings, not a context-integration bug — the operator's OBSERVATION reply was reaching the asking agent's compose_context correctly via `query_by_thread(branches=inheritance_chain())`; subsequent M3 meetings just emit fresh malformed questions of their own.
+
 ## T-ab63 pass 2 — title-similarity clustering for cross-feature ticket dedup
 
 ldr-final M1 design (first end-to-end pilot post-T-ab66/67/69/70) shipped 31 tickets where ~25 were near-duplicates: 5 schema tickets, 5 password-hashing tickets, 5 session-middleware tickets, etc., each composed under a different M3 lane. Existing T-a5 cross-feature consolidation missed them because it clusters by EXACT match on upstream source sets — each ticket cited its own feature's stories, so the upstream sets differed across the obvious dups.

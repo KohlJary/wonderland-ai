@@ -234,6 +234,13 @@ class CaterpillarResponse(BaseModel):
                 "Choose `silence` or `concern` if you don't have a story to "
                 "ship; choose `story` only when the stories[] payload is real."
             )
+        # T-ab71: empty-body operator question wastes the cycle.
+        if self.decision == "question_to_operator" and not self.body.strip():
+            raise ValueError(
+                "CaterpillarResponse: decision='question_to_operator' requires "
+                "a non-empty `body`. Formulate the question or pick a different "
+                "decision (concern / question / silence)."
+            )
 
 
 _OUTPUT_PROTOCOL = """\
