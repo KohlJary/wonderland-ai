@@ -10,6 +10,11 @@ from wonderland.diagrams.models import (
     Diagram,
     DiagramNode,
 )
+from wonderland.diagrams.dedup import (
+    DiagramDuplicate,
+    consolidate_diagrams,
+    find_duplicate_diagrams,
+)
 from wonderland.diagrams.registry import DIAGRAMS_DIRNAME, DiagramRegistry
 
 __all__ = [
@@ -20,4 +25,7 @@ __all__ = [
     "LAYER_UI",
     "LAYER_DB",
     "DEFAULT_LAYER",
+    "DiagramDuplicate",
+    "find_duplicate_diagrams",
+    "consolidate_diagrams",
 ]

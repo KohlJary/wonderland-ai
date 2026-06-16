@@ -11,6 +11,7 @@ title) keyed by slug, never the structure itself.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from wonderland.adr import slugify
@@ -99,6 +100,15 @@ class DiagramRegistry:
             for state_root in comp.states.values():
                 for ref in _iter_component_refs(state_root):
                     referenced.add(ref.name)  # type: ignore[arg-type]
+        # Raw ◆-token fallback: the structured parser only yields
+        # COMPONENT_REFs when the surrounding box is well-formed, and
+        # LLM-authored boxes frequently are not (misaligned borders drop
+        # the whole node). The ◆ sigil is unambiguous on its own, so
+        # harvest every ◆Name directly from the source and union it in —
+        # otherwise the build-tracker can't link or status a component
+        # the agent clearly drew.
+        for m in re.finditer(r"◆\s*([A-Za-z_][\w-]*)", text):
+            referenced.add(m.group(1))
 
         names = sorted(defined | referenced)
         nodes: list[DiagramNode] = []
@@ -169,6 +179,23 @@ class DiagramRegistry:
         diagram = self.read(slug)
         assert diagram is not None  # just wrote it
         return diagram
+
+    def remove(self, slug: str) -> bool:
+        """Delete a diagram (``.oph`` file + index entry). Used by the
+        diagram-dedup consolidation when a surface is drawn twice. Returns
+        True if anything was removed. Does not touch links — callers
+        migrate those to the survivor first."""
+        removed = False
+        oph_path = self._root / f"{slug}.oph"
+        if oph_path.is_file():
+            oph_path.unlink()
+            removed = True
+        index = self._load_index()
+        if slug in index["diagrams"]:
+            del index["diagrams"][slug]
+            self._save_index(index)
+            removed = True
+        return removed
 
     def rename_node(self, guid: str, new_name: str) -> bool:
         """Rename a node's display label while preserving its GUID — the

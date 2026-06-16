@@ -313,3 +313,128 @@ def test_alice_diagram_decision_records_to_registry(tmp_path: Path) -> None:
         "Navbar", "Sidebar", "ContentArea",
     }
     assert DiagramRegistry(tmp_path).list_slugs() == ["dashboard"]
+
+
+# --------------------------------------------------------------------- #
+# Diagram dedup (P21) — cross-author same-surface folding
+# --------------------------------------------------------------------- #
+
+from wonderland.diagrams import (  # noqa: E402
+    consolidate_diagrams,
+    find_duplicate_diagrams,
+)
+
+# A second dashboard the way the OTHER author would draw it: same surface
+# (shares Navbar + ContentArea), one extra unique component, slightly
+# different framing. The dedup should fold this into the richer one.
+_DASH2_OPH = """# Dashboard Page
+
+@desktop
+┌──────────────────────────────────────────────────┐
+│ ┌────────────────────────────────────────────┐   │
+│ │ ◆Navbar                                    │   │
+│ └────────────────────────────────────────────┘   │
+│ ┌──────────────────┐ ┌─────────────────────┐      │
+│ │ ◆ContentArea     │ │ ◆RefreshSection     │      │
+│ └──────────────────┘ └─────────────────────┘      │
+└──────────────────────────────────────────────────┘
+"""
+
+# A genuinely different page that happens to share ONE chrome element
+# (Navbar) — must NOT be folded (MIN_SHARED guard).
+_SETTINGS_OPH = """# Settings
+
+@desktop
+┌────────────────────────┐
+│ ┌────────────────────┐ │
+│ │ ◆Navbar            │ │
+│ └────────────────────┘ │
+│ ┌────────────────────┐ │
+│ │ ◆ProfileForm       │ │
+│ └────────────────────┘ │
+└────────────────────────┘
+"""
+
+# Malformed boxes (borders misaligned) but the ◆ sigils are intact — the
+# structured parser drops these nodes; the raw-◆ fallback must catch them.
+_MANGLED_OPH = """# Mangled
+
+@desktop
+┌───────────────────┐
+│ ◆Header
+│ ◆Body  ◆Footer   │
+└─────────────
+"""
+
+
+def test_raw_diamond_fallback_extracts_nodes_from_malformed_boxes(
+    tmp_path: Path,
+) -> None:
+    reg = DiagramRegistry(tmp_path)
+    d = reg.write("Mangled", _MANGLED_OPH, layer=LAYER_UI)
+    # Even though the boxes don't close cleanly, every ◆-ref is captured.
+    assert {n.name for n in d.nodes} == {"Header", "Body", "Footer"}
+
+
+def test_find_duplicate_folds_same_surface(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_OPH, layer=LAYER_UI)
+    reg.write("Dashboard Page", _DASH2_OPH, layer=LAYER_UI)
+    dups = find_duplicate_diagrams(reg)
+    assert len(dups) == 1
+    dup = dups[0]
+    # Survivor is the richer diagram (more nodes): the original _DASH_OPH
+    # has Navbar/Sidebar/ContentArea (3); _DASH2 has Navbar/ContentArea/
+    # RefreshSection (3) — tie broken alphabetically -> "dashboard".
+    assert {dup.survivor, dup.removed} == {"dashboard", "dashboard-page"}
+    assert "navbar" in dup.shared and "contentarea" in dup.shared
+
+
+def test_single_shared_chrome_not_folded(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_OPH, layer=LAYER_UI)
+    reg.write("Settings", _SETTINGS_OPH, layer=LAYER_UI)
+    # Share only Navbar -> below MIN_SHARED, never folded.
+    assert find_duplicate_diagrams(reg) == []
+
+
+def test_cross_layer_never_folded(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_OPH, layer=LAYER_UI)
+    # Same node names but a DB-layer diagram: layer guard keeps them apart.
+    reg.write("Dashboard", _DASH_OPH, layer=LAYER_DB, slug="dashboard-db")
+    assert find_duplicate_diagrams(reg) == []
+
+
+def test_consolidate_removes_loser_and_migrates_links(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_OPH, layer=LAYER_UI)
+    page = reg.write("Dashboard Page", _DASH2_OPH, layer=LAYER_UI)
+    links = DiagramLinks(tmp_path)
+
+    dups = find_duplicate_diagrams(reg)
+    removed_slug = dups[0].removed
+    survivor_slug = dups[0].survivor
+    removed = reg.read(removed_slug)
+    # Link a ticket to the removed diagram's Navbar node (shared surface).
+    removed_navbar = removed.node_by_name("Navbar")
+    links.link(removed_navbar.guid, "t-navbar")
+
+    applied = consolidate_diagrams(tmp_path, registry=reg, links=links)
+    assert len(applied) == 1
+    # Loser diagram gone; survivor remains.
+    assert removed_slug not in reg.list_slugs()
+    assert survivor_slug in reg.list_slugs()
+    # The link migrated onto the survivor's same-named Navbar node.
+    survivor = reg.read(survivor_slug)
+    survivor_navbar = survivor.node_by_name("Navbar")
+    assert ("ticket", "t-navbar") in links.links_for_node(survivor_navbar.guid)
+    assert links.links_for_node(removed_navbar.guid) == []
+
+
+def test_consolidate_noop_when_no_duplicates(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_OPH, layer=LAYER_UI)
+    reg.write("Settings", _SETTINGS_OPH, layer=LAYER_UI)
+    assert consolidate_diagrams(tmp_path, registry=reg) == []
+    assert set(reg.list_slugs()) == {"dashboard", "settings"}

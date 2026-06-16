@@ -3007,6 +3007,14 @@ async def run_workflow(
         # consolidated anyway. Reads the active scope, still set here
         # (cleared in the finally below).
         _maybe_fire_content_scope_leak_retraction(workflow, runner)
+
+        # P21: diagram dedup. The diagram-stack meeting has two authors
+        # (Rabbit + Alice) who both tend to draw the popular surfaces, so
+        # the same page lands twice under slightly different slugs. Fold
+        # same-surface diagrams (node-set containment) into one survivor,
+        # migrating any links. Same cross-author dup as the ticket
+        # surface-signature pass, one layer up.
+        _maybe_fire_diagram_consolidation(workflow, runner)
     finally:
         set_active_milestone_scope(None)
         reset_active_branch_id(branch_token)
@@ -3044,6 +3052,40 @@ def _maybe_fire_within_feature_consolidation(
     except Exception as exc:  # noqa: BLE001 — best-effort
         import sys
         sys.stderr.write(f"[surface-consolidation] error: {exc}\n")
+
+
+def _maybe_fire_diagram_consolidation(
+    workflow: "Workflow", runner: "Runner",
+) -> None:
+    """P21 wiring — folds same-surface duplicate diagrams at the end of the
+    milestone-plan workflow (whose diagram-stack meeting has two authors
+    drawing the same pages). Best-effort; no-op when no dups exist or the
+    workflow doesn't produce diagrams.
+    """
+    name = (workflow.name or "").lower()
+    if name != "milestone-plan":
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    try:
+        from wonderland.diagrams import consolidate_diagrams
+
+        dups = consolidate_diagrams(project_root)
+        if dups:
+            import sys
+
+            n_dropped = sum(len(d.dropped) for d in dups)
+            sys.stderr.write(
+                f"[diagram-consolidation] workflow={name!r} "
+                f"folded={len(dups)} dropped_nodes={n_dropped}\n"
+            )
+            for d in dups:
+                sys.stderr.write(f"  {d.summary()}\n")
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        import sys
+
+        sys.stderr.write(f"[diagram-consolidation] error: {exc}\n")
 
 
 def _maybe_fire_ticket_reattribution(
