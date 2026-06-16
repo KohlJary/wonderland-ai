@@ -13,6 +13,7 @@ from wonderland.cross_feature import (
     ConsolidationDecision,
     consolidate_cross_feature_duplicates,
     find_cross_feature_duplicates,
+    reattribute_orphaned_tickets,
 )
 from wonderland.ticket_lifecycle import (
     TicketState,
@@ -377,3 +378,335 @@ def test_t_ab63p2_pass1_consolidated_tickets_excluded_from_pass2(
     # Both tickets in one cluster
     all_slugs = {decisions[0].kept_slug, *decisions[0].retracted_slugs}
     assert all_slugs == {"schema-1", "schema-2"}
+
+
+# ---------- T-ab78: orphaned-ticket re-attribution ----------
+
+
+def _write_feature_milestoned(
+    project_root: Path, slug: str, milestone: str | None, guid: str,
+) -> None:
+    """Feature markdown carrying a milestone field (for active-scope
+    re-attribution tests)."""
+    feat_dir = project_root / ".wonderland" / "features"
+    feat_dir.mkdir(parents=True, exist_ok=True)
+    body = (
+        f"## Feature 001: {slug}\n\n"
+        f"**GUID:** {guid}\n"
+        f"**Slug:** {slug}\n"
+        f"**Milestone:** {milestone or '—'}\n"
+        f"**Sources:** story-x\n"
+        f"**Stack span:** backend\n\n"
+        f"**Description:**\n\nx\n"
+    )
+    (feat_dir / f"feature-{guid}-{slug}.md").write_text(body, encoding="utf-8")
+
+
+def test_reattributes_milestone_orphaned_ticket(tmp_path: Path) -> None:
+    """A ticket citing only the milestone (no feature) gets re-homed to
+    the feature whose title best matches — the M2 failure mode."""
+    _write_feature(tmp_path, "partner-profile-schema-and-post-partner-endpoint",
+                   ["story-x"], guid="01AAAAAA")
+    _write_feature(tmp_path, "server-side-geocoding-and-timezone-resolver",
+                   ["story-x"], guid="01BBBBBB")
+    # Orphan: cites the milestone slug, not a feature.
+    _write_ticket_titled(
+        tmp_path, "partner-schema-write-endpoint-stub",
+        "Partner profile schema + write endpoint stub",
+        ["m2-partner-profile-storage", "story-x"], guid="01TKT001",
+    )
+    reattached = reattribute_orphaned_tickets(tmp_path)
+    assert len(reattached) == 1
+    slug, feature, score = reattached[0]
+    assert slug == "partner-schema-write-endpoint-stub"
+    assert feature == "partner-profile-schema-and-post-partner-endpoint"
+    # On-disk sources now lead with the feature.
+    text = (tmp_path / ".wonderland" / "tickets"
+            / "ticket-01TKT001-partner-schema-write-endpoint-stub.md").read_text()
+    assert "**Sources:** partner-profile-schema-and-post-partner-endpoint" in text
+
+
+def test_reattribution_skips_already_attributed(tmp_path: Path) -> None:
+    """A ticket already citing a feature is left untouched."""
+    _write_feature(tmp_path, "feat-a", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "t1", "Some ticket title", ["feat-a", "story-x"],
+        guid="01TKT001",
+    )
+    assert reattribute_orphaned_tickets(tmp_path) == []
+
+
+def test_surface_dedup_catches_orphan_plus_parented_directly(
+    tmp_path: Path,
+) -> None:
+    """Unification: a parented ticket + an orphan that build the same
+    surface are caught by the surface pass DIRECTLY — orphans are included,
+    no re-attribution needed first. (Was: orphan invisible until re-homed,
+    then cross-feature Jaccard. The unified surface pass subsumes that.)"""
+    _write_feature(tmp_path, "schema-feature-alpha", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "schema-ticket-1",
+        "Set up SQLite schema migration for users", ["schema-feature-alpha"],
+        guid="01TKT001",
+    )
+    # Orphan with the same surface (be|act:schema).
+    _write_ticket_titled(
+        tmp_path, "schema-ticket-2",
+        "SQLite schema migration", ["m2-some-milestone"],
+        guid="01TKT002",
+    )
+    decisions = find_surface_duplicates(tmp_path)
+    assert len(decisions) == 1
+    assert {decisions[0].kept_slug, *decisions[0].retracted_slugs} == {
+        "schema-ticket-1", "schema-ticket-2",
+    }
+    assert decisions[0].kept_slug == "schema-ticket-1"  # parented wins
+
+
+def test_reattribution_scopes_to_active_milestone(tmp_path: Path) -> None:
+    """An M2 orphan never re-homes to an M1 feature when active_slug is
+    given — only active-milestone features are candidates."""
+    _write_feature_milestoned(
+        tmp_path, "auth-foundation-feature", "m1-auth-foundation", "01AAAAAA")
+    _write_feature_milestoned(
+        tmp_path, "partner-profile-storage-feature",
+        "m2-partner-profile-storage", "01BBBBBB")
+    # Orphan whose title happens to share tokens with BOTH, but belongs to M2.
+    _write_ticket_titled(
+        tmp_path, "partner-profile-write",
+        "partner profile storage write path", ["m2-partner-profile-storage"],
+        guid="01TKT001",
+    )
+    reattached = reattribute_orphaned_tickets(
+        tmp_path, "m2-partner-profile-storage")
+    assert len(reattached) == 1
+    assert reattached[0][1] == "partner-profile-storage-feature"
+
+
+# ---------- T-ab79: within-feature dedup (surface signatures) ----------
+
+from wonderland.cross_feature import (  # noqa: E402
+    _surface_signature,
+    consolidate_surface_duplicates,
+    consolidate_within_feature_duplicates,
+    find_surface_duplicates,
+    find_within_feature_duplicates,
+)
+
+
+def test_surface_signature_extraction() -> None:
+    assert _surface_signature("Implement POST /auth/signup with validation") == "be|path:/auth/signup"
+    assert _surface_signature("POST /auth/signup — account creation") == "be|path:/auth/signup"
+    assert _surface_signature("POST /auth/signin verification") == "be|path:/auth/signin"
+    assert _surface_signature("Frontend: Sign-up flow (email + password form)") == "fe|act:signup"
+    assert _surface_signature("Implement frontend sign-in form") == "fe|act:signin"
+    assert _surface_signature("Create SQLite schema for users") == "be|act:schema"
+    # No derivable surface → None (never deduped)
+    assert _surface_signature("Set up Vite proxy and CORS config") is None
+
+
+def test_within_feature_dedup_clusters_same_surface(tmp_path: Path) -> None:
+    """Two tickets under one feature building the same endpoint = dup."""
+    _write_feature(tmp_path, "auth-feature", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "signup-a", "Implement POST /auth/signup with validation",
+        ["auth-feature"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "signup-b", "POST /auth/signup — account creation",
+        ["auth-feature"], guid="01TKT002",
+    )
+    decisions = find_within_feature_duplicates(tmp_path)
+    assert len(decisions) == 1
+    assert {decisions[0].kept_slug, *decisions[0].retracted_slugs} == {"signup-a", "signup-b"}
+
+
+def test_within_feature_signup_signin_not_merged(tmp_path: Path) -> None:
+    """The false-positive guard: signup and signin are distinct surfaces
+    even though their titles are ~50-100% lexically identical (the case
+    that breaks title-Jaccard — frontend signup/signin flow titles are
+    1.00 Jaccard)."""
+    _write_feature(tmp_path, "auth-feature", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "fe-signup", "Frontend: Sign-up flow (email + password form)",
+        ["auth-feature"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "fe-signin", "Frontend: Sign-in flow (email + password form)",
+        ["auth-feature"], guid="01TKT002",
+    )
+    assert find_within_feature_duplicates(tmp_path) == []
+
+
+def test_within_feature_frontend_backend_same_action_not_merged(
+    tmp_path: Path,
+) -> None:
+    """A frontend signup form and the backend signup endpoint are distinct
+    deliverables — layer keeps them apart."""
+    _write_feature(tmp_path, "auth-feature", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "be-signup", "Implement POST /auth/signup endpoint",
+        ["auth-feature"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "fe-signup", "Implement frontend sign-up form",
+        ["auth-feature"], guid="01TKT002",
+    )
+    assert find_within_feature_duplicates(tmp_path) == []
+
+
+def test_surface_dedup_catches_cross_feature_same_surface(tmp_path: Path) -> None:
+    """Unification: same surface under DIFFERENT features IS a duplicate —
+    grouping by surface signature alone catches it (the M1-fullstack leak
+    where signup appeared under two features and cross-feature Jaccard
+    missed it)."""
+    _write_feature(tmp_path, "feat-a", ["story-x"], guid="01AAAAAA")
+    _write_feature(tmp_path, "feat-b", ["story-x"], guid="01BBBBBB")
+    _write_ticket_titled(
+        tmp_path, "t-a", "POST /auth/signup endpoint", ["feat-a"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "t-b", "Implement POST /auth/signup with validation", ["feat-b"],
+        guid="01TKT002",
+    )
+    decisions = find_surface_duplicates(tmp_path)
+    assert len(decisions) == 1
+    assert {decisions[0].kept_slug, *decisions[0].retracted_slugs} == {"t-a", "t-b"}
+
+
+def test_surface_dedup_includes_orphans_and_prefers_parented(
+    tmp_path: Path,
+) -> None:
+    """An orphaned ticket (cites a story slug, no feature) sharing a surface
+    with a parented ticket is a duplicate; the PARENTED one wins so the
+    survivor has a home."""
+    _write_feature(tmp_path, "feat-a", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "parented", "POST /auth/signup endpoint with validation",
+        ["feat-a"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "orphan", "POST /auth/signup",
+        ["some-story-slug"], guid="01TKT002",  # no feature in sources
+    )
+    decisions = find_surface_duplicates(tmp_path)
+    assert len(decisions) == 1
+    assert decisions[0].kept_slug == "parented"  # parented beats orphan
+    assert decisions[0].retracted_slugs == ("orphan",)
+
+
+def test_reattribution_uses_surface_owner(tmp_path: Path) -> None:
+    """An orphan re-homes to the feature that already owns its surface,
+    even when the feature SLUG (a verbose user-story phrase) barely
+    token-overlaps the orphan's technical title."""
+    _write_feature(
+        tmp_path, "kohl-signs-up-with-email-and-password", ["story-x"],
+        guid="01AAAAAA",
+    )
+    # Parented ticket establishes the surface owner.
+    _write_ticket_titled(
+        tmp_path, "owned-signup", "Implement POST /auth/signup endpoint",
+        ["kohl-signs-up-with-email-and-password"], guid="01TKT001",
+    )
+    # Orphan with the same surface, title that won't Jaccard-match the slug.
+    _write_ticket_titled(
+        tmp_path, "orphan-signup", "POST /auth/signup",
+        ["a-story-slug"], guid="01TKT002",
+    )
+    reattached = reattribute_orphaned_tickets(tmp_path)
+    assert ("orphan-signup", "kohl-signs-up-with-email-and-password", 1.0) in reattached
+
+
+def test_consolidate_within_feature_aborts_retracted(tmp_path: Path) -> None:
+    _write_feature(tmp_path, "auth-feature", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "signup-keep", "Implement POST /auth/signup with full validation",
+        ["auth-feature"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "signup-dup", "POST /auth/signup",
+        ["auth-feature"], guid="01TKT002",
+    )
+    applied = consolidate_within_feature_duplicates(tmp_path)
+    assert len(applied) == 1
+    # Longest title wins (more specific)
+    assert applied[0].kept_slug == "signup-keep"
+    assert get_ticket_state(tmp_path, "signup-dup") == TicketState.ABORTED
+    assert get_ticket_state(tmp_path, "signup-keep") is None  # untouched
+
+
+def test_surface_dedup_skips_already_aborted(tmp_path: Path) -> None:
+    """Regression: a ticket a PRIOR pass already aborted must not drag its
+    live sibling down. Two same-surface tickets, one pre-aborted → the
+    surface pass leaves the survivor alone (it must not re-cluster the dead
+    one as winner and abort the live one — the schema-vanishes bug)."""
+    from wonderland.ticket_lifecycle import back_fill_state, transition
+
+    _write_feature(tmp_path, "feat-a", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "schema-live", "Set up SQLite schema migration for users",
+        ["feat-a"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "schema-dead", "SQLite schema migration",
+        ["feat-a"], guid="01TKT002",
+    )
+    # Pre-abort schema-dead, as a prior pass would.
+    back_fill_state(tmp_path, "schema-dead", TicketState.IN_PROGRESS)
+    transition(tmp_path, "schema-dead", TicketState.ABORTED, by="prior-pass")
+
+    decisions = find_surface_duplicates(tmp_path)
+    assert decisions == []  # only one LIVE ticket on this surface → no dup
+    consolidate_surface_duplicates(tmp_path)
+    assert get_ticket_state(tmp_path, "schema-live") is None  # survivor untouched
+
+
+def test_cross_feature_does_not_merge_different_surfaces_sharing_upstream(
+    tmp_path: Path,
+) -> None:
+    """Regression (M1-verify): tickets that share an upstream story but
+    build DIFFERENT surfaces are NOT duplicates. One story decomposes into
+    many surfaces; Pass 1's exact-upstream clustering must not merge them.
+    This is the bug that deleted 14 distinct tickets (incl. both frontend
+    forms) keeping only session-middleware."""
+    _write_feature(tmp_path, "feat-a", ["story-auth"], guid="01AAAAAA")
+    _write_feature(tmp_path, "feat-b", ["story-auth"], guid="01BBBBBB")
+    _write_ticket_titled(
+        tmp_path, "signup-a", "POST /auth/signup endpoint",
+        ["feat-a", "story-auth"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "signin-b", "POST /auth/signin endpoint",
+        ["feat-b", "story-auth"], guid="01TKT002",
+    )
+    _write_ticket_titled(
+        tmp_path, "me-a", "GET /auth/me endpoint",
+        ["feat-a", "story-auth"], guid="01TKT003",
+    )
+    _write_ticket_titled(
+        tmp_path, "schema-b", "Set up SQLite schema for users",
+        ["feat-b", "story-auth"], guid="01TKT004",
+    )
+    decisions = find_cross_feature_duplicates(tmp_path)
+    retracted = [s for d in decisions for s in d.retracted_slugs]
+    assert retracted == []  # all distinct surfaces → nothing merged
+
+
+def test_cross_feature_still_merges_same_surface_sharing_upstream(
+    tmp_path: Path,
+) -> None:
+    """The guard doesn't break legit dedup: two SAME-surface tickets under
+    different features sharing an upstream story still merge."""
+    _write_feature(tmp_path, "feat-a", ["story-auth"], guid="01AAAAAA")
+    _write_feature(tmp_path, "feat-b", ["story-auth"], guid="01BBBBBB")
+    _write_ticket_titled(
+        tmp_path, "signup-a", "POST /auth/signup endpoint",
+        ["feat-a", "story-auth"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "signup-b", "Implement POST /auth/signup with validation",
+        ["feat-b", "story-auth"], guid="01TKT002",
+    )
+    decisions = find_cross_feature_duplicates(tmp_path)
+    retracted = [s for d in decisions for s in d.retracted_slugs]
+    assert len(retracted) == 1  # the two signups merge

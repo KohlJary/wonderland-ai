@@ -84,6 +84,10 @@ def test_save_writes_json_to_target_path(tmp_path: Path) -> None:
         },
         "ui": {
             "show_welcome": True,
+            "check_updates": True,
+        },
+        "run": {
+            "auto_resolve_questions": False,
         },
     }
 
@@ -112,6 +116,24 @@ def test_load_partial_config(tmp_path: Path) -> None:
     config = load_config(path=target)
     assert config.anthropic.api_key == "sk-ant-only"
     assert config.anthropic.model is None
+
+
+def test_auto_resolve_questions_defaults_off(tmp_path: Path) -> None:
+    """T-ab77 — autonomy is opt-in: the resolver is OFF unless the
+    operator turns it on. A config file without a ``run`` section, and a
+    fresh default config, both read False."""
+    assert WonderlandConfig().run.auto_resolve_questions is False
+    target = tmp_path / "config.json"
+    target.write_text(json.dumps({"anthropic": {"api_key": "x"}}))
+    assert load_config(path=target).run.auto_resolve_questions is False
+
+
+def test_auto_resolve_questions_roundtrips_when_enabled(tmp_path: Path) -> None:
+    target = tmp_path / "config.json"
+    cfg = WonderlandConfig()
+    cfg.run.auto_resolve_questions = True
+    save_config(cfg, path=target)
+    assert load_config(path=target).run.auto_resolve_questions is True
 
 
 def test_load_empty_anthropic_section(tmp_path: Path) -> None:

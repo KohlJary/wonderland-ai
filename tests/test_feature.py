@@ -323,6 +323,59 @@ def test_t_ab67_feature_kind_autopromotes_under_foundation_milestone(
     assert reg.find_by_slug("user-signup") is not None
 
 
+def test_t_ab76_auto_stamps_milestone_when_none(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """T-ab76: a feature emitted during a milestone-scoped run with no
+    milestone field gets stamped with the active scope slug. The
+    substrate knows the scope; relying on the agent to repeat it left
+    feature.milestone None on real runs, which silently no-ops T-ab73
+    + T-ab74 (both resolve ticket -> feature.milestone)."""
+    from types import SimpleNamespace
+
+    fake_scope = SimpleNamespace(slug="m2-partner-profile-storage", kind="capability")
+    import wonderland.workflow as wf
+    monkeypatch.setattr(wf, "get_active_milestone_scope", lambda: fake_scope)
+
+    reg = FeatureRegistry(tmp_path)
+    record = reg.write(_payload(title="Store partner profile"))
+    assert reg.find_by_slug(record.slug).milestone == "m2-partner-profile-storage"
+    assert "**Milestone:** m2-partner-profile-storage" in record.path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_t_ab76_explicit_matching_milestone_is_preserved(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """An explicit milestone matching the active scope is kept as-is —
+    the auto-stamp only fills a None field."""
+    from types import SimpleNamespace
+
+    fake_scope = SimpleNamespace(slug="m2-partner-profile-storage", kind="capability")
+    import wonderland.workflow as wf
+    monkeypatch.setattr(wf, "get_active_milestone_scope", lambda: fake_scope)
+
+    reg = FeatureRegistry(tmp_path)
+    payload = _payload(title="Store partner profile").model_copy(
+        update={"milestone": "m2-partner-profile-storage"}
+    )
+    record = reg.write(payload)
+    assert reg.find_by_slug(record.slug).milestone == "m2-partner-profile-storage"
+
+
+def test_t_ab76_no_stamp_without_active_scope(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """No active scope (ad-hoc / non-scoped run) → milestone stays None."""
+    import wonderland.workflow as wf
+    monkeypatch.setattr(wf, "get_active_milestone_scope", lambda: None)
+
+    reg = FeatureRegistry(tmp_path)
+    record = reg.write(_payload(title="Some feature"))
+    assert reg.find_by_slug(record.slug).milestone is None
+
+
 def test_t_ab67_feature_kind_unchanged_under_capability_milestone(
     tmp_path: Path, monkeypatch
 ) -> None:

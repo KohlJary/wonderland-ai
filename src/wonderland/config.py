@@ -75,9 +75,30 @@ class UIConfig:
 
 
 @dataclass
+class RunConfig:
+    """Run-behavior preferences that shape how autonomous a pilot is.
+
+    auto_resolve_questions: when True, an agent's
+    ``question_to_operator`` is first handed to the automated resolver
+    (T-ab77), which answers it from the milestone roster when the answer
+    is derivable and only escalates genuine forks to the human. Defaults
+    to **False** — autonomy is opt-in: out of the box every question goes
+    straight to the operator (the semi-autonomous path). Turn it on to
+    run fully autonomous, or to A/B the resolver's answers against your
+    own.
+
+    The ``WONDERLAND_AUTO_RESOLVE_QUESTIONS`` env var overrides this
+    (``0``/``1``) for a one-off run without editing the config.
+    """
+
+    auto_resolve_questions: bool = False
+
+
+@dataclass
 class WonderlandConfig:
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
     ui: UIConfig = field(default_factory=UIConfig)
+    run: RunConfig = field(default_factory=RunConfig)
 
 
 def load_config(*, path: Path | None = None) -> WonderlandConfig:
@@ -92,6 +113,7 @@ def load_config(*, path: Path | None = None) -> WonderlandConfig:
     raw = json.loads(target.read_text(encoding="utf-8"))
     anthropic_raw = raw.get("anthropic") or {}
     ui_raw = raw.get("ui") or {}
+    run_raw = raw.get("run") or {}
     return WonderlandConfig(
         anthropic=AnthropicConfig(
             api_key=anthropic_raw.get("api_key"),
@@ -100,6 +122,9 @@ def load_config(*, path: Path | None = None) -> WonderlandConfig:
         ui=UIConfig(
             show_welcome=ui_raw.get("show_welcome", True),
             check_updates=ui_raw.get("check_updates", True),
+        ),
+        run=RunConfig(
+            auto_resolve_questions=run_raw.get("auto_resolve_questions", False),
         ),
     )
 
@@ -111,5 +136,6 @@ def save_config(config: WonderlandConfig, *, path: Path | None = None) -> None:
     payload = {
         "anthropic": asdict(config.anthropic),
         "ui": asdict(config.ui),
+        "run": asdict(config.run),
     }
     target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -406,6 +406,21 @@ class FeatureRegistry:
                     f"concern."
                 )
 
+        # T-ab76: auto-stamp the active milestone when the agent left
+        # the field None during a milestone-scoped run. The substrate
+        # KNOWS the scope — relying on the agent to repeat it left
+        # feature.milestone None on most real runs (ldr-final M1: the
+        # composed feature carried no milestone), which silently
+        # no-ops BOTH T-ab73 (ticket scope-lock) and T-ab74 (content-
+        # leak gate) because both resolve ticket -> parent feature ->
+        # milestone. Stamping here makes the field reliable so those
+        # gates actually fire. Only when scoped + None; an explicit
+        # mismatching milestone already raised above.
+        if active_scope is not None and not validated.milestone:
+            validated = validated.model_copy(
+                update={"milestone": active_scope.slug}
+            )
+
         slug = slugify(validated.title)
         # T-g2: guid-first lookup; slug fallback for back-compat.
         existing = self.find_by_guid(validated.guid)

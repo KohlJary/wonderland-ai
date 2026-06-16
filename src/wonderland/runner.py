@@ -203,6 +203,24 @@ class _PendingEscalation:
     response_future: asyncio.Future[str]
 
 
+def _auto_resolve_enabled() -> bool:
+    """Whether the T-ab77 question resolver is active. Resolution order:
+    ``WONDERLAND_AUTO_RESOLVE_QUESTIONS`` env var (``0``/``1``) overrides
+    ``config.run.auto_resolve_questions`` (default False — autonomy is
+    opt-in)."""
+    import os
+
+    env = os.environ.get("WONDERLAND_AUTO_RESOLVE_QUESTIONS")
+    if env is not None:
+        return env.strip().lower() not in ("0", "false", "no", "")
+    try:
+        from wonderland.config import load_config
+
+        return load_config().run.auto_resolve_questions
+    except Exception:  # noqa: BLE001 — default off if config unreadable
+        return False
+
+
 class Runner:
     """Drives a Wonderland team for a directive run.
 
@@ -346,6 +364,11 @@ class Runner:
         self._pending_question_futures: dict[
             str, asyncio.Future[Utterance]
         ] = {}
+        # T-ab77: running log of (question, answer) pairs resolved this
+        # run — auto-resolved or human-answered — so the resolver can
+        # ground later questions on earlier decisions ("M2 is backend
+        # only" answered once stays answered).
+        self._resolved_qa: list[tuple[str, str]] = []
 
     # ------------------------------------------------------------------ #
     # Factory: full-cast scenario
@@ -994,7 +1017,15 @@ class Runner:
             # would fire while the operator reads the question).
             self._monitor.pause_for_external_input(u.thread_id)
             try:
-                if self._user_question_handler is None:
+                # T-ab77: try to auto-resolve from the milestone roster
+                # before escalating to the human. A grounded answer skips
+                # the operator round-trip entirely; an un-groundable
+                # question (genuine fork) falls through to the human
+                # handler (or the no-operator sentinel).
+                answer_text = await self._maybe_auto_resolve_question(u)
+                if answer_text is not None:
+                    pass  # auto-resolved; skip the human handler
+                elif self._user_question_handler is None:
                     answer_text = (
                         "(no operator available; proceed with your "
                         "best judgment based on existing context)"
@@ -1019,6 +1050,10 @@ class Runner:
                 # — so the meeting doesn't get stuck paused.
                 self._monitor.resume_for_external_input(u.thread_id)
 
+            # Record the (question, answer) so the resolver can ground
+            # later questions on this decision (T-ab77).
+            self._resolved_qa.append((u.content.body or "", answer_text))
+
             answer_utt = Utterance(
                 thread_id=u.thread_id,
                 speaker=operator_identity(),
@@ -1032,6 +1067,91 @@ class Runner:
             future = self._pending_question_futures.pop(u.id, None)
             if future is not None and not future.done():
                 future.set_result(answer_utt)
+
+    async def _maybe_auto_resolve_question(
+        self, u: "Utterance"
+    ) -> str | None:
+        """T-ab77: attempt to answer an operator question from the
+        milestone roster + prior answers this run, before escalating to
+        the human. Returns a grounded answer (tagged ``[auto-resolved
+        …]``) or None to escalate. Gated by ``WONDERLAND_AUTO_RESOLVE_
+        QUESTIONS`` (default on; set ``0`` to A/B the human-only path).
+
+        Best-effort: any failure returns None so the human handler still
+        runs — the resolver can never deadlock or break a meeting.
+
+        Enabled via ``config.run.auto_resolve_questions`` (default off —
+        autonomy is opt-in); the ``WONDERLAND_AUTO_RESOLVE_QUESTIONS``
+        env var overrides it (``0``/``1``) for a one-off run.
+        """
+        if not _auto_resolve_enabled():
+            return None
+        try:
+            from wonderland.llm import LLMClient
+            from wonderland.question_resolver import resolve_operator_question
+            from wonderland.workflow import get_active_milestone_scope
+
+            scope = get_active_milestone_scope()
+            options: list[str] = []
+            for artifact in u.content.artifacts:
+                if artifact.kind == "operator_question_options":
+                    raw = artifact.payload.get("options", [])
+                    if isinstance(raw, list):
+                        options = [str(o) for o in raw if o]
+                    break
+
+            client = LLMClient(
+                on_token_usage=self.telemetry.record_for("question_resolver")
+            )
+            resolution = await resolve_operator_question(
+                project_root=self.project_root,
+                scope=scope,
+                question=u.content.body or "",
+                options=options,
+                prior_qa=list(self._resolved_qa),
+                llm_client=client,
+            )
+            self._record_question_resolution(u, resolution)
+            return resolution.answer
+        except Exception:  # noqa: BLE001 — never break the meeting
+            return None
+
+    def _record_question_resolution(self, u: "Utterance", resolution) -> None:
+        """Emit observability for one resolver decision (T-ab77): a
+        grep-able stderr line + a per-run ``question-resolutions.jsonl``
+        record. Lets the Friday A/B count resolved-vs-escalated, see each
+        grounding citation + latency, and tie cost to the
+        ``question_resolver`` telemetry agent."""
+        import sys
+
+        q = (u.content.body or "").replace("\n", " ")
+        sys.stderr.write(
+            f"[question-resolver] decision={resolution.decision} "
+            f"latency_ms={resolution.latency_ms:.0f} "
+            f"grounding={resolution.citation!r} q={q[:100]!r}\n"
+        )
+        sys.stderr.flush()
+        try:
+            import json
+
+            run_dir = (
+                self.project_root / ".wonderland" / "runs" / self.run_id
+            )
+            run_dir.mkdir(parents=True, exist_ok=True)
+            record = {
+                "asking_agent": u.speaker.name,
+                "question": u.content.body or "",
+                "decision": resolution.decision,
+                "citation": resolution.citation,
+                "latency_ms": round(resolution.latency_ms, 1),
+                "answer": resolution.answer or "",
+            }
+            with (run_dir / "question-resolutions.jsonl").open(
+                "a", encoding="utf-8"
+            ) as fh:
+                fh.write(json.dumps(record) + "\n")
+        except Exception:  # noqa: BLE001 — metrics must never break a run
+            pass
 
     async def wait_for_question_answer(
         self,

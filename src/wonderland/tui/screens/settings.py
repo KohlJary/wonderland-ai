@@ -29,6 +29,7 @@ from textual.widgets import Button, Checkbox, Footer, Header, Input, Label, Stat
 
 from wonderland.config import (
     AnthropicConfig,
+    RunConfig,
     UIConfig,
     WonderlandConfig,
     config_path,
@@ -139,6 +140,20 @@ class SettingsScreen(Screen[None]):
                 id="show-welcome-checkbox",
             )
 
+            yield Static(
+                "[b]Autonomy[/b]\n"
+                "[dim]When on, an agent's question to the operator is "
+                "first answered by the automated resolver from the "
+                "milestone roster; only genuine forks reach you. Off = "
+                "every question comes to you (semi-autonomous).[/dim]",
+                id="settings-run-label",
+            )
+            yield Checkbox(
+                "Auto-resolve operator questions from the milestone roster",
+                value=self._config.run.auto_resolve_questions,
+                id="auto-resolve-checkbox",
+            )
+
             with Horizontal(id="settings-actions"):
                 yield Button(
                     "💾 Save (Ctrl+S)",
@@ -166,6 +181,9 @@ class SettingsScreen(Screen[None]):
         show_welcome = self.query_one(
             "#show-welcome-checkbox", Checkbox
         ).value
+        auto_resolve = self.query_one(
+            "#auto-resolve-checkbox", Checkbox
+        ).value
 
         # Updated config: keep existing key when the input was left
         # blank (the placeholder hint says so explicitly). Update
@@ -179,7 +197,13 @@ class SettingsScreen(Screen[None]):
                 api_key=api_key_to_save,
                 model=model_to_save,
             ),
-            ui=UIConfig(show_welcome=show_welcome),
+            # Preserve check_updates (not surfaced on this screen) rather
+            # than resetting it to default.
+            ui=UIConfig(
+                show_welcome=show_welcome,
+                check_updates=self._config.ui.check_updates,
+            ),
+            run=RunConfig(auto_resolve_questions=auto_resolve),
         )
 
         try:

@@ -922,6 +922,21 @@ def test_diff_tools_appear_in_tool_definitions() -> None:
     assert "insert" in names
 
 
+def test_read_file_description_advertises_milestone_roster() -> None:
+    """T-ab78 follow-up — read_file's description must point agents at
+    the milestone roster for scope-ownership lookups. We locked down
+    cross-milestone story/feature/ticket reads (T-ab35) to keep design
+    passes on-task; this re-surfaces the boundary data (goal +
+    done-when) as supplementary context so agents self-resolve
+    'who owns surface X?' instead of escalating to the operator."""
+    read_file_def = next(
+        d for d in Tools.tool_definitions() if d["name"] == "read_file"
+    )
+    desc = read_file_def["description"].lower()
+    assert ".wonderland/milestones/" in desc
+    assert "done-when" in desc or "done when" in desc
+
+
 # ---------- verify_imports (P16 T-v5) ----------
 
 

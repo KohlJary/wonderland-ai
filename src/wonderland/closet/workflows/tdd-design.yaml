@@ -673,6 +673,32 @@ meetings:
       describing the redundancy + retract only the specific dupes
       you can name. Leave the originals when in doubt.
 
+      **THE SURFACE TEST — apply this FIRST, before anything else.**
+      Two tickets are duplicates if they build the SAME surface — the
+      same endpoint (both ``POST /auth/signup``) or the same UI element
+      (both the sign-up form) — no matter how differently they are
+      worded. This is the most-missed case, because reworded dups don't
+      *look* alike. Concretely, walk your tickets and write down the one
+      endpoint or UI surface each delivers:
+        - ``Implement POST /auth/signup with email + password validation``
+          and ``POST /auth/signup — email + password account creation``
+          → BOTH deliver ``POST /auth/signup``. Same surface, reworded.
+          DUPLICATE — keep the more complete one, retract the other.
+        - ``Implement frontend sign-up form`` and ``Frontend: Sign-up
+          flow`` → BOTH deliver the sign-up form UI. DUPLICATE.
+      Any surface that appears on two tickets under this feature is a
+      duplicate. The M1 design pass shipped 13 tickets for one feature
+      where signup, signin, and both frontend forms each appeared TWICE —
+      every pair was a same-surface reword, and none got merged. Don't
+      let that happen.
+
+      **Guard — different surfaces are NOT duplicates even when the
+      titles are nearly identical.** ``POST /auth/signup`` and ``POST
+      /auth/signin`` are different endpoints; ``Sign-up flow`` and
+      ``Sign-in flow`` are different UI surfaces. A frontend form and its
+      backend endpoint are different deliverables. Never merge across a
+      surface boundary — only collapse tickets that build the *same* one.
+
       **Near-duplicate patterns to MERGE** (T-ab63). The LDR-rerun
       pilot shipped these pairs in M1's foundation feature; they
       are textually different but functionally identical and should

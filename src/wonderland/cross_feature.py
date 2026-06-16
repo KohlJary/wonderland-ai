@@ -230,6 +230,21 @@ def find_cross_feature_duplicates(
     if not feature_slugs:
         return []
 
+    # ticket_slug → surface signature. The surface-agreement GUARD: a
+    # cross-feature merge (Pass 1 upstream-source OR Pass 2 title-Jaccard)
+    # is only valid between tickets that build the SAME surface. The
+    # M1-verify run exposed why: 15 tickets all cited the one story
+    # ``kohl-can-sign-up...`` as upstream, so Pass 1 clustered them and
+    # aborted 14 — but they were signup, signin, /auth/me, schema, and
+    # both frontend forms (all DIFFERENT surfaces). One story legitimately
+    # decomposes into many surfaces; "same upstream" ≠ "duplicate." The
+    # same convergent lesson as everywhere else: only the surface
+    # signature is a safe merge key. (None==None still merges — two
+    # un-surfaced tickets sharing upstream are the original Pass 1 case.)
+    ticket_surface: dict[str, str | None] = {
+        r.slug: _surface_signature(r.title) for r in tickets
+    }
+
     # ticket_slug → (parent_feature, upstream_sources_frozenset)
     ticket_info: dict[str, tuple[str, frozenset[str]]] = {}
     for record in tickets:
@@ -277,9 +292,18 @@ def find_cross_feature_duplicates(
         # determinism.
         scored.sort(key=lambda x: (-x[0], x[1]))
         winner_score, winner_slug, winner_parent = scored[0]
+        winner_surface = ticket_surface.get(winner_slug)
+        # Surface-agreement guard: only retract members that build the
+        # SAME surface as the winner. Different-surface members sharing
+        # this upstream set are distinct deliverables — leave them
+        # standing (their own same-surface dups, if any, are caught by
+        # the surface pass).
         retracted = tuple(
             slug for _score, slug, _parent in scored[1:]
+            if ticket_surface.get(slug) == winner_surface
         )
+        if not retracted:
+            continue
         decisions.append(ConsolidationDecision(
             kept_slug=winner_slug,
             kept_parent_feature=winner_parent,
@@ -367,9 +391,15 @@ def find_cross_feature_duplicates(
             key=lambda x: (-len(x[2]), x[0])
         )
         winner_slug, winner_parent, winner_tokens = cluster_members[0]
+        winner_surface = ticket_surface.get(winner_slug)
+        # Surface-agreement guard (same as Pass 1): only retract members
+        # that build the same surface as the winner.
         retracted = tuple(
             slug for slug, _p, _t in cluster_members[1:]
+            if ticket_surface.get(slug) == winner_surface
         )
+        if not retracted:
+            continue
         # Build a synthetic "upstream sources" for the cluster: union
         # of all members' upstream sets. Used by the ConsolidationDecision
         # for audit / forensics, not for the cluster-identification.
@@ -475,8 +505,327 @@ def consolidate_cross_feature_duplicates(
     return applied
 
 
+# ---- Within-feature dedup (T-ab79) — surface signatures, not Jaccard ----
+# The M1-forced design pass shipped 13 tickets for ONE feature, ~5 reworded
+# dup pairs (two decomposition rotations over the same feature; M3.5 agent
+# consolidation missed them). Title-token Jaccard provably CANNOT separate
+# these: distinct signup-vs-signin frontend tickets score 1.00 (the
+# tokenizer eats sign-"up"/"in"), while a real session-middleware dup scores
+# 0.20. The discriminator is the SURFACE a ticket builds — its endpoint
+# path, or its UI action — not lexical overlap. Two tickets under the same
+# feature are dups iff they target the same surface. Layer (fe/be) is part
+# of the signature so a frontend form and its backend endpoint never merge.
+_PATH_RE = re.compile(r"/[a-z][a-z0-9/_{}-]*")
+_FE_RE = re.compile(
+    r"\b(frontend|react|vite|ui|page|screen|component|form|route)\b"
+)
+# Ordered: first match wins. signup before signin so "sign-up" can't fall
+# through to a looser pattern. Each pattern is distinctive enough that a
+# signup ticket never matches the signin action and vice-versa.
+_SURFACE_ACTIONS: tuple[tuple[str, str], ...] = (
+    ("signup", r"sign[\s_-]?up|signup|registration|register"),
+    ("signin", r"sign[\s_-]?in|signin|log[\s_-]?in|login"),
+    ("signout", r"sign[\s_-]?out|log[\s_-]?out|logout"),
+    ("dashboard", r"dashboard"),
+    ("session-middleware", r"session middleware|middleware"),
+    ("schema", r"\bschema\b|migration|\btable\b"),
+    ("profile", r"profile"),
+)
+
+
+def _surface_signature(title: str) -> str | None:
+    """The surface a ticket builds — ``<layer>|path:<endpoint>`` (strongest,
+    generic) or ``<layer>|act:<action>`` (fallback for path-less tickets).
+    Returns None when no surface is derivable (→ never deduped; conservative).
+
+    Layer (fe/be) is encoded so a frontend form and its backend endpoint —
+    or two frontend pages for different actions — keep distinct signatures.
+    """
+    t = title.lower()
+    layer = "fe" if _FE_RE.search(t) else "be"
+    m = _PATH_RE.search(t)
+    if m:
+        path = m.group(0).rstrip("/")
+        if len(path) > 2:  # skip a bare "/" or single-char noise
+            return f"{layer}|path:{path}"
+    for name, pattern in _SURFACE_ACTIONS:
+        if re.search(pattern, t):
+            return f"{layer}|act:{name}"
+    return None
+
+
+def find_surface_duplicates(
+    project_root: Path,
+) -> list[ConsolidationDecision]:
+    """Tickets that build the same surface — grouped by surface signature
+    ALONE, across feature boundaries AND including orphaned tickets (no
+    resolvable parent). Pure read-side.
+
+    Unification (T-ab79 follow-up): the M1-fullstack run showed surface
+    dups leaking three ways — within a feature, across two features, and
+    via orphaned tickets citing a story slug. Title-Jaccard (cross-feature
+    T-ab63 pass 2) and parent-scoped grouping (the original within-feature
+    pass) each only caught one slice. Grouping by surface signature alone
+    catches all three at once: any surface appearing on ≥2 tickets is a
+    duplicate, no matter which feature claims them or whether they're
+    attributed at all.
+
+    Winner selection prefers a PARENTED ticket over an orphan (so the
+    survivor has a home), then the longest/most-specific title, then alpha
+    slug for determinism."""
+    registry = TicketRegistry(project_root)
+    tickets = registry.list_tickets()
+    if not tickets:
+        return []
+    feature_slugs, _ = _build_feature_index(project_root)
+
+    # surface_signature → [(slug, title, parent_or_None)]
+    groups: dict[str, list[tuple[str, str, str | None]]] = defaultdict(list)
+    for record in tickets:
+        # Skip tickets a prior pass already aborted — otherwise this pass
+        # re-clusters a dead ticket with its live sibling, picks the dead
+        # one as winner, and aborts the survivor (both end up aborted).
+        if get_ticket_state(project_root, record.slug) == TicketState.ABORTED:
+            continue
+        try:
+            text = record.path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        sig = _surface_signature(record.title)
+        if sig is None:
+            continue
+        parent = _ticket_parent_feature(
+            _parse_ticket_sources(text), feature_slugs
+        )
+        groups[sig].append((record.slug, record.title, parent))
+
+    decisions: list[ConsolidationDecision] = []
+    for sig, members in groups.items():
+        if len(members) < 2:
+            continue
+        # Prefer parented (parent is not None) → longest title → alpha slug.
+        members.sort(key=lambda m: (m[2] is None, -len(m[1]), m[0]))
+        winner_slug, _wtitle, winner_parent = members[0]
+        retracted = tuple(slug for slug, _t, _p in members[1:])
+        decisions.append(ConsolidationDecision(
+            kept_slug=winner_slug,
+            kept_parent_feature=winner_parent or "(orphan)",
+            retracted_slugs=retracted,
+            upstream_sources=frozenset({sig}),
+        ))
+    return decisions
+
+
+# Back-compat alias — the original name from the within-feature-only pass.
+find_within_feature_duplicates = find_surface_duplicates
+
+
+def consolidate_surface_duplicates(
+    project_root: Path,
+    *,
+    actor: str = "wonderland-substrate",
+) -> list[ConsolidationDecision]:
+    """Find + apply surface dedup (within + cross feature + orphans).
+    Retracted tickets transition to ABORTED (file left on disk for
+    forensics); recoverable, best-effort — same as the sibling passes."""
+    decisions = find_surface_duplicates(project_root)
+    applied: list[ConsolidationDecision] = []
+    for decision in decisions:
+        any_applied = False
+        for ticket_slug in decision.retracted_slugs:
+            if _abort_ticket_as_duplicate(
+                project_root, ticket_slug,
+                kept_slug=decision.kept_slug,
+                kept_parent=decision.kept_parent_feature,
+                actor=actor,
+            ):
+                any_applied = True
+        if any_applied:
+            applied.append(decision)
+    return applied
+
+
+# Back-compat alias — the original name from the within-feature-only pass.
+consolidate_within_feature_duplicates = consolidate_surface_duplicates
+
+
+def _abort_ticket_as_duplicate(
+    project_root: Path, ticket_slug: str, *,
+    kept_slug: str, kept_parent: str, actor: str,
+) -> bool:
+    """Walk a duplicate ticket to ABORTED via ticket_lifecycle. Returns
+    True iff it ends in ABORTED. Mirrors the abort path in
+    ``consolidate_cross_feature_duplicates``."""
+    try:
+        current = get_ticket_state(project_root, ticket_slug)
+        if current == TicketState.ABORTED:
+            return True
+        notes = (
+            f"Within-feature consolidation: duplicate surface of "
+            f"{kept_slug!r} under feature {kept_parent!r}"
+        )
+        if current is None:
+            back_fill_state(
+                project_root, ticket_slug, TicketState.IN_PROGRESS,
+                notes="Back-fill to in_progress for within-feature abort",
+            )
+            current = TicketState.IN_PROGRESS
+        walk = {
+            TicketState.PENDING: [
+                TicketState.QUEUED, TicketState.IN_PROGRESS,
+                TicketState.ABORTED,
+            ],
+            TicketState.QUEUED: [
+                TicketState.IN_PROGRESS, TicketState.ABORTED,
+            ],
+            TicketState.IN_PROGRESS: [TicketState.ABORTED],
+            TicketState.DONE: [
+                TicketState.QUEUED, TicketState.IN_PROGRESS,
+                TicketState.ABORTED,
+            ],
+        }.get(current, [])
+        for next_state in walk:
+            try:
+                ticket_transition(
+                    project_root, ticket_slug, next_state,
+                    by=actor, notes=notes,
+                )
+            except IllegalTransitionError:
+                break
+        return get_ticket_state(project_root, ticket_slug) == TicketState.ABORTED
+    except Exception:  # noqa: BLE001 — best-effort
+        return False
+
+
+def reattribute_orphaned_tickets(
+    project_root: Path,
+    active_slug: str | None = None,
+    *,
+    min_jaccard: float = 0.15,
+) -> list[tuple[str, str, float]]:
+    """Re-home tickets that cite no resolvable parent feature to the
+    feature whose title best matches the ticket's title.
+
+    T-ab78: M2 design's parallel decomposition left 4 of 13 tickets
+    citing the milestone ``guid:slug`` as ``sources[0]`` instead of a
+    feature — the thread-scoped attribution
+    (``_attribute_ticket_sources_to_iteration_feature``) skipped them on
+    ``scoped=0`` threads — and the geocoding-resolver feature got 0
+    tickets (its work mis-injected into the schema feature). Orphaned
+    tickets are invisible to BOTH cross-feature dedup (needs >=2 FEATURE
+    parents) and M3.5 within-feature consolidation, so the duplicates
+    they represent never get collapsed. Re-attaching them by title
+    similarity feeds correct input to the dedup that runs next.
+
+    When ``active_slug`` is given, only features belonging to that
+    milestone are candidates (``feature.milestone``, reliable since
+    T-ab76) — an M2 orphan never re-homes to an M1 feature.
+
+    Deterministic; mirrors the title-token machinery used by T-ab63
+    pass 2. Mutates the ticket's on-disk ``**Sources:**`` line.
+
+    Returns ``[(ticket_slug, feature_slug, jaccard)]`` for each
+    re-attached ticket.
+    """
+    feature_slugs, _ = _build_feature_index(project_root)
+    if not feature_slugs:
+        return []
+
+    feature_registry = FeatureRegistry(project_root)
+    candidates: dict[str, frozenset[str]] = {}
+    for slug in feature_slugs:
+        if active_slug is not None:
+            rec = feature_registry.find_by_slug(slug)
+            ms = None
+            if rec is not None and rec.milestone:
+                ms = (
+                    rec.milestone.split(":", 1)[1]
+                    if ":" in rec.milestone
+                    else rec.milestone
+                )
+            if ms != active_slug:
+                continue
+        # Feature slug -> title tokens (slug is hyphenated title).
+        candidates[slug] = _normalize_title_tokens(slug.replace("-", " "))
+    if not candidates:
+        return []
+
+    registry = TicketRegistry(project_root)
+    all_tickets = registry.list_tickets()
+
+    # Surface-owner index: which candidate feature already owns each
+    # surface (from its PARENTED tickets). The unification's primary
+    # re-attribution signal — title↔feature-slug Jaccard is unreliable
+    # when feature slugs are verbose user-story phrases
+    # (``kohl-signs-up-with-email-and-password``) and ticket titles are
+    # technical (``POST /auth/signup``). The surface a ticket builds is
+    # the robust signal: an orphaned ``POST /auth/signup`` belongs to
+    # whichever feature already has a parented ``/auth/signup`` ticket.
+    surface_owner: dict[str, str] = {}
+    for record in all_tickets:
+        try:
+            text = record.path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        parent = _ticket_parent_feature(
+            _parse_ticket_sources(text), feature_slugs
+        )
+        if parent is None or parent not in candidates:
+            continue
+        sig = _surface_signature(record.title)
+        if sig is not None:
+            surface_owner.setdefault(sig, parent)
+
+    reattached: list[tuple[str, str, float]] = []
+    for record in all_tickets:
+        try:
+            text = record.path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        sources = _parse_ticket_sources(text)
+        if _ticket_parent_feature(sources, feature_slugs) is not None:
+            continue  # already has a resolvable feature parent
+
+        # Primary: surface-owner match. Fallback: title↔slug Jaccard.
+        best_slug: str | None = None
+        best_score = 0.0
+        sig = _surface_signature(record.title)
+        if sig is not None and sig in surface_owner:
+            best_slug, best_score = surface_owner[sig], 1.0
+        else:
+            title_tokens = _normalize_title_tokens(record.title)
+            if not title_tokens:
+                continue
+            for fslug, ftokens in candidates.items():
+                score = _title_jaccard(title_tokens, ftokens)
+                if score > best_score:
+                    best_slug, best_score = fslug, score
+            if best_slug is None or best_score < min_jaccard:
+                continue
+        m = _SOURCES_RE.search(text)
+        if m is None:
+            continue
+        existing = [s.strip() for s in m.group(1).split(",") if s.strip()]
+        new_content = ", ".join([best_slug] + existing)
+        # Replace only the captured content span; preserves the exact
+        # ``**Sources:**`` prefix.
+        new_text = text[: m.start(1)] + new_content + text[m.end(1):]
+        try:
+            record.path.write_text(new_text, encoding="utf-8")
+        except OSError:
+            continue
+        reattached.append((record.slug, best_slug, best_score))
+    return reattached
+
+
 __all__ = [
     "ConsolidationDecision",
     "find_cross_feature_duplicates",
     "consolidate_cross_feature_duplicates",
+    "reattribute_orphaned_tickets",
+    "find_surface_duplicates",
+    "consolidate_surface_duplicates",
+    # Back-compat aliases (within-feature-only era):
+    "find_within_feature_duplicates",
+    "consolidate_within_feature_duplicates",
 ]

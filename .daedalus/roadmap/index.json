@@ -2041,6 +2041,56 @@
       "status": "done",
       "created_at": "2026-05-23T06:46:08.241010+00:00",
       "created_by": "daedalus"
+    },
+    {
+      "id": "d16bfb33-e359-4866-809f-37386936b88a",
+      "title": "T-ab74: content-level scope leak \u2014 ticket bodies describe cross-milestone work that structural gate (T-ab73) can't catch",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-06-06T22:51:16.866791",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "9cd9b1f8-47ed-4477-84f4-e4197ea12118",
+      "title": "T-ab75: operator-question cross-agent dedup \u2014 multiple agents (e.g. Rabbit + Caterpillar) independently fire the same/overlapping question_to_operator; each gets its own 600s timer + separate round-trip. Coalesce by content-similarity + broadcast the answer as shared meeting context so the second agent never re-asks.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-06-16T17:58:03.121180",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "0facd1e4-dff6-43a9-b238-1f932b5c2702",
+      "title": "T-ab76: auto-stamp feature.milestone = active scope when None at write time. Agents leave it None; substrate stays permissive; so T-ab73 ticket scope-lock AND T-ab74 content-leak gate both silently no-op (both resolve ticket->feature.milestone). Keystone fix makes the field reliable so both gates actually fire. Plus scope T-ab74 to active-milestone tickets (currently over-reaches across milestones, would retract prior milestones' tickets).",
+      "description": "",
+      "priority": "P0",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-06-16T18:04:43.734931",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "85bd06c2-9b9b-4e85-94f8-4e46ae659b65",
+      "title": "T-ab77: automated operator-question resolver (Tier-2 enabler). Intercept question_to_operator before the human round-trip; a cheap resolver agent answers from grounding context (active milestone goal+done_when, FULL roster for surface-ownership, directive scope-lock, consumed requirements, prior Q&A this run). Confidence-gate: answer autonomously when groundable in an artifact, escalate to operator ONLY for genuine forks (contradictory milestone / true product preference). Formalizes what I do manually. M2 receipt: all 6 operator questions were artifact-derivable, 0 genuine forks.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-06-16T18:25:25.142863",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "c80b4979-e89b-4812-be05-7f80ca4a09e2",
+      "title": "T-ab78: ticket->feature attribution breaks during multi-feature design \u2014 M2 produced 13 tickets but 5 cited the MILESTONE guid:slug as sources[0] instead of a feature, and the 3rd feature (geocoding-resolver) got 0 tickets (its work mis-attributed to the schema feature). Orphaned/mis-attributed tickets are invisible to cross-feature dedup (needs >=2 FEATURE parents), so it found 0 clusters despite obvious dups. The dedup is fine; its INPUT attribution is broken.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-06-16T18:29:04.445652",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

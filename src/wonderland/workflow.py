@@ -2986,12 +2986,103 @@ async def run_workflow(
         # ticket_lifecycle. Substrate-side dedup; no agent calls.
         # Fires for design-shaped workflows only (the ones that
         # produce tickets); other workflow names skip silently.
+        #
+        # T-ab78: re-attribute orphaned tickets to their best-matching
+        # feature FIRST, so the consolidation below sees correct
+        # ticket->feature parentage. M2 design left 4 of 13 tickets
+        # citing the milestone instead of a feature (scoped=0 thread
+        # misses), which made the dups invisible to dedup.
+        _maybe_fire_ticket_reattribution(workflow, runner)
         _maybe_fire_cross_feature_consolidation(workflow, runner)
+        # T-ab79: within-feature dedup by surface signature — catches the
+        # reworded dups one feature decomposed twice that cross-feature
+        # dedup (needs ≥2 features) and M3.5 agent consolidation miss.
+        _maybe_fire_within_feature_consolidation(workflow, runner)
+
+        # T-ab74: content-level scope-leak retraction. T-ab73 gates the
+        # structural milestone axis (ticket → parent feature → milestone);
+        # this catches tickets whose TITLE names a foreign-milestone
+        # surface even though the parent feature is in-scope. Runs after
+        # cross-feature dedup so we don't retract a ticket about to be
+        # consolidated anyway. Reads the active scope, still set here
+        # (cleared in the finally below).
+        _maybe_fire_content_scope_leak_retraction(workflow, runner)
     finally:
         set_active_milestone_scope(None)
         reset_active_branch_id(branch_token)
         clear_retractions()
         clear_active_disallowed_decisions()
+
+
+def _maybe_fire_within_feature_consolidation(
+    workflow: "Workflow", runner: "Runner",
+) -> None:
+    """T-ab79 wiring — surface-signature dedup at end of design-shaped
+    workflows. Catches surface dups within a feature, ACROSS features, and
+    among orphaned tickets (one unified pass). Best-effort; no-op when no
+    dups exist.
+    """
+    name = (workflow.name or "").lower()
+    if name not in ("tdd-design", "tdd-decompose"):
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    try:
+        from wonderland.cross_feature import consolidate_surface_duplicates
+
+        decisions = consolidate_surface_duplicates(project_root)
+        if decisions:
+            import sys
+            n_aborted = sum(len(d.retracted_slugs) for d in decisions)
+            sys.stderr.write(
+                f"[surface-consolidation] workflow={name!r} "
+                f"clusters={len(decisions)} aborted_tickets={n_aborted}\n"
+            )
+            for d in decisions:
+                sys.stderr.write(f"  {d.summary()}\n")
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        import sys
+        sys.stderr.write(f"[surface-consolidation] error: {exc}\n")
+
+
+def _maybe_fire_ticket_reattribution(
+    workflow: "Workflow", runner: "Runner",
+) -> None:
+    """T-ab78 wiring — re-homes orphaned tickets (those citing no
+    resolvable parent feature, e.g. the milestone slug) to their
+    best-matching feature before the cross-feature consolidation runs,
+    so the dedup sees correct ticket->feature parentage. Scoped to the
+    active milestone's features when a scope is set.
+
+    Best-effort: errors are caught + logged to stderr without breaking
+    the caller.
+    """
+    name = (workflow.name or "").lower()
+    if name not in ("tdd-design", "tdd-decompose"):
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    scope = get_active_milestone_scope()
+    active_slug = scope.slug if scope is not None else None
+    try:
+        from wonderland.cross_feature import reattribute_orphaned_tickets
+
+        reattached = reattribute_orphaned_tickets(project_root, active_slug)
+        if reattached:
+            import sys
+            sys.stderr.write(
+                f"[ticket-reattribution] workflow={name!r} "
+                f"milestone={active_slug!r} reattached={len(reattached)}\n"
+            )
+            for ticket_slug, feature_slug, score in reattached:
+                sys.stderr.write(
+                    f"  {ticket_slug!r} -> {feature_slug!r} (jaccard={score:.2f})\n"
+                )
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        import sys
+        sys.stderr.write(f"[ticket-reattribution] error: {exc}\n")
 
 
 def _maybe_fire_cross_feature_consolidation(
@@ -3029,6 +3120,44 @@ def _maybe_fire_cross_feature_consolidation(
         sys.stderr.write(
             f"[cross-feature-consolidation] error: {exc}\n"
         )
+
+
+def _maybe_fire_content_scope_leak_retraction(
+    workflow: "Workflow", runner: "Runner",
+) -> None:
+    """T-ab74 wiring — auto-retracts content scope-leak tickets at the end
+    of design-shaped workflows. A ticket leaks when its TITLE names a
+    surface owned by a non-active milestone (deliverable leak), as opposed
+    to merely referencing it in the body (legitimate guard/redirect).
+
+    No-op when the workflow isn't ticket-producing, there's no active
+    milestone scope, or no leak is found. Best-effort: errors are caught +
+    logged to stderr without breaking the caller.
+    """
+    name = (workflow.name or "").lower()
+    if name not in ("tdd-design", "tdd-decompose"):
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    scope = get_active_milestone_scope()
+    if scope is None or not scope.slug:
+        return
+    try:
+        from wonderland.scope_leak import retract_content_scope_leaks
+
+        applied = retract_content_scope_leaks(project_root, scope.slug)
+        if applied:
+            import sys
+            sys.stderr.write(
+                f"[scope-leak] workflow={name!r} milestone={scope.slug!r} "
+                f"retracted={len(applied)}\n"
+            )
+            for d in applied:
+                sys.stderr.write(f"  {d.summary()}\n")
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        import sys
+        sys.stderr.write(f"[scope-leak] error: {exc}\n")
 
 
 def _derive_implicit_milestone_for_implement(
