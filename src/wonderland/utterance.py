@@ -55,6 +55,10 @@ class SpeechAct(StrEnum):
     # meeting carrying one or more milestone artifacts. The
     # substrate's MilestoneRegistry dedups by slug.
     MILESTONE_PLAN = "milestone_plan"
+    # P21 — a layout diagram (Ophanic .oph) authored by an agent.
+    # Carries one or more ``diagram`` artifacts; the substrate writes
+    # them through DiagramRegistry. The structural build-tracker.
+    DIAGRAM = "diagram"
     # P15 T-m7 — artifact retraction. RETRACT carries one or more
     # ``retraction`` artifacts ({target_kind, target_slug, reason}).
     # The substrate scans the utterance after publish, deletes the

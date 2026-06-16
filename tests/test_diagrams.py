@@ -257,3 +257,35 @@ def test_unlink(tmp_path: Path) -> None:
     assert links.unlink(navbar, "t1") is True
     assert links.links_for_node(navbar) == []
     assert links.unlink(navbar, "t1") is False  # already gone
+
+
+# ---------- milestone_plan emission (P21 chunk 2) ----------
+
+
+def test_rabbit_diagram_decision_records_to_registry(tmp_path: Path) -> None:
+    """The diagram meeting: a Rabbit `diagram` decision writes the .oph
+    through DiagramRegistry and returns a node-bearing artifact."""
+    from wonderland.agents.white_rabbit import RabbitResponse, WhiteRabbit
+    from wonderland.diagrams.payload import DiagramPayload
+
+    # Schema: decision='diagram' requires diagrams.
+    resp = RabbitResponse(
+        decision="diagram",
+        diagrams=[DiagramPayload(name="Dashboard", oph=_DASH_OPH, layer="ui")],
+    )
+    import pytest
+    with pytest.raises(Exception):
+        RabbitResponse(decision="diagram", diagrams=[])
+
+    # Recorder writes to the registry + emits an artifact.
+    rb = WhiteRabbit.__new__(WhiteRabbit)
+    rb._diagram_registry = DiagramRegistry(tmp_path)
+    artifacts = rb._record_diagrams(resp.diagrams)
+    assert len(artifacts) == 1
+    art = artifacts[0]
+    assert art.kind == "diagram"
+    assert art.payload["slug"] == "dashboard"
+    assert {n["name"] for n in art.payload["nodes"]} == {
+        "Navbar", "Sidebar", "ContentArea",
+    }
+    assert DiagramRegistry(tmp_path).list_slugs() == ["dashboard"]

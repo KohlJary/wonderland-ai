@@ -57,7 +57,8 @@ defaults:
   # Most of the cost is in reasoning about an existing requirement
   # corpus; the agents don't generate much new structured content
   # per turn (a milestone is ~5 fields + a list of slugs).
-  budget_dollars: 1.50
+  # Covers the planning meeting (1.50) + the P21 diagram meeting (1.00).
+  budget_dollars: 2.50
   quiescence_seconds: 60.0
 
 meetings:
@@ -531,3 +532,98 @@ meetings:
         # remaining — operator notices the difference in the
         # MeetingEndEvent.
         coverage_check: requirement_coverage
+
+  # ─────────────────────────────────────────────────────────────────
+  # P21 — the diagram meeting. Runs AFTER the milestone plan is
+  # settled. Sketches the app's top-level structure as Ophanic layout
+  # diagrams (the initial build-tracking map). Design refines these as
+  # features compose; review diffs built code against them to catch
+  # the hollow-verify class (components built but never wired in).
+  # ─────────────────────────────────────────────────────────────────
+  - id: diagram-stack
+    label: P2
+    name: The Wheels Within Wheels
+    goal: |
+      sketch the app's top-level structure as Ophanic layout diagrams —
+      one per major page/screen (and optionally a db-layer schema
+      diagram), so downstream design + implementation track against a
+      living map of what's built vs pending
+    roster: [white_rabbit, alice]
+    primary_speaker: white_rabbit
+    meeting_budget: 1.00
+    allowed_decisions:
+      - diagram
+      - concern
+      - deference
+      - silence
+    convenor_directive: |
+      The milestone plan is settled. Now draw the app's STRUCTURE as
+      Ophanic layout diagrams — a build-tracking map the rest of the
+      project will fill in and check against.
+
+      **Ship ``diagram`` decisions.** Each diagram is one page / screen
+      / major surface, authored as an Ophanic ``.oph`` body in the
+      ``oph`` field, with a ``name`` (becomes the slug) and a ``layer``
+      (``ui`` for screens; ``db`` for a schema-structure diagram on a
+      foundation milestone). One emission can carry several diagrams.
+
+      **Altitude: top-level skeleton, not pixel detail.** Name the major
+      regions/components and how they nest. Design refines later; you're
+      laying down the frame.
+
+      **Ophanic format rules — these are load-bearing for tracking:**
+        - Box-drawing characters (┌─┐│└┘├┤┬┴┼). Fixed-width — keep
+          columns roughly aligned (the parser tolerates a few chars).
+        - **Each component goes in its OWN box.** That's how each one
+          becomes a trackable node. Don't put two components in one box.
+        - **Wrap each row/column in its own box** so nesting is
+          captured. A full-width navbar OVER a row of [sidebar | content]
+          means: a navbar box, then a row box containing a sidebar box
+          beside a content box.
+        - Reference a component with ``◆Name``. If a component has its
+          own internal structure, define it in a ``## ◆Name`` section.
+        - Tag layouts with ``@desktop`` / ``@mobile`` (or one ``@default``).
+
+      **Example (a dashboard page):**
+
+      ```
+      # Dashboard
+
+      @desktop
+      ┌──────────────────────────────────────────────────┐
+      │ ┌────────────────────────────────────────────┐   │
+      │ │ ◆Navbar                                    │   │
+      │ └────────────────────────────────────────────┘   │
+      │ ┌──────────────────────────────────────────────┐ │
+      │ │ ┌──────────────────┐ ┌─────────────────────┐ │ │
+      │ │ │ ◆Sidebar         │ │ ◆ContentArea        │ │ │
+      │ │ └──────────────────┘ └─────────────────────┘ │ │
+      │ └──────────────────────────────────────────────┘ │
+      └──────────────────────────────────────────────────┘
+      ```
+
+      Draw the pages the milestones imply (consult the seeded milestone
+      plan). One diagram per page is the floor; a foundation milestone
+      with real schema structure earns a ``db``-layer diagram too. When
+      the map is laid down, ``deference``/``silence`` is fine — don't
+      manufacture diagrams for surfaces the app doesn't have.
+
+      **Alice** — the user-flow lens. Push back with ``concern`` if a
+      page is missing or a region is mis-grouped; don't author competing
+      diagrams, the Rabbit holds the pen.
+
+    seeds:
+      - from: any
+        kinds: [project_context]
+      # The milestone plan just settled — author structure against it.
+      - from: any
+        kinds: [milestone]
+      - from: any
+        kinds: [requirement]
+      # Existing diagrams — re-runs amend rather than restart.
+      - from: any
+        kinds: [diagram]
+
+    phases:
+      - name: draw
+        max_rotations: 3

@@ -35,6 +35,8 @@ from wonderland.engagement import (
     selectively,
     speaker_is,
 )
+from wonderland.diagrams.payload import DiagramPayload
+from wonderland.diagrams.registry import DiagramRegistry
 from wonderland.feature import FeaturePayload, FeatureRegistry
 from wonderland.identity import load_constitution
 from wonderland.interview import (
@@ -141,6 +143,7 @@ RabbitDecision = Literal[
     "interview_questions",
     "interview_review",
     "milestone_plan",
+    "diagram",
     "concern",
     "question",
     "question_to_operator",
@@ -208,6 +211,14 @@ class RabbitResponse(BaseModel):
             "the Rabbit's milestones are the canonical plan."
         ),
     )
+    diagrams: list["DiagramPayload"] = Field(
+        default_factory=list,
+        description=(
+            "Layout diagrams (Ophanic .oph) shipped on a ``diagram`` "
+            "decision — the app's top-level structure as a build-"
+            "tracking map. Required (non-empty) when decision='diagram'."
+        ),
+    )
 
     @field_validator("body", mode="before")
     @classmethod
@@ -231,6 +242,7 @@ class RabbitResponse(BaseModel):
         "questions",
         "followup_questions",
         "milestones",
+        "diagrams",
         mode="before",
     )
     @classmethod
@@ -261,6 +273,12 @@ class RabbitResponse(BaseModel):
                 "RabbitResponse: decision='interview_questions' requires at "
                 "least one question in `questions`. Ship the shaped batch "
                 "(YAML templates tailored to the directive)."
+            )
+        if self.decision == "diagram" and not self.diagrams:
+            raise ValueError(
+                "RabbitResponse: decision='diagram' requires at least one "
+                "diagram in `diagrams`. Ship the .oph layout(s) or choose a "
+                "different decision."
             )
         if self.decision == "milestone_plan" and not self.milestones:
             raise ValueError(
@@ -549,6 +567,7 @@ class WhiteRabbit(WonderlandAgent):
         feature_registry: FeatureRegistry | None = None,
         requirement_registry: RequirementRegistry | None = None,
         milestone_registry: MilestoneRegistry | None = None,
+        diagram_registry: "DiagramRegistry | None" = None,
         tools=None,  # type: ignore[no-untyped-def]
         constitutions_root: Path | None = None,
     ) -> None:
@@ -562,6 +581,7 @@ class WhiteRabbit(WonderlandAgent):
         self._feature_registry = feature_registry
         self._requirement_registry = requirement_registry
         self._milestone_registry = milestone_registry
+        self._diagram_registry = diagram_registry
         # tools is forwarded to the base Agent which handles tool-use
         # loops in deliberate(); needed for M3.5 consolidation where
         # Rabbit prunes duplicate tickets via delete_file.
@@ -578,6 +598,10 @@ class WhiteRabbit(WonderlandAgent):
     @property
     def requirement_registry(self) -> RequirementRegistry | None:
         return self._requirement_registry
+
+    @property
+    def diagram_registry(self) -> DiagramRegistry | None:
+        return self._diagram_registry
 
     @property
     def milestone_registry(self) -> MilestoneRegistry | None:
@@ -601,6 +625,8 @@ class WhiteRabbit(WonderlandAgent):
             artifacts.extend(self._record_tickets(response.tickets))
         elif response.decision == "feature":
             artifacts.extend(self._record_features(response.features))
+        elif response.decision == "diagram":
+            artifacts.extend(self._record_diagrams(response.diagrams))
         elif response.decision == "interview_questions":
             artifacts.append(
                 Artifact(
@@ -779,6 +805,39 @@ class WhiteRabbit(WonderlandAgent):
                         # capability flow.
                         "kind": record.kind.value,
                         "tickets": list(payload.tickets),
+                    },
+                )
+            )
+        return artifacts
+
+    def _record_diagrams(
+        self, payloads: list[DiagramPayload]
+    ) -> list[Artifact]:
+        """Persist each authored diagram through DiagramRegistry. Same
+        drop-silently-if-no-registry contract as the other recorders."""
+        if self._diagram_registry is None:
+            return []
+        artifacts: list[Artifact] = []
+        for payload in payloads:
+            try:
+                diagram = self._diagram_registry.write(
+                    payload.name, payload.oph, layer=payload.layer,
+                )
+            except Exception:  # noqa: BLE001 — a malformed .oph mustn't kill the meeting
+                continue
+            artifacts.append(
+                Artifact(
+                    kind="diagram",
+                    payload={
+                        "slug": diagram.slug,
+                        "guid": diagram.guid,
+                        "layer": diagram.layer,
+                        "title": diagram.title,
+                        "path": str(diagram.path),
+                        "nodes": [
+                            {"guid": n.guid, "name": n.name}
+                            for n in diagram.nodes
+                        ],
                     },
                 )
             )

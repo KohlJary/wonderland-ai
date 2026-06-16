@@ -83,6 +83,7 @@ from wonderland.story import StoryRegistry
 from wonderland.telemetry import Telemetry
 from wonderland.test_scenario import TestScenarioRegistry
 from wonderland.thread_monitor import ThreadMonitor, ThreadState, ThreadStateChange
+from wonderland.diagrams.registry import DiagramRegistry
 from wonderland.feature import FeatureRegistry
 from wonderland.ticket import TicketRegistry
 from wonderland.tools import Tools
@@ -491,6 +492,7 @@ class Runner:
                 feature_registry=FeatureRegistry(project_root),
                 requirement_registry=RequirementRegistry(project_root),
                 milestone_registry=MilestoneRegistry(project_root),
+                diagram_registry=DiagramRegistry(project_root),
                 tools=shared_tools,
             ),
             "mad_hatter": MadHatter(
