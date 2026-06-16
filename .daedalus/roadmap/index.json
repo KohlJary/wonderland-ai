@@ -2091,6 +2091,16 @@
       "status": "backlog",
       "created_at": "2026-06-16T18:29:04.445652",
       "created_by": "daedalus"
+    },
+    {
+      "id": "c10f6d5f-071f-4661-b089-7a0aa6119466",
+      "title": "P21 Diagrams: bring ophanic layout-tool into wonderland as a structural build-tracker. .wonderland/diagrams/*.oph with GUID-identified nodes (durable slug identity, T-g pattern). Many-to-many node<->ticket and node<->feature links. Generalizes beyond fe layout to backend structure (db schema etc.), layer-separated. milestone_plan emits the initial diagram stack; tdd-design publishes/updates diagrams as features compose; built-vs-pending derived from linked-ticket lifecycle (a view, never a second source of truth). KILLER FEATURE: Caterpillar review reverse-adapts actual built code -> diffs vs intended diagram -> flags orphaned/missing/mis-nested nodes. Kills the LDR hollow-verify class (front-end components built but never wired into the app). ophanic is round-trippable (fwd .oph->React, rev React->.oph) so the wiring check is a diagram diff.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-06-16T21:43:01.407100",
+      "created_by": "daedalus"
     }
   ],
   "version": 1
