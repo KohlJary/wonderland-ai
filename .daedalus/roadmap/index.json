@@ -2101,6 +2101,16 @@
       "status": "backlog",
       "created_at": "2026-06-16T21:43:01.407100",
       "created_by": "daedalus"
+    },
+    {
+      "id": "3bf903b2-199f-4f1a-bb50-83f1a661e38d",
+      "title": "P21+ TUI future: combine Milestone + Feature panes into a single unified tree view, then use the freed space for a CHANGE-REQUEST CHAT window \u2014 operator types a change request, watches it materialize as new/updated features/tickets/milestones (and diagrams). The conversational front-door to the substrate. Comes after the Structure/Diagrams tab reorg.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-06-16T22:11:00.116212",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

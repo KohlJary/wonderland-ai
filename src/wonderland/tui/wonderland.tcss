@@ -952,6 +952,17 @@ CastBrowserScreen #cast-constitution-pane {
     height: auto;
 }
 
+/* P21 reorg: the top structure/diagrams tabs take the lion's share;
+ * the bottom drill-down tabs (artifacts/files/metrics/runs) keep 1fr. */
+#structure-tabs {
+    height: 2fr;
+}
+
+#diagrams-scroll {
+    height: 1fr;
+    padding: 0 2;
+}
+
 #dashboard-tabs {
     height: 1fr;
     margin: 0 0 0 0;

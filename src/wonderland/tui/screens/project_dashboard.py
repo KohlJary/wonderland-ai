@@ -342,243 +342,15 @@ class ProjectDashboardScreen(Screen[None]):
             # milestone's consumes_requirements. Empty-state CTAs
             # inside each pane drive the operator through the flow
             # (discovery → milestone-plan → tdd-design → tdd-implement).
-            with Horizontal(id="top-row"):
-                # Milestones pane: tree + empty-state CTA. The tree
-                # shows one node per milestone (collapsible to its
-                # consumes_requirements). When no requirements exist,
-                # the pane shows a big "Run discovery" button instead.
-                # When requirements exist but no milestones, "Run
-                # milestone-plan". When milestones exist but
-                # decomposable requirements are unassigned, a smaller
-                # "Some requirements unplanned" hint sits above the
-                # tree.
-                # Milestones row: list (left) + detail (right) —
-                # mirrors the Features row structure so the operator's
-                # eye doesn't have to retrain when moving between
-                # them. List = tree of milestones + collapsible
-                # requirements + phase-aware CTA. Detail = highlighted
-                # milestone's body, with the "Design this milestone"
-                # button anchored at the bottom of the detail pane
-                # so the read order is select → review → act.
-                with Horizontal(id="milestones-row"):
-                    with Vertical(id="milestones-list-pane"):
-                        yield Static(
-                            "[b]Milestones[/b]",
-                            id="milestones-label",
-                        )
-                        yield Static(
-                            "",
-                            id="milestones-orphan-hint",
-                        )
-                        yield Tree(
-                            "Milestones",
-                            id="milestones-tree",
-                        )
-                        # Empty-state CTA — populated by
-                        # _refresh_milestones_cta when no
-                        # requirements or no milestones exist.
-                        # Hidden otherwise.
-                        yield Button(
-                            "",
-                            id="milestones-empty-cta",
-                            variant="primary",
-                        )
-                    with Vertical(id="milestones-detail-pane"):
-                        yield Static(
-                            "[b]Milestone detail[/b]",
-                            id="milestones-detail-label",
-                        )
-                        with VerticalScroll(
-                            id="milestones-detail-scroll"
-                        ):
-                            yield Static(
-                                "[dim](no milestone selected)[/dim]",
-                                id="milestones-detail",
-                            )
-                        # P15 T-m5 — Design CTA at the bottom of
-                        # the milestone detail pane. Hidden by
-                        # default; surfaced by
-                        # _refresh_milestone_design_cta when the
-                        # highlighted milestone has zero realizing
-                        # features. Click launches tdd-design
-                        # --milestone <slug>.
-                        yield Button(
-                            "",
-                            id="milestone-design-cta",
-                            variant="primary",
-                        )
-                # Features primary surface — left list (with state
-                # filter chips), right detail (dossier + per-feature
-                # actions). The list narrows to the selected
-                # milestone's features when one is picked in the
-                # Milestones tree.
-                with Horizontal(id="features-row"):
-                    with Vertical(id="features-list-pane"):
-                        yield Static(
-                            "[b]Features[/b]", id="features-list-label"
-                        )
-                        with Horizontal(id="features-filter-row"):
-                            for chip_id, label, _state in _FILTER_CHIPS:
-                                classes = "filter-chip"
-                                if _state is None:
-                                    classes += " filter-active"
-                                yield Button(
-                                    label, id=chip_id, classes=classes
-                                )
-                        # Tree (not DataTable): each feature is a
-                        # parent node; its tickets nest underneath
-                        # like a file tree. Operator can highlight a
-                        # ticket and see the same dossier shape as
-                        # for features. Default expanded so tickets
-                        # are immediately visible — typical project
-                        # sizes (3-6 features × 1-4 tickets) fit fine.
-                        yield Tree(
-                            "Features",
-                            id="features-tree",
-                        )
-                    with Vertical(id="features-detail-pane"):
-                        yield Static(
-                            "[b]Feature detail[/b]",
-                            id="features-detail-label",
-                        )
-                        with VerticalScroll(id="features-detail-scroll"):
-                            yield Static(
-                                "[dim](no feature selected)[/dim]",
-                                id="features-detail",
-                            )
-                        with Horizontal(id="feature-actions-row"):
-                            # Promote → Designed shows when the
-                            # selected feature is in_design (M5 didn't
-                            # fully fire, or operator un-promoted
-                            # earlier). Replaces queue/un-queue in
-                            # that view since those transitions
-                            # aren't legal from in_design.
-                            yield Button(
-                                "Promote to Designed",
-                                id="feature-action-promote-designed",
-                                variant="primary",
-                            )
-                            yield Button(
-                                "Queue", id="feature-action-queue"
-                            )
-                            yield Button(
-                                "Un-queue",
-                                id="feature-action-unqueue",
-                            )
-                            # designed → in_design transition for the
-                            # tdd-decompose workflow. Use case: feature
-                            # got designed but its ticket set is wrong
-                            # (zero tickets attributed, over-pruned in
-                            # M3.5, or operator inspects and wants a
-                            # redo). This button transitions the
-                            # feature back to in_design; the operator
-                            # then runs tdd-decompose, which iterates
-                            # M3+M3.5 over features in in_design and
-                            # transitions them back to designed with
-                            # fresh tickets.
-                            yield Button(
-                                "Decompose tickets",
-                                id="feature-action-decompose",
-                                variant="warning",
-                            )
-                            # in_progress controls — escape hatches
-                            # for features stuck mid-implementation.
-                            # Mark Ready advances to ready_for_review
-                            # (skip M8 and go straight to operator
-                            # verify); Re-design aborts implementation
-                            # and sends back to designed (operator
-                            # wants to re-run design phase against new
-                            # directive).
-                            yield Button(
-                                "Mark Ready",
-                                id="feature-action-mark-ready",
-                                variant="primary",
-                            )
-                            yield Button(
-                                "Re-design",
-                                id="feature-action-redesign",
-                                variant="warning",
-                            )
-                            yield Button(
-                                "Verify",
-                                id="feature-action-verify",
-                                variant="success",
-                            )
-                            yield Button(
-                                "Reject",
-                                id="feature-action-reject",
-                                variant="error",
-                            )
-                            # Per-ticket queue controls — only
-                            # visible when a ticket node is
-                            # highlighted in the tree. The operator
-                            # uses these to re-queue a single ticket
-                            # after an iteration aborts on budget,
-                            # without re-running the whole feature.
-                            yield Button(
-                                "Queue ticket",
-                                id="ticket-action-queue",
-                                variant="primary",
-                            )
-                            yield Button(
-                                "Un-queue ticket",
-                                id="ticket-action-unqueue",
-                            )
-                            yield Button(
-                                "Mark done",
-                                id="ticket-action-mark-done",
-                                variant="success",
-                            )
-                            # T-ab38: operator escape hatch for a
-                            # ticket stuck in IN_PROGRESS (e.g. a
-                            # prior run crashed mid-iteration, or
-                            # the operator wants to park the work).
-                            # IN_PROGRESS → PENDING via chain
-                            # transition; T-ab37's gate filter then
-                            # leaves the feature out of the next
-                            # implement run rather than auto-pulling
-                            # it.
-                            yield Button(
-                                "Reset to pending",
-                                id="ticket-action-reset-pending",
-                                variant="warning",
-                            )
+            with TabbedContent(id="structure-tabs"):
+                with TabPane("Structure", id="tab-structure"):
+                    yield from self._compose_structure_tab()
+                with TabPane("Diagrams", id="tab-diagrams"):
+                    yield from self._compose_diagrams_tab()
 
-            # Bottom row: Runs list + detail. Sits below the
-            # Milestones/Features row so the operator's primary
-            # navigation surface is up top + run history is the
-            # reference layer below. Always visible — preparation
-            # for background runs the operator can leave going
-            # while navigating other views.
-            with Horizontal(id="runs-row"):
-                with Vertical(id="runs-list-pane"):
-                    yield Static(
-                        "[b]Runs[/b]", id="runs-list-label"
-                    )
-                    yield DataTable(
-                        id="runs-table", cursor_type="row"
-                    )
-                with Vertical(id="runs-detail-pane"):
-                    yield Static(
-                        "[b]Run detail[/b]", id="runs-detail-label"
-                    )
-                    with VerticalScroll(id="runs-detail-scroll"):
-                        yield Static(
-                            "[dim](no run selected)[/dim]",
-                            id="runs-detail",
-                        )
-
-            # Drill-downs — investigation surfaces. Take less screen
-            # real estate than the Features section; operator opens
-            # them with 1/2/3 keybinds when investigating "why did
-            # the team make this decision?" types of questions. Runs
-            # is no longer a tab — it has its own always-visible
-            # row above.
-            yield Static(
-                "[dim]Drill-downs · 1=Artifacts  2=Files  "
-                "3=Metrics[/dim]",
-                id="dashboard-drilldown-label",
-            )
+            # Drill-downs — investigation surfaces (Artifacts / Files /
+            # Metrics) + run history (Runs). Moved below the structure
+            # tabs in the P21 reorg so the top owns "what we're building".
             with TabbedContent(id="dashboard-tabs"):
                 with TabPane("Artifacts", id="tab-artifacts"):
                     yield from self._compose_artifacts_tab()
@@ -586,7 +358,309 @@ class ProjectDashboardScreen(Screen[None]):
                     yield from self._compose_files_tab()
                 with TabPane("Metrics", id="tab-metrics"):
                     yield from self._compose_metrics_tab()
+                with TabPane("Runs", id="tab-runs"):
+                    yield from self._compose_runs_tab()
         yield Footer()
+
+    def _compose_structure_tab(self) -> ComposeResult:
+        """The Structure tab — milestones + features panes (P21 reorg)."""
+        with Horizontal(id="top-row"):
+            # Milestones pane: tree + empty-state CTA. The tree
+            # shows one node per milestone (collapsible to its
+            # consumes_requirements). When no requirements exist,
+            # the pane shows a big "Run discovery" button instead.
+            # When requirements exist but no milestones, "Run
+            # milestone-plan". When milestones exist but
+            # decomposable requirements are unassigned, a smaller
+            # "Some requirements unplanned" hint sits above the
+            # tree.
+            # Milestones row: list (left) + detail (right) —
+            # mirrors the Features row structure so the operator's
+            # eye doesn't have to retrain when moving between
+            # them. List = tree of milestones + collapsible
+            # requirements + phase-aware CTA. Detail = highlighted
+            # milestone's body, with the "Design this milestone"
+            # button anchored at the bottom of the detail pane
+            # so the read order is select → review → act.
+            with Horizontal(id="milestones-row"):
+                with Vertical(id="milestones-list-pane"):
+                    yield Static(
+                        "[b]Milestones[/b]",
+                        id="milestones-label",
+                    )
+                    yield Static(
+                        "",
+                        id="milestones-orphan-hint",
+                    )
+                    yield Tree(
+                        "Milestones",
+                        id="milestones-tree",
+                    )
+                    # Empty-state CTA — populated by
+                    # _refresh_milestones_cta when no
+                    # requirements or no milestones exist.
+                    # Hidden otherwise.
+                    yield Button(
+                        "",
+                        id="milestones-empty-cta",
+                        variant="primary",
+                    )
+                with Vertical(id="milestones-detail-pane"):
+                    yield Static(
+                        "[b]Milestone detail[/b]",
+                        id="milestones-detail-label",
+                    )
+                    with VerticalScroll(
+                        id="milestones-detail-scroll"
+                    ):
+                        yield Static(
+                            "[dim](no milestone selected)[/dim]",
+                            id="milestones-detail",
+                        )
+                    # P15 T-m5 — Design CTA at the bottom of
+                    # the milestone detail pane. Hidden by
+                    # default; surfaced by
+                    # _refresh_milestone_design_cta when the
+                    # highlighted milestone has zero realizing
+                    # features. Click launches tdd-design
+                    # --milestone <slug>.
+                    yield Button(
+                        "",
+                        id="milestone-design-cta",
+                        variant="primary",
+                    )
+            # Features primary surface — left list (with state
+            # filter chips), right detail (dossier + per-feature
+            # actions). The list narrows to the selected
+            # milestone's features when one is picked in the
+            # Milestones tree.
+            with Horizontal(id="features-row"):
+                with Vertical(id="features-list-pane"):
+                    yield Static(
+                        "[b]Features[/b]", id="features-list-label"
+                    )
+                    with Horizontal(id="features-filter-row"):
+                        for chip_id, label, _state in _FILTER_CHIPS:
+                            classes = "filter-chip"
+                            if _state is None:
+                                classes += " filter-active"
+                            yield Button(
+                                label, id=chip_id, classes=classes
+                            )
+                    # Tree (not DataTable): each feature is a
+                    # parent node; its tickets nest underneath
+                    # like a file tree. Operator can highlight a
+                    # ticket and see the same dossier shape as
+                    # for features. Default expanded so tickets
+                    # are immediately visible — typical project
+                    # sizes (3-6 features × 1-4 tickets) fit fine.
+                    yield Tree(
+                        "Features",
+                        id="features-tree",
+                    )
+                with Vertical(id="features-detail-pane"):
+                    yield Static(
+                        "[b]Feature detail[/b]",
+                        id="features-detail-label",
+                    )
+                    with VerticalScroll(id="features-detail-scroll"):
+                        yield Static(
+                            "[dim](no feature selected)[/dim]",
+                            id="features-detail",
+                        )
+                    with Horizontal(id="feature-actions-row"):
+                        # Promote → Designed shows when the
+                        # selected feature is in_design (M5 didn't
+                        # fully fire, or operator un-promoted
+                        # earlier). Replaces queue/un-queue in
+                        # that view since those transitions
+                        # aren't legal from in_design.
+                        yield Button(
+                            "Promote to Designed",
+                            id="feature-action-promote-designed",
+                            variant="primary",
+                        )
+                        yield Button(
+                            "Queue", id="feature-action-queue"
+                        )
+                        yield Button(
+                            "Un-queue",
+                            id="feature-action-unqueue",
+                        )
+                        # designed → in_design transition for the
+                        # tdd-decompose workflow. Use case: feature
+                        # got designed but its ticket set is wrong
+                        # (zero tickets attributed, over-pruned in
+                        # M3.5, or operator inspects and wants a
+                        # redo). This button transitions the
+                        # feature back to in_design; the operator
+                        # then runs tdd-decompose, which iterates
+                        # M3+M3.5 over features in in_design and
+                        # transitions them back to designed with
+                        # fresh tickets.
+                        yield Button(
+                            "Decompose tickets",
+                            id="feature-action-decompose",
+                            variant="warning",
+                        )
+                        # in_progress controls — escape hatches
+                        # for features stuck mid-implementation.
+                        # Mark Ready advances to ready_for_review
+                        # (skip M8 and go straight to operator
+                        # verify); Re-design aborts implementation
+                        # and sends back to designed (operator
+                        # wants to re-run design phase against new
+                        # directive).
+                        yield Button(
+                            "Mark Ready",
+                            id="feature-action-mark-ready",
+                            variant="primary",
+                        )
+                        yield Button(
+                            "Re-design",
+                            id="feature-action-redesign",
+                            variant="warning",
+                        )
+                        yield Button(
+                            "Verify",
+                            id="feature-action-verify",
+                            variant="success",
+                        )
+                        yield Button(
+                            "Reject",
+                            id="feature-action-reject",
+                            variant="error",
+                        )
+                        # Per-ticket queue controls — only
+                        # visible when a ticket node is
+                        # highlighted in the tree. The operator
+                        # uses these to re-queue a single ticket
+                        # after an iteration aborts on budget,
+                        # without re-running the whole feature.
+                        yield Button(
+                            "Queue ticket",
+                            id="ticket-action-queue",
+                            variant="primary",
+                        )
+                        yield Button(
+                            "Un-queue ticket",
+                            id="ticket-action-unqueue",
+                        )
+                        yield Button(
+                            "Mark done",
+                            id="ticket-action-mark-done",
+                            variant="success",
+                        )
+                        # T-ab38: operator escape hatch for a
+                        # ticket stuck in IN_PROGRESS (e.g. a
+                        # prior run crashed mid-iteration, or
+                        # the operator wants to park the work).
+                        # IN_PROGRESS → PENDING via chain
+                        # transition; T-ab37's gate filter then
+                        # leaves the feature out of the next
+                        # implement run rather than auto-pulling
+                        # it.
+                        yield Button(
+                            "Reset to pending",
+                            id="ticket-action-reset-pending",
+                            variant="warning",
+                        )
+
+    def _compose_runs_tab(self) -> ComposeResult:
+        """The Runs tab — run history + detail (P21 reorg moved it here)."""
+        with Horizontal(id="runs-row"):
+            with Vertical(id="runs-list-pane"):
+                yield Static(
+                    "[b]Runs[/b]", id="runs-list-label"
+                )
+                yield DataTable(
+                    id="runs-table", cursor_type="row"
+                )
+            with Vertical(id="runs-detail-pane"):
+                yield Static(
+                    "[b]Run detail[/b]", id="runs-detail-label"
+                )
+                with VerticalScroll(id="runs-detail-scroll"):
+                    yield Static(
+                        "[dim](no run selected)[/dim]",
+                        id="runs-detail",
+                    )
+
+    def _compose_diagrams_tab(self) -> ComposeResult:
+        """The Diagrams tab — structural build map (P21)."""
+        with VerticalScroll(id="diagrams-scroll"):
+            yield Static(
+                "[dim]loading diagrams…[/dim]", id="diagrams-content",
+            )
+
+    def _populate_diagrams(self) -> None:
+        """Render every diagram (the .oph layout IS the view) with its
+        node build-status — derived live from the ticket ledger (P21)."""
+        from rich.markup import escape
+
+        from wonderland.diagrams import DiagramRegistry
+        from wonderland.diagrams.links import (
+            DiagramLinks,
+            STATUS_BUILT,
+            STATUS_IN_PROGRESS,
+            STATUS_PENDING,
+            STATUS_UNLINKED,
+        )
+
+        status_markup = {
+            STATUS_BUILT: "[green]● built[/green]",
+            STATUS_IN_PROGRESS: "[yellow]◐ in progress[/yellow]",
+            STATUS_PENDING: "[dim]○ pending[/dim]",
+            STATUS_UNLINKED: "[red]· unlinked[/red]",
+        }
+        try:
+            content = self.query_one("#diagrams-content", Static)
+        except Exception:  # noqa: BLE001 — tab not mounted yet
+            return
+
+        root = self.project.root_path
+        reg = DiagramRegistry(root)
+        links = DiagramLinks(root)
+        slugs = reg.list_slugs()
+        if not slugs:
+            content.update(
+                "[dim]No diagrams yet. The milestone_plan diagram meeting "
+                "creates the initial structural map; design refines it as "
+                "features compose.[/dim]"
+            )
+            return
+
+        parts: list[str] = []
+        for slug in slugs:
+            diagram = reg.read(slug)
+            if diagram is None:
+                continue
+            built = sum(
+                1 for n in diagram.nodes
+                if links.node_status(n.guid) == STATUS_BUILT
+            )
+            parts.append(
+                f"[b]{escape(diagram.title or slug)}[/b]  "
+                f"[dim]({diagram.layer}) · {built}/{len(diagram.nodes)} "
+                f"built[/dim]"
+            )
+            try:
+                oph = diagram.path.read_text(encoding="utf-8").rstrip()
+            except OSError:
+                oph = "(missing .oph file)"
+            # Escape the layout body so box-drawing + any brackets render
+            # literally rather than as Rich markup.
+            parts.append(escape(oph))
+            for node in sorted(diagram.nodes, key=lambda n: n.name):
+                status = links.node_status(node.guid)
+                tickets = links.ticket_slugs_for_node(node.guid)
+                tk = escape(", ".join(tickets)) if tickets else "—"
+                parts.append(
+                    f"  {status_markup.get(status, status)}  "
+                    f"{escape(node.name)}  [dim]{tk}[/dim]"
+                )
+            parts.append("")
+        content.update("\n".join(parts))
 
     # ------------------------------------------------------------------ #
     # Runs column (T80; reshaped P14 — runs is its own always-visible
@@ -2549,6 +2623,7 @@ class ProjectDashboardScreen(Screen[None]):
         self._populate_runs()
         self._populate_artifacts()
         self._populate_metrics()
+        self._populate_diagrams()
         self._refresh_phase_badge()
         self._refresh_milestone_detail()
         # Land focus on the milestones tree — primary navigation
@@ -2574,6 +2649,7 @@ class ProjectDashboardScreen(Screen[None]):
         self._populate_runs()
         self._populate_artifacts()
         self._populate_metrics()
+        self._populate_diagrams()
         self._refresh_phase_badge()
         self._refresh_milestone_detail()
 
