@@ -289,3 +289,27 @@ def test_rabbit_diagram_decision_records_to_registry(tmp_path: Path) -> None:
         "Navbar", "Sidebar", "ContentArea",
     }
     assert DiagramRegistry(tmp_path).list_slugs() == ["dashboard"]
+
+
+def test_alice_diagram_decision_records_to_registry(tmp_path: Path) -> None:
+    """Alice can now author diagrams too (P21 — she's on the diagram
+    meeting roster). Same shared recorder as the Rabbit."""
+    from wonderland.agents.alice import Alice, AliceResponse
+    from wonderland.diagrams.payload import DiagramPayload
+    from wonderland.diagrams.recording import record_diagrams
+
+    resp = AliceResponse(
+        decision="diagram",
+        diagrams=[DiagramPayload(name="Dashboard", oph=_DASH_OPH, layer="ui")],
+    )
+    import pytest
+    with pytest.raises(Exception):
+        AliceResponse(decision="diagram", diagrams=[])
+
+    arts = record_diagrams(DiagramRegistry(tmp_path), resp.diagrams)
+    assert len(arts) == 1
+    assert arts[0].kind == "diagram"
+    assert {n["name"] for n in arts[0].payload["nodes"]} == {
+        "Navbar", "Sidebar", "ContentArea",
+    }
+    assert DiagramRegistry(tmp_path).list_slugs() == ["dashboard"]

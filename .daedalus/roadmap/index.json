@@ -2111,6 +2111,36 @@
       "status": "backlog",
       "created_at": "2026-06-16T22:11:00.116212",
       "created_by": "daedalus"
+    },
+    {
+      "id": "463f5564-d5c8-40c4-99d0-017836118580",
+      "title": "P21 bug: diagram-meeting robustness. (1) 'diagram' decision only in White Rabbit's literal schema; Alice (on the diagram-stack roster) tried to emit one -> Pydantic literal_error. Either add diagram to Alice's schema+recorder, or keep Rabbit-only but stop Alice attempting. (2) Rabbit didn't reliably author diagrams (0 this run vs 4 last) -> diagram meeting needs a forcing nudge so it always lays down the stack. High run-to-run variance.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "bug",
+      "status": "backlog",
+      "created_at": "2026-06-16T22:54:47.540948",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "983988e0-10b2-447b-b5d9-c90a2611a1cc",
+      "title": "T-ab77 follow-up: resolver should also ground on consumed REQUIREMENTS, not just the milestone roster. During milestone-plan the roster is mid-creation so the resolver is blind to the corpus it's planning from (escalated a graceful-degradation question whose answer was sitting in the requirements). Add requirement bodies to the grounding context.",
+      "description": "",
+      "priority": "P2",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-06-16T22:54:47.623752",
+      "created_by": "daedalus"
+    },
+    {
+      "id": "05d45b74-19ab-4213-829f-3cd86680a334",
+      "title": "P21 remaining integration (the serious-upgrade arc): (a) tdd-design publishes/updates diagrams as features compose; (b) auto-link diagram nodes <-> features/tickets as they're built (the build-tracking wire); (c) diagrams seeded to Tweedles during tdd-implement so they build against the structural contract; (d) Caterpillar reverse-adapts built code -> diffs vs intended diagram in review (the hollow-verify payoff). Each its own chunk.",
+      "description": "",
+      "priority": "P1",
+      "item_type": "feature",
+      "status": "backlog",
+      "created_at": "2026-06-16T22:54:47.706594",
+      "created_by": "daedalus"
     }
   ],
   "version": 1

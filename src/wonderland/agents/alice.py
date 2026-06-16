@@ -43,6 +43,9 @@ from wonderland.milestone import (
 )
 from wonderland.llm import CachedBlock
 from wonderland.parsing import ResponseParseError, extract_and_validate
+from wonderland.diagrams.payload import DiagramPayload
+from wonderland.diagrams.recording import record_diagrams
+from wonderland.diagrams.registry import DiagramRegistry
 from wonderland.story import StoryPayload, StoryRegistry
 from wonderland.test_scenario import (
     TestScenarioPayload,
@@ -112,6 +115,7 @@ AliceDecision = Literal[
     "interview_questions",
     "interview_review",
     "milestone_plan",
+    "diagram",
     "concern",
     "question",
     "question_to_operator",
@@ -194,6 +198,15 @@ class AliceResponse(BaseModel):
             "something the named persona would notice."
         ),
     )
+    diagrams: list["DiagramPayload"] = Field(
+        default_factory=list,
+        description=(
+            "Layout diagrams (Ophanic .oph) shipped on a ``diagram`` "
+            "decision in the P21 diagram meeting — the app's top-level "
+            "structure. Alice's lens: name the pages/screens a persona "
+            "actually touches. Required (non-empty) when decision='diagram'."
+        ),
+    )
     questions: list[InterviewQuestion] = Field(
         default_factory=list,
         description=(
@@ -238,6 +251,7 @@ class AliceResponse(BaseModel):
     @field_validator(
         "requirements",
         "milestones",
+        "diagrams",
         "questions",
         "followup_questions",
         mode="before",
@@ -258,6 +272,12 @@ class AliceResponse(BaseModel):
                 "AliceResponse: decision='test_scenario' requires at least "
                 "one scenario in `scenarios`. Choose a different decision "
                 "or include the scenarios you intended to issue."
+            )
+        if self.decision == "diagram" and not self.diagrams:
+            raise ValueError(
+                "AliceResponse: decision='diagram' requires at least one "
+                "diagram in `diagrams`. Ship the .oph layout(s) or choose a "
+                "different decision."
             )
         if self.decision == "interview_review" and not self.requirements:
             raise ValueError(
@@ -695,6 +715,7 @@ class Alice(WonderlandAgent):
         test_scenario_registry: TestScenarioRegistry | None = None,
         requirement_registry: RequirementRegistry | None = None,
         milestone_registry: MilestoneRegistry | None = None,
+        diagram_registry: DiagramRegistry | None = None,
         constitutions_root: Path | None = None,
     ) -> None:
         identity = load_constitution(ALICE_NAME, root=constitutions_root)
@@ -707,6 +728,7 @@ class Alice(WonderlandAgent):
         self._test_scenario_registry = test_scenario_registry
         self._requirement_registry = requirement_registry
         self._milestone_registry = milestone_registry
+        self._diagram_registry = diagram_registry
 
     @property
     def story_registry(self) -> StoryRegistry | None:
@@ -723,6 +745,10 @@ class Alice(WonderlandAgent):
     @property
     def milestone_registry(self) -> MilestoneRegistry | None:
         return self._milestone_registry
+
+    @property
+    def diagram_registry(self) -> DiagramRegistry | None:
+        return self._diagram_registry
 
     async def deliberate(self, context: Context) -> Utterance | None:
         if self.llm is None:
@@ -781,6 +807,10 @@ class Alice(WonderlandAgent):
         elif response.decision == "milestone_plan":
             artifacts.extend(
                 self._record_milestones(response.milestones)
+            )
+        elif response.decision == "diagram":
+            artifacts.extend(
+                record_diagrams(self._diagram_registry, response.diagrams)
             )
         elif response.decision == "retract":
             # Alice names artifacts to remove (typically her own

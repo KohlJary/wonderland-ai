@@ -36,6 +36,7 @@ from wonderland.engagement import (
     speaker_is,
 )
 from wonderland.diagrams.payload import DiagramPayload
+from wonderland.diagrams.recording import record_diagrams
 from wonderland.diagrams.registry import DiagramRegistry
 from wonderland.feature import FeaturePayload, FeatureRegistry
 from wonderland.identity import load_constitution
@@ -813,35 +814,8 @@ class WhiteRabbit(WonderlandAgent):
     def _record_diagrams(
         self, payloads: list[DiagramPayload]
     ) -> list[Artifact]:
-        """Persist each authored diagram through DiagramRegistry. Same
-        drop-silently-if-no-registry contract as the other recorders."""
-        if self._diagram_registry is None:
-            return []
-        artifacts: list[Artifact] = []
-        for payload in payloads:
-            try:
-                diagram = self._diagram_registry.write(
-                    payload.name, payload.oph, layer=payload.layer,
-                )
-            except Exception:  # noqa: BLE001 — a malformed .oph mustn't kill the meeting
-                continue
-            artifacts.append(
-                Artifact(
-                    kind="diagram",
-                    payload={
-                        "slug": diagram.slug,
-                        "guid": diagram.guid,
-                        "layer": diagram.layer,
-                        "title": diagram.title,
-                        "path": str(diagram.path),
-                        "nodes": [
-                            {"guid": n.guid, "name": n.name}
-                            for n in diagram.nodes
-                        ],
-                    },
-                )
-            )
-        return artifacts
+        """Persist each authored diagram via the shared recorder (P21)."""
+        return record_diagrams(self._diagram_registry, payloads)
 
     @staticmethod
     def _derive_threading(context: Context) -> tuple[str, str | None]:

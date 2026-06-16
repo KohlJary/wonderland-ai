@@ -474,6 +474,7 @@ class Runner:
                 test_scenario_registry=TestScenarioRegistry(project_root),
                 requirement_registry=RequirementRegistry(project_root),
                 milestone_registry=MilestoneRegistry(project_root),
+                diagram_registry=DiagramRegistry(project_root),
             ),
             "cheshire_cat": CheshireCat(
                 memory=memories["cheshire_cat"],

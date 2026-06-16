@@ -608,9 +608,18 @@ meetings:
       the map is laid down, ``deference``/``silence`` is fine — don't
       manufacture diagrams for surfaces the app doesn't have.
 
-      **Alice** — the user-flow lens. Push back with ``concern`` if a
-      page is missing or a region is mis-grouped; don't author competing
-      diagrams, the Rabbit holds the pen.
+      **Alice** — author the pages/screens your persona-lens surfaces
+      (the surfaces a named persona actually touches), while the Rabbit
+      lays down the structural frame. You both ship ``diagram`` decisions.
+      Coordinate on names: a diagram re-emitted with the same name
+      overwrites (last wins), so don't both draw the same page two
+      different ways — split the surfaces, or push back with ``concern``
+      if you'd group a region differently.
+
+      Between the two of you, make sure the app's foundational surfaces
+      get drawn — the auth/entry screens and the primary page shell —
+      not just the feature cards. A diagram stack that's missing the base
+      is the gap the operator notices first.
 
     seeds:
       - from: any
