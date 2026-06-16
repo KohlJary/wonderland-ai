@@ -958,9 +958,30 @@ CastBrowserScreen #cast-constitution-pane {
     height: 2fr;
 }
 
-#diagrams-scroll {
+/* Diagrams tab: list (left) + wide rendered-diagram detail (right),
+ * mirroring the milestones/features master-detail. */
+#diagrams-row {
     height: 1fr;
-    padding: 0 2;
+}
+
+#diagrams-list-pane {
+    width: 36;
+    height: 1fr;
+    padding: 0 1;
+}
+
+#diagrams-detail-pane {
+    width: 1fr;
+    height: 1fr;
+    padding: 0 1;
+}
+
+#diagram-detail-scroll {
+    height: 1fr;
+}
+
+#diagrams-table {
+    height: 1fr;
 }
 
 #dashboard-tabs {

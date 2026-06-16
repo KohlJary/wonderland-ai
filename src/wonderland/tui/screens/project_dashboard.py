@@ -273,6 +273,7 @@ class ProjectDashboardScreen(Screen[None]):
         self._runs: list[RunRecord] = []
         self._artifacts: list[tuple[str, Path]] = []
         self._features: list[_FeatureRow] = []
+        self._diagram_slugs: list[str] = []  # P21 — diagram-table rows
         self._filter: FeatureState | None = None
         # Marked-for-deletion ticket slugs. Operator presses ``m`` on
         # a ticket node in the features tree to toggle membership;
@@ -587,15 +588,61 @@ class ProjectDashboardScreen(Screen[None]):
                     )
 
     def _compose_diagrams_tab(self) -> ComposeResult:
-        """The Diagrams tab — structural build map (P21)."""
-        with VerticalScroll(id="diagrams-scroll"):
-            yield Static(
-                "[dim]loading diagrams…[/dim]", id="diagrams-content",
-            )
+        """The Diagrams tab — list (left) + wide rendered diagram detail
+        (right), mirroring the milestones/features master-detail (P21).
+        The .oph layout IS the view; uses the full horizontal space."""
+        with Horizontal(id="diagrams-row"):
+            with Vertical(id="diagrams-list-pane"):
+                yield Static("[b]Diagrams[/b]", id="diagrams-list-label")
+                yield DataTable(id="diagrams-table", cursor_type="row")
+            with Vertical(id="diagrams-detail-pane"):
+                yield Static(
+                    "[b]Diagram detail[/b]", id="diagrams-detail-label"
+                )
+                with VerticalScroll(id="diagram-detail-scroll"):
+                    yield Static(id="diagram-oph")
+                    yield Static(id="diagram-nodes")
 
     def _populate_diagrams(self) -> None:
-        """Render every diagram (the .oph layout IS the view) with its
-        node build-status — derived live from the ticket ledger (P21)."""
+        """Fill the diagram list + render the first one's detail (P21)."""
+        from wonderland.diagrams import DiagramRegistry
+        from wonderland.diagrams.links import DiagramLinks, STATUS_BUILT
+
+        try:
+            table = self.query_one("#diagrams-table", DataTable)
+        except Exception:  # noqa: BLE001 — tab not mounted yet
+            return
+        reg = DiagramRegistry(self.project.root_path)
+        links = DiagramLinks(self.project.root_path)
+        self._diagram_slugs = reg.list_slugs()
+        table.clear(columns=True)
+        table.add_columns("Diagram", "Layer", "Built")
+        for slug in self._diagram_slugs:
+            diagram = reg.read(slug)
+            if diagram is None:
+                continue
+            built = sum(
+                1 for n in diagram.nodes
+                if links.node_status(n.guid) == STATUS_BUILT
+            )
+            table.add_row(
+                diagram.title or slug, diagram.layer,
+                f"{built}/{len(diagram.nodes)}",
+            )
+        if self._diagram_slugs:
+            table.cursor_coordinate = (0, 0)
+            self._render_diagram_detail(self._diagram_slugs[0])
+        else:
+            self.query_one("#diagram-oph", Static).update(
+                "[dim]No diagrams yet. The milestone_plan diagram meeting "
+                "creates the initial structural map; design refines it as "
+                "features compose.[/dim]"
+            )
+            self.query_one("#diagram-nodes", Static).update("")
+
+    def _render_diagram_detail(self, slug: str) -> None:
+        """Render the selected diagram's .oph (verbatim) + node build
+        status into the detail pane (P21)."""
         from rich.markup import escape
 
         from wonderland.diagrams import DiagramRegistry
@@ -613,54 +660,30 @@ class ProjectDashboardScreen(Screen[None]):
             STATUS_PENDING: "[dim]○ pending[/dim]",
             STATUS_UNLINKED: "[red]· unlinked[/red]",
         }
+        oph_w = self.query_one("#diagram-oph", Static)
+        nodes_w = self.query_one("#diagram-nodes", Static)
+        reg = DiagramRegistry(self.project.root_path)
+        links = DiagramLinks(self.project.root_path)
+        diagram = reg.read(slug)
+        if diagram is None:
+            oph_w.update("[red]could not read diagram[/red]")
+            nodes_w.update("")
+            return
         try:
-            content = self.query_one("#diagrams-content", Static)
-        except Exception:  # noqa: BLE001 — tab not mounted yet
-            return
-
-        root = self.project.root_path
-        reg = DiagramRegistry(root)
-        links = DiagramLinks(root)
-        slugs = reg.list_slugs()
-        if not slugs:
-            content.update(
-                "[dim]No diagrams yet. The milestone_plan diagram meeting "
-                "creates the initial structural map; design refines it as "
-                "features compose.[/dim]"
+            oph = diagram.path.read_text(encoding="utf-8").rstrip()
+        except OSError:
+            oph = "(missing .oph file)"
+        oph_w.update(escape(oph))
+        lines = ["", "[b]Components[/b]"]
+        for node in sorted(diagram.nodes, key=lambda n: n.name):
+            status = links.node_status(node.guid)
+            tickets = links.ticket_slugs_for_node(node.guid)
+            tk = escape(", ".join(tickets)) if tickets else "—"
+            lines.append(
+                f"  {status_markup.get(status, status)}  "
+                f"{escape(node.name)}  [dim]{tk}[/dim]"
             )
-            return
-
-        parts: list[str] = []
-        for slug in slugs:
-            diagram = reg.read(slug)
-            if diagram is None:
-                continue
-            built = sum(
-                1 for n in diagram.nodes
-                if links.node_status(n.guid) == STATUS_BUILT
-            )
-            parts.append(
-                f"[b]{escape(diagram.title or slug)}[/b]  "
-                f"[dim]({diagram.layer}) · {built}/{len(diagram.nodes)} "
-                f"built[/dim]"
-            )
-            try:
-                oph = diagram.path.read_text(encoding="utf-8").rstrip()
-            except OSError:
-                oph = "(missing .oph file)"
-            # Escape the layout body so box-drawing + any brackets render
-            # literally rather than as Rich markup.
-            parts.append(escape(oph))
-            for node in sorted(diagram.nodes, key=lambda n: n.name):
-                status = links.node_status(node.guid)
-                tickets = links.ticket_slugs_for_node(node.guid)
-                tk = escape(", ".join(tickets)) if tickets else "—"
-                parts.append(
-                    f"  {status_markup.get(status, status)}  "
-                    f"{escape(node.name)}  [dim]{tk}[/dim]"
-                )
-            parts.append("")
-        content.update("\n".join(parts))
+        nodes_w.update("\n".join(lines))
 
     # ------------------------------------------------------------------ #
     # Runs column (T80; reshaped P14 — runs is its own always-visible
@@ -856,6 +879,11 @@ class ProjectDashboardScreen(Screen[None]):
             if row is None or row < 0 or row >= len(self._artifacts):
                 return
             self._render_artifact_content(self._artifacts[row])
+        elif event.data_table.id == "diagrams-table":
+            row = event.cursor_row
+            if row is None or row < 0 or row >= len(self._diagram_slugs):
+                return
+            self._render_diagram_detail(self._diagram_slugs[row])
 
     def on_data_table_row_selected(
         self, event: DataTable.RowSelected
