@@ -285,10 +285,99 @@ def format_findings(findings: list[WiringFinding]) -> str:
     return head + "\n" + "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class HollowBuild:
+    """A diagram node a DONE ticket claims to build, that the built code
+    doesn't actually contain — a confirmed hollow build."""
+
+    node: str
+    layer: str
+    status: str  # missing | orphaned
+    done_tickets: tuple[str, ...]
+
+    def summary(self) -> str:
+        return (
+            f"{self.node} [{self.status}] — ticket(s) "
+            f"{list(self.done_tickets)} marked DONE but the component is not "
+            f"in the built code"
+        )
+
+
+def find_hollow_builds(
+    project_root: Path, *, feature_slug: str | None = None,
+) -> list[HollowBuild]:
+    """The (b)+(d) cross-reference. A node is a CONFIRMED hollow build when a
+    DONE ticket is linked to it (the build-tracker says "this was built") yet
+    ``verify_wiring`` reports it ``missing``/``orphaned`` (the code says it
+    isn't there). The intersection is precise where either signal alone is
+    noisy: it ignores inlined chrome and naming-divergent components, because
+    those have no DONE ticket claiming them this pass.
+
+    Scoped to one feature's done tickets when ``feature_slug`` is given (M8
+    reviews per feature). Pure read-side."""
+    from wonderland.diagrams.links import DiagramLinks
+    from wonderland.ticket_lifecycle import TicketState, get_state as tstate
+
+    registry = DiagramRegistry(project_root)
+    links = DiagramLinks(project_root)
+    status_by_node = {
+        f.node: f.status for f in verify_wiring(project_root)
+    }
+
+    ticket_feature: dict[str, str | None] = {}
+    if feature_slug is not None:
+        from wonderland.cross_feature import (
+            _build_feature_index,
+            _parse_ticket_sources,
+            _ticket_parent_feature,
+        )
+        from wonderland.ticket import TicketRegistry
+
+        fslugs, _ = _build_feature_index(project_root)
+        for t in TicketRegistry(project_root).list_tickets():
+            try:
+                ticket_feature[t.slug] = _ticket_parent_feature(
+                    _parse_ticket_sources(
+                        t.path.read_text(encoding="utf-8")
+                    ),
+                    fslugs,
+                )
+            except OSError:
+                continue
+
+    out: list[HollowBuild] = []
+    for slug in registry.list_slugs():
+        diagram = registry.read(slug)
+        if diagram is None:
+            continue
+        for node in diagram.nodes:
+            status = status_by_node.get(node.name)
+            if status not in (STATUS_MISSING, STATUS_ORPHANED):
+                continue
+            done = []
+            for tslug in links.ticket_slugs_for_node(node.guid):
+                if tstate(project_root, tslug) != TicketState.DONE:
+                    continue
+                if (
+                    feature_slug is not None
+                    and ticket_feature.get(tslug) != feature_slug
+                ):
+                    continue
+                done.append(tslug)
+            if done:
+                out.append(HollowBuild(
+                    node=node.name, layer=node.layer,
+                    status=status, done_tickets=tuple(done),
+                ))
+    return out
+
+
 __all__ = [
     "WiringFinding",
     "verify_wiring",
     "format_findings",
+    "HollowBuild",
+    "find_hollow_builds",
     "STATUS_WIRED",
     "STATUS_ORPHANED",
     "STATUS_MISSING",

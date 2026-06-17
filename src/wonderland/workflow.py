@@ -7180,12 +7180,90 @@ def _synthesize_default_accept_review(
     """
     try:
         from wonderland.review import (
+            FindingKind,
+            ReviewFinding,
             ReviewPayload,
             ReviewRegistry,
+            ReviewSeverity,
             ReviewVerdict,
         )
     except Exception:  # noqa: BLE001 — best-effort
         return
+
+    # P21 (b)+(d) hollow-build gate. Silence is NOT a clean bill of health.
+    # Even when Caterpillar emits no verdict, a feature whose DONE tickets
+    # claim diagram components that aren't actually in the built code is a
+    # hollow build — the time-card placeholder that type-checks but renders
+    # nothing. The (b)+(d) cross-reference catches it deterministically (a
+    # node a DONE ticket claims, that verify_wiring reports missing/orphaned)
+    # and routes to REQUEST-CHANGES so follow-up tickets get spawned, instead
+    # of auto-approving. This matters precisely BECAUSE agent disengagement
+    # grows with project size: silence-as-approval otherwise ships more
+    # unreviewed hollow work exactly when the codebase is largest. Gated to
+    # ui-layer (the placeholder-component class); db naming-divergence is
+    # benign. Best-effort — never let the gate crash the safety net.
+    hollow_ui: list[Any] = []
+    try:
+        from wonderland.diagrams.models import LAYER_UI
+        from wonderland.diagrams.wiring import find_hollow_builds
+
+        hollow_ui = [
+            h for h in find_hollow_builds(project_root, feature_slug=feature_slug)
+            if h.layer == LAYER_UI
+        ]
+    except Exception:  # noqa: BLE001 — best-effort
+        hollow_ui = []
+
+    if hollow_ui:
+        findings = [
+            ReviewFinding(
+                severity=ReviewSeverity.CHANGE_REQUIRED,
+                kind=FindingKind.BUG,
+                title=f"Hollow build: {h.node} marked done but not in the code",
+                location=(
+                    f"(diagram node ◆{h.node}; no matching component in "
+                    f"built source)"
+                ),
+                quote=f"ticket(s) {list(h.done_tickets)} -> DONE",
+                read=(
+                    f"A DONE ticket claims to build {h.node}, but verify_wiring "
+                    f"reports it {h.status} — nothing renders or defines it."
+                ),
+                concern=(
+                    f"{h.node} is a hollow build: it passes type-check yet ships "
+                    f"nothing the user sees. The component was marked done "
+                    f"without being built and wired into the app — the exact "
+                    f"failure the structural layer exists to catch."
+                ),
+                request=(
+                    f"Build the {h.node} component for real and wire it into its "
+                    f"parent per the diagram. Do not leave a placeholder."
+                ),
+            )
+            for h in hollow_ui
+        ]
+        block_payload = ReviewPayload(
+            title=(
+                f"Auto-blocked: {feature_slug} — hollow build(s) caught on "
+                f"caterpillar silence ((b)+(d) gate)"
+            ),
+            target_files=["(substrate-synthesized — verify_wiring (b)+(d) gate)"],
+            verdict=ReviewVerdict.REQUEST_CHANGES,
+            findings=findings,
+        )
+        try:
+            ReviewRegistry(project_root).write(block_payload)
+        except Exception:  # noqa: BLE001 — best-effort
+            return
+        _route_blocking_review(
+            project_root,
+            feature_slug=feature_slug,
+            review_payload=block_payload.model_dump(mode="json"),
+            actor=actor,
+            meeting_id=meeting_id,
+        )
+        return
+
     payload = ReviewPayload(
         title=f"Auto-approved: {feature_slug} (caterpillar silenced on M8)",
         target_files=["(substrate-synthesized — caterpillar silenced)"],

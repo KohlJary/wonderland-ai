@@ -783,3 +783,37 @@ def test_wiring_milestone_scoped(tmp_path: Path) -> None:
         wf.set_active_milestone_scope(None)
     assert "SignIn" in nodes
     assert "WeatherCard" not in nodes  # M2 surface excluded from M1 review
+
+
+def test_find_hollow_builds_cross_references_b_and_d(tmp_path: Path) -> None:
+    # (b)+(d): a node a DONE ticket claims but that isn't in the code is a
+    # hollow build; a node that's built+wired is not; a node with no done
+    # ticket is ignored (filters verify_wiring's standalone noise).
+    from wonderland.diagrams.links import DiagramLinks
+    from wonderland.diagrams.wiring import find_hollow_builds
+    from wonderland.ticket_lifecycle import TicketState, transition
+
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_CARDS_OPH, layer=LAYER_UI, slug="dashboard")
+    # WeatherCard built + wired; TimeCard never built.
+    _write_src(tmp_path, "Dashboard.tsx",
+               "import WeatherCard from './WeatherCard';\n"
+               "export default function Dashboard(){return <WeatherCard/>;}")
+    _write_src(tmp_path, "WeatherCard.tsx",
+               "export default function WeatherCard(){return <div/>;}")
+    _feature(tmp_path, "dash-feat")
+    links = DiagramLinks(tmp_path)
+    tc = _ticket(tmp_path, "Frontend time card component", stack_span="frontend",
+                 slug_src="dash-feat")
+    wc = _ticket(tmp_path, "Frontend weather card component", stack_span="frontend",
+                 slug_src="dash-feat-2")
+    links.link(reg.read("dashboard").node_by_name("TimeCard").guid, tc.slug)
+    links.link(reg.read("dashboard").node_by_name("WeatherCard").guid, wc.slug)
+    for t in (tc, wc):
+        transition(tmp_path, t.slug, TicketState.QUEUED, by="op")
+        transition(tmp_path, t.slug, TicketState.IN_PROGRESS, by="op")
+        transition(tmp_path, t.slug, TicketState.DONE, by="op")
+    hollow = {h.node for h in find_hollow_builds(tmp_path)}
+    assert "TimeCard" in hollow          # done ticket + not in code → hollow
+    assert "WeatherCard" not in hollow   # done ticket + built+wired → ok
+    assert "Navbar" not in hollow        # no done ticket → not flagged (noise filtered)
