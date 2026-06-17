@@ -1261,7 +1261,8 @@ async def test_tool_loop_exhaustion_forces_final_response(tmp_path: Path) -> Non
     dee._tools = Tools(tmp_path)
 
     result = await dee._complete_with_tools(
-        [], [{"role": "user", "content": "go"}], max_tool_iterations=2)
+        [], [{"role": "user", "content": "go"}],
+        max_tool_iterations=20, max_read_iterations=2)
 
     # Recovered the forced response — did NOT return "" (the silence bug).
     assert result != ""

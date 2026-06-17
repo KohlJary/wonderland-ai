@@ -1001,32 +1001,41 @@ class WonderlandAgent:
         self,
         system: list,  # type: ignore[type-arg]
         messages: list,  # type: ignore[type-arg]
-        max_tool_iterations: int = 20,
+        max_tool_iterations: int = 15,
+        max_read_iterations: int = 30,
     ) -> str:
         """Tool-use loop. Calls the LLM with tools=[...]; if the response
         is a tool_use, executes the tools, appends results, calls again.
         Returns the final text response when the LLM stops requesting tools.
 
-        ``max_tool_iterations`` caps the loop to prevent runaway tool use
-        on a malformed prompt. Subclasses' protocols ask for a final
-        JSON response; if the LLM iterates past the cap without producing
-        one, this returns "" so the parser raises and the speak loop
-        treats it as silence.
-
-        Bumped from 10 → 20 in T38 Session 2 diagnostics: continuation-
-        session Tweedles legitimately needed more reads (read existing
-        models.py + messages.py + users.py + schemas.py + tests + git_diff
-        to understand what already shipped) before designing the diff.
-        At 10 iterations they'd exhaust on read_file calls and never
-        emit the final JSON. Risk of feedback loops is low — the
-        toolset (read/write/list/grep/git_status/git_diff) is local-
-        only with no network / process-spawning paths.
+        SPLIT BUDGET. Reads are EXPLORATION, not progress — they shouldn't
+        eat the budget the agent needs to BUILD. A single shared cap made an
+        agent that read 20 files to understand a feature run out before it
+        could write a line (the frontend Tweedle that read its way through
+        the data-flow chain and shipped nothing; Caterpillar reading file
+        after file as the project grew, then going silent). So there are two
+        budgets:
+          - ``max_read_iterations`` — read-only turns (read_file / list_files
+            / grep / git_status / git_diff). Generous, because understanding
+            a feature is allowed to be expensive. Bounded so accumulated read
+            results (each kept in-context for later turns) don't blow the
+            window, and so a read-runaway can't spin forever.
+          - ``max_tool_iterations`` — productive turns (a turn that calls
+            write_file or any non-read tool, i.e. real progress). The tight
+            convergence budget.
+        A turn whose tool calls are ALL reads advances only the read budget.
+        The "stop exploring, commit now" nudge fires as EITHER budget runs
+        low; on exhaustion of either, a final no-tools call forces the
+        structured response rather than returning "".
 
         Side effect: ``self._last_write_file_paths`` is reset at entry
         and populated as ``write_file`` tool calls succeed. Subclasses
         can read it after parsing to coerce decisions when the LLM
         writes files but picks a non-implementation utterance.
         """
+        _READ_ONLY_TOOLS = frozenset({
+            "read_file", "list_files", "grep", "git_status", "git_diff",
+        })
         assert self._tools is not None, "set_tools must have been called"
         assert self.llm is not None
         self._last_write_file_paths = []
@@ -1036,7 +1045,12 @@ class WonderlandAgent:
         # turns. The caller's `messages` is preserved.
         loop_messages = list(messages)
 
-        for i in range(max_tool_iterations):
+        read_iters = 0
+        productive_iters = 0
+        while (
+            productive_iters < max_tool_iterations
+            and read_iters < max_read_iterations
+        ):
             # Flip back to AWAITING_RESPONSE before each LLM call. On the
             # first iteration this is a no-op (speak() already set us
             # there); on subsequent iterations we're transitioning back
@@ -1060,11 +1074,13 @@ class WonderlandAgent:
             # Extract tool_use blocks; build tool_result blocks for each.
             assistant_blocks: list[dict] = []
             tool_results: list[dict] = []
+            tool_names: set[str] = set()
             for block in content_blocks:
                 btype = getattr(block, "type", None)
                 if btype == "text":
                     assistant_blocks.append({"type": "text", "text": block.text})
                 elif btype == "tool_use":
+                    tool_names.add(block.name)
                     assistant_blocks.append(
                         {
                             "type": "tool_use",
@@ -1113,21 +1129,32 @@ class WonderlandAgent:
                             }
                         )
 
+            # Classify the turn: a turn whose tools are ALL reads is pure
+            # exploration → spend the (generous) read budget. Any write /
+            # check / mixed turn is progress → spend the (tight) convergence
+            # budget.
+            if tool_names and tool_names <= _READ_ONLY_TOOLS:
+                read_iters += 1
+            else:
+                productive_iters += 1
+
             loop_messages.append({"role": "assistant", "content": assistant_blocks})
-            # Near the iteration cap, force convergence. An agent still
+            # Force convergence as EITHER budget runs low. An agent still
             # READING this deep — the frontend Tweedle working through the
             # data-flow dependency chain, or Caterpillar reading file after
-            # file as the project grows — will otherwise exhaust the loop and
-            # return "" (silence) having committed nothing. This is the
-            # mechanism behind BOTH the Tweedle that never builds and
+            # file as the project grows — will otherwise exhaust the read
+            # budget and return "" (silence) having committed nothing. This is
+            # the mechanism behind BOTH the Tweedle that never builds and
             # Caterpillar's worsens-with-scope silence. Push it to commit
-            # while it still has tool calls left to do so.
-            remaining = max_tool_iterations - i - 1
-            if remaining <= 3:
+            # while it still has budget to do so.
+            reads_left = max_read_iterations - read_iters
+            writes_left = max_tool_iterations - productive_iters
+            if reads_left <= 4 or writes_left <= 3:
                 tool_results.append({
                     "type": "text",
                     "text": (
-                        f"[substrate] Only {remaining} tool call(s) left. STOP "
+                        f"[substrate] Budget nearly spent (reads_left="
+                        f"{reads_left}, write_turns_left={writes_left}). STOP "
                         f"exploring — make your write_file calls now (if any) "
                         f"and then emit your FINAL response JSON. Do not request "
                         f"more reads; commit with what you have."

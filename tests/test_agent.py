@@ -1066,6 +1066,7 @@ async def test_parse_with_retry_logs_max_tokens_truncation(tmp_path, capsys):
             "first attempt — not JSON either",
             system=[],
             messages=[],
+            max_retries=1,
         )
     err = capsys.readouterr().err
     assert "max_tokens cap" in err
