@@ -710,3 +710,34 @@ def test_cross_feature_still_merges_same_surface_sharing_upstream(
     decisions = find_cross_feature_duplicates(tmp_path)
     retracted = [s for d in decisions for s in d.retracted_slugs]
     assert len(retracted) == 1  # the two signups merge
+
+
+def test_reattribution_refuses_unowned_surface(tmp_path: Path) -> None:
+    """An orphan whose surface no in-scope feature owns must NOT be
+    reattached, even when title-Jaccard would clear the threshold. T-ab78
+    follow-up: the M3 run leaked an M4 news-card ticket into the M3 weather
+    feature because 'News card: frontend rendering...' ≈ 'Weather card:
+    frontend rendering...' on tokens. The surface (newscard vs weathercard)
+    tells them apart; the gate refuses the cross-surface match."""
+    _write_feature(tmp_path, "weather-card-cached-data", ["story-w"], guid="01AAAAAA")
+    # Weather feature owns the weathercard surface (a parented ticket).
+    _write_ticket_titled(
+        tmp_path, "weather-owned",
+        "Frontend: render the weather card component",
+        ["weather-card-cached-data"], guid="01TKT001",
+    )
+    # Orphan weather ticket — same surface → reattaches.
+    _write_ticket_titled(
+        tmp_path, "weather-orphan",
+        "Weather card: frontend rendering from cached API response",
+        ["m3-some-milestone"], guid="01TKT002",
+    )
+    # Orphan NEWS ticket — different surface, no owner → must NOT reattach.
+    _write_ticket_titled(
+        tmp_path, "news-orphan",
+        "News card: frontend rendering from cached API response",
+        ["m3-some-milestone"], guid="01TKT003",
+    )
+    homed = {slug for slug, _, _ in reattribute_orphaned_tickets(tmp_path)}
+    assert "weather-orphan" in homed
+    assert "news-orphan" not in homed

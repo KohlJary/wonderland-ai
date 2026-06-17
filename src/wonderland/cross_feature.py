@@ -526,6 +526,15 @@ _SURFACE_ACTIONS: tuple[tuple[str, str], ...] = (
     ("signup", r"sign[\s_-]?up|signup|registration|register"),
     ("signin", r"sign[\s_-]?in|signin|log[\s_-]?in|login"),
     ("signout", r"sign[\s_-]?out|log[\s_-]?out|logout"),
+    # Per-card surfaces — distinct so a news ticket never reads as a weather
+    # one. Before "dashboard" so "weather card on the dashboard" → weathercard,
+    # not dashboard. (T-ab78 follow-up: the M3 run reattributed an orphaned
+    # "News card: frontend rendering" into the WEATHER feature because both
+    # titles tokenize to ~{card, frontend, rendering, cached} — title-Jaccard
+    # can't tell time/weather/news cards apart; the surface can.)
+    ("timecard", r"time[\s_-]?card"),
+    ("weathercard", r"weather[\s_-]?card"),
+    ("newscard", r"news[\s_-]?card"),
     ("dashboard", r"dashboard"),
     ("session-middleware", r"session middleware|middleware"),
     ("schema", r"\bschema\b|migration|\btable\b"),
@@ -786,7 +795,15 @@ def reattribute_orphaned_tickets(
         if _ticket_parent_feature(sources, feature_slugs) is not None:
             continue  # already has a resolvable feature parent
 
-        # Primary: surface-owner match. Fallback: title↔slug Jaccard.
+        # Primary: surface-owner match. Fallback: title↔slug Jaccard, but
+        # surface-GATED — a candidate feature whose own surface (read off its
+        # slug) conflicts with the orphan's surface can't own it, so it's
+        # excluded from the fuzzy match. This is what stops an M4 news-card
+        # orphan ("News card: frontend rendering…") from Jaccard-matching the
+        # M3 weather feature on generic {card, cached} tokens: weathercard ≠
+        # newscard, so the weather feature is ineligible and the news ticket
+        # stays orphaned for its own milestone. Surface-LESS orphans (and
+        # surface-less candidates) keep the original token-Jaccard behaviour.
         best_slug: str | None = None
         best_score = 0.0
         sig = _surface_signature(record.title)
@@ -796,7 +813,14 @@ def reattribute_orphaned_tickets(
             title_tokens = _normalize_title_tokens(record.title)
             if not title_tokens:
                 continue
+            sig_surface = sig.split("|", 1)[1] if sig else None
             for fslug, ftokens in candidates.items():
+                if sig_surface is not None:
+                    fsig = _surface_signature(fslug.replace("-", " "))
+                    # Compare the surface part only (act:/path:), not the
+                    # fe/be layer — a feature slug rarely encodes layer.
+                    if fsig is not None and fsig.split("|", 1)[1] != sig_surface:
+                        continue  # feature owns a different surface
                 score = _title_jaccard(title_tokens, ftokens)
                 if score > best_score:
                     best_slug, best_score = fslug, score

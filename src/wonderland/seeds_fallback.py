@@ -560,16 +560,68 @@ def _load_diagrams(project_root: Path) -> list[Any]:
     agents update/extend it rather than re-draw from scratch. The seed
     body is each ``.oph`` file (via ``.path``), so the agent sees the
     actual structure + component names (keeping names stable preserves
-    node GUIDs + their ticket links)."""
+    node GUIDs + their ticket links).
+
+    Milestone-scoped: when a milestone is active, only diagrams with at
+    least one node whose component name appears in the milestone's
+    goal/done-when text are seeded. The whole-app stack (milestone-plan
+    draws every surface up front) otherwise invites a single milestone's
+    design pass to decompose surfaces it doesn't own — M2 was shown the
+    full three-card dashboard and overshot into weather/news work. Dropping
+    the auth/partner diagrams from a weather milestone's seed keeps the pass
+    focused. Over-inclusive on purpose (a shared diagram with ANY in-scope
+    node is kept) — starving design of needed context is worse than a bit
+    of extra."""
     from wonderland.diagrams.registry import DiagramRegistry
 
     registry = DiagramRegistry(project_root)
+
+    milestone_tokens: frozenset[str] | None = None
+    try:
+        from wonderland.workflow import get_active_milestone_scope
+
+        scope = get_active_milestone_scope()
+    except Exception:  # noqa: BLE001
+        scope = None
+    if scope is not None and getattr(scope, "slug", None):
+        from wonderland.diagrams.linking import _title_tokens
+        from wonderland.milestone import MilestoneRegistry
+
+        for rec in MilestoneRegistry(project_root).list_milestones():
+            if rec.slug == scope.slug:
+                try:
+                    milestone_tokens = _title_tokens(
+                        rec.path.read_text(encoding="utf-8")
+                    )
+                except OSError:
+                    milestone_tokens = None
+                break
+
     out: list[Any] = []
     for slug in registry.list_slugs():
         diagram = registry.read(slug)
-        if diagram is not None:
-            out.append(_RegistryRecordAdapter(diagram))
+        if diagram is None:
+            continue
+        if milestone_tokens is not None and not _diagram_in_milestone_scope(
+            diagram, milestone_tokens
+        ):
+            continue
+        out.append(_RegistryRecordAdapter(diagram))
     return out
+
+
+def _diagram_in_milestone_scope(diagram: Any, milestone_tokens: frozenset) -> bool:
+    """True if any of the diagram's component nodes is named in the
+    milestone text (its distinctive tokens all appear). Reuses the
+    node↔ticket matcher's tokenizer so scope-relevance and link-relevance
+    agree."""
+    from wonderland.diagrams.linking import _distinctive_tokens
+
+    for node in diagram.nodes:
+        distinctive = _distinctive_tokens(node.name)
+        if distinctive and distinctive <= milestone_tokens:
+            return True
+    return False
 
 
 class _DirectiveRecord:
