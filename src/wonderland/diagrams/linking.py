@@ -171,17 +171,40 @@ def link_tickets_to_nodes(
     links: DiagramLinks | None = None,
     ticket_registry: TicketRegistry | None = None,
 ) -> LinkingResult:
-    """Match every diagram node against every ticket and write the links.
-    Idempotent (``DiagramLinks.link`` dedupes). Pure derivation from the
-    ticket + diagram registries — safe to re-run any time."""
+    """Match every LIVE ticket against every diagram node and write the
+    links. Idempotent (``DiagramLinks.link`` dedupes). Pure derivation
+    from the ticket + diagram registries — safe to re-run any time.
+
+    "Live" excludes orphan tickets — those whose ``sources`` resolve to no
+    on-disk feature (they cite only the milestone slug). The substrate
+    treats orphans as not-properly-composed and never implements them, so
+    the tracker must ignore them too: ldr-ophanic M2 produced 4 orphan
+    weather/news tickets (M3/M4 work that leaked into M2's decomposition
+    but attached to no M2 feature). Linking them made WeatherCard/NewsCard
+    report false ``pending`` for work that's effectively culled. The
+    diagram must show the same reality the feature tree does.
+    """
     registry = registry or DiagramRegistry(project_root)
     links = links or DiagramLinks(project_root)
     ticket_registry = ticket_registry or TicketRegistry(project_root)
 
+    from wonderland.cross_feature import (
+        _build_feature_index,
+        _parse_ticket_sources,
+        _ticket_parent_feature,
+    )
+
+    feature_slugs, _ = _build_feature_index(project_root)
     tickets = ticket_registry.list_tickets()
-    # Precompute (slug, title, token-set, stack-span) once.
+    # Precompute (slug, title, token-set, stack-span) once. Skip orphans —
+    # but only when a feature index exists to judge against (no features on
+    # disk → can't determine orphan-hood, so link all, e.g. in unit tests).
     ticket_rows: list[tuple[str, str, frozenset[str], TicketStackSpan]] = []
     for t in tickets:
+        if feature_slugs:
+            sources = _parse_ticket_sources(t.path.read_text(encoding="utf-8"))
+            if _ticket_parent_feature(sources, feature_slugs) is None:
+                continue  # orphan / culled — not live work
         span = read_ticket_stack_span(project_root, t.slug)
         ticket_rows.append((t.slug, t.title, _title_tokens(t.title), span))
 

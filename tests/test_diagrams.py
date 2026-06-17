@@ -606,3 +606,30 @@ def test_conjunction_surface_still_links(tmp_path: Path) -> None:
             stack_span="frontend")
     created = link_tickets_to_nodes(tmp_path).created
     assert any(c.node_name == "SignInForm" for c in created)
+
+
+def _feature(tmp_path, slug):
+    from wonderland.feature import FeaturePayload, FeatureRegistry, StackSpan
+    from wonderland.ticket import TicketTier
+    return FeatureRegistry(tmp_path).write(FeaturePayload(
+        title=slug.replace("-", " "), description="parent feature",
+        stack_span=StackSpan.FULL_STACK, personas=["p"], tickets=[],
+        tier=TicketTier.V1, sources=["some-story"], milestone=None,
+    ))
+
+
+def test_orphan_ticket_not_linked(tmp_path: Path) -> None:
+    # A ticket that cites no on-disk feature (orphan — points only at a
+    # milestone) is culled work; it must not light up a node, even when its
+    # title would match by name. ldr-ophanic M2: the leaked weather/news
+    # tickets were orphans and were falsely showing nodes as pending.
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Sign In", _SIGNIN_OPH, layer=LAYER_UI)
+    _feature(tmp_path, "auth-feature")
+    _ticket(tmp_path, "Implement the sign-in form", stack_span="frontend",
+            slug_src="auth-feature")          # feature-attached -> links
+    _ticket(tmp_path, "Sign-in form leaked orphan", stack_span="frontend",
+            slug_src="m9-some-milestone")     # orphan -> filtered
+    created = link_tickets_to_nodes(tmp_path).created
+    assert any("Implement" in c.ticket_title for c in created)
+    assert all("orphan" not in c.ticket_title for c in created)
