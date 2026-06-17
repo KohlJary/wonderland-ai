@@ -51,6 +51,17 @@ _GENERIC_TOKENS = frozenset(
     }
 )
 
+# DB-surface vocabulary. A ``UsersTable`` node should link a ticket that
+# says "users SCHEMA & MIGRATIONS" as readily as one that says "users
+# TABLE" — real DB tickets reach for any of these words. So for a DB node,
+# a distinctive ``table`` token is satisfied by ANY of these in the title,
+# but NOT by an unrelated word: "users API endpoint" still won't match,
+# because it carries none of them. (Calibrated on ldr-ophanic M1: the
+# "SQLite schema & migrations (users, partner_profiles)" ticket.)
+_DB_SURFACE_SYNONYMS = frozenset(
+    {"table", "tables", "schema", "schemas", "migration", "migrations", "ddl"}
+)
+
 # Minimum length for a *lone* distinctive token to be trusted on its own —
 # guards against a single common word (e.g. a bare "Users" node) linking
 # every ticket that happens to mention it. Multi-token nodes bypass this.
@@ -94,9 +105,23 @@ def _layer_allows(layer: str, span: TicketStackSpan) -> bool:
     return True  # unknown layer: don't gate
 
 
-def _name_matches(distinctive: frozenset[str], title_toks: frozenset[str]) -> bool:
-    if not distinctive or not distinctive <= title_toks:
+def _acceptable_for(token: str, layer: str) -> frozenset[str]:
+    """Title tokens that satisfy a node token. Usually just the token
+    itself; for a DB node a surface word (``table``) is satisfied by any
+    DB-surface synonym (``schema``/``migration``/…)."""
+    if layer == LAYER_DB and token in _DB_SURFACE_SYNONYMS:
+        return _DB_SURFACE_SYNONYMS
+    return frozenset({token})
+
+
+def _name_matches(
+    distinctive: frozenset[str], title_toks: frozenset[str], layer: str = LAYER_UI
+) -> bool:
+    if not distinctive:
         return False
+    for token in distinctive:
+        if not (_acceptable_for(token, layer) & title_toks):
+            return False
     if len(distinctive) == 1:
         return len(next(iter(distinctive))) >= _MIN_SOLO_TOKEN_LEN
     return True
@@ -156,7 +181,7 @@ def link_tickets_to_nodes(
             for tslug, ttitle, ttoks, span in ticket_rows:
                 if not _layer_allows(node.layer, span):
                     continue
-                if _name_matches(distinctive, ttoks):
+                if _name_matches(distinctive, ttoks, node.layer):
                     links.link(node.guid, tslug, LINK_TICKET)
                     result.created.append(
                         NodeLink(

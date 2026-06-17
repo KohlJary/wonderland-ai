@@ -554,3 +554,31 @@ def test_linking_idempotent(tmp_path: Path) -> None:
     node = reg.read("sign-in").node_by_name("SignInForm")
     # No duplicate link rows.
     assert len(DiagramLinks(tmp_path).links_for_node(node.guid)) == 1
+
+
+def test_db_node_matches_schema_migration_vocabulary(tmp_path: Path) -> None:
+    # Real ldr-ophanic gap: a UsersTable node must link a ticket that says
+    # "schema & migrations" (not the literal word "table"), but still NOT
+    # an unrelated "users API" ticket.
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Users Schema", _USERS_SCHEMA_OPH, layer=LAYER_DB)
+    _ticket(tmp_path, "SQLite schema and migrations for users and partners",
+            stack_span="backend")
+    _ticket(tmp_path, "Build the users API list endpoint", stack_span="backend",
+            slug_src="feat-y")
+    created = link_tickets_to_nodes(tmp_path).created
+    assert len(created) == 1
+    assert "schema and migrations" in created[0].ticket_title
+
+
+def test_db_synonym_does_not_leak_to_ui_nodes() -> None:
+    from wonderland.diagrams.linking import _name_matches
+    from wonderland.diagrams import LAYER_DB, LAYER_UI
+    # A ui node with a literal "table" token is NOT expanded to schema/etc.
+    assert _name_matches({"pricing", "table"},
+                         _title_tokens("pricing table component"), LAYER_UI)
+    assert not _name_matches({"pricing", "table"},
+                             _title_tokens("pricing schema migration"), LAYER_UI)
+    # The db node IS expanded.
+    assert _name_matches({"users", "table"},
+                         _title_tokens("users schema migration"), LAYER_DB)
