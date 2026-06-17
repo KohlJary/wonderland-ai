@@ -71,7 +71,10 @@ def _iters(times: list[datetime]) -> int:
     return n
 
 
-def analyze(project: Path, exhaust_iters: int) -> dict:
+def analyze(project: Path, exhaust_iters: int, since: datetime | None = None) -> dict:
+    """When ``since`` is given, only count deliberations whose window
+    OPENED at/after that time — scopes the read to a single run (the
+    telemetry logs are append-only across runs)."""
     wonder = project / ".wonderland"
     events = _load_jsonl(wonder / "phase-events.jsonl")
     calls = _load_jsonl(wonder / "tool-calls.jsonl")
@@ -99,7 +102,10 @@ def analyze(project: Path, exhaust_iters: int) -> dict:
         if k == "PriorityWindowOpenEvent" and e.get("phase_name") == IMPLEMENT_PHASE:
             open_at[a] = _parse(e["timestamp"])
         elif k in ("AgentActEvent", "AgentPassEvent") and a in open_at:
-            spans.append((a, open_at.pop(a), _parse(e["timestamp"]), k == "AgentPassEvent"))
+            start = open_at.pop(a)
+            if since is not None and start < since:
+                continue
+            spans.append((a, start, _parse(e["timestamp"]), k == "AgentPassEvent"))
 
     def within(lst, a, b):
         return [t for t in lst if a <= t <= b]
