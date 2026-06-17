@@ -63,9 +63,12 @@ _DB_SURFACE_SYNONYMS = frozenset(
 )
 
 # Minimum length for a *lone* distinctive token to be trusted on its own —
-# guards against a single common word (e.g. a bare "Users" node) linking
-# every ticket that happens to mention it. Multi-token nodes bypass this.
-_MIN_SOLO_TOKEN_LEN = 5
+# guards against a single throwaway token (ui/db/id/api) linking every
+# ticket that mentions it. Set to 4: real component nouns like Time, News,
+# Auth, User are 4 chars and must link (ldr-ophanic M2: TimeCard/NewsCard
+# both missed their obvious tickets at 5). 3-and-under are almost always
+# non-distinctive (api, ui, db, id, css, dom). Multi-token nodes bypass it.
+_MIN_SOLO_TOKEN_LEN = 4
 
 _CAMEL_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -90,11 +93,23 @@ def _distinctive_tokens(name: str) -> frozenset[str]:
     )
 
 
+# A surface named as a navigation TARGET ("…redirect to sign-in") is
+# referenced, not built. Strip the nav verb + "to" + its destination word
+# so a sign-out ticket that redirects to sign-in doesn't link the SignIn
+# node, while "sign-up AND sign-in flows" (no nav verb) keeps both.
+# (ldr-ophanic M2: the sign-out tickets all say "redirect to sign-in".)
+_NAV_REF_RE = re.compile(
+    r"\b(?:redirect(?:s|ed)?|return(?:s|ed|ing)?|navigat\w+|back|forward)"
+    r"\s+to\s+[\w-]+"
+)
+
+
 def _title_tokens(title: str) -> frozenset[str]:
     # No stopword removal: ``in``/``up``/``on`` are real signal in
     # component names (signIN, signUP), and the subset test only ever
     # reads the node's tokens, so title noise is harmless.
-    return frozenset(t for t in _WORD_RE.findall(title.lower()) if len(t) >= 2)
+    cleaned = _NAV_REF_RE.sub(" ", title.lower())
+    return frozenset(t for t in _WORD_RE.findall(cleaned) if len(t) >= 2)
 
 
 def _layer_allows(layer: str, span: TicketStackSpan) -> bool:

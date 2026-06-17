@@ -493,8 +493,11 @@ def test_distinctive_tokens_drops_generic_suffix() -> None:
 def test_name_matches_requires_all_distinctive_tokens() -> None:
     assert _name_matches({"sign", "in"}, _title_tokens("Build the sign in form"))
     assert not _name_matches({"sign", "in"}, _title_tokens("Build the sign up form"))
-    # lone short token (<5) is not trusted alone.
-    assert not _name_matches({"news"}, _title_tokens("Add a news widget"))
+    # 4-char real nouns ARE trusted (Time/News card nodes must link).
+    assert _name_matches({"news"}, _title_tokens("Add a news widget"))
+    assert _name_matches({"time"}, _title_tokens("Time card client-side render"))
+    # 3-and-under lone tokens are not (throwaway: api/ui/db).
+    assert not _name_matches({"api"}, _title_tokens("Build the api layer"))
     # lone long token is.
     assert _name_matches({"dashboard"}, _title_tokens("Render the dashboard"))
 
@@ -582,3 +585,24 @@ def test_db_synonym_does_not_leak_to_ui_nodes() -> None:
     # The db node IS expanded.
     assert _name_matches({"users", "table"},
                          _title_tokens("users schema migration"), LAYER_DB)
+
+
+def test_nav_reference_target_does_not_link(tmp_path: Path) -> None:
+    # A sign-out ticket that says "redirect to sign-in" must NOT link the
+    # SignIn node (it references sign-in as a destination, doesn't build it).
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Sign In", _SIGNIN_OPH, layer=LAYER_UI)
+    _ticket(tmp_path, "Sign-out button on dashboard + redirect to sign-in",
+            stack_span="frontend")
+    assert link_tickets_to_nodes(tmp_path).created == []
+
+
+def test_conjunction_surface_still_links(tmp_path: Path) -> None:
+    # "Sign-up AND sign-in flows" builds both — the nav-ref strip must not
+    # eat a surface joined by "and".
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Sign In", _SIGNIN_OPH, layer=LAYER_UI)
+    _ticket(tmp_path, "Sign-up and sign-in flows with session handling",
+            stack_span="frontend")
+    created = link_tickets_to_nodes(tmp_path).created
+    assert any(c.node_name == "SignInForm" for c in created)
