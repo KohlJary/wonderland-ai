@@ -357,6 +357,29 @@ meetings:
       makes a claim the stories don't support, surface the gap
       so Rabbit can revise.
 
+      **Keep the diagram stack current (P21).** The milestone-plan
+      laid down an initial set of Ophanic layout diagrams — the
+      build-tracking map (the `.oph` files in your context). As you
+      compose features, the concrete component shape sharpens: a
+      feature may introduce a surface or component the initial stack
+      didn't draw, or split one drawn box into its real parts. When
+      that happens, ship a `diagram` decision to publish a new
+      diagram or update an existing one (same slug → updates in
+      place). Rules that make this worth doing:
+
+        - **Keep component names stable.** A node's identity (and the
+          ticket links that will hang off it downstream) is keyed on
+          its component name. Renaming ``Dashboard`` → ``DashboardView``
+          across a redraw orphans its links. Add and refine; don't
+          churn names.
+        - **One box per component, each in its own box** — the same
+          convention the milestone-plan diagrams follow, so node
+          extraction stays clean.
+        - **Only touch diagrams a feature actually changes.** Silence
+          on diagrams is correct when the existing stack already
+          covers the features you're composing. This is a refinement
+          pass, not a redraw.
+
     seeds:
       - from: any
         kinds: [project_context]
@@ -392,6 +415,12 @@ meetings:
       - from: scoping
         kinds: [story]
         consumed_by: feature
+      # P21 — the current diagram stack (milestone-plan's build-tracking
+      # map). Seeded so composition refines/extends it in place rather
+      # than re-drawing from scratch; node names stay stable, so the
+      # ticket links auto-attached downstream survive.
+      - from: any
+        kinds: [diagram]
 
     transition_emitted_to: proposed
     phases:

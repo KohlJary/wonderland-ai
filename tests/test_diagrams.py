@@ -438,3 +438,119 @@ def test_consolidate_noop_when_no_duplicates(tmp_path: Path) -> None:
     reg.write("Settings", _SETTINGS_OPH, layer=LAYER_UI)
     assert consolidate_diagrams(tmp_path, registry=reg) == []
     assert set(reg.list_slugs()) == {"dashboard", "settings"}
+
+
+# --------------------------------------------------------------------- #
+# Diagram-node ↔ ticket auto-linking (P21 chunk b)
+# --------------------------------------------------------------------- #
+
+from wonderland.diagrams.linking import (  # noqa: E402
+    _distinctive_tokens,
+    _name_matches,
+    _title_tokens,
+    link_tickets_to_nodes,
+)
+from wonderland.ticket import TicketPayload, TicketRegistry  # noqa: E402
+
+_SIGNIN_OPH = """# Sign In
+
+@desktop
+┌────────────────────────┐
+│ ┌────────────────────┐ │
+│ │ ◆SignInForm        │ │
+│ └────────────────────┘ │
+└────────────────────────┘
+"""
+
+_USERS_SCHEMA_OPH = """# Users Schema
+
+@default
+┌────────────────────────┐
+│ ┌────────────────────┐ │
+│ │ ◆UsersTable        │ │
+│ └────────────────────┘ │
+└────────────────────────┘
+"""
+
+
+def _ticket(tmp_path, title, *, stack_span="full-stack", slug_src="feat-x"):
+    return TicketRegistry(tmp_path).write(TicketPayload(
+        title=title, owner="tweedledum", tier="v1",
+        estimate="1d", description="d", sources=[slug_src],
+        stack_span=stack_span,
+    ))
+
+
+def test_distinctive_tokens_drops_generic_suffix() -> None:
+    assert _distinctive_tokens("DashboardPage") == {"dashboard"}
+    assert _distinctive_tokens("SignInForm") == {"sign", "in"}
+    # "table" is KEPT distinctive (DB discriminator).
+    assert _distinctive_tokens("UsersTable") == {"users", "table"}
+    # all-generic name -> empty (chrome, never matches).
+    assert _distinctive_tokens("ContentArea") == frozenset()
+
+
+def test_name_matches_requires_all_distinctive_tokens() -> None:
+    assert _name_matches({"sign", "in"}, _title_tokens("Build the sign in form"))
+    assert not _name_matches({"sign", "in"}, _title_tokens("Build the sign up form"))
+    # lone short token (<5) is not trusted alone.
+    assert not _name_matches({"news"}, _title_tokens("Add a news widget"))
+    # lone long token is.
+    assert _name_matches({"dashboard"}, _title_tokens("Render the dashboard"))
+
+
+def test_links_node_to_matching_ticket(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Sign In", _SIGNIN_OPH, layer=LAYER_UI)
+    _ticket(tmp_path, "Implement the sign-in form", stack_span="frontend")
+
+    result = link_tickets_to_nodes(tmp_path)
+    assert len(result.created) == 1
+    link = result.created[0]
+    assert link.node_name == "SignInForm"
+    # node_status now reflects a linked-but-unstarted ticket.
+    node = reg.read("sign-in").node_by_name("SignInForm")
+    assert DiagramLinks(tmp_path).node_status(node.guid) == STATUS_PENDING
+
+
+def test_layer_gate_blocks_cross_layer(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Sign In", _SIGNIN_OPH, layer=LAYER_UI)
+    # A backend-only ticket whose title would match by name — layer gate
+    # must keep a ui node off it.
+    _ticket(tmp_path, "Sign in form session backend", stack_span="backend")
+    assert link_tickets_to_nodes(tmp_path).created == []
+
+
+def test_table_discriminator(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Users Schema", _USERS_SCHEMA_OPH, layer=LAYER_DB)
+    _ticket(tmp_path, "Create users table migration", stack_span="backend")
+    _ticket(tmp_path, "Build the users API list endpoint", stack_span="backend",
+            slug_src="feat-y")
+    created = link_tickets_to_nodes(tmp_path).created
+    # UsersTable links the migration, NOT the API endpoint.
+    assert len(created) == 1
+    assert created[0].ticket_title == "Create users table migration"
+
+
+def test_chrome_node_stays_unlinked(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_OPH, layer=LAYER_UI)  # has ◆ContentArea
+    _ticket(tmp_path, "Build the content area wrapper", stack_span="frontend")
+    result = link_tickets_to_nodes(tmp_path)
+    # ContentArea is all-generic -> never linked.
+    assert all(l.node_name != "ContentArea" for l in result.created)
+    assert "dashboard:ContentArea" in result.unlinked_nodes
+
+
+def test_linking_idempotent(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Sign In", _SIGNIN_OPH, layer=LAYER_UI)
+    _ticket(tmp_path, "Implement the sign-in form", stack_span="frontend")
+    first = link_tickets_to_nodes(tmp_path)
+    second = link_tickets_to_nodes(tmp_path)
+    assert len(first.created) == len(second.created) == 1
+    node = reg.read("sign-in").node_by_name("SignInForm")
+    # No duplicate link rows.
+    assert len(DiagramLinks(tmp_path).links_for_node(node.guid)) == 1

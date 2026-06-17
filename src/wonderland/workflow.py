@@ -3015,6 +3015,10 @@ async def run_workflow(
         # migrating any links. Same cross-author dup as the ticket
         # surface-signature pass, one layer up.
         _maybe_fire_diagram_consolidation(workflow, runner)
+        # P21 (b): auto-link diagram nodes to the tickets that realize
+        # them, so the Diagrams pane reports live build progress. Runs
+        # AFTER consolidation so links land on surviving diagrams.
+        _maybe_fire_diagram_linking(workflow, runner)
     finally:
         set_active_milestone_scope(None)
         reset_active_branch_id(branch_token)
@@ -3057,13 +3061,15 @@ def _maybe_fire_within_feature_consolidation(
 def _maybe_fire_diagram_consolidation(
     workflow: "Workflow", runner: "Runner",
 ) -> None:
-    """P21 wiring — folds same-surface duplicate diagrams at the end of the
-    milestone-plan workflow (whose diagram-stack meeting has two authors
-    drawing the same pages). Best-effort; no-op when no dups exist or the
-    workflow doesn't produce diagrams.
+    """P21 wiring — folds same-surface duplicate diagrams. Fires for
+    milestone-plan (the diagram-stack meeting has two authors drawing the
+    same pages) and for tdd-design/tdd-decompose (where design publishes/
+    updates diagrams as features compose, which can re-introduce dups).
+    Runs before diagram-linking so links land on survivors. Best-effort;
+    no-op when no dups exist or the workflow doesn't touch diagrams.
     """
     name = (workflow.name or "").lower()
-    if name != "milestone-plan":
+    if name not in ("milestone-plan", "tdd-design", "tdd-decompose"):
         return
     project_root = getattr(runner, "project_root", None)
     if project_root is None:
@@ -3086,6 +3092,43 @@ def _maybe_fire_diagram_consolidation(
         import sys
 
         sys.stderr.write(f"[diagram-consolidation] error: {exc}\n")
+
+
+def _maybe_fire_diagram_linking(
+    workflow: "Workflow", runner: "Runner",
+) -> None:
+    """P21 wiring — auto-links diagram nodes to the tickets that build
+    them at the end of design-shaped workflows. This is what flips a node
+    from ``unlinked`` to ``pending`` once a realizing ticket exists, so
+    the Diagrams pane becomes a live build-progress map. Best-effort;
+    no-op when there are no diagrams or no tickets. Idempotent —
+    recomputed from scratch each run, never a second source of truth.
+    """
+    name = (workflow.name or "").lower()
+    if name not in ("tdd-design", "tdd-decompose"):
+        return
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return
+    try:
+        from wonderland.diagrams.linking import link_tickets_to_nodes
+
+        result = link_tickets_to_nodes(project_root)
+        if result.created or result.unlinked_nodes:
+            import sys
+
+            sys.stderr.write(
+                f"[diagram-linking] workflow={name!r} {result.summary()}\n"
+            )
+            for link in result.created:
+                sys.stderr.write(
+                    f"  {link.diagram_slug}:{link.node_name} "
+                    f"-> {link.ticket_slug!r}\n"
+                )
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        import sys
+
+        sys.stderr.write(f"[diagram-linking] error: {exc}\n")
 
 
 def _maybe_fire_ticket_reattribution(

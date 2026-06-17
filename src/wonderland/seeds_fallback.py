@@ -555,6 +555,23 @@ def _load_observations(project_root: Path) -> list[Any]:
     return ObservationRegistry(project_root).list_observations()
 
 
+def _load_diagrams(project_root: Path) -> list[Any]:
+    """P21 — surface the current diagram stack into design meetings so
+    agents update/extend it rather than re-draw from scratch. The seed
+    body is each ``.oph`` file (via ``.path``), so the agent sees the
+    actual structure + component names (keeping names stable preserves
+    node GUIDs + their ticket links)."""
+    from wonderland.diagrams.registry import DiagramRegistry
+
+    registry = DiagramRegistry(project_root)
+    out: list[Any] = []
+    for slug in registry.list_slugs():
+        diagram = registry.read(slug)
+        if diagram is not None:
+            out.append(_RegistryRecordAdapter(diagram))
+    return out
+
+
 class _DirectiveRecord:
     """Adapter so the directive loader can return objects with the
     same shape as Story/Ticket/Feature records: ``.path``, ``.title``,
@@ -706,6 +723,11 @@ _LOADERS: dict[str, tuple[Callable[[Path], list[Any]], str, SpeechAct]] = {
     # what the operator wants and project context is operator-
     # authored.
     "project_context": (_load_project_context, "dodo", SpeechAct.DIRECTIVE),
+    # P21 diagrams — the structural build-tracker. milestone-plan lays
+    # the initial stack; tdd-design meetings read it via from: any
+    # kinds: [diagram] so composition can refine/extend it as features
+    # take shape. Speaker = Rabbit (canonical structure owner).
+    "diagram": (_load_diagrams, "white_rabbit", SpeechAct.DIAGRAM),
 }
 
 
