@@ -1005,8 +1005,9 @@ async def test_parse_with_retry_raises_when_retry_also_fails(tmp_path, capsys):
             "first attempt also prose",
             system=[],
             messages=[{"role": "user", "content": "go"}],
+            max_retries=1,  # explicit: this test is about raise-on-failure
         )
-    # Retry happened (one extra LLM call), then both attempts failed
+    # Retry happened (one extra LLM call), then both attempts failed.
     assert agent.llm._client.messages.create.await_count == 1
     assert "parse error on attempt 1" in capsys.readouterr().err
 

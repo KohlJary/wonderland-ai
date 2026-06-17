@@ -1125,16 +1125,28 @@ class WonderlandAgent:
         *,
         system: list,  # type: ignore[type-arg]
         messages: list,  # type: ignore[type-arg]
-        max_retries: int = 1,
+        max_retries: int = 3,
     ) -> _T:
         """Parse ``response_text`` with ``parse_fn``. On
-        ``ResponseParseError``, retry once by re-prompting the LLM with
-        the malformed response + a hint to respond with valid JSON only.
+        ``ResponseParseError``, retry up to ``max_retries`` times by
+        re-prompting the LLM with the malformed response + a hint to
+        respond with valid JSON only.
 
         The retry is a plain ``llm.complete`` call — no tools — because
         the goal is to recover the *structured response*, not to do more
         work. The agent already finished its tool loop (if any); this is
         purely about formatting the conclusion.
+
+        ``max_retries`` default is 3 (4 attempts). The dominant failure
+        here is the model returning an EMPTY response (Haiku, len=0 chars),
+        which is transient — a retry usually recovers — but with the old
+        budget of 1 retry, two empties in a row silenced the agent. That
+        compounds: Tweedledee had exactly 2 implement windows on a feature,
+        both came back empty, and it passed both → the frontend was never
+        built (it looked like the Tweedle "refused" to work, but it just
+        ran out of attempts). Same path silences Caterpillar on M8 and the
+        rate climbs with context size. Extra attempts only fire on the
+        failure path, so the common (clean-parse) case pays nothing.
 
         Returns the parsed model on success. Re-raises the parse error
         from the *final* attempt if all retries fail; the speak loop's
