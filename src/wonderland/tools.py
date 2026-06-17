@@ -1199,6 +1199,30 @@ class Tools:
             out = out[:MAX_TEST_OUTPUT_BYTES] + "\n[truncated]"
         return f"verify_imports findings for {path}:\n{out}"
 
+    def verify_wiring(self, diagram_slug: str | None = None) -> str:
+        """Diff the BUILT code against the intended structural diagram(s).
+
+        The hollow-verify catcher (P21 d). A diagram node records intent —
+        "the dashboard renders a WeatherCard". This reverse-adapts the
+        built front-end (which component renders/imports which) and reports
+        each node as:
+          - ``wired``    — built AND referenced by something else (hooked up)
+          - ``orphaned`` — built but NOTHING references it (the hollow
+            build: passes its own unit test, ships nothing the user sees)
+          - ``missing``  — intended, no file defines it (not built)
+        DB-layer nodes get a lighter presence check (table named in backend).
+
+        ``orphaned`` is the load-bearing finding — the exact failure the
+        first LDR pilot shipped (front-end components built but never wired
+        into the app). Run it during M8 review against the milestone's
+        diagrams; flag every orphaned/missing node back to the Tweedles.
+        ``diagram_slug`` limits to one diagram; omit to check all.
+        """
+        from wonderland.diagrams.wiring import format_findings, verify_wiring
+
+        findings = verify_wiring(self._root, diagram_slug=diagram_slug)
+        return format_findings(findings)
+
     def exec_smoke_probe(
         self,
         snippet: str,
@@ -1710,6 +1734,37 @@ class Tools:
                 },
             },
             {
+                "name": "verify_wiring",
+                "description": (
+                    "Diff the BUILT code against the intended structural "
+                    "diagram(s) — the hollow-build catcher. Reverse-adapts "
+                    "the front-end (which component renders/imports which) "
+                    "and reports each diagram node as: ``wired`` (built AND "
+                    "referenced — hooked up), ``orphaned`` (built but NOTHING "
+                    "renders/imports it — a hollow build that passes its own "
+                    "unit test yet ships nothing the user can see), or "
+                    "``missing`` (intended but no file defines it). DB-layer "
+                    "nodes get a presence check. ``orphaned`` is the exact "
+                    "failure the first LDR pilot shipped (components built but "
+                    "never wired into the app) — run this DURING M8 review "
+                    "and flag every orphaned/missing node back to the "
+                    "Tweedles. Omit ``diagram_slug`` to check every diagram."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "diagram_slug": {
+                            "type": "string",
+                            "description": (
+                                "Optional: limit the check to one diagram "
+                                "(its slug). Omit to check all diagrams."
+                            ),
+                        },
+                    },
+                    "required": [],
+                },
+            },
+            {
                 "name": "exec_smoke_probe",
                 "description": (
                     "Execute a Python snippet in the project root to "
@@ -1842,6 +1897,10 @@ class Tools:
                 )
             elif tool_name == "verify_imports":
                 result_str = self.verify_imports(tool_input["path"])
+            elif tool_name == "verify_wiring":
+                result_str = self.verify_wiring(
+                    tool_input.get("diagram_slug")
+                )
             elif tool_name == "exec_smoke_probe":
                 result_str = self.exec_smoke_probe(
                     tool_input["snippet"],

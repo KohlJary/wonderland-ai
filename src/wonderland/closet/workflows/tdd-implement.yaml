@@ -497,6 +497,20 @@ meetings:
       reproduces, and it's the one to ship FIRST when budget is
       tight. Do these checks in order:
 
+        0. **Run ``verify_wiring`` first (P21).** It reverse-adapts the
+           built front-end and diffs it against this milestone's structural
+           diagrams, reporting every node as ``wired`` / ``orphaned`` /
+           ``missing``. An ``orphaned`` node IS the built-but-never-mounted
+           bug above, found deterministically — a component file that
+           exists but nothing imports or renders (it passes its own unit
+           test and ships nothing the user sees). A ``missing`` node is
+           intended structure never built. Flag EVERY orphaned/missing node
+           as a request-changes finding — the Tweedles wire it in or build
+           it. The tool can't see SEMANTIC drift (a wired component showing
+           the wrong field), so it doesn't replace the cross-ticket reading
+           below — it makes the structural half cheap and certain so your
+           reading budget goes to the semantic half the tool can't reach.
+
         1. **Cross-ticket coherence FIRST** (full-stack features
            only; for backend/frontend-only features, restrict to
            the relevant side). Open these together BEFORE any
@@ -699,6 +713,12 @@ meetings:
       - from: any
         kinds: [review]
         tail: 2
+      # P21 (d) — the milestone's structural diagrams. Caterpillar runs
+      # verify_wiring (which reads them from disk) but also sees them here
+      # to interpret the findings + check nesting (is WeatherCard rendered
+      # where the diagram says it nests?). Milestone-scoped by the loader.
+      - from: any
+        kinds: [diagram]
 
     # No ``transition_iteration_to`` line on M8 anymore. The
     # substrate routes verdicts directly to the ticket lifecycle:

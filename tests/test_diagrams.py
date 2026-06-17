@@ -664,3 +664,97 @@ def test_tdd_implement_seeds_diagrams_to_tweedles() -> None:
     m7 = next(m for m in wf.meetings if m.id == "implementation")
     seed_kinds = {k for s in m7.seeds for k in s.kinds}
     assert "diagram" in seed_kinds
+
+
+# --------------------------------------------------------------------- #
+# Wiring-diff (P21 d) — reverse-adapt built code vs intended diagram
+# --------------------------------------------------------------------- #
+
+from wonderland.diagrams.wiring import (  # noqa: E402
+    STATUS_MISSING,
+    STATUS_ORPHANED,
+    STATUS_WIRED,
+    verify_wiring,
+)
+
+# Clean box-per-component dashboard: Navbar over a row of three cards.
+_DASH_CARDS_OPH = """# Dashboard
+
+@desktop
+┌──────────────────────────────────────────────────┐
+│ ┌────────────────────────────────────────────┐   │
+│ │ ◆Navbar                                    │   │
+│ └────────────────────────────────────────────┘   │
+│ ┌──────────┐ ┌──────────────┐ ┌──────────────┐   │
+│ │ ◆TimeCard│ │ ◆WeatherCard │ │ ◆NewsCard    │   │
+│ └──────────┘ └──────────────┘ └──────────────┘   │
+└──────────────────────────────────────────────────┘
+"""
+
+
+def _write_src(tmp_path: Path, name: str, body: str) -> None:
+    src = tmp_path / "src"
+    src.mkdir(exist_ok=True)
+    (src / name).write_text(body, encoding="utf-8")
+
+
+def test_wiring_flags_orphaned_component(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_CARDS_OPH, layer=LAYER_UI, slug="dashboard")
+    # Dashboard renders Navbar/TimeCard/WeatherCard but NOT NewsCard.
+    _write_src(tmp_path, "Dashboard.tsx",
+               "import Navbar from './Navbar';\n"
+               "import TimeCard from './TimeCard';\n"
+               "import WeatherCard from './WeatherCard';\n"
+               "export default function Dashboard(){return(<div>"
+               "<Navbar/><TimeCard/><WeatherCard/></div>);}")
+    for c in ("Navbar", "TimeCard", "WeatherCard", "NewsCard"):
+        _write_src(tmp_path, f"{c}.tsx",
+                   f"export default function {c}(){{return <div/>;}}")
+    by = {f.node: f.status for f in verify_wiring(tmp_path)}
+    assert by["WeatherCard"] == STATUS_WIRED
+    assert by["TimeCard"] == STATUS_WIRED
+    assert by["Navbar"] == STATUS_WIRED
+    # NewsCard.tsx exists but nothing renders/imports it → hollow.
+    assert by["NewsCard"] == STATUS_ORPHANED
+
+
+def test_wiring_flags_missing_component(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_CARDS_OPH, layer=LAYER_UI, slug="dashboard")
+    # Only Dashboard + WeatherCard exist; the rest are unbuilt.
+    _write_src(tmp_path, "Dashboard.tsx",
+               "import WeatherCard from './WeatherCard';\n"
+               "export default function Dashboard(){return <WeatherCard/>;}")
+    _write_src(tmp_path, "WeatherCard.tsx",
+               "export default function WeatherCard(){return <div/>;}")
+    by = {f.node: f.status for f in verify_wiring(tmp_path)}
+    assert by["WeatherCard"] == STATUS_WIRED
+    assert by["TimeCard"] == STATUS_MISSING
+    assert by["NewsCard"] == STATUS_MISSING
+
+
+def test_wiring_db_layer_presence(tmp_path: Path) -> None:
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Schema", _SCHEMA_OPH, layer=LAYER_DB, slug="schema")  # users, orders
+    (tmp_path / "src").mkdir(exist_ok=True)
+    (tmp_path / "src" / "models.py").write_text(
+        "class Users:\n    email: str\n", encoding="utf-8")
+    by = {f.node: f.status for f in verify_wiring(tmp_path)}
+    assert by["users"] == "present"
+    assert by["orders"] == STATUS_MISSING
+
+
+def test_tdd_implement_review_seeds_diagrams_and_tool() -> None:
+    # P21 (d): M8 review seeds the diagrams + verify_wiring is a tool.
+    from wonderland.workflow import load_workflow
+
+    wf = load_workflow("tdd-implement")
+    m8 = next(m for m in wf.meetings if m.id == "review")
+    assert "diagram" in {k for s in m8.seeds for k in s.kinds}
+
+    from wonderland.tools import Tools
+    schema_names = {t["name"] for t in Tools.tool_schemas()} if hasattr(
+        Tools, "tool_schemas"
+    ) else set()
+    assert hasattr(Tools, "verify_wiring")
