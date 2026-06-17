@@ -1267,3 +1267,45 @@ async def test_tool_loop_exhaustion_forces_final_response(tmp_path: Path) -> Non
     # Recovered the forced response — did NOT return "" (the silence bug).
     assert result != ""
     assert "Committed after exhausting" in result
+
+
+async def test_read_cache_dedups_identical_reads(tmp_path: Path) -> None:
+    """An identical read issued twice in one loop executes the underlying
+    tool ONCE and the duplicate is budget-free (Kohl's invalidate-on-write
+    ring-buffer idea). Without this, re-reading the same file while reasoning
+    through a dependency chain burns the read budget on content already held —
+    the waste that scales with project size at M8."""
+    read_calls: list[str] = []
+
+    def _execute(name, tool_input, agent_id=None):
+        if name == "read_file":
+            read_calls.append(tool_input.get("path"))
+            return "FILE CONTENTS"
+        return "ok"
+
+    tools = MagicMock()
+    tools.tool_definitions = MagicMock(return_value=[])
+    tools.execute = _execute
+
+    read_a = {
+        "content": [{"type": "tool_use", "id": "r1", "name": "read_file",
+                     "input": {"path": "a.txt"}}],
+        "stop_reason": "tool_use",
+    }
+    final = '```json\n{"decision": "silence", "body": "done"}\n```'
+    # Same path read THREE times, then answer, with a read budget of only 2.
+    # Without the cache the 2nd real read would bring read_iters to 2 and the
+    # 3rd would exhaust → recovery forcing call (no "done"). With the cache the
+    # 2nd and 3rd are free hits, read_iters never passes 1, and the loop
+    # reaches the final response naturally.
+    llm = _mock_tool_use_llm(turns=[read_a, read_a, read_a, final])
+    dee = await _tweedledee(tmp_path, llm=llm)
+    dee._tools = tools
+
+    result = await dee._complete_with_tools(
+        [], [{"role": "user", "content": "go"}],
+        max_tool_iterations=20, max_read_iterations=2)
+
+    assert "done" in result
+    # Underlying read executed once; the duplicates were served from cache.
+    assert read_calls == ["a.txt"]

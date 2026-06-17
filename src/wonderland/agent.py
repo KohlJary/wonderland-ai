@@ -1047,10 +1047,25 @@ class WonderlandAgent:
 
         read_iters = 0
         productive_iters = 0
+        # Per-loop read cache (Kohl's ring-buffer idea, keyed for
+        # invalidate-on-write rather than evict-by-age). Re-reading the same
+        # file while reasoning through a dependency chain is the dominant
+        # source of read-budget waste; serving an identical read from the
+        # cache costs nothing and DOESN'T spend a read turn, so the read
+        # budget tracks UNIQUE surface area instead of total read calls —
+        # exactly the axis that scales with project size at M8.
+        read_cache: dict[str, str] = {}
+        # Absolute backstop: a fully-cached read turn is free, so a model that
+        # spins re-requesting the same file would never trip the read/write
+        # caps. total_iters always bumps and bounds that pathology.
+        total_iters = 0
+        _hard_iter_cap = max_read_iterations + max_tool_iterations + 15
         while (
             productive_iters < max_tool_iterations
             and read_iters < max_read_iterations
+            and total_iters < _hard_iter_cap
         ):
+            total_iters += 1
             # Flip back to AWAITING_RESPONSE before each LLM call. On the
             # first iteration this is a no-op (speak() already set us
             # there); on subsequent iterations we're transitioning back
@@ -1075,6 +1090,10 @@ class WonderlandAgent:
             assistant_blocks: list[dict] = []
             tool_results: list[dict] = []
             tool_names: set[str] = set()
+            # Did this turn perform any REAL (non-cached) read? A turn whose
+            # reads were all cache hits did no work → it shouldn't spend a
+            # read turn (see classification below).
+            any_real_read = False
             for block in content_blocks:
                 btype = getattr(block, "type", None)
                 if btype == "text":
@@ -1091,27 +1110,56 @@ class WonderlandAgent:
                     )
                     try:
                         tool_input = dict(block.input) if block.input else {}
-                        tool_output = self._tools.execute(
-                            block.name,
-                            tool_input,
-                            agent_id=self.identity.name,
+                        is_read = block.name in _READ_ONLY_TOOLS
+                        cache_sig = (
+                            block.name
+                            + ":"
+                            + json.dumps(tool_input, sort_keys=True, default=str)
+                            if is_read
+                            else None
                         )
-                        if block.name == "write_file":
-                            path = tool_input.get("path")
-                            if isinstance(path, str):
-                                self._last_write_file_paths.append(path)
-                        # T-ab57: cap tool result size to prevent within-
-                        # deliberation context bloat. Each tool result stays
-                        # in loop_messages for all subsequent LLM calls in
-                        # this deliberation (~5-13 calls typical), so an
-                        # untruncated 35K grep or 65K git_diff multiplies
-                        # its cost across many cache_read cycles.
-                        # obol-260522-1 cost analysis: 52% of tweedle
-                        # tool-result bytes were above 5K (concentrated
-                        # in grep + read_file + git_diff long tail).
-                        tool_output = _maybe_truncate_tool_result(
-                            tool_output, block.name
-                        )
+                        if cache_sig is not None and cache_sig in read_cache:
+                            # Identical read already served this loop — free.
+                            tool_output = read_cache[cache_sig]
+                        else:
+                            if is_read:
+                                any_real_read = True
+                            tool_output = self._tools.execute(
+                                block.name,
+                                tool_input,
+                                agent_id=self.identity.name,
+                            )
+                            if block.name == "write_file":
+                                path = tool_input.get("path")
+                                if isinstance(path, str):
+                                    self._last_write_file_paths.append(path)
+                                    # Invalidate-on-write: drop any cached read
+                                    # of this path, plus tree/content-level
+                                    # reads (list_files/grep) a write can
+                                    # change. Staleness here would serve the
+                                    # pre-write file — actively harmful.
+                                    for k in list(read_cache):
+                                        if (
+                                            path in k
+                                            or k.startswith("list_files:")
+                                            or k.startswith("grep:")
+                                        ):
+                                            read_cache.pop(k, None)
+                            # T-ab57: cap tool result size to prevent within-
+                            # deliberation context bloat. Each tool result
+                            # stays in loop_messages for all subsequent LLM
+                            # calls in this deliberation (~5-13 calls typical),
+                            # so an untruncated 35K grep or 65K git_diff
+                            # multiplies its cost across many cache_read
+                            # cycles. obol-260522-1 cost analysis: 52% of
+                            # tweedle tool-result bytes were above 5K
+                            # (concentrated in grep + read_file + git_diff
+                            # long tail).
+                            tool_output = _maybe_truncate_tool_result(
+                                tool_output, block.name
+                            )
+                            if cache_sig is not None:
+                                read_cache[cache_sig] = tool_output
                         tool_results.append(
                             {
                                 "type": "tool_result",
@@ -1134,7 +1182,10 @@ class WonderlandAgent:
             # check / mixed turn is progress → spend the (tight) convergence
             # budget.
             if tool_names and tool_names <= _READ_ONLY_TOOLS:
-                read_iters += 1
+                # Fully-cached read turn (no real read) is free — don't spend
+                # a read turn on content we already had.
+                if any_real_read:
+                    read_iters += 1
             else:
                 productive_iters += 1
 
