@@ -633,3 +633,34 @@ def test_orphan_ticket_not_linked(tmp_path: Path) -> None:
     created = link_tickets_to_nodes(tmp_path).created
     assert any("Implement" in c.ticket_title for c in created)
     assert all("orphan" not in c.ticket_title for c in created)
+
+
+def test_diagram_in_milestone_scope_matches_named_nodes() -> None:
+    # P21 seed scoping: a diagram is in-scope for a milestone iff one of its
+    # nodes is named in the milestone text.
+    from wonderland.seeds_fallback import _diagram_in_milestone_scope
+    from wonderland.diagrams.linking import _title_tokens
+
+    class _D:
+        def __init__(self, names):
+            self.nodes = [type("N", (), {"name": n}) for n in names]
+
+    weather_text = _title_tokens(
+        "Weather card renders cached conditions with stale indicator"
+    )
+    assert _diagram_in_milestone_scope(_D(["WeatherCard", "CardGrid"]), weather_text)
+    # auth diagram has no node named in the weather milestone → out of scope
+    assert not _diagram_in_milestone_scope(
+        _D(["SignInForm", "SignInPage"]), weather_text
+    )
+
+
+def test_tdd_implement_seeds_diagrams_to_tweedles() -> None:
+    # P21 (c): the M7 implementation meeting must seed the structural
+    # diagrams so the Tweedles build + wire components against the contract.
+    from wonderland.workflow import load_workflow
+
+    wf = load_workflow("tdd-implement")
+    m7 = next(m for m in wf.meetings if m.id == "implementation")
+    seed_kinds = {k for s in m7.seeds for k in s.kinds}
+    assert "diagram" in seed_kinds

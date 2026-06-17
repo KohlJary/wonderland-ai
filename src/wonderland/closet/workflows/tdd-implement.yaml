@@ -291,6 +291,31 @@ meetings:
       don't pull adjacent tickets' work into this iteration. The
       per_item: ticket scope is calibrated for atomic work.
 
+      **Build against the structural contract (P21).** The Ophanic
+      ``.oph`` diagrams in your context are this milestone's structural
+      map — the UI component tree and the DB schema the design settled
+      on. Your ticket realizes one or more of the components drawn there;
+      the component is named after what your ticket builds (a "weather
+      card" ticket realizes the ``◆WeatherCard`` node, a "users table"
+      ticket realizes ``◆UsersTable``). Find yours in the diagram, then:
+
+        - **Match its place in the tree.** If the diagram shows
+          ``◆WeatherCard`` nested inside ``◆CardGrid`` inside the
+          dashboard, your weather card is a child rendered by that grid —
+          not a standalone page. Keep the component name the diagram uses;
+          it's the contract the reviewer checks your code against.
+        - **WIRE IT IN — this is the load-bearing rule.** A component that
+          exists as a file but is never mounted into its parent is a
+          HOLLOW build: it passes its own unit test and ships nothing the
+          user can actually see. Your implementation is NOT done until the
+          component is really composed at the position the diagram shows —
+          the dashboard imports and renders the WeatherCard, the router
+          mounts the page, the endpoint is registered on the app. Building
+          the leaf without connecting it to the trunk is the exact failure
+          this structural layer exists to prevent. If you can't wire it in
+          because the parent isn't built yet, say so as a concern — don't
+          ship an orphaned component and call it green.
+
     seeds:
       - from: any
         kinds: [project_context]
@@ -330,6 +355,15 @@ meetings:
       - from: any
         kinds: [review]
         tail: 1
+      # P21 (c) — the milestone's structural diagrams (Ophanic .oph),
+      # milestone-scoped by the loader. The Tweedles build their component
+      # against this contract and wire it into its parent (the hollow-build
+      # fix — components built but never mounted into the app). Not
+      # ticket-sliced: the whole milestone map is cheap context, and the
+      # Tweedle locates their own component in it (the directive teaches
+      # the ticket-title → ◆Node correspondence).
+      - from: any
+        kinds: [diagram]
 
     # Same exit_condition shape as M6: implementation lands → meeting
     # exits regardless of phase. max_rotations tightened from 4→2 on
