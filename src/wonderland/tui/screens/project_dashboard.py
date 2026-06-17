@@ -2453,6 +2453,12 @@ class ProjectDashboardScreen(Screen[None]):
                 ticket_state = _ticket_state_for(
                     self.project.root_path, ticket.slug
                 )
+                # Hide aborted tickets — they're dead work (duplicates the
+                # design-time surface dedup culled, or abandoned tickets),
+                # not part of the feature's live scope. Showing them
+                # cluttered the tree and made culled features look busy.
+                if ticket_state is not None and ticket_state.name == "ABORTED":
+                    continue
                 if ticket.slug in self._marked_ticket_slugs:
                     ticket_label = (
                         f"[red]✗[/red] [strike]{ticket_title}[/strike]  "

@@ -222,13 +222,15 @@ class TestDerivedState:
         ticket_transition(tmp_path, "a", TicketState.IN_PROGRESS, by="system")
         assert get_state(tmp_path, slug) == FeatureState.IN_PROGRESS
 
-    def test_aborted_ticket_still_in_progress(
+    def test_aborted_ticket_excluded_from_rollup(
         self, tmp_path: Path
     ) -> None:
-        """ABORTED rolls up to IN_PROGRESS — the feature still has
-        work in flight from the operator's perspective (just stalled
-        and owing a retry call). The ticket-level ⚠ badge carries
-        the "needs attention" signal."""
+        """ABORTED tickets are dead — duplicates the design-time surface
+        dedup culled, or abandoned work — so they're EXCLUDED from the
+        feature rollup. A freshly-designed feature whose only non-pending
+        ticket is an aborted dup must stay DESIGNED, not read as
+        in_progress (which would queue it for implementation and pollute
+        the queue). The ticket-level ⚠ badge still marks the dead ticket."""
         from wonderland.ticket_lifecycle import (
             TicketState,
             transition as ticket_transition,
@@ -244,6 +246,29 @@ class TestDerivedState:
         ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
         ticket_transition(tmp_path, "a", TicketState.IN_PROGRESS, by="system")
         ticket_transition(tmp_path, "a", TicketState.ABORTED, by="system")
+        # 'a' aborted (dead), 'b' still pending → no live work → stays DESIGNED.
+        assert get_state(tmp_path, slug) == FeatureState.DESIGNED
+
+    def test_in_progress_ticket_alongside_aborted_is_in_progress(
+        self, tmp_path: Path
+    ) -> None:
+        """A genuinely in-flight ticket still drives the feature to
+        IN_PROGRESS — the aborted sibling is simply ignored, not blocking."""
+        from wonderland.ticket_lifecycle import (
+            TicketState,
+            transition as ticket_transition,
+        )
+
+        slug = "alpha"
+        _make_feature_and_tickets(tmp_path, slug, ticket_slugs=["a", "b"])
+        transition(tmp_path, slug, FeatureState.PROPOSED, by="rabbit")
+        transition(tmp_path, slug, FeatureState.IN_DESIGN, by="rabbit")
+        transition(tmp_path, slug, FeatureState.DESIGNED, by="system")
+        ticket_transition(tmp_path, "a", TicketState.QUEUED, by="operator")
+        ticket_transition(tmp_path, "a", TicketState.IN_PROGRESS, by="system")
+        ticket_transition(tmp_path, "a", TicketState.ABORTED, by="system")
+        ticket_transition(tmp_path, "b", TicketState.QUEUED, by="operator")
+        ticket_transition(tmp_path, "b", TicketState.IN_PROGRESS, by="system")
         assert get_state(tmp_path, slug) == FeatureState.IN_PROGRESS
 
     def test_all_tickets_done_derives_ready_for_review(

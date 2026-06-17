@@ -2096,10 +2096,18 @@ def _collect_per_item_items(
 
             ticket_to_feature = _ticket_to_feature_map(project_root)
             for item in items:
-                # Explicit ticket-level queue override: skip the
-                # feature-state gate entirely.
                 if get_ticket_state is not None and TicketState is not None:
                     tstate = get_ticket_state(project_root, item["slug"])
+                    # ABORTED tickets are dead — duplicates the design-time
+                    # surface dedup culled, or work the operator abandoned.
+                    # They must NEVER be iterated for implementation, even
+                    # when their parent feature is queued. (This is the
+                    # queue-pollution the operator hit: deduped dup tickets
+                    # were being picked up as implementable work.)
+                    if tstate == TicketState.ABORTED:
+                        continue
+                    # Explicit ticket-level queue override: skip the
+                    # feature-state gate entirely.
                     if tstate in (
                         TicketState.QUEUED,
                         TicketState.IN_PROGRESS,

@@ -297,6 +297,22 @@ def _derive_post_ticket_state(
         return None
     states = [get_ticket_state(project_root, t) for t in tickets]
 
+    # ABORTED tickets are DEAD, not live work. The surface dedup aborts
+    # duplicate tickets at DESIGN time (cross-feature / within-feature
+    # consolidation), so a freshly-designed feature routinely carries
+    # aborted dups alongside its live designed tickets. Rolling ABORTED up
+    # into IN_PROGRESS made those features read as mid-implementation
+    # straight out of design — which queued them prematurely and polluted
+    # the implementation queue. Drop aborted states entirely; the ⚠ badge
+    # on the ticket node still marks it in the tree. (A genuinely
+    # abandoned implementation ticket is surfaced by its own badge + the
+    # operator's retry flow, not by dragging the whole feature's state.)
+    states = [s for s in states if s != TicketState.ABORTED]
+    if not states:
+        # Every ticket was aborted → no live tickets → feature stays in
+        # its pre-ticket log state (e.g. designed).
+        return None
+
     # All untouched → no derivation, feature stays in its log state.
     if all(s in (None, TicketState.PENDING) for s in states):
         return None
@@ -305,11 +321,8 @@ def _derive_post_ticket_state(
     if all(s == TicketState.DONE for s in states):
         return FeatureState.READY_FOR_REVIEW
 
-    # Any in-flight or retry-pending → in_progress umbrella.
-    if any(
-        s in (TicketState.IN_PROGRESS, TicketState.ABORTED)
-        for s in states
-    ):
+    # Any in-flight → in_progress umbrella.
+    if any(s == TicketState.IN_PROGRESS for s in states):
         return FeatureState.IN_PROGRESS
 
     # Any queued, none active → queued.
