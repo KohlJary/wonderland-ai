@@ -758,3 +758,28 @@ def test_tdd_implement_review_seeds_diagrams_and_tool() -> None:
         Tools, "tool_schemas"
     ) else set()
     assert hasattr(Tools, "verify_wiring")
+
+
+def test_wiring_milestone_scoped(tmp_path: Path) -> None:
+    # P21 (d) refinement: verify_wiring only checks the ACTIVE milestone's
+    # diagrams, so an M1 review doesn't flag M2-M4 surfaces as missing.
+    import wonderland.workflow as wf
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Sign In", "# Sign In\n@d\n┌────────┐\n│ ◆SignIn│\n└────────┘\n",
+              layer=LAYER_UI, slug="sign-in")
+    reg.write("Dashboard",
+              "# Dashboard\n@d\n┌──────────────┐\n│ ◆WeatherCard │\n└──────────────┘\n",
+              layer=LAYER_UI, slug="dashboard")
+    ms = tmp_path / ".wonderland" / "milestones"
+    ms.mkdir(parents=True, exist_ok=True)
+    (ms / "milestone-01AAAAAA-m1-auth.md").write_text(
+        "## Milestone 01\n**Slug:** m1-auth\n**Goal:**\nKohl can sign in\n")
+    (tmp_path / "src").mkdir(exist_ok=True)
+    scope = type("S", (), {"slug": "m1-auth"})()
+    tok = wf.set_active_milestone_scope(scope)
+    try:
+        nodes = {f.node for f in verify_wiring(tmp_path)}
+    finally:
+        wf.set_active_milestone_scope(None)
+    assert "SignIn" in nodes
+    assert "WeatherCard" not in nodes  # M2 surface excluded from M1 review

@@ -142,7 +142,18 @@ def verify_wiring(
     """Diff built code against the intended diagram(s). ``diagram_slug``
     limits to one diagram; otherwise every diagram is checked."""
     registry = DiagramRegistry(project_root)
-    slugs = [diagram_slug] if diagram_slug else registry.list_slugs()
+    if diagram_slug:
+        slugs = [diagram_slug]
+    else:
+        slugs = registry.list_slugs()
+        # Milestone-scope: when a milestone is active (tdd-implement
+        # --milestone), only check diagrams whose nodes belong to it. An M1
+        # review otherwise flags every M2-M4 surface (dashboard cards,
+        # weather/news caches) as "missing" — true that they're unbuilt, but
+        # noise that buries the findings that matter for THIS milestone.
+        scoped = _milestone_scoped_slugs(project_root, registry, slugs)
+        if scoped is not None:
+            slugs = scoped
 
     # ---- frontend reference graph (built once) ----
     fe_files = _iter_files(project_root, src_dirs, _FRONTEND_EXT)
@@ -211,6 +222,47 @@ def verify_wiring(
                     f"or rendered — hollow build, not wired into the app",
                 ))
     return findings
+
+
+def _milestone_scoped_slugs(project_root, registry, slugs):
+    """Diagram slugs whose nodes belong to the active milestone (its
+    goal/done-when names at least one). Returns None when no milestone is
+    active (→ caller checks everything). Mirrors the diagram seed scoping so
+    review-relevance and seed-relevance agree."""
+    try:
+        from wonderland.workflow import get_active_milestone_scope
+
+        scope = get_active_milestone_scope()
+    except Exception:  # noqa: BLE001
+        return None
+    if scope is None or not getattr(scope, "slug", None):
+        return None
+    try:
+        from wonderland.diagrams.linking import _distinctive_tokens, _title_tokens
+        from wonderland.milestone import MilestoneRegistry
+    except Exception:  # noqa: BLE001
+        return None
+    mtokens = None
+    for rec in MilestoneRegistry(project_root).list_milestones():
+        if rec.slug == scope.slug:
+            try:
+                mtokens = _title_tokens(rec.path.read_text(encoding="utf-8"))
+            except OSError:
+                return None
+            break
+    if mtokens is None:
+        return None
+    kept = []
+    for slug in slugs:
+        diagram = registry.read(slug)
+        if diagram is None:
+            continue
+        if any(
+            (dt := _distinctive_tokens(n.name)) and dt <= mtokens
+            for n in diagram.nodes
+        ):
+            kept.append(slug)
+    return kept
 
 
 def _snake(name: str) -> str:
