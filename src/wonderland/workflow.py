@@ -7208,7 +7208,14 @@ def _synthesize_default_accept_review(
         from wonderland.diagrams.wiring import find_hollow_builds
 
         hollow_ui = [
-            h for h in find_hollow_builds(project_root, feature_slug=feature_slug)
+            h for h in find_hollow_builds(
+                project_root,
+                feature_slug=feature_slug,
+                # At gate time the feature's tickets are still IN_PROGRESS
+                # (the accept hasn't marked them DONE yet) — include them or
+                # the gate sees nothing and the hollow build slips through.
+                include_in_progress=True,
+            )
             if h.layer == LAYER_UI
         ]
     except Exception:  # noqa: BLE001 — best-effort

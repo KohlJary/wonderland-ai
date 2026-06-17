@@ -304,19 +304,33 @@ class HollowBuild:
 
 
 def find_hollow_builds(
-    project_root: Path, *, feature_slug: str | None = None,
+    project_root: Path,
+    *,
+    feature_slug: str | None = None,
+    include_in_progress: bool = False,
 ) -> list[HollowBuild]:
     """The (b)+(d) cross-reference. A node is a CONFIRMED hollow build when a
-    DONE ticket is linked to it (the build-tracker says "this was built") yet
-    ``verify_wiring`` reports it ``missing``/``orphaned`` (the code says it
-    isn't there). The intersection is precise where either signal alone is
-    noisy: it ignores inlined chrome and naming-divergent components, because
-    those have no DONE ticket claiming them this pass.
+    ticket is linked to it that CLAIMS the work is shipping (the build-tracker
+    says "this was built") yet ``verify_wiring`` reports it ``missing``/
+    ``orphaned`` (the code says it isn't there). The intersection is precise
+    where either signal alone is noisy: it ignores inlined chrome and
+    naming-divergent components, because those have no claiming ticket.
 
-    Scoped to one feature's done tickets when ``feature_slug`` is given (M8
+    ``include_in_progress`` widens "claims shipping" from DONE-only to also
+    IN_PROGRESS. The M8 auto-approve gate needs this: at gate time the
+    feature's tickets are still IN_PROGRESS (M7 finished, the accept hasn't
+    marked them DONE yet), so a DONE-only check sees nothing and the hollow
+    build slips through to be marked done. Post-hoc analysis keeps the
+    default (DONE only).
+
+    Scoped to one feature's tickets when ``feature_slug`` is given (M8
     reviews per feature). Pure read-side."""
     from wonderland.diagrams.links import DiagramLinks
     from wonderland.ticket_lifecycle import TicketState, get_state as tstate
+
+    claims_states = {TicketState.DONE}
+    if include_in_progress:
+        claims_states.add(TicketState.IN_PROGRESS)
 
     registry = DiagramRegistry(project_root)
     links = DiagramLinks(project_root)
@@ -356,7 +370,7 @@ def find_hollow_builds(
                 continue
             done = []
             for tslug in links.ticket_slugs_for_node(node.guid):
-                if tstate(project_root, tslug) != TicketState.DONE:
+                if tstate(project_root, tslug) not in claims_states:
                     continue
                 if (
                     feature_slug is not None

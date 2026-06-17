@@ -817,3 +817,27 @@ def test_find_hollow_builds_cross_references_b_and_d(tmp_path: Path) -> None:
     assert "TimeCard" in hollow          # done ticket + not in code → hollow
     assert "WeatherCard" not in hollow   # done ticket + built+wired → ok
     assert "Navbar" not in hollow        # no done ticket → not flagged (noise filtered)
+
+
+def test_hollow_build_includes_in_progress_for_gate(tmp_path: Path) -> None:
+    # The M8 gate runs while tickets are still IN_PROGRESS (the accept hasn't
+    # marked them done yet). Default (DONE-only) misses them; the gate passes
+    # include_in_progress=True so the hollow build is caught before approval.
+    from wonderland.diagrams.links import DiagramLinks
+    from wonderland.diagrams.wiring import find_hollow_builds
+    from wonderland.ticket_lifecycle import TicketState, transition
+
+    reg = DiagramRegistry(tmp_path)
+    reg.write("Dashboard", _DASH_CARDS_OPH, layer=LAYER_UI, slug="dashboard")
+    _feature(tmp_path, "dash-feat")
+    tc = _ticket(tmp_path, "Frontend time card component", stack_span="frontend",
+                 slug_src="dash-feat")
+    DiagramLinks(tmp_path).link(
+        reg.read("dashboard").node_by_name("TimeCard").guid, tc.slug)
+    transition(tmp_path, tc.slug, TicketState.QUEUED, by="op")
+    transition(tmp_path, tc.slug, TicketState.IN_PROGRESS, by="op")  # NOT done
+    # default (DONE-only): in-progress ticket isn't counted → no hollow.
+    assert find_hollow_builds(tmp_path) == []
+    # gate mode: in-progress counts → TimeCard flagged.
+    hollow = {h.node for h in find_hollow_builds(tmp_path, include_in_progress=True)}
+    assert "TimeCard" in hollow
