@@ -741,3 +741,42 @@ def test_reattribution_refuses_unowned_surface(tmp_path: Path) -> None:
     homed = {slug for slug, _, _ in reattribute_orphaned_tickets(tmp_path)}
     assert "weather-orphan" in homed
     assert "news-orphan" not in homed
+
+
+def test_surface_dedup_keeps_distinct_responsibilities_same_path(
+    tmp_path: Path,
+) -> None:
+    """Same-path tickets with DIFFERENT responsibilities (serve HTML vs serve
+    data vs wire middleware) are not duplicates — they must all survive.
+    ldr-ophanic M2: the /dashboard data endpoint got culled as a 'dup' of the
+    HTML-serving endpoint, stranding the time card with no data to render."""
+    _write_feature(tmp_path, "dash-feat", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "serve-html",
+        "GET /dashboard serves the React SPA index.html shell",
+        ["dash-feat"], guid="01TKT001")
+    _write_ticket_titled(
+        tmp_path, "serve-data",
+        "GET /dashboard returns partner profile data and session validation",
+        ["dash-feat"], guid="01TKT002")
+    _write_ticket_titled(
+        tmp_path, "middleware",
+        "Wire session middleware to protect the /dashboard route",
+        ["dash-feat"], guid="01TKT003")
+    assert find_surface_duplicates(tmp_path) == []
+
+
+def test_surface_dedup_still_merges_same_responsibility(tmp_path: Path) -> None:
+    """Control: genuine reworded duplicates on the same path still merge."""
+    _write_feature(tmp_path, "auth-feat", ["story-x"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "signup-a",
+        "Implement POST /auth/signup endpoint with email validation",
+        ["auth-feat"], guid="01TKT001")
+    _write_ticket_titled(
+        tmp_path, "signup-b",
+        "POST /auth/signup endpoint with email and password validation",
+        ["auth-feat"], guid="01TKT002")
+    decs = find_surface_duplicates(tmp_path)
+    assert len(decs) == 1
+    assert {decs[0].kept_slug, *decs[0].retracted_slugs} == {"signup-a", "signup-b"}

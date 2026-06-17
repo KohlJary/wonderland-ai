@@ -563,12 +563,55 @@ def _surface_signature(title: str) -> str | None:
     return None
 
 
+# A surface signature alone is too coarse to merge on: one endpoint PATH
+# legitimately spawns several complementary tickets — serve the SPA shell,
+# return the JSON data, wire the session middleware — that all sign as
+# ``be|path:/dashboard``. Merging them eats the substantive ones (the data
+# endpoint) and keeps the trivial one (the HTML shell), which is how a
+# feature ends up with components that have no data to render. So WITHIN a
+# surface group we additionally require title similarity: two same-surface
+# tickets merge only if they describe the same RESPONSIBILITY, not just the
+# same path. Calibrated on ldr-ophanic M2: the four /dashboard tickets
+# (serve / data / weather / middleware) score 0.07–0.25 pairwise; genuine
+# reworded dups score 0.75+. Bias is deliberately toward NOT merging — a
+# surviving duplicate is recoverable, a culled data endpoint is a hollow
+# build.
+_SAME_SURFACE_TITLE_THRESHOLD = 0.30
+
+
+def _subcluster_by_title(
+    members: list[tuple[str, str, str | None]], threshold: float,
+) -> list[list[tuple[str, str, str | None]]]:
+    """Partition a same-surface group into clusters of title-similar tickets
+    (transitive closure of pairwise title-Jaccard ≥ threshold). Only members
+    of the same cluster are treated as duplicates of each other."""
+    n = len(members)
+    tokens = [_normalize_title_tokens(m[1]) for m in members]
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if _title_jaccard(tokens[i], tokens[j]) >= threshold:
+                parent[find(i)] = find(j)
+
+    clusters: dict[int, list[tuple[str, str, str | None]]] = defaultdict(list)
+    for i, m in enumerate(members):
+        clusters[find(i)].append(m)
+    return list(clusters.values())
+
+
 def find_surface_duplicates(
     project_root: Path,
 ) -> list[ConsolidationDecision]:
     """Tickets that build the same surface — grouped by surface signature
-    ALONE, across feature boundaries AND including orphaned tickets (no
-    resolvable parent). Pure read-side.
+    AND title-responsibility, across feature boundaries AND including
+    orphaned tickets (no resolvable parent). Pure read-side.
 
     Unification (T-ab79 follow-up): the M1-fullstack run showed surface
     dups leaking three ways — within a feature, across two features, and
@@ -612,16 +655,24 @@ def find_surface_duplicates(
     for sig, members in groups.items():
         if len(members) < 2:
             continue
-        # Prefer parented (parent is not None) → longest title → alpha slug.
-        members.sort(key=lambda m: (m[2] is None, -len(m[1]), m[0]))
-        winner_slug, _wtitle, winner_parent = members[0]
-        retracted = tuple(slug for slug, _t, _p in members[1:])
-        decisions.append(ConsolidationDecision(
-            kept_slug=winner_slug,
-            kept_parent_feature=winner_parent or "(orphan)",
-            retracted_slugs=retracted,
-            upstream_sources=frozenset({sig}),
-        ))
+        # Same surface is necessary but NOT sufficient — sub-cluster by
+        # title so only same-responsibility tickets merge (serve-HTML and
+        # serve-data on /dashboard stay distinct).
+        for cluster in _subcluster_by_title(
+            members, _SAME_SURFACE_TITLE_THRESHOLD
+        ):
+            if len(cluster) < 2:
+                continue
+            # Prefer parented (parent not None) → longest title → alpha slug.
+            cluster.sort(key=lambda m: (m[2] is None, -len(m[1]), m[0]))
+            winner_slug, _wtitle, winner_parent = cluster[0]
+            retracted = tuple(slug for slug, _t, _p in cluster[1:])
+            decisions.append(ConsolidationDecision(
+                kept_slug=winner_slug,
+                kept_parent_feature=winner_parent or "(orphan)",
+                retracted_slugs=retracted,
+                upstream_sources=frozenset({sig}),
+            ))
     return decisions
 
 
