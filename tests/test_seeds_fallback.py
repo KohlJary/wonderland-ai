@@ -762,3 +762,50 @@ def test_load_tickets_drops_when_all_sources_phantom(
     assert "fully-unmoored" not in slugs, (
         "ticket whose every source is phantom must be dropped"
     )
+
+
+def test_phantom_filter_keeps_feature_with_queued_work(tmp_path: Path) -> None:
+    """A feature whose upstream citations are ALL phantom must NOT be
+    dropped when it has queued/in-progress work — otherwise the operator's
+    queued tickets silently vanish from the implement lane (the
+    'No tickets to work' bug)."""
+    from wonderland.coverage import _parse_feature_sources
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.seeds_fallback import _filter_phantom_citations
+    from wonderland.ticket import TicketPayload, TicketRegistry
+    from wonderland.ticket_lifecycle import TicketState, transition
+
+    feat = FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="live time card", description="d", stack_span="full-stack",
+        tier="v1", personas=["p"], tickets=[],
+        sources=["ghost-story-that-does-not-exist-on-disk"], milestone=None))
+    tk = TicketRegistry(tmp_path).write(TicketPayload(
+        title="build the time card", owner="tweedledum", tier="v1",
+        estimate="1d", description="d", sources=[feat.slug]))
+    transition(tmp_path, tk.slug, TicketState.QUEUED, by="operator")
+
+    records = FeatureRegistry(tmp_path).list_features()
+    kept = _filter_phantom_citations(
+        records, tmp_path, citing_kind="feature",
+        sources_parser=_parse_feature_sources,
+    )
+    # Feature survives despite all-phantom sources, because its ticket is queued.
+    assert any(r.slug == feat.slug for r in kept)
+
+
+def test_phantom_filter_drops_feature_with_no_live_work(tmp_path: Path) -> None:
+    """Control: an all-phantom feature with NO queued/in-progress work is
+    still dropped (the exemption is scoped to live work only)."""
+    from wonderland.coverage import _parse_feature_sources
+    from wonderland.feature import FeaturePayload, FeatureRegistry
+    from wonderland.seeds_fallback import _filter_phantom_citations
+
+    feat = FeatureRegistry(tmp_path).write(FeaturePayload(
+        title="orphan feature", description="d", stack_span="full-stack",
+        tier="v1", personas=["p"], tickets=[],
+        sources=["ghost-story-that-does-not-exist-on-disk"], milestone=None))
+    kept = _filter_phantom_citations(
+        FeatureRegistry(tmp_path).list_features(), tmp_path,
+        citing_kind="feature", sources_parser=_parse_feature_sources,
+    )
+    assert all(r.slug != feat.slug for r in kept)

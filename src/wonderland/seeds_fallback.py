@@ -46,6 +46,40 @@ from wonderland.utterance import (
 )
 
 
+def _record_has_live_work(record: Any, project_root: Path, citing_kind: str) -> bool:
+    """True when a record represents operator-queued / in-flight work — a
+    feature/ticket in QUEUED or IN_PROGRESS lifecycle state. Such a record
+    must survive the phantom-citation filter even when its upstream
+    citations are stale, so queued work never silently drops out of the
+    implement lane. Best-effort: any lookup failure → not-live (filter
+    proceeds as before)."""
+    slug = getattr(record, "slug", None)
+    if not slug:
+        return False
+    try:
+        if citing_kind == "feature":
+            # Roll up the feature's TICKETS directly (not get_state, which
+            # short-circuits to None when the feature has no transition-log
+            # history) — a feature is live iff it has queued/in-flight work.
+            from wonderland.feature_lifecycle import (
+                FeatureState,
+                _derive_post_ticket_state,
+            )
+
+            return _derive_post_ticket_state(project_root, slug) in (
+                FeatureState.QUEUED, FeatureState.IN_PROGRESS,
+            )
+        if citing_kind == "ticket":
+            from wonderland.ticket_lifecycle import TicketState, get_state
+
+            return get_state(project_root, slug) in (
+                TicketState.QUEUED, TicketState.IN_PROGRESS,
+            )
+    except Exception:  # noqa: BLE001 — best-effort
+        return False
+    return False
+
+
 def _filter_phantom_citations(
     records: list[Any],
     project_root: Path,
@@ -124,8 +158,25 @@ def _filter_phantom_citations(
             sources, project_root, citing_kind=citing_kind,
         )
         if phantoms and len(phantoms) == len(sources):
-            # FULLY unanchored — every source is a phantom. Drop
-            # with WARNING so the operator sees the cleanup.
+            # Exemption: never strand operator-queued work. A feature or
+            # ticket the operator has QUEUED (or that's IN_PROGRESS) is LIVE
+            # regardless of whether its upstream story/feature citations
+            # still resolve — the citations can go stale across design
+            # re-runs while the downstream work the operator queued stays
+            # valid. Dropping it here is how queued tickets silently vanish
+            # from the implement lane ("no tickets to work" with no reason).
+            if _record_has_live_work(record, project_root, citing_kind):
+                logging.warning(
+                    "seeds_fallback KEEPING %s %r despite all-phantom "
+                    "sources %s — it has queued/in-progress work, so it's "
+                    "live. The **Sources:** line is stale (fix it when "
+                    "convenient), but the work is NOT dropped.",
+                    citing_kind, record.slug, phantoms,
+                )
+                clean.append(record)
+                continue
+            # FULLY unanchored AND no live work — drop with WARNING so
+            # the operator sees the cleanup.
             logging.warning(
                 "seeds_fallback dropping %s %r — ALL %d sources are "
                 "phantom citations: %s. The artifact is fully "
