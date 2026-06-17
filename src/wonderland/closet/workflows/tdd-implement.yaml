@@ -723,7 +723,13 @@ meetings:
     # No ``transition_iteration_to`` line on M8 anymore. The
     # substrate routes verdicts directly to the ticket lifecycle:
     #   - accept → tickets IN_PROGRESS → DONE
-    #   - request-changes / block → tickets IN_PROGRESS → ABORTED
+    #   - request-changes / block → original tickets IN_PROGRESS → DONE,
+    #     AND the review's findings are synthesized into NEW follow-up
+    #     tickets transitioned to QUEUED (see _find_blocking_reviews +
+    #     the follow-up synthesis path). M8 does NOT abort tickets — the
+    #     rework is captured as fresh queued work, nothing is stranded.
+    #     (ABORTED is reserved for design-time culls: dedup consolidation
+    #     + scope-leak retraction, plus operator-manual kill.)
     # Feature state then derives from the ticket rollup, so
     # all-tickets-DONE rolls up to ``ready_for_review`` without
     # needing an explicit feature transition here. (Previous
