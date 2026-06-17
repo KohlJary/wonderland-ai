@@ -1238,3 +1238,31 @@ async def test_live_dum_smoke(tmp_path: Path) -> None:
         with contextlib.suppress(asyncio.CancelledError):
             await run_task
         await dum.memory.close()
+
+
+async def test_tool_loop_exhaustion_forces_final_response(tmp_path: Path) -> None:
+    """On tool-budget exhaustion, the loop makes a final no-tools call to
+    RECOVER a response instead of returning '' (silence). This is the root
+    fix for the frontend Tweedle that reads past the cap without committing,
+    and for Caterpillar's worsens-with-scope M8 silence."""
+    from wonderland.tools import Tools
+
+    forced = ('```json\n{"decision": "silence", "body": '
+              '"Committed after exhausting the read budget."}\n```')
+    tool_turn = {
+        "content": [{"type": "tool_use", "id": "t", "name": "list_files",
+                     "input": {"directory": "."}}],
+        "stop_reason": "tool_use",
+    }
+    # 2 tool_use turns exhaust max_tool_iterations=2; the 3rd turn answers
+    # the forced no-tools call.
+    llm = _mock_tool_use_llm(turns=[tool_turn, tool_turn, forced])
+    dee = await _tweedledee(tmp_path, llm=llm)
+    dee._tools = Tools(tmp_path)
+
+    result = await dee._complete_with_tools(
+        [], [{"role": "user", "content": "go"}], max_tool_iterations=2)
+
+    # Recovered the forced response — did NOT return "" (the silence bug).
+    assert result != ""
+    assert "Committed after exhausting" in result

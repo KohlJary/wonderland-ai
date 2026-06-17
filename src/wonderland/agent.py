@@ -1036,7 +1036,7 @@ class WonderlandAgent:
         # turns. The caller's `messages` is preserved.
         loop_messages = list(messages)
 
-        for _ in range(max_tool_iterations):
+        for i in range(max_tool_iterations):
             # Flip back to AWAITING_RESPONSE before each LLM call. On the
             # first iteration this is a no-op (speak() already set us
             # there); on subsequent iterations we're transitioning back
@@ -1114,9 +1114,48 @@ class WonderlandAgent:
                         )
 
             loop_messages.append({"role": "assistant", "content": assistant_blocks})
+            # Near the iteration cap, force convergence. An agent still
+            # READING this deep — the frontend Tweedle working through the
+            # data-flow dependency chain, or Caterpillar reading file after
+            # file as the project grows — will otherwise exhaust the loop and
+            # return "" (silence) having committed nothing. This is the
+            # mechanism behind BOTH the Tweedle that never builds and
+            # Caterpillar's worsens-with-scope silence. Push it to commit
+            # while it still has tool calls left to do so.
+            remaining = max_tool_iterations - i - 1
+            if remaining <= 3:
+                tool_results.append({
+                    "type": "text",
+                    "text": (
+                        f"[substrate] Only {remaining} tool call(s) left. STOP "
+                        f"exploring — make your write_file calls now (if any) "
+                        f"and then emit your FINAL response JSON. Do not request "
+                        f"more reads; commit with what you have."
+                    ),
+                })
             loop_messages.append({"role": "user", "content": tool_results})
 
-        return ""
+        # Tool budget exhausted with no final non-tool response. Returning ""
+        # here drops the whole turn as silence — the failure that silently
+        # ships hollow frontends and auto-approves unreviewed features. Make
+        # ONE last no-tools call so the model commits whatever it gathered
+        # (any write_file calls it made already landed —
+        # working-tree-as-artifact). Best-effort; "" only as the true last
+        # resort.
+        try:
+            self._set_state(AgentState.AWAITING_RESPONSE)
+            loop_messages.append({
+                "role": "user",
+                "content": (
+                    "Tool budget exhausted. Stop calling tools and emit your "
+                    "FINAL response now as the JSON your protocol requires, "
+                    "based on everything you've done so far."
+                ),
+            })
+            forced = await self.llm.complete(system=system, messages=loop_messages)
+            return forced.text
+        except Exception:  # noqa: BLE001 — never let recovery crash the loop
+            return ""
 
     async def _parse_with_retry(
         self,
