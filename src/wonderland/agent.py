@@ -1157,6 +1157,15 @@ class WonderlandAgent:
         """
         assert self.llm is not None, "LLM must be wired to retry"
         last_exc: ResponseParseError | None = None
+        # An EMPTY response (len 0) on a large context is almost always
+        # deterministic — re-prompting just returns empty again, at full
+        # context cost. So cap CONSECUTIVE empties at 2 (the original + one
+        # retry): a transient empty still recovers, but a deterministic one
+        # doesn't burn the whole max_retries budget re-sending a huge prompt
+        # for nothing (the bill the frontend Tweedle was running up).
+        # Malformed-but-present responses reset the counter and keep the
+        # full retry budget — those recover.
+        consecutive_empty = 0
         for attempt in range(max_retries + 1):
             try:
                 parsed = parse_fn(response_text)
@@ -1171,9 +1180,23 @@ class WonderlandAgent:
                 return parsed
             except ResponseParseError as exc:
                 last_exc = exc
+                import sys
+
+                consecutive_empty = (
+                    consecutive_empty + 1
+                    if not (response_text or "").strip()
+                    else 0
+                )
+                if consecutive_empty >= 2:
+                    print(
+                        f"[{self.identity.name}] {consecutive_empty} consecutive "
+                        f"EMPTY responses — bailing (deterministic; not "
+                        f"re-sending the full context further)",
+                        file=sys.stderr,
+                    )
+                    raise
                 if attempt >= max_retries:
                     raise
-                import sys
 
                 print(
                     f"[{self.identity.name}] parse error on attempt {attempt + 1}, "

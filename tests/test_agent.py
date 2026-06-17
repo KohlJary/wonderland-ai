@@ -1128,3 +1128,22 @@ def test_tool_result_truncation_handles_non_string_defensively() -> None:
     structured: dict[str, str] = {"key": "value"}
     # Non-string input is returned as-is rather than raising.
     assert _maybe_truncate_tool_result(structured, "weird_tool") is structured  # type: ignore[arg-type]
+
+
+async def test_parse_with_retry_bails_on_consecutive_empties(tmp_path, capsys):
+    """Empty responses on a large context are deterministic — after 2
+    consecutive empties, bail instead of burning the full retry budget
+    re-sending the context (the bill the frontend Tweedle was running up)."""
+    agent = await _agent(tmp_path)
+    agent.llm = _scripted_llm("")  # the retry also comes back empty
+    with pytest.raises(_SampleParseError):
+        await agent._parse_with_retry(
+            _parse_sample,
+            "",  # initial response is empty too
+            system=[],
+            messages=[{"role": "user", "content": "go"}],
+            max_retries=3,  # would allow 3 retries, but 2 empties bail early
+        )
+    # Bailed after ONE retry call (2 consecutive empties), not 3.
+    assert agent.llm._client.messages.create.await_count == 1
+    assert "consecutive" in capsys.readouterr().err
