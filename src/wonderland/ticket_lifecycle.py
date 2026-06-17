@@ -284,6 +284,86 @@ def transition(
     return record
 
 
+def tombstone(
+    project_root: Path,
+    ticket_slug: str,
+    *,
+    by: str,
+    notes: str | None = None,
+) -> TransitionRecord | None:
+    """Record a ticket as ABORTED regardless of current state — the
+    administrative "this ticket's artifact was deleted" transition.
+
+    Unlike ``transition``, this bypasses ``LEGAL_TRANSITIONS``:
+    deletion is out-of-band (operator prune, registry cull) and can
+    hit a ticket in any state, and the whole point is to make the
+    append-only ledger reflect that the artifact is gone. Without it,
+    a pruned ticket's last state (often QUEUED) lingers as a *phantom*
+    — present in the ledger, absent on disk — which misleads any
+    consumer that reads the raw state log instead of the artifact set
+    (ldr-ophanic 2026-06-17: two pruned hollow-build fix-tickets stayed
+    QUEUED in the ledger and read as live work that no agent could see).
+
+    No artifact is touched and no ``**Status:**`` mirror is written —
+    the file is already gone. No-op when the ticket has no prior record
+    or is already ABORTED.
+    """
+    current = get_state(project_root, ticket_slug)
+    if current is None or current == TicketState.ABORTED:
+        return None
+    record = TransitionRecord(
+        ticket_slug=ticket_slug,
+        from_state=current,
+        to_state=TicketState.ABORTED,
+        by=by,
+        notes=notes,
+    )
+    _append_record(project_root, record)
+    return record
+
+
+def tombstone_orphaned_ticket_states(
+    project_root: Path, *, by: str = "substrate-sweep",
+) -> list[str]:
+    """Tombstone every ticket whose latest ledger state is non-terminal
+    (PENDING / QUEUED / IN_PROGRESS) but whose artifact is gone from
+    disk — a *phantom* left by a prune/cull that didn't update the
+    append-only ledger.
+
+    Read-side defence + retroactive cleanup in one. The feature rollup
+    and implement work-discovery already iterate the artifact set
+    (``_ticket_to_feature_map``), so they ignore phantoms; this sweep
+    protects the consumers that read the *raw ledger* and heals
+    phantoms already on disk so no one has to hunt them down by hand.
+    Scoped to non-terminal states: a pruned DONE ticket isn't claiming
+    pending work, and relabelling it ABORTED would misstate history.
+    Idempotent — swept phantoms become ABORTED and are skipped next run.
+    Returns the slugs tombstoned.
+    """
+    from wonderland.ticket import TicketRegistry
+
+    registry = TicketRegistry(project_root)
+    live = {
+        TicketState.PENDING,
+        TicketState.QUEUED,
+        TicketState.IN_PROGRESS,
+    }
+    slugs = {r.ticket_slug for r in all_transitions(project_root)}
+    tombstoned: list[str] = []
+    for slug in sorted(slugs):
+        if (
+            get_state(project_root, slug) in live
+            and registry.find_by_slug(slug) is None
+        ):
+            rec = tombstone(
+                project_root, slug, by=by,
+                notes="Orphaned ledger state — artifact absent (phantom sweep).",
+            )
+            if rec is not None:
+                tombstoned.append(slug)
+    return tombstoned
+
+
 # Hardcoded legal paths between ticket states — the state machine
 # is small enough that explicit paths beat runtime BFS. Each entry
 # names the intermediate states to traverse (not including the

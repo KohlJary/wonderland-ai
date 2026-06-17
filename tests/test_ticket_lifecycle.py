@@ -15,6 +15,8 @@ from wonderland.ticket_lifecycle import (
     back_fill_state,
     get_state,
     list_tickets_in_state,
+    tombstone,
+    tombstone_orphaned_ticket_states,
     transition,
     transitions_for,
 )
@@ -294,3 +296,61 @@ def test_transition_md_propagation_is_best_effort(tmp_path: Path) -> None:
     record.path.unlink()
     transition(tmp_path, record.slug, TicketState.IN_PROGRESS, by="system")
     assert get_state(tmp_path, record.slug) == TicketState.IN_PROGRESS
+
+
+def test_tombstone_aborts_from_any_state_bypassing_legal_gate(
+    tmp_path: Path,
+) -> None:
+    """A pruned ticket can be QUEUED — and QUEUED→ABORTED is NOT a legal
+    transition. tombstone() bypasses the gate so the ledger reflects the
+    deleted artifact instead of leaving a phantom QUEUED entry."""
+    transition(tmp_path, "ticket-x", TicketState.QUEUED, by="operator")
+    rec = tombstone(tmp_path, "ticket-x", by="operator", notes="pruned")
+    assert rec is not None
+    assert get_state(tmp_path, "ticket-x") == TicketState.ABORTED
+
+
+def test_tombstone_noop_on_unrecorded_or_already_aborted(
+    tmp_path: Path,
+) -> None:
+    assert tombstone(tmp_path, "never-existed", by="op") is None
+    transition(tmp_path, "ticket-y", TicketState.QUEUED, by="op")
+    assert tombstone(tmp_path, "ticket-y", by="op") is not None
+    assert tombstone(tmp_path, "ticket-y", by="op") is None  # already aborted
+
+
+def test_sweep_tombstones_phantom_leaves_real_and_terminal(
+    tmp_path: Path,
+) -> None:
+    """The phantom sweep tombstones a non-terminal ledger state whose
+    artifact is gone, but leaves (a) a real ticket whose artifact exists
+    and (b) a DONE/terminal ledger state (relabelling it ABORTED would
+    misstate history)."""
+    from wonderland.ticket import TicketPayload, TicketRegistry, TicketTier
+
+    reg = TicketRegistry(tmp_path)
+    real = reg.write(
+        TicketPayload(
+            title="Real ticket with an artifact",
+            owner="tweedledee",
+            tier=TicketTier.V1,
+            estimate="1d",
+            description="x",
+        )
+    )
+    transition(tmp_path, real.slug, TicketState.QUEUED, by="op")
+    # phantom: QUEUED in the ledger, no artifact on disk
+    transition(tmp_path, "phantom-queued", TicketState.QUEUED, by="op")
+    # terminal phantom: DONE, no artifact — out of sweep scope
+    transition(tmp_path, "done-phantom", TicketState.QUEUED, by="op")
+    transition(tmp_path, "done-phantom", TicketState.IN_PROGRESS, by="op")
+    transition(tmp_path, "done-phantom", TicketState.DONE, by="op")
+
+    swept = tombstone_orphaned_ticket_states(tmp_path, by="sweep")
+
+    assert swept == ["phantom-queued"]
+    assert get_state(tmp_path, "phantom-queued") == TicketState.ABORTED
+    assert get_state(tmp_path, real.slug) == TicketState.QUEUED
+    assert get_state(tmp_path, "done-phantom") == TicketState.DONE
+    # idempotent — a second sweep finds nothing new
+    assert tombstone_orphaned_ticket_states(tmp_path, by="sweep") == []

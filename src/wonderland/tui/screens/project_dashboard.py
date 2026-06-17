@@ -3590,6 +3590,7 @@ class ProjectDashboardScreen(Screen[None]):
         """Delete the marked tickets from disk, clear the mark set,
         refresh the tree. Reports the success count."""
         from wonderland.ticket import TicketRegistry
+        from wonderland.ticket_lifecycle import tombstone
 
         registry = TicketRegistry(self.project.root_path)
         deleted = 0
@@ -3597,6 +3598,18 @@ class ProjectDashboardScreen(Screen[None]):
         for slug in list(self._marked_ticket_slugs):
             if registry.delete_by_slug(slug):
                 deleted += 1
+                # Tombstone the ledger so the deleted ticket doesn't
+                # linger as a phantom (its last state — often QUEUED —
+                # would otherwise read as live work with no artifact
+                # behind it). Best-effort; the file delete is the
+                # primary action.
+                try:
+                    tombstone(
+                        self.project.root_path, slug, by="operator",
+                        notes="Pruned via dashboard — artifact deleted.",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             else:
                 failed.append(slug)
         self._marked_ticket_slugs.clear()
