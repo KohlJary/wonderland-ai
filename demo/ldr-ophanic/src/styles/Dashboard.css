@@ -1,0 +1,324 @@
+/**
+ * Dashboard layout: three-card grid
+ * 
+ * Structure:
+ * - dashboard-container: main flex container for the page
+ * - cards-grid: grid layout for time, weather, news cards
+ * - card: base card styling (border, padding, shadow)
+ * - .time-card, .weather-card, .news-card: individual card colors
+ * 
+ * Design goals:
+ * - Cards are visually distinct (different colors / icons)
+ * - Cards are responsive (stack on narrow viewports)
+ * - Cards have clear visual hierarchy (title, content area)
+ * - Whitespace is consistent across cards
+ */
+
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.dashboard-container h1 {
+  text-align: center;
+  color: white;
+  margin: 0 0 2rem 0;
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+}
+
+.card h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.card p {
+  margin: 0;
+  color: #666;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+}
+
+/**
+ * Time card: blue accent for time/clock concept
+ */
+.time-card {
+  border-left: 4px solid #667eea;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f4ff 100%);
+}
+
+.time-card h2 {
+  color: #667eea;
+}
+
+/**
+ * Weather card: teal accent for weather
+ */
+.weather-card {
+  border-left: 4px solid #17a2b8;
+  background: linear-gradient(135deg, #ffffff 0%, #e0f7f6 100%);
+}
+
+.weather-card h2 {
+  color: #17a2b8;
+}
+
+/**
+ * News card: orange accent for news
+ */
+.news-card {
+  border-left: 4px solid #fd7e14;
+  background: linear-gradient(135deg, #ffffff 0%, #fff5eb 100%);
+}
+
+.news-card h2 {
+  color: #fd7e14;
+}
+
+/**
+ * Responsive: on smaller screens, stack cards vertically
+ */
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 1rem;
+  }
+
+  .dashboard-container h1 {
+    font-size: 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .cards-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .card {
+    min-height: 220px;
+    padding: 1rem;
+  }
+
+  .card h2 {
+    font-size: 1.25rem;
+  }
+}
+
+/**
+ * Placeholder state: while loading, cards show minimal content
+ * This is the current state — cards will be filled in by subsequent tickets
+ */
+.card.placeholder p {
+  color: #999;
+  font-style: italic;
+}
+
+/**
+ * Weather card content states
+ */
+.weather-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.weather-card-content .partner-name {
+  font-size: 0.95rem;
+  color: #666;
+  margin: 0;
+}
+
+.weather-card-content .weather-display {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0.5rem 0 0 0;
+  font-size: 1.1rem;
+}
+
+.weather-card-content .temperature {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #17a2b8;
+}
+
+.weather-card-content .condition {
+  color: #555;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.weather-card-content .stale-indicator {
+  font-size: 0.85rem;
+  color: #999;
+  margin: 0.5rem 0 0 0;
+  font-style: italic;
+}
+
+.weather-card-content .fresh-indicator {
+  font-size: 0.85rem;
+  color: #17a2b8;
+  margin: 0.5rem 0 0 0;
+  font-weight: 500;
+}
+
+.weather-card .loading-state {
+  color: #999;
+  font-style: italic;
+}
+
+.weather-card .error-recoverable {
+  color: #fd7e14;
+  font-size: 0.95rem;
+}
+
+.weather-card .error-unrecoverable {
+  color: #dc3545;
+  font-size: 0.95rem;
+}
+
+/**
+ * Time card content styling (already rendered, adding for consistency)
+ */
+.time-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.time-card-content .partner-name {
+  font-size: 0.95rem;
+  color: #666;
+  margin: 0;
+}
+
+.time-card-content .time-display {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #667eea;
+  margin: 0.25rem 0 0 0;
+}
+
+.time-card-content .timezone-label {
+  font-size: 0.85rem;
+  color: #999;
+  margin: 0.25rem 0 0 0;
+}
+
+/**
+ * News card content styling
+ */
+.news-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.news-card-content .partner-name {
+  font-size: 0.95rem;
+  color: #666;
+  margin: 0;
+}
+
+.news-card-content .headlines-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.news-card-content .headline-item {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.news-card-content .headline-item:last-of-type {
+  border-bottom: none;
+}
+
+.news-card-content .headline-link {
+  color: #fd7e14;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  display: block;
+  margin-bottom: 0.25rem;
+  transition: color 0.2s;
+}
+
+.news-card-content .headline-link:hover {
+  color: #e67e0d;
+  text-decoration: underline;
+}
+
+.news-card-content .headline-source {
+  font-size: 0.8rem;
+  color: #999;
+  font-style: italic;
+  display: block;
+}
+
+.news-card-content .stale-indicator {
+  font-size: 0.85rem;
+  color: #999;
+  margin: 0.5rem 0 0 0;
+  font-style: italic;
+}
+
+.news-card-content .fresh-indicator {
+  font-size: 0.85rem;
+  color: #fd7e14;
+  margin: 0.5rem 0 0 0;
+  font-weight: 500;
+}
+
+.news-card .loading-state {
+  color: #999;
+  font-style: italic;
+}
+
+.news-card .error-recoverable {
+  color: #fd7e14;
+  font-size: 0.95rem;
+}
+
+.news-card .error-unrecoverable {
+  color: #dc3545;
+  font-size: 0.95rem;
+}

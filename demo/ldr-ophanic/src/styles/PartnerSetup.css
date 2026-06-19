@@ -1,0 +1,86 @@
+/**
+ * PartnerSetup page styling
+ * 
+ * Structure:
+ * - partner-setup-page: main page container
+ * - setup-container: centered content wrapper
+ * - setup-header: heading and subheading area
+ * - loading: loading state indicator
+ * 
+ * Design goals:
+ * - Centered, focused layout (like sign-up flow)
+ * - Clear hierarchy: header → form
+ * - Generous whitespace around form
+ * - Accessible on mobile and desktop
+ */
+
+.partner-setup-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 2rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  justify-content: center;
+}
+
+.setup-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  max-width: 500px;
+  width: 100%;
+  margin: 0 auto;
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.setup-header {
+  text-align: center;
+}
+
+.setup-header h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #333;
+  letter-spacing: -0.5px;
+}
+
+.setup-header p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #666;
+  line-height: 1.5;
+}
+
+.loading {
+  text-align: center;
+  padding: 2rem;
+  color: #667eea;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/**
+ * Responsive: adjust layout on smaller screens
+ */
+@media (max-width: 768px) {
+  .partner-setup-page {
+    padding: 1rem;
+  }
+
+  .setup-container {
+    padding: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .setup-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .setup-header p {
+    font-size: 0.9rem;
+  }
+}

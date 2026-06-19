@@ -1,0 +1,119 @@
+/**
+ * PartnerForm styling
+ * 
+ * Structure:
+ * - partner-form: main form container
+ * - form-group: label + input wrapper
+ * - error-message: error state feedback
+ * - submit-button: form submission button
+ * 
+ * Design goals:
+ * - Clear label hierarchy
+ * - Accessible input sizing (large touch targets)
+ * - Clear visual feedback on error
+ * - Disabled state during submission
+ */
+
+.partner-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #333;
+  text-align: left;
+}
+
+.form-group input {
+  padding: 0.75rem 1rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-group input:disabled {
+  background-color: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.form-group input::placeholder {
+  color: #bbb;
+}
+
+.error-message {
+  padding: 1rem;
+  background-color: #fee;
+  border-left: 4px solid #f44;
+  border-radius: 4px;
+  color: #c33;
+  font-size: 0.95rem;
+  margin-top: -0.5rem;
+}
+
+.submit-button {
+  padding: 0.875rem 1.5rem;
+  background-color: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  margin-top: 0.5rem;
+}
+
+.submit-button:hover:not(:disabled) {
+  background-color: #5568d3;
+  transform: translateY(-2px);
+}
+
+.submit-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submit-button:disabled {
+  background-color: #bbb;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/**
+ * Responsive: adjust spacing on smaller screens
+ */
+@media (max-width: 768px) {
+  .partner-form {
+    gap: 1.25rem;
+  }
+
+  .form-group input {
+    padding: 0.65rem 0.875rem;
+    font-size: 16px; /* Prevents zoom-on-focus on iOS */
+  }
+
+  .submit-button {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+  }
+}
