@@ -195,6 +195,13 @@ meetings:
     name: Advice from a Caterpillar
     goal: compose user-facing features from the M1 stories
     roster: [alice, white_rabbit, caterpillar]
+    # Rabbit is the primary feature author. Like milestone_plan, he
+    # re-emits his FULL feature list each rotation (refining slugs as he
+    # goes); _apply_feature_snapshot folds to his most-recent emission so
+    # earlier rotations' near-duplicate features don't accumulate (wwu
+    # 2026-06-19: 5+6 emissions → 11 features for ~6 surfaces, and
+    # decomposition left the stale half as "features with no tickets").
+    primary_speaker: white_rabbit
     # 0.40 → 0.60 (wwu 2026-06-19): the discussion phase's concern/
     # nudge ping-pong burned the whole 0.40 before commit could ship a
     # single feature — composition hit MEETING_BUDGET with 0 features on

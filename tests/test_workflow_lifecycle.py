@@ -1939,3 +1939,101 @@ class TestSourceResolves:
         from wonderland.workflow import _source_resolves
 
         assert _source_resolves("", set(), set()) is False
+
+
+class TestFeatureSnapshot:
+    """Regression for _apply_feature_snapshot (wwu 2026-06-19): Rabbit
+    re-emits his FULL feature list each composition rotation with slug
+    drift; without folding, every rotation accumulates as near-dup
+    features and decomposition leaves the stale half un-ticketed.
+    Mirrors the milestone snapshot."""
+
+    def _feat_utt(self, speaker, slugs):
+        from wonderland.utterance import (
+            AgentIdentity, Artifact, SpeechAct, Utterance, UtteranceContent,
+        )
+        return Utterance(
+            thread_id="composition",
+            speaker=AgentIdentity(name=speaker, constitution_version="0.1"),
+            addressed_to="caucus",
+            speech_act=SpeechAct.FEATURE,
+            content=UtteranceContent(
+                body="features",
+                artifacts=[
+                    Artifact(kind="feature", payload={"slug": s}) for s in slugs
+                ],
+            ),
+        )
+
+    def _seed(self, tmp_path, slugs):
+        d = tmp_path / ".wonderland" / "features"
+        d.mkdir(parents=True, exist_ok=True)
+        for i, slug in enumerate(slugs, start=1):
+            (d / f"feature-{i:03d}-{slug}.md").write_text(
+                f"## Feature {i:03d}: {slug}\n\n**Slug:** {slug}\n",
+                encoding="utf-8",
+            )
+
+    def _names(self, tmp_path):
+        return [p.name for p in (tmp_path / ".wonderland" / "features").iterdir()]
+
+    def test_folds_stale_rotation_to_latest_emission(self, tmp_path):
+        from wonderland.workflow import _apply_feature_snapshot
+        # The wwu slug-drift pattern: rot1 then rot2 re-frames the same
+        # surfaces under new slugs.
+        self._seed(tmp_path, [
+            "admin-auth", "wrestler-roster-mgmt", "championship-belt",
+            "admin-login", "wrestler-creation-edit", "championship-data-model",
+        ])
+        utts = [
+            self._feat_utt("white_rabbit",
+                           ["admin-auth", "wrestler-roster-mgmt", "championship-belt"]),
+            self._feat_utt("white_rabbit",
+                           ["admin-login", "wrestler-creation-edit", "championship-data-model"]),
+        ]
+        deleted = _apply_feature_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utts, primary_speaker="white_rabbit",
+        )
+        assert set(deleted) == {"admin-auth", "wrestler-roster-mgmt", "championship-belt"}
+        assert any("wrestler-creation-edit" in f for f in self._names(tmp_path))
+        assert not any("wrestler-roster-mgmt" in f for f in self._names(tmp_path))
+
+    def test_folds_non_primary_authors_features(self, tmp_path):
+        from wonderland.workflow import _apply_feature_snapshot
+        self._seed(tmp_path, ["rabbit-auth", "alice-auth"])
+        utts = [
+            self._feat_utt("alice", ["alice-auth"]),
+            self._feat_utt("white_rabbit", ["rabbit-auth"]),
+        ]
+        deleted = _apply_feature_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=utts, primary_speaker="white_rabbit",
+        )
+        assert deleted == ["alice-auth"]
+
+    def test_noop_without_primary_speaker(self, tmp_path):
+        # Scoped out of per-feature meetings (consolidation edits
+        # features incrementally — must not be snapshot-folded).
+        from wonderland.workflow import _apply_feature_snapshot
+        self._seed(tmp_path, ["a", "b"])
+        deleted = _apply_feature_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[self._feat_utt("white_rabbit", ["a"])],
+            primary_speaker=None,
+        )
+        assert deleted == []
+        assert len(self._names(tmp_path)) == 2
+
+    def test_noop_on_empty_active_set(self, tmp_path):
+        # Zero-artifact feature emission (LLM mis-ship) must not wipe
+        # the feature set.
+        from wonderland.workflow import _apply_feature_snapshot
+        self._seed(tmp_path, ["a", "b"])
+        deleted = _apply_feature_snapshot(
+            runner=_runner_with_root(tmp_path),
+            new_utterances=[self._feat_utt("white_rabbit", [])],
+            primary_speaker="white_rabbit",
+        )
+        assert deleted == []
+        assert len(self._names(tmp_path)) == 2

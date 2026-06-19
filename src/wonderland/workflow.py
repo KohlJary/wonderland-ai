@@ -6962,6 +6962,100 @@ def _apply_milestone_plan_snapshot(
     return deleted
 
 
+def _apply_feature_snapshot(
+    *,
+    runner: Runner,
+    new_utterances: list[Utterance],
+    primary_speaker: str | None = None,
+) -> list[str]:
+    """Snapshot semantics for ``feature`` emissions — the feature analog
+    of ``_apply_milestone_plan_snapshot``.
+
+    Rabbit composes features by re-emitting his FULL feature list each
+    composition rotation (refining slugs / framings as he goes), the
+    same way agents re-emit the milestone plan. Without folding, every
+    rotation's features accumulate as near-duplicates: wwu M1 shipped
+    two emissions of 5 then 6 features → 11 features for ~6 surfaces
+    (``wrestler-roster-management`` rot 1 vs ``wrestler-creation-edit``
+    rot 2, etc.), and decomposition only ticketed the canonical set,
+    leaving the stale half as "features with no tickets."
+
+    Snapshot rule (mirrors the milestone snapshot): for each speaker,
+    take their MOST-RECENT ``feature`` emission (their current full
+    list); the union across speakers is the active set; delete any
+    feature on disk whose slug is NOT in the active set.
+
+    **Scoped to primary-speaker meetings** (``primary_speaker`` set —
+    i.e. composition, once it designates white_rabbit). Returns [] when
+    no ``feature`` utterances are present, when ``primary_speaker`` is
+    None (so it never touches per-feature design meetings like
+    consolidation that edit features incrementally), or when the active
+    set would be empty (an LLM mis-ship of zero artifacts — bail rather
+    than wipe the whole feature set).
+    """
+    from wonderland.utterance import SpeechAct
+
+    project_root = getattr(runner, "project_root", None)
+    if project_root is None:
+        return []
+    if primary_speaker is None:
+        return []
+
+    per_speaker_latest: dict[str, list[str]] = {}
+    for u in new_utterances:
+        if u.speech_act is not SpeechAct.FEATURE:
+            continue
+        speaker_name = u.speaker.name if u.speaker else None
+        if not speaker_name:
+            continue
+        slugs: list[str] = []
+        for art in u.content.artifacts:
+            if art.kind != "feature":
+                continue
+            if not isinstance(art.payload, dict):
+                continue
+            slug = art.payload.get("slug")
+            if isinstance(slug, str) and slug:
+                slugs.append(slug)
+        # Last write per speaker wins — each emission is the agent's
+        # current full view of the feature set.
+        per_speaker_latest[speaker_name] = slugs
+
+    if not per_speaker_latest:
+        return []
+
+    # Primary-speaker mode: only the designated author's most-recent
+    # emission defines the active set.
+    per_speaker_latest = {
+        k: v for k, v in per_speaker_latest.items() if k == primary_speaker
+    }
+    if not per_speaker_latest:
+        return []
+
+    active: set[str] = set()
+    for slugs in per_speaker_latest.values():
+        active.update(slugs)
+    # Empty active set => the primary speaker emitted feature(s) with
+    # zero artifacts (LLM mis-ship). Bail without deleting — same guard
+    # as the milestone snapshot.
+    if not active:
+        return []
+
+    from wonderland.feature import FeatureRegistry
+
+    registry = FeatureRegistry(project_root)
+    deleted: list[str] = []
+    for record in registry.list_features():
+        if record.slug in active:
+            continue
+        try:
+            record.path.unlink()
+            deleted.append(record.slug)
+        except OSError:
+            pass
+    return deleted
+
+
 def _apply_review_verdict_routing(
     *,
     meeting: Meeting,
@@ -8141,6 +8235,11 @@ async def _run_one_meeting_inner(
                         new_utterances=phased_new_utterances,
                         primary_speaker=meeting.primary_speaker,
                     )
+                    _apply_feature_snapshot(
+                        runner=runner,
+                        new_utterances=phased_new_utterances,
+                        primary_speaker=meeting.primary_speaker,
+                    )
                     _apply_post_meeting_transitions(
                         meeting=meeting,
                         runner=runner,
@@ -8432,6 +8531,11 @@ async def _convene_one(
             thread_id=thread_id,
         )
         _apply_milestone_plan_snapshot(
+            runner=runner,
+            new_utterances=new_utterances,
+            primary_speaker=meeting.primary_speaker,
+        )
+        _apply_feature_snapshot(
             runner=runner,
             new_utterances=new_utterances,
             primary_speaker=meeting.primary_speaker,
