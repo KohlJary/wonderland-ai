@@ -303,6 +303,21 @@ meetings:
       ("app launches, profile can be created and selected")
       not just "schema exists."
 
+      **done_when conditions are observable OUTCOMES, never design
+      tasks.** A done_when is something you can point at and check is
+      true ("admin can create a wrestler and it persists", "a fan sees
+      the roster"). It is NOT a design decision to be made downstream:
+      do NOT write done_whens like "name the architectural seams",
+      "decide the match-composition model", "choose the image
+      abstraction", or "define the draft/published boundary." Those are
+      DESIGN work the tdd-design phase does — and if you bake them into
+      a milestone's completion conditions, the design agents try to
+      *resolve them during feature composition*, which spirals into
+      architecture deliberation and ships zero features (wwu
+      2026-06-19: a "name the four architectural seams" done_when
+      deadlocked composition). If you see an architectural seam worth
+      flagging, that's a `concern`, not a milestone done_when.
+
       **Milestone kind — foundation vs capability. This field
       materially changes how the milestone gets designed
       downstream.** It is not metadata; it is a routing decision
