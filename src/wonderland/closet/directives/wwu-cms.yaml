@@ -1,0 +1,116 @@
+name: wwu-cms
+title: Wonderland Wrestling Underground — fullstack content-management site
+description: |
+  A fourth reference demo directive (alongside notebook, obol, and
+  ldr-dashboard) chosen to exercise a complexity axis the others
+  don't: a content-management system with a genuinely RELATIONAL
+  data model and a multi-content-type authoring workflow. Where
+  ldr-dashboard stressed external-API integration + auth, this
+  stresses data-model depth + content lifecycle + an admin/public
+  surface split.
+
+  Why this directive earns its place:
+
+    - **Deepest relational model of any demo.** Wrestlers belong to
+      factions/stables AND tag teams (many-to-many), appear in
+      matches on opposing SIDES (not a flat list), hold titles over
+      time, and link up through events. Factions in particular force
+      real many-to-many modeling and surface in multiple views
+      (roster, faction page, event card). This is the directive most
+      likely to expose contract drift between Tweedles, because the
+      entities genuinely interrelate.
+    - **Match structure is a modeling trap, on purpose.** "2+
+      wrestlers per match" hides sides: 1-v-1, 2-v-2 tag, 2-v-1
+      handicap, fatal-four-way singles. A naive flat-list model is
+      wrong; the design phase has to represent competitor groupings.
+      Good test of whether decomposition catches the subtlety before
+      implementation pays for it.
+    - **Content lifecycle (draft → published)** across several
+      content types — a CMS primitive the prior CRUD/read-mostly
+      demos skipped entirely.
+    - **Admin/public surface split + roles.** Public browses; only
+      admins author. First demo with an authoring-permission
+      dimension on top of auth.
+    - **First demo with real media handling** (wrestler photos, event
+      posters, blog images) — image upload/storage as a first-class
+      concern.
+
+  For the paper: a third complexity data point for the cost thesis,
+  on a DIFFERENT shape of hard than ldr (relational depth + CMS
+  workflow vs external integration). If cost-per-milestone holds flat
+  here too, "cost held across a complexity jump" upgrades toward
+  "cost decoupled from the SHAPE of complexity, not just its amount."
+
+  Expected feature decomposition (rough; planner refines):
+    1. Foundation — admin auth + role check, public site shell,
+       wrestler roster (profiles, photos, attributes: alignment /
+       finisher / hometown).
+    2. Factions, tag teams, and titles — the relational layer;
+       group wrestlers, show stables/teams, track current champions
+       and title history.
+    3. Events & match cards — ordered matches per event, competitor
+       sides, optional stipulation, optional title-on-the-line;
+       public event-detail pages.
+    4. Calendar — upcoming events.
+    5. Blog — promo posts with draft/publish.
+    6. Newsletter — public signup / subscriber capture.
+
+  Explicit v1 scope calls (going with operator's leans):
+    - Public users do NOT have accounts; only admins log in. Fans
+      browse anonymously.
+    - Draft/publish IS in scope (events + blog at minimum). Scheduled
+      publishing is deferred.
+    - Image upload IS in scope (it's a visual site).
+    - Newsletter is COLLECT-ONLY in v1 — capture subscribers; the
+      app does not compose or send email.
+    - Forward-looking only: PAST-event results / win-loss records /
+      match outcomes are DEFERRED (calendar is upcoming-focused).
+    - Single admin role for v1, modeled so finer roles can extend.
+
+  Verification path: a developer can ``git clone``, follow the
+  README, browse the public roster / factions / upcoming events as a
+  fan, then log into the admin interface and create a wrestler, put
+  them in a faction, build an event card with a tag match and a title
+  match, save it as a draft, and publish it — all within a few
+  minutes of post-install work.
+
+body: |
+  I run an independent pro wrestling promotion called Wonderland
+  Wrestling Underground, and I want a website for it.
+
+  The heart of it is the roster. Every wrestler needs their own
+  profile — a photo, a bio, where they're from, whether they're a
+  fan favorite or a villain, their finishing move, that kind of
+  thing. A lot of our talent runs in factions or has regular tag
+  teams, and that's a huge part of the story, so I need to be able
+  to group wrestlers into stables and teams and show who's aligned
+  with who. We've also got championships — a handful of different
+  belts — and it should always be clear who's currently holding each
+  title, and a wrestler's profile should show what titles they've
+  held.
+
+  The other big piece is our events. For each show I put together a
+  card — basically an ordered lineup of matches. A match is usually
+  one-on-one, but plenty are tag matches or big multi-way brawls, so
+  a match can have two or more wrestlers (or whole teams) on
+  different sides. Some matches have a stipulation — a ladder match,
+  a cage match, that sort of thing — and some are for one of the
+  titles. Fans should be able to see what shows are coming up on a
+  calendar and click into any event to see the full card.
+
+  I also want a blog where I can write posts hyping up upcoming
+  shows, and we run a newsletter, so there should be a spot where
+  fans can sign up for it.
+
+  The most important thing: I need to run all of this myself.
+  Everything on the site — the wrestlers, the factions, the titles,
+  the events and their cards, the blog posts — I create and edit
+  through an admin login. I want to be able to save things as drafts
+  and only publish them once they're ready. Fans just browse the
+  public site; only me and anyone I give admin access to can change
+  anything.
+
+suggested_workflow: discovery
+suggested_skeleton: fullstack-fastapi-react
+tags: [fullstack, paper-demo, cms, auth, relational-model, draft-publish, media]
+category: demo
