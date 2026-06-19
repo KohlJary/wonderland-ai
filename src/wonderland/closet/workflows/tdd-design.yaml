@@ -195,7 +195,12 @@ meetings:
     name: Advice from a Caterpillar
     goal: compose user-facing features from the M1 stories
     roster: [alice, white_rabbit, caterpillar]
-    meeting_budget: 0.40
+    # 0.40 → 0.60 (wwu 2026-06-19): the discussion phase's concern/
+    # nudge ping-pong burned the whole 0.40 before commit could ship a
+    # single feature — composition hit MEETING_BUDGET with 0 features on
+    # repeated runs, even on a lean milestone. Headroom so commit always
+    # gets turns; paired with the discussion-rotation cap below.
+    meeting_budget: 0.60
     convenor_directive: |
       **SCOPE LOCK — read this first.** This composition meeting
       designs features for the ACTIVE MILESTONE ONLY (the one named
@@ -432,8 +437,14 @@ meetings:
       # before commit ever ships a feature artifact (observed in
       # the obol mock-data design pass: 19 calls of concerns + 0
       # features).
+      # max_rotations 3 → 2 (wwu 2026-06-19): discussion was running
+      # all 3 rotations of 3-agent ping-pong and starving commit. The
+      # exit_condition_artifact: feature was supposed to end discussion
+      # early, but Rabbit ships features in COMMIT not discussion, so it
+      # never fired. Cap discussion so the budget reaches commit, where
+      # features actually get composed.
       - name: discussion
-        max_rotations: 3
+        max_rotations: 2
         exit_condition_artifact: feature
       - name: commit
         max_rotations: 2
