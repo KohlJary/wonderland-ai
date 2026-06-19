@@ -455,8 +455,16 @@ def test_filter_strips_when_speech_act_in_workflow_disallowed(
 ) -> None:
     """Substrate guard: even when the meeting doesn't declare
     allowed_decisions, the workflow-level kill-list strips artifacts
-    of forbidden speech_acts. Validates the P15 follow-up that blocks
-    milestone_plan emissions during tdd-design."""
+    of forbidden speech_acts from the bus (a downstream no-op).
+    Validates the P15 follow-up that blocks milestone_plan emissions
+    during tdd-design.
+
+    NB (0.12.1): the strip suppresses the artifact but does NOT delete
+    the milestone FILE — a milestone_plan emission during tdd-design is
+    typically a RE-AFFIRMATION of the committed plan, and deleting its
+    files would wipe the real milestones (wwu 2026-06-19). Milestones
+    are owned only by the snapshot + retraction. A non-milestone leak's
+    file IS still deleted (see ...speech_act_not_allowed above)."""
     file_path = tmp_path / "milestone-99-leaked.md"
     file_path.write_text("leaked milestone body")
     set_active_disallowed_decisions(["milestone_plan"])
@@ -473,7 +481,8 @@ def test_filter_strips_when_speech_act_in_workflow_disallowed(
         )
         result = fake_agent._apply_allowed_decisions_filter(utt)
         assert result.content.artifacts == []
-        assert not file_path.exists()
+        # Stripped from the bus, but the milestone file is preserved.
+        assert file_path.exists()
     finally:
         clear_active_disallowed_decisions()
 
@@ -494,3 +503,47 @@ def test_filter_passthrough_when_speech_act_not_in_workflow_disallowed(
         assert len(result.content.artifacts) == 1
     finally:
         clear_active_disallowed_decisions()
+
+
+# --------------------------------------------------------------------- #
+# Milestone files are never deleted by the decision-filter
+# (regression: wwu 2026-06-19, 0.12.1 — the P21 diagram meeting wiped
+# the whole milestone plan when an agent re-emitted it while drawing it)
+# --------------------------------------------------------------------- #
+
+
+def test_milestone_file_survives_meeting_allowed_decisions_strip(
+    fake_agent, tmp_path: Path
+) -> None:
+    """The diagram meeting allows only ``diagram``. When an agent
+    re-emits the milestone_plan while drawing it, the artifact gets
+    stripped from the bus — but the milestone FILE (the planning
+    phase's committed plan) must survive. Milestones are owned solely
+    by the snapshot + explicit retraction, never the decision-filter."""
+    milestone_file = tmp_path / "milestone-001-foundation.md"
+    milestone_file.write_text(
+        "## Milestone 01: Foundation\n", encoding="utf-8"
+    )
+
+    set_thread_allowed_decisions("t-diagram", ["diagram"])
+    try:
+        utt = _utt(
+            thread_id="t-diagram",
+            speech_act=SpeechAct.MILESTONE_PLAN,
+            artifacts=[
+                Artifact(
+                    kind="milestone",
+                    payload={
+                        "slug": "foundation",
+                        "path": str(milestone_file),
+                    },
+                )
+            ],
+        )
+        out = fake_agent._apply_allowed_decisions_filter(utt)
+        # Artifact stripped from the bus (downstream no-op) ...
+        assert out.content.artifacts == []
+        # ... but the committed milestone file SURVIVES.
+        assert milestone_file.exists()
+    finally:
+        clear_thread_allowed_decisions("t-diagram")
