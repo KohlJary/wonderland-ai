@@ -1549,6 +1549,21 @@ class WonderlandAgent:
         """Best-effort delete of an artifact's on-disk file. Reads
         ``artifact.payload['path']`` when present. Silent on every
         failure path — this is cleanup, not the critical path."""
+        # Milestone files are owned EXCLUSIVELY by the milestone-plan
+        # snapshot (_apply_milestone_plan_snapshot — logged + guarded).
+        # The decision-filter must never delete them: an agent
+        # re-emitting the milestone_plan in a later meeting that
+        # disallows it — the P21 diagram-stack meeting drawing the
+        # milestones, or any tdd-design meeting where milestone_plan is
+        # on the kill-list — is RE-AFFIRMING the committed plan, not
+        # creating a stage-leak. Deleting the backing files here wipes
+        # the whole plan as a side effect (wwu 2026-06-19: the
+        # diagram-stack meeting silently deleted all milestones this
+        # way — directly, so not even a milestone-unlink.log entry).
+        # The artifact still gets stripped from the bus by the caller;
+        # only the destructive on-disk delete is skipped.
+        if artifact.kind == "milestone":
+            return
         if not isinstance(artifact.payload, dict):
             return
         raw_path = artifact.payload.get("path")
