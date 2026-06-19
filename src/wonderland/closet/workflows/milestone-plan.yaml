@@ -44,9 +44,15 @@ description: |
     proposed order would have the persona seeing something
     incomplete-feeling before something complete-feeling.
 
-  Target 3-7 milestones for a v1 cut. More than that and the
-  operator loses track; fewer than that and milestones aren't
-  pulling their weight as a sequencing layer.
+  Milestone count follows scope, not a fixed target. Each milestone
+  is one coherent, independently-shippable slice; the number falls out
+  of how many such slices the work has (a simple app: 3-4; a
+  content-heavy app with auth + several entity types + media + an
+  admin/public split: closer to 8-12). The failure mode to avoid is
+  over-bundling a fat foundation (auth + multiple entities + media in
+  one milestone), which starves the downstream design pass — see the
+  planning meeting's sizing directive. A soft ~3-12 is a sanity check,
+  not a goal.
 
 version: 1
 
@@ -243,7 +249,36 @@ meetings:
       Silence is also valid when you have nothing to add to a
       shipped draft.
 
-      **Target shape:** 3-7 milestones, each with:
+      **Sizing — let scope set the count, don't aim for a number.**
+      A milestone is ONE coherent slice that's independently
+      designable and shippable: a foundation others build on, or a
+      capability built on it. The number of milestones FOLLOWS the
+      work. A small app may be 3-4; a content-heavy app with auth,
+      several distinct entity types, media, and an admin/public split
+      is closer to 8-12. Size each milestone by what it bundles, not
+      by hitting a total.
+
+      **SPLIT a milestone when it bundles slices that could each ship
+      and be reviewed on their own.** The classic over-bundle is a fat
+      foundation. "Auth + wrestlers + championships + factions + media
+      + draft/publish" is NOT one foundation milestone — that's an auth
+      slice, a wrestler-substrate slice, and the relational entities
+      (factions, championships) as their own slice. Each distinct
+      entity type or cross-cutting concern (auth, media, draft/publish)
+      is a candidate slice. Cramming them together produces a milestone
+      whose design phase can't compose it in one pass — it over-
+      produces stories and the feature-composition meeting starves on
+      budget before shipping anything (wwu 2026-06-19: a 6-concern M1
+      emitted 17 stories and composition deadlocked). Conversely, don't
+      fragment: a slice that isn't independently meaningful or buildable
+      isn't its own milestone.
+
+      **Sanity check, not a target:** under ~3 and you're probably
+      bundling independent slices; past ~12 and you may be fragmenting
+      plumbing into ceremony. Within that range, the scope decides —
+      not the count.
+
+      Each milestone has:
         - stable slug (re-emit to amend an existing milestone)
         - 1-indexed order
         - human-readable name
