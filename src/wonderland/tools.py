@@ -1056,6 +1056,31 @@ class Tools:
     # closes. Running tests during M5 collapses the iteration distance.
     # ------------------------------------------------------------------ #
 
+    def _project_python(self) -> str:
+        """Interpreter to run the PROJECT's code/tests under.
+
+        Prefers the project's own venv (``.venv/bin/python``) over the
+        substrate's interpreter (``sys.executable``). The project's deps
+        and *pinned* dependency versions live in its venv; running
+        pytest or import-probes under the substrate's Python instead
+        hits ModuleNotFoundError on the project's deps (fastapi,
+        sqlalchemy, bcrypt, …) and version skew on shared ones (e.g. the
+        project pins pydantic 2.13 while the substrate runs 2.12) — the
+        recurring "test infra can't import the deps" failure Tweedles
+        report. The skeleton creates the venv + installs deps; this is
+        what points the tools at it. Falls back to ``sys.executable``
+        when the project has no venv.
+        """
+        for rel in (
+            Path(".venv") / "bin" / "python",
+            Path(".venv") / "bin" / "python3",
+            Path(".venv") / "Scripts" / "python.exe",  # Windows
+        ):
+            cand = self._root / rel
+            if cand.is_file():
+                return str(cand)
+        return sys.executable
+
     def run_tests(
         self,
         paths: list[str] | None = None,
@@ -1081,7 +1106,7 @@ class Tools:
         escape, timeout). A failing pytest run is *not* an error — the
         return string conveys it via the summary.
         """
-        cmd: list[str] = [sys.executable, "-m", "pytest", "--tb=short", "-q"]
+        cmd: list[str] = [self._project_python(), "-m", "pytest", "--tb=short", "-q"]
         if paths:
             for p in paths:
                 self._resolve(p)  # raises ToolError on sandbox escape
@@ -1288,7 +1313,7 @@ class Tools:
                 f"or file it as a test under tests/ via a finding "
                 f"with test_coverage_required=true"
             )
-        cmd = [sys.executable, "-c", snippet]
+        cmd = [self._project_python(), "-c", snippet]
         try:
             result = subprocess.run(
                 cmd,
