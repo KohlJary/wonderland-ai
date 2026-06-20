@@ -878,13 +878,45 @@ meetings:
       ADR must serve it. Stories paraphrase; the directive is
       verbatim.
 
-      **Cat — write ADR(s).** Each ADR names a structural decision
-      (storage shape, integration patterns, data flow) with explicit
-      tradeoffs (what the alternative would have been + why we're
-      not choosing it). Ground every claim in the directive +
-      features + tickets; don't architect for hypothetical
-      extensions. Use status "Proposed" so M5 can challenge if
-      contracts can't realize the ADR.
+      **Cat — first, the project conventions charter.** Look in your
+      context for an ADR titled "Project Conventions".
+
+      IF NONE EXISTS YET, the ADR you ship in this meeting IS that
+      charter — the cross-cutting rules every feature in this project
+      must follow so they don't each invent their own and drift apart
+      (one entity naming its publish flag `published` while the next
+      names it `is_published`; one page redirecting on 401 while the
+      next silently swallows it). Name, concretely:
+        - **Naming.** Boolean flags (pick `is_<x>` OR bare `<x>` —
+          once, for all); timestamps (`<x>_at`); the shape a
+          "publishable" entity takes (which fields, which states).
+        - **Routes.** The URL scheme — e.g. admin surfaces under
+          `/admin/<resource>`, public surfaces under
+          `/public/<resource>`. One scheme, stated once.
+        - **Error + auth handling.** What a client does on 401
+          (e.g. redirect to login), the standard error envelope.
+        - **Shared primitives — prefer these over rules.** Where a
+          convention can be enforced by a SHARED PIECE OF CODE instead
+          of a rule everyone must remember, mandate the primitive and
+          name it: an API client with a built-in 401 interceptor, a
+          `Publishable` mixin/base, one upload/storage helper. The
+          first feature to need it BUILDS it; every later feature
+          CONSUMES it. A convention you can't bypass beats one you
+          must remember to obey. Then name this milestone's structural
+          shape (storage, integration) in a section.
+
+      IF A "Project Conventions" ADR ALREADY EXISTS in your context,
+      it is settled law — do NOT re-author or restate it. Your ADR
+      this meeting addresses THIS milestone's structural decisions,
+      conforming to the established conventions. Only flag a charter
+      gap if a genuinely new cross-cutting need arises that it didn't
+      anticipate.
+
+      Each ADR names its decision with explicit tradeoffs (the
+      alternative + why we're not choosing it). Ground every claim in
+      the directive + features + tickets; don't architect for
+      hypothetical extensions. Use status "Proposed" so M5 can
+      challenge if contracts can't realize the ADR.
 
       **Queen — security ruling pass.** For each feature, name the
       threat model: what's the attack surface, what could go wrong,

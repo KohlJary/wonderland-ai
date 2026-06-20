@@ -316,6 +316,20 @@ meetings:
           because the parent isn't built yet, say so as a concern — don't
           ship an orphaned component and call it green.
 
+      **Follow the project conventions charter.** The "Project
+      Conventions" ADR in your context is the law for cross-cutting
+      choices — boolean/timestamp field names, the publishable shape,
+      the route scheme (`/admin/*` vs `/public/*`), what a client does
+      on 401, the standard error envelope. Match them EXACTLY: an
+      adjacent feature already built to them, and yours must agree or
+      the codebase drifts (its publish flag becomes `is_published`
+      while yours is `published`). Where the charter names a SHARED
+      PRIMITIVE — an API client with a 401 interceptor, a `Publishable`
+      mixin, one upload helper — USE IT; don't hand-roll your own. If
+      the primitive doesn't exist yet and your ticket is the first to
+      need it, BUILD it as the charter describes so the next feature
+      consumes it instead of reinventing it.
+
     seeds:
       - from: any
         kinds: [project_context]
@@ -342,6 +356,15 @@ meetings:
       - from: any
         kinds: [contract_note]
         tail: 5
+      # Conventions charter (the "Project Conventions" ADR authored at
+      # M4). The Tweedles BUILD the code, so they're where cross-feature
+      # divergence is born — each feature inventing its own publish-flag
+      # name / 401 handling / route scheme. M4's charter only stops that
+      # if it reaches the authoring agents; M8 already seeds adr, M7
+      # didn't. Seeding it here lets the Tweedles build to the declared
+      # conventions + consume the shared primitives the charter mandates.
+      - from: any
+        kinds: [adr]
       - from: tea-party
         kinds: [test_scenario]
       # Context-compression Lever C — tail: 1 keeps the MOST RECENT
@@ -543,10 +566,25 @@ meetings:
            (milestone-review / end-of-milestone coherence pass);
            it's not your job in this M8.
 
-        2. **Does the code match the contract?** Per-file: walk the
-           implementation against the ADR + contract notes.
-           Implementation that drifts from those commitments is a
-           concern even if tests pass — surface the gap.
+        2. **Does the code match the contract + conventions?**
+           Per-file: walk the implementation against the ADR +
+           contract notes. Implementation that drifts from those
+           commitments is a concern even if tests pass — surface the
+           gap. **Check the "Project Conventions" ADR explicitly:**
+           does this feature's field naming, route scheme, 401 /
+           error handling, and publishable shape MATCH the charter,
+           or did it invent its own — a `published` flag where the
+           charter says `is_published`, a `/wrestlers/published`
+           route where the charter says `/public/wrestlers`, a page
+           that swallows a 401 where the charter says redirect? Did
+           it hand-roll something the charter mandates as a SHARED
+           PRIMITIVE (its own fetch + 401 logic instead of the
+           declared API client)? Convention deviations ARE findings:
+           an adjacent feature already set the precedent, and
+           divergence is paid for later as a cross-feature refactor.
+           This is a cheap, certain check — the charter names the
+           rule, you match the diff against it — unlike the semantic
+           cross-ticket reading in #1.
 
         3. **Do the tests cover the acceptance criteria?** Each
            ticket has acceptance conditions; are there test
