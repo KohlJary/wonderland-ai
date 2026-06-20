@@ -963,6 +963,16 @@ meetings:
         kinds: [feature]
       - from: decomposition
         kinds: [ticket]
+      # Prior ADRs — load-bearing for the conventions charter's
+      # cross-milestone stability. A later milestone's M4 must SEE the
+      # "Project Conventions" ADR an earlier milestone authored, or the
+      # directive's "if a charter already exists, treat it as settled
+      # law" branch can never fire and each milestone re-authors its own
+      # (re-introducing the very cross-feature divergence the charter
+      # exists to prevent — now cross-MILESTONE). Also lets later M4s
+      # build structural ADRs that conform to earlier ones.
+      - from: any
+        kinds: [adr]
     # exit_condition mirrored to discussion + tightened rotations.
     # Squathero produced 11 ADRs at this meeting for \$1.48 (≈3.7×
     # the \$0.40 budget) — Cat kept shipping ADRs because nothing
