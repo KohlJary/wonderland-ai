@@ -504,6 +504,54 @@ def test_surface_signature_extraction() -> None:
     # No derivable surface → None (never deduped)
     assert _surface_signature("Set up Vite proxy and CORS config") is None
 
+    # T-ab80 — generic domain-noun fallback. Surfaces outside the action
+    # whitelist (a NEW domain's nouns) still get a bucket, gated on a
+    # surface-shape word so they generalize without a hand-maintained list.
+    assert _surface_signature("Frontend: Roster discovery page") == "fe|noun:roster"
+    assert _surface_signature("Roster discovery page component") == "fe|noun:roster"
+    assert _surface_signature("Faction directory page") == "fe|noun:faction"
+    # Gate holds: infra/config without a surface-shape word stays None even
+    # though it has nouns ("connection", "pooling").
+    assert _surface_signature("Configure database connection pooling") is None
+
+
+def test_cross_feature_domain_noun_dedup(tmp_path: Path) -> None:
+    """A domain surface NOT in the action whitelist (wwu's roster) still
+    dedups across features via the generic noun fallback — the wwu M2 leak
+    where 3 'Roster discovery page' tickets all signed None and all shipped.
+    """
+    _write_feature(tmp_path, "roster-discovery", ["story-a"], guid="01AAAAAA")
+    _write_feature(tmp_path, "wrestler-profile", ["story-b"], guid="01BBBBBB")
+    _write_ticket_titled(
+        tmp_path, "roster-1", "Frontend: Roster discovery page listing wrestlers",
+        ["roster-discovery"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "roster-2", "Roster discovery page component and layout",
+        ["wrestler-profile"], guid="01TKT002",
+    )
+    decisions = find_surface_duplicates(tmp_path)
+    assert len(decisions) == 1
+    assert {decisions[0].kept_slug, *decisions[0].retracted_slugs} == {
+        "roster-1", "roster-2",
+    }
+
+
+def test_cross_feature_distinct_domain_pages_not_merged(tmp_path: Path) -> None:
+    """Two DIFFERENT domain pages (a roster list vs a championship detail)
+    must not collapse just because both fall to the generic noun fallback —
+    different nouns → different buckets."""
+    _write_feature(tmp_path, "roster-discovery", ["story-a"], guid="01AAAAAA")
+    _write_ticket_titled(
+        tmp_path, "roster-pg", "Frontend: Roster discovery page",
+        ["roster-discovery"], guid="01TKT001",
+    )
+    _write_ticket_titled(
+        tmp_path, "champ-pg", "Frontend: Championship belt detail page",
+        ["roster-discovery"], guid="01TKT002",
+    )
+    assert find_surface_duplicates(tmp_path) == []
+
 
 def test_within_feature_dedup_clusters_same_surface(tmp_path: Path) -> None:
     """Two tickets under one feature building the same endpoint = dup."""
