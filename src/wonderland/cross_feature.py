@@ -522,20 +522,27 @@ _FE_RE = re.compile(
 # Ordered: first match wins. signup before signin so "sign-up" can't fall
 # through to a looser pattern. Each pattern is distinctive enough that a
 # signup ticket never matches the signin action and vice-versa.
+# NOT a catalog of known surfaces. The generic domain-noun fallback below
+# (_surface_signature) handles unknown domains — adding ``roster`` or
+# ``championship`` here would be redundant. This list is ONLY for surfaces
+# the generic first-salient-noun heuristic gets WRONG, of which there are
+# three kinds:
+#   1. Shared-noun confusables the tokenizer can't split — signup/signin both
+#      fall to noun:``sign`` (the up/in is eaten) and would false-merge. The
+#      explicit actions keep them distinct.
+#   2. Surface named by a non-surface-shape word the gate drops — ``schema``
+#      (a "Create SQLite schema" ticket has no page/card/endpoint word, so the
+#      fallback returns None; and its first noun would be ``sqlite``).
+#   3. Surface named by a NON-FIRST noun — ``profile`` ("Wrestler profile page"
+#      → fallback picks ``wrestler``, lumping profile with wrestler-list/edit;
+#      the explicit action keys it on the precise surface).
+# GUARDRAIL: before adding an entry, check the fallback first. If it already
+# yields a correct, distinct noun for your surface (it does for roster, faction,
+# weather/news cards, dashboard — all pruned T-ab80), DON'T add it here.
 _SURFACE_ACTIONS: tuple[tuple[str, str], ...] = (
     ("signup", r"sign[\s_-]?up|signup|registration|register"),
     ("signin", r"sign[\s_-]?in|signin|log[\s_-]?in|login"),
     ("signout", r"sign[\s_-]?out|log[\s_-]?out|logout"),
-    # Per-card surfaces — distinct so a news ticket never reads as a weather
-    # one. Before "dashboard" so "weather card on the dashboard" → weathercard,
-    # not dashboard. (T-ab78 follow-up: the M3 run reattributed an orphaned
-    # "News card: frontend rendering" into the WEATHER feature because both
-    # titles tokenize to ~{card, frontend, rendering, cached} — title-Jaccard
-    # can't tell time/weather/news cards apart; the surface can.)
-    ("timecard", r"time[\s_-]?card"),
-    ("weathercard", r"weather[\s_-]?card"),
-    ("newscard", r"news[\s_-]?card"),
-    ("dashboard", r"dashboard"),
     ("session-middleware", r"session middleware|middleware"),
     ("schema", r"\bschema\b|migration|\btable\b"),
     ("profile", r"profile"),

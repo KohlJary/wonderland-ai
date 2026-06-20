@@ -514,6 +514,19 @@ def test_surface_signature_extraction() -> None:
     # though it has nouns ("connection", "pooling").
     assert _surface_signature("Configure database connection pooling") is None
 
+    # T-ab80 — whitelist pruned to genuine disambiguators only. The card /
+    # dashboard surfaces (ldr-era domain nouns) now route through the generic
+    # fallback and MUST stay distinct (the reattribution invariant: a news
+    # orphan must never match a weather feature).
+    assert _surface_signature("Weather card frontend rendering") == "fe|noun:weather"
+    assert _surface_signature("News card frontend rendering") == "fe|noun:news"
+    assert _surface_signature("Time card component") == "fe|noun:time"
+    assert _surface_signature("Admin dashboard navigation page") == "fe|noun:dashboard"
+    # Genuine disambiguators retained: shared-noun confusables (sign), a
+    # non-surface-shape surface (schema), a non-first-noun surface (profile).
+    assert _surface_signature("Frontend: Sign-up form") == "fe|act:signup"
+    assert _surface_signature("Frontend: Sign-in form") == "fe|act:signin"
+
 
 def test_cross_feature_domain_noun_dedup(tmp_path: Path) -> None:
     """A domain surface NOT in the action whitelist (wwu's roster) still
