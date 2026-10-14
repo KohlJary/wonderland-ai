@@ -268,7 +268,7 @@ async def test_new_run_screen_pushes_settings_when_key_missing(
         screen.query_one("#directive-composer", TextArea).text = (
             "Build a /hello endpoint."
         )
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = str(tmp_path)
         screen.query_one("#save-checkbox", Checkbox).value = False
@@ -1726,26 +1726,11 @@ async def test_new_run_screen_enter_advances_through_form() -> None:
         description = screen.query_one("#description-composer", TextArea)
         assert description.has_focus
 
-        # From description → workflow.
+        # Form order follows NewRunScreen._FORM_ORDER: the workflow
+        # picker is now a DataTable (#workflow-table) placed after the
+        # save-as-preset controls, and project precedes budget.
+        # description → save checkbox
         screen._advance_from("description-composer")
-        await pilot.pause()
-        workflow = screen.query_one("#workflow-select", Select)
-        assert workflow.has_focus
-
-        # workflow → budget
-        screen._advance_from("workflow-select")
-        await pilot.pause()
-        budget = screen.query_one("#budget-input", Input)
-        assert budget.has_focus
-
-        # budget → project
-        screen._advance_from("budget-input")
-        await pilot.pause()
-        project = screen.query_one("#project-input", Input)
-        assert project.has_focus
-
-        # project → save checkbox
-        screen._advance_from("project-input")
         await pilot.pause()
         save_box = screen.query_one("#save-checkbox", Checkbox)
         assert save_box.has_focus
@@ -1756,9 +1741,29 @@ async def test_new_run_screen_enter_advances_through_form() -> None:
         save_name = screen.query_one("#save-name-input", Input)
         assert save_name.has_focus
 
+        # save-name input → workflow table
+        screen._advance_from("save-name-input")
+        await pilot.pause()
+        workflow = screen.query_one("#workflow-table", DataTable)
+        assert workflow.has_focus
+
+        # workflow → project
+        screen._advance_from("workflow-table")
+        await pilot.pause()
+        project = screen.query_one("#project-input", Input)
+        assert project.has_focus
+
+        # project → budget
+        screen._advance_from("project-input")
+        await pilot.pause()
+        budget = screen.query_one("#budget-input", Input)
+        assert budget.has_focus
+
         # End of form → action_go fires (without crashing on empty
         # directive — surfaces a notification).
-        screen._advance_from("save-name-input")
+        screen._advance_from("budget-input")
+        await pilot.pause()
+        screen._advance_from("go-button")
         await pilot.pause()
 
         await pilot.press("q")
@@ -1795,7 +1800,7 @@ async def test_new_run_screen_go_button_triggers_launch_flow(
         screen.query_one("#directive-composer", TextArea).text = (
             "Build a /hello endpoint."
         )
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = "/tmp"
         await pilot.pause()
@@ -1933,7 +1938,7 @@ async def test_new_run_screen_action_go_pushes_confirmation_modal(
         screen.query_one("#directive-composer", TextArea).text = (
             "Build a /hello endpoint."
         )
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = "/tmp"
         screen.query_one("#save-checkbox", Checkbox).value = False
@@ -1980,7 +1985,7 @@ async def test_new_run_screen_action_go_pushes_skeleton_picker_for_bare_root(
         screen.query_one("#directive-composer", TextArea).text = (
             "Build a /hello endpoint."
         )
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = str(nonexistent)
         screen.query_one("#save-checkbox", Checkbox).value = False
@@ -2030,7 +2035,7 @@ async def test_new_run_screen_action_go_blocks_without_api_key(
         screen.query_one("#directive-composer", TextArea).text = (
             "Build a /hello endpoint."
         )
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = str(tmp_path)
         screen.query_one("#save-checkbox", Checkbox).value = False
@@ -2051,6 +2056,7 @@ async def test_new_run_screen_action_go_blocks_without_api_key(
 
 
 async def test_new_run_screen_save_as_preset_persists_and_relists(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """T51 follow-up: when the save-as-preset checkbox is on and a
@@ -2062,6 +2068,9 @@ async def test_new_run_screen_save_as_preset_persists_and_relists(
     # Make the project root non-bare so we skip the skeleton picker
     # (T71) and exercise the save-as-preset path directly.
     (tmp_path / "src").mkdir()
+    # The preset save runs after the API-key pre-flight, so the test
+    # needs a key or action_go diverts to SettingsScreen first.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake-key-for-testing")
 
     app = WonderlandApp(show_welcome=False)
     async with app.run_test() as pilot:
@@ -2076,7 +2085,7 @@ async def test_new_run_screen_save_as_preset_persists_and_relists(
         composer.text = "Build a custom thing for testing."
         description = screen.query_one("#description-composer", TextArea)
         description.text = "A custom thing\nwith multi-line description."
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#save-checkbox", Checkbox).value = True
         screen.query_one("#save-name-input", Input).value = "custom-thing-test"
         await pilot.pause()
@@ -2126,7 +2135,7 @@ async def test_skeleton_picker_apply_lays_down_files_and_resumes_launch(
         screen.query_one("#directive-composer", TextArea).text = (
             "Build a thing."
         )
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = str(project)
         screen.query_one("#save-checkbox", Checkbox).value = False
@@ -2190,7 +2199,7 @@ async def test_skeleton_picker_skip_continues_launch_with_bare_root(
         assert isinstance(screen, NewRunScreen)
 
         screen.query_one("#directive-composer", TextArea).text = "Build."
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = str(project)
         screen.query_one("#save-checkbox", Checkbox).value = False
@@ -2241,7 +2250,7 @@ async def test_skeleton_picker_cancel_aborts_launch(
         assert isinstance(screen, NewRunScreen)
 
         screen.query_one("#directive-composer", TextArea).text = "Build."
-        screen.query_one("#workflow-select", Select).value = "smoke"
+        screen._select_workflow_by_name("smoke")
         screen.query_one("#budget-input", Input).value = "0.50"
         screen.query_one("#project-input", Input).value = str(project)
         screen.query_one("#save-checkbox", Checkbox).value = False
@@ -2305,8 +2314,7 @@ async def test_new_run_screen_preset_selection_populates_composer() -> None:
         assert "focus sessions" in composer.text
 
         # Workflow should be pre-selected to the suggested one.
-        workflow_select = screen.query_one("#workflow-select", Select)
-        assert workflow_select.value == "tdd-serial"
+        assert screen._selected_workflow_name == "tdd-serial"
 
         await pilot.press("q")
 
@@ -4658,8 +4666,7 @@ async def test_new_run_screen_default_workflow_prefills_select(
         await pilot.pause()
         screen = app.screen
         assert isinstance(screen, NewRunScreen)
-        wf_select = screen.query_one("#workflow-select", Select)
-        assert wf_select.value == "tdd-implement"
+        assert screen._selected_workflow_name == "tdd-implement"
         await pilot.press("escape")
         await pilot.press("q")
 
@@ -4726,8 +4733,7 @@ async def test_new_run_screen_empty_directive_pushes_confirmation_modal(
         # Verify directive is empty and workflow is set.
         composer = screen.query_one("#directive-composer", TextArea)
         composer.text = ""
-        wf = screen.query_one("#workflow-select", Select)
-        assert wf.value == "tdd-implement"
+        assert screen._selected_workflow_name == "tdd-implement"
         await pilot.pause()
         # Trigger Go
         screen.action_go()

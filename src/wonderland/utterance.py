@@ -101,6 +101,7 @@ SUBSTANTIVE_ACTS: frozenset[SpeechAct] = frozenset(
         SpeechAct.INTERVIEW_QUESTIONS,
         SpeechAct.INTERVIEW_REVIEW,
         SpeechAct.MILESTONE_PLAN,
+        SpeechAct.DIAGRAM,
         SpeechAct.RETRACT,
         SpeechAct.DEFERENCE,
         SpeechAct.CONTRACT_NOTE,

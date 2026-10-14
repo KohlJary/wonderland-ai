@@ -7,7 +7,7 @@
 
 ## What we tested
 
-After analysis 031's tdd-serial v1 + v2 follow-up, the directive shipped two refinements ([commit 6c8ad0f](../../../commit/6c8ad0f) for tdd-serial, [a7d8e76](../../../commit/a7d8e76) for tdd):
+After analysis 031's tdd-serial v1 + v2 follow-up, the directive shipped two refinements (commit 6c8ad0f for tdd-serial, a7d8e76 for tdd — pre-squash commits not in published history):
 
 1. **Tweedles bounded to ONE concern per iteration in M4**, reactive-not-proactive.
 2. **No `write_file` calls at all by Tweedles in M4** — neither production code nor test files.
@@ -57,7 +57,7 @@ Per-iteration M4 average: $0.577 / 54 calls. Per-iteration M5 average: $0.490 / 
 - M5 (3 iterations, Tweedle-only roster): the bulk — implementation work, `write_file` calls, `run_tests` cycles, iteration on red→green
 - M6 (Trial, both Tweedles in roster): Tweedles fixed two load-bearing bugs Caterpillar surfaced, plus answered review findings
 
-Each `write_file` call sends the *full file content* as input tokens. Tweedles writing a 250-line `sessions.py`, then iterating on it via `run_tests` + `write_file` 3-4 more times to fix red tests, produces ~250 + ~280 + ~310 + ~340 = ~1180 lines of input across 4 calls — vs ~250 + ~30 + ~30 + ~30 = ~340 lines if a diff-based tool let them send only the deltas. Roughly **3.5× cost compression** would be available with the right tool. Filed as [roadmap 0858a936](../.daedalus/roadmap/items/0858a936) during this run.
+Each `write_file` call sends the *full file content* as input tokens. Tweedles writing a 250-line `sessions.py`, then iterating on it via `run_tests` + `write_file` 3-4 more times to fix red tests, produces ~250 + ~280 + ~310 + ~340 = ~1180 lines of input across 4 calls — vs ~250 + ~30 + ~30 + ~30 = ~340 lines if a diff-based tool let them send only the deltas. Roughly **3.5× cost compression** would be available with the right tool. Filed as roadmap 0858a936 in `.daedalus/roadmap/index.json` during this run.
 
 ## Comparison vs prior runs on the same directive
 
@@ -86,7 +86,7 @@ This is the cleanest signal yet that surface-shaped directive bounds work. Tweed
 
 The v3 directive said "Do NOT call `write_file` in this thread — at all. No production code, AND no test files." Tweedles obeyed on the bus side — no proactive `implementation` artifacts shipped during M4 — but at least one Tweedle tool-called `write_file` for `tests/test_focus_session_with_visual_countdown.py` during M4 iter 1. Detected only because a late-publish surfaced as `[bus record coerced to implementation: write_file calls landed for tests/test_focus_session_with_visual_countdown.py]`.
 
-The directive can constrain what Tweedles *say* (bus side, validated through speech-act emission) but not what they *do* (tool side, not yet surfaced as bus events). Until tool calls are first-class events, tool-shaped directive bounds remain unenforceable through observation. Filed as [roadmap 33e29f5c](../.daedalus/roadmap/items/33e29f5c) at P1.
+The directive can constrain what Tweedles *say* (bus side, validated through speech-act emission) but not what they *do* (tool side, not yet surfaced as bus events). Until tool calls are first-class events, tool-shaped directive bounds remain unenforceable through observation. Filed as roadmap 33e29f5c in `.daedalus/roadmap/index.json` at P1.
 
 The structural fix isn't a tighter directive; it's making tool calls visible so the framework can detect the violation in real time.
 
@@ -99,7 +99,7 @@ What v1 actually showed (visible only in retrospect with v3's per-agent data):
 - Each M5 iteration burns 50-60 Tweedle calls re-shipping growing files via `write_file`. With 5 features × 3 iterations of red→green = ~15 iterations of file-rewrites per Tweedle, the input-token cost compounds dramatically.
 - Hatter only ships in M4 (4 iterations × ~7 scenarios × probably 1-2 calls each = ~30-50 calls). His total cost in v3 was $0.90 for 65 calls — modest.
 
-The framing error matters because it pointed toward the wrong fix. Tightening Hatter's directive (which v3 did via the surface-relative + self-audit clauses from analysis 031 F3) was at most a small contributor. The big lever is **reducing Tweedle re-write cost via diff-based tools** ([roadmap 0858a936](../.daedalus/roadmap/items/0858a936)). Compresses input tokens 3-4× on iterative authoring — exactly what Tweedles do throughout M5 and M6.
+The framing error matters because it pointed toward the wrong fix. Tightening Hatter's directive (which v3 did via the surface-relative + self-audit clauses from analysis 031 F3) was at most a small contributor. The big lever is **reducing Tweedle re-write cost via diff-based tools** (roadmap 0858a936 in `.daedalus/roadmap/index.json`). Compresses input tokens 3-4× on iterative authoring — exactly what Tweedles do throughout M5 and M6.
 
 ### F4 — M5 iteration 1 completed naturally at $0.35 — first tdd-serial M5 to settle
 
@@ -125,22 +125,22 @@ M6 cost was $1.20 (under cap-but-close) for 99 calls. Most of that is Tweedles f
 
 Two M4 iterations + one M5 iteration in v3 shipped 0 test_scenario / story / implementation artifacts on the bus, but disk had real test files / implementation written via `write_file` tool calls. Detected only via late-publish messages of the form `[bus record coerced to implementation: write_file calls landed for X.py]`.
 
-This is the same pattern analysis 031 F6 identified — the framework's bus capture undercounts actual work whenever a parse-error empty + late-publish fires. Filed at P1 ([roadmap 92cec468](../.daedalus/roadmap/items/92cec468)). Compounds with the tool-call surfacing item ([33e29f5c](../.daedalus/roadmap/items/33e29f5c)) — both reach into the substrate to make what *actually happened* visible to downstream consumers (analyses, telemetry, the eventual TUI live-watch).
+This is the same pattern analysis 031 F6 identified — the framework's bus capture undercounts actual work whenever a parse-error empty + late-publish fires. Filed at P1 (roadmap 92cec468 in `.daedalus/roadmap/index.json`). Compounds with the tool-call surfacing item (33e29f5c in `.daedalus/roadmap/index.json`) — both reach into the substrate to make what *actually happened* visible to downstream consumers (analyses, telemetry, the eventual TUI live-watch).
 
 ### F7 — Empty-response parse errors still recur at high rates
 
 Six empty-response parse errors during v3 (across 11 thread-iterations: 0 in M1-M3, 1 in M4 iter 2, 4 in M5 iters 1-3, 1 in M6). 50%+ of M5/M6 iterations hit an empty response at some point. Most recovered via parse-retry; one (Tweedledum in M6) hit `deliberate() raised TweedleResponseParseError` after retries failed.
 
-[Roadmap 884bbad2](../.daedalus/roadmap/items/884bbad2) tracks the investigation — the cumulative-context hypothesis remains the leading suspect.
+Roadmap 884bbad2 in `.daedalus/roadmap/index.json` tracks the investigation — the cumulative-context hypothesis remains the leading suspect.
 
 ### F8 — The right next bound is on Tweedle iterative-write costs, not on Hatter
 
-Per F3, the diff-based-write-tool roadmap ([0858a936](../.daedalus/roadmap/items/0858a936)) is the leading candidate for the next material cost compression. Implementation:
+Per F3, the diff-based-write-tool roadmap (0858a936 in `.daedalus/roadmap/index.json`) is the leading candidate for the next material cost compression. Implementation:
 
 - Tweedles in M5 iterate red→green by writing → testing → fixing → testing again. Each write currently sends the entire file as input. Most M5 calls are these iterative writes.
 - A `str_replace`-style tool would compress input by 3-4× on iterative writes. For a 250-line implementation file iterated 4 times: 1180 → 340 input lines.
 - Hatter's M4 file authoring would also benefit (writes test files in passes), though he's a smaller share of cost.
-- Composes naturally with tool-call event surfacing ([33e29f5c](../.daedalus/roadmap/items/33e29f5c)) — once tool calls are visible in the bus, we can measure the iterative-vs-one-shot ratio cleanly.
+- Composes naturally with tool-call event surfacing (33e29f5c in `.daedalus/roadmap/index.json`) — once tool calls are visible in the bus, we can measure the iterative-vs-one-shot ratio cleanly.
 
 Expected outcome: re-running v3's directive after diff tools land brings total cost to maybe $3.20-$3.50 — comparable to or below the v6 banner parallel-TDD baseline, while keeping serial's per-feature artifact coherence.
 
@@ -151,13 +151,13 @@ Expected outcome: re-running v3's directive after diff tools land brings total c
 2. **No more directive iteration on tdd-serial** for now. v3's directive is the right shape; further compression requires substrate work (diff tools, tool-call events). Iterating directives further would be premature.
 
 3. **Roadmap items filed during this run cluster** (analyses 031 + 032):
-   - [3925b46f](../.daedalus/roadmap/items/3925b46f) P1 bug — Quiescence tracks in-flight `deliberate()` calls
-   - [92cec468](../.daedalus/roadmap/items/92cec468) P1 bug — Substrate divergence: bus vs disk
-   - [33e29f5c](../.daedalus/roadmap/items/33e29f5c) P1 feature — Surface tool calls to bus event log
-   - [884bbad2](../.daedalus/roadmap/items/884bbad2) P2 bug — Empty-response parse errors
-   - [0b785ab0](../.daedalus/roadmap/items/0b785ab0) P2 feature — Parallelize per_item iterations
-   - [51fe6dc5](../.daedalus/roadmap/items/51fe6dc5) P2 feature — Test scenario prioritization
-   - [0858a936](../.daedalus/roadmap/items/0858a936) P2 feature — Diff-based write tool
+   - 3925b46f in `.daedalus/roadmap/index.json` P1 bug — Quiescence tracks in-flight `deliberate()` calls
+   - 92cec468 in `.daedalus/roadmap/index.json` P1 bug — Substrate divergence: bus vs disk
+   - 33e29f5c in `.daedalus/roadmap/index.json` P1 feature — Surface tool calls to bus event log
+   - 884bbad2 in `.daedalus/roadmap/index.json` P2 bug — Empty-response parse errors
+   - 0b785ab0 in `.daedalus/roadmap/index.json` P2 feature — Parallelize per_item iterations
+   - 51fe6dc5 in `.daedalus/roadmap/index.json` P2 feature — Test scenario prioritization
+   - 0858a936 in `.daedalus/roadmap/index.json` P2 feature — Diff-based write tool
 
 4. **Banner status**: tdd-serial is now a completable workflow on the same directive that the parallel-TDD v6 banner used. Cost premium remains (~32%) but the serial workflow ships an end-to-end Pomodoro app + comprehensive deferred-test backlog + working M6 review-and-fix loop. Worth being a recommended workflow choice for projects where:
    - Feature batches make sense (one-at-a-time iteration is the user's preference)

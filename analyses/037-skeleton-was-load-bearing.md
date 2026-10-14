@@ -1,8 +1,8 @@
 # Analysis 037 — Skeleton was load-bearing all along; directive backfill recovers the deliverable
 
 **Date:** 2026-05-09
-**Run:** Pomodoro tdd-serial-phased v4 ([runs/r39-question-user/](../runs/r39-question-user/), $5.1170 / $10.00 cap, 36.7 min wall-clock, 3 features, completed end-to-end).
-**Predecessors:** [r38-diff-tool-v2](../runs/r38-diff-tool-v2/) — 5 features, $7.77, 49.5 min, **0 LOC production code in src/** (analysis 036's headline regression).
+**Run:** Pomodoro tdd-serial-phased v4 (runs/r39-question-user/ (local file, not in repo), $5.1170 / $10.00 cap, 36.7 min wall-clock, 3 features, completed end-to-end).
+**Predecessors:** r38-diff-tool-v2 (local file, not in repo) — 5 features, $7.77, 49.5 min, **0 LOC production code in src/** (analysis 036's headline regression).
 **Result:** **r39 shipped 602 LOC of real Pomodoro logic in `src/` (`app.py`, `review.py`, `__init__.py`) — the M5 + M6 convenor directive update from analysis 036 worked. But the bigger finding reframes the entire r33-r38 trajectory: every TUI run since r33 has been against a *bare project root* (no skeleton). The 032 banner used a `fullstack-fastapi-react` skeleton that pre-laid `src/`, `tests/`, `frontend/` directories and a `conftest.py` already wired to import from production modules. r33-r38 ran without that scaffolding, and the deliverable shape progressively degraded as the team's path-of-least-resistance defaulted to whatever pytest could already see. r38 was the reductio: production logic inlined into `tests/conftest.py` because there was no canonical `src/` to write to. r39 shows that an explicit M5 directive can backfill skeleton-shaped guidance and recover production-code deliverability, at a ~10% per-feature cost premium.**
 
 ## What we tested

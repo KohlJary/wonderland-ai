@@ -70,7 +70,7 @@ shipped as supplementary material rather than inline.
 
 ## Cross-reference normalization
 
-Each chapter source uses internal `[chapter-source-name](./file.md)`
+Each chapter source uses internal `[chapter-source-name](./<file>.md)`
 links to refer to peer chapters. When composing into a single
 document, these become §X.Y references:
 

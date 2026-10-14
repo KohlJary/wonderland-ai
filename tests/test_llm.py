@@ -245,6 +245,16 @@ async def test_on_token_usage_callback_fires_after_each_call() -> None:
     assert all(u.input_tokens == 7 and u.output_tokens == 3 for u in captured)
 
 
+async def test_usage_is_stamped_with_client_model() -> None:
+    """Telemetry prices per model, so usage carries the model id."""
+    captured: list[TokenUsage] = []
+    mock = _mock_anthropic_client(_mock_response(input_tokens=7, output_tokens=3))
+    llm = LLMClient(client=mock, model="claude-sonnet-4-6", on_token_usage=captured.append)
+    result = await llm.complete(system=["x"], messages=[{"role": "user", "content": "hi"}])
+    assert result.usage.model == "claude-sonnet-4-6"
+    assert captured[0].model == "claude-sonnet-4-6"
+
+
 async def test_callback_skipped_when_not_provided() -> None:
     mock = _mock_anthropic_client()
     llm = LLMClient(client=mock)  # no callback

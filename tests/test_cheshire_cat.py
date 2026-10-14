@@ -563,9 +563,10 @@ async def test_end_to_end_directive_produces_proposal_with_adr(tmp_path: Path) -
     assert len(received.content.artifacts) == 1
     assert received.content.artifacts[0].kind == "adr"
 
-    # ADR file appears at .wonderland/architecture/adr-001-*.md
+    # ADR file appears at .wonderland/architecture/adr-<guid8>-*.md
+    # (GUID identity replaced numeric adr-NNN filenames in 0.7.0).
     adr_dir = tmp_path / ".wonderland" / "architecture"
-    adr_files = list(adr_dir.glob("adr-001-*.md"))
+    adr_files = list(adr_dir.glob("adr-*.md"))
     assert len(adr_files) == 1
     assert "use-redis-streams-for-the-caucus" in adr_files[0].name
 

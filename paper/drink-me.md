@@ -46,8 +46,12 @@ subsequently closed by an end-to-end-composition-gate
 shipment; the LDR re-run is pending. These cost regimes are
 low across the substrate's own iteration history at this
 shape; the working-fullstack-app directive class is the
-scope tested to date, with the trajectory monotonically
-downward as substrate iterations compound (§7 Pillar 1).
+scope tested to date, with the trajectory mostly
+downward as substrate iterations compound (§7 Pillar 1) —
+not monotonic: obol-260522-1 ($92.64, larger scope) cost
+more than mvp ($83.78). **Correction (2026-10-14):** earlier
+versions said "monotonically downward"; the pilot table in
+§1.2 contradicts that.
 
 The category Wonderland occupies — typed-state workflow
 engine with LLM-driven transitions and lifecycle invariants
@@ -602,8 +606,10 @@ answer three questions:
    small models with strong constitutions produce
    working full-stack applications on a cost trajectory
    ($83.78 → $30.58 across mvp → redux on identical scope)
-   that is monotonically downward as substrate iterations
-   compound at the working-fullstack-app shape; that the
+   that is mostly downward as substrate iterations
+   compound at the working-fullstack-app shape (obol, at
+   $92.64 on larger scope, is the exception; see the
+   2026-10-14 correction in the Abstract); that the
    iteration cycle of pilot → falsification → substrate
    fix → next pilot is itself the methodology.
 3. **What does this mean beyond Wonderland?** That
@@ -863,11 +869,17 @@ otherwise have to do via raw inference.
   the load-bearing judgment work.
 
 - **Schema-as-safety on Haiku:** across 7+ Caterpillar M8
-  review passes during mvp-demo, every review finding cited
-  real code at real `file:line` locations with verbatim
-  quotes. Zero hallucinated findings — non-trivial for a
-  Haiku-class model, where fabrication is the standard
-  failure mode. The constitution's forced-citation discipline
+  review passes during mvp-demo, review findings cited
+  real code at real `file:line` locations with quotes. No
+  fabricated findings were noticed in operator review —
+  non-trivial for a Haiku-class model, where fabrication is
+  the standard failure mode. This is an observation, not a
+  verified count: nothing in the substrate checks quotes
+  against disk, and [analysis 042](https://github.com/KohlJary/wonderland-ai/blob/main/analyses/042-contracts-finally-flowed-and-caterpillar-misquoted-once.md) records a pre-mvp review that
+  misquoted the code (`datetime` for `date`) and reasoned to
+  a false bug from the misquote. **Correction (2026-10-14):**
+  earlier versions said "zero hallucinated findings." The
+  constitution's forced-citation discipline
   did the work the model wouldn't have done on its own
   (developed as the schema-as-safety property in §7 (§7):
   forced-citation review structure makes hallucination
@@ -875,9 +887,11 @@ otherwise have to do via raw inference.
 
 - **Substrate-stack cost trajectory:** the strongest receipt
   for Haiku-with-strong-constraints isn't that Haiku ships
-  working code — it's that the cost-per-pilot drops
-  monotonically as substrate constraints compound across
-  iterations. The full per-pilot trajectory + per-milestone
+  working code — it's that the cost-per-pilot trends
+  downward as substrate constraints compound across
+  iterations (mostly, not monotonically: obol-260522-1 at
+  $92.64 cost more than mvp at $83.78, on larger scope;
+  **Correction (2026-10-14)**). The full per-pilot trajectory + per-milestone
   decomposition is developed as the
   quality-cost coupling property in §7 (§7):
   every substrate primitive that narrows agent grammar
@@ -1802,8 +1816,12 @@ fabricate the quote, the read context, the file location,
 and have them coherently support each other. The shape
 forces the agent to actually open the file.
 
-Across 5+ pilots on Haiku 4.5, zero hallucinated findings
-have been observed (§7 Pillar 3 develops the receipt).
+Across 5+ pilots on Haiku 4.5, no fabricated findings were
+noticed in operator review (§7 Pillar 3 develops the receipt
+and its limits: quotes are not mechanically checked against
+disk, and analysis 042 records one misquote-then-reason false
+positive on an earlier run). **Correction (2026-10-14):**
+previously "zero hallucinated findings have been observed."
 
 ### Convergence-failure detection
 
@@ -2271,9 +2289,14 @@ field empty. The substrate's emission path enforces what
 the constitution promises.
 
 The result is what §7 Pillar 3 develops as schema-as-safety:
-across all observed M8 reviews on Haiku 4.5 (5+ pilots),
-**zero hallucinated findings**. Every cited line existed;
-every cited quote matched disk. **This is the small-model
+across the M8 reviews the operator read on Haiku 4.5 (5+
+pilots), **no fabricated findings were noticed**. That is a
+spot-check observation, not a verified property: the
+substrate does not compare quotes against disk, and analysis
+042 records a review that misquoted the code and reasoned
+from the misquote. **Correction (2026-10-14):** this passage
+previously claimed "zero hallucinated findings… every cited
+quote matched disk." **This is the small-model
 result that depends most directly on the constitution-
 plus-substrate composition** — the constitution's prose
 asks for careful reading; the schema's structure makes
@@ -2518,7 +2541,9 @@ Five constitutional patterns walked in the body:
   failure mode can't manifest.
 - **Caterpillar** — forced-citation schema discipline makes
   hallucination structurally harder than honest reading;
-  zero hallucinated findings across 5 pilots on Haiku 4.5.
+  no fabricated findings noticed across 5 pilots on Haiku 4.5
+  (unverified against disk; one misquote recorded in
+  analysis 042).
 - **Tweedledee + Tweedledum** — pair-as-identity-primitive;
   contract-as-seam discipline depends on substrate-enforced
   pair presence at M5 + M7 + M8.
@@ -2889,7 +2914,7 @@ that lets the substrate's maturity be measured operationally:
 | **Tier 3 — Designer** | Edits tickets, fixes wedges, surgically wipes memory, kills runs. | The substrate's baseline before specific gaps are closed. |
 
 Per
-[`project_first_tier2_pilot_completion.md`](https://github.com/KohlJary/wonderland-ai/blob/main/.daedalus/.../memory/project_first_tier2_pilot_completion.md):
+`project_first_tier2_pilot_completion.md` (local project memory, not in repo):
 mvp was the first end-to-end Tier 2 completion. Since
 then, the substrate has supported multiple Tier 2 pilots:
 
@@ -3440,7 +3465,7 @@ research-grade rather than post-hoc rationalization.
 | Claim | Falsifier | Pre-registered next-pilot prediction |
 |---|---|---|
 | **Constraint→quality+cost coupling** (Pillar 1; Corollary 6). Every substrate primitive that narrows agent grammar improves output AND lowers cost. | A future substrate fix that improves output AND increases cost. The mechanism (constraints narrow grammar so the convergence path shortens) predicts cost decreases when output improves; a substrate change that improves output by adding deliberation rounds rather than removing them would refute the mechanism. | Total pilot cost continues the $83.78 → $30.58 trajectory's direction (next-pilot total at or below redux on comparable scope), measured at the per-feature granularity to control for directive variation. |
-| **Schema-as-safety prevents hallucination on small models** (Pillar 3). Caterpillar's forced-citation review schema makes hallucination structurally harder than honest reading. | A hallucinated review finding from Caterpillar — a citation that doesn't resolve to a real file, or a quote that doesn't match the cited line on disk. Across five pilots on Haiku 4.5, zero hallucinated findings have been observed. Pilot six surfaces one, the schema is leaking and the mechanism needs revisiting. | Zero hallucinated findings across all M8 review passes the next pilot runs. Every finding shipped resolves to a real file at the cited line; every quote matches the cited line verbatim. |
+| **Schema-as-safety prevents hallucination on small models** (Pillar 3). Caterpillar's forced-citation review schema makes hallucination structurally harder than honest reading. | A hallucinated review finding from Caterpillar — a citation that doesn't resolve to a real file, or a quote that doesn't match the cited line on disk. Across five pilots on Haiku 4.5, none was noticed in operator review, but quotes are not mechanically checked, and analysis 042 (pre-mvp) already records a misquote-then-reason false positive — a partial counterexample. If pilot six surfaces one under a mechanical quote-vs-disk check, the schema is leaking and the mechanism needs revisiting. **Correction (2026-10-14):** previously "zero hallucinated findings have been observed." | Zero hallucinated findings across all M8 review passes the next pilot runs. Every finding shipped resolves to a real file at the cited line; every quote matches the cited line verbatim. |
 | **Foundation-once, capability-cheap** (Pillar 1's per-milestone trajectory). Once a foundation milestone is shipped, subsequent capability milestones building on that foundation cost monotonically less. | A future pilot where capability M3 costs *more* than capability M2 despite both building on the same foundation and having comparable architectural shape. Redux's $15.59 → $10.91 → $3.72 trajectory is the shape the claim predicts; a future pilot inverting this ordering refutes the foundation-amortizes mechanism. | The per-milestone cost decomposition shows capability milestones building on a shared foundation continue to decrease M2 onward, mirroring redux's $15.59 → $10.91 → $3.72 shape (each M_{n+1} ≤ M_n on a comparable architectural cut). |
 | **T-ab51 closes cross-milestone bleed** (§6 Phase 3). The keystone milestone-scope filter at the seed-resolution layer prevents the cost-rise pattern obol-260522 exhibited. | A future pilot exhibiting obol-260522's cost-up-on-bigger-substrate pattern despite T-ab51 + T-ab52 active. The mechanism (read-side scope filtering at the resolver, not at each consumer) predicts the bleed is structurally impossible at the post-T-ab51 substrate; a recurrence refutes that. | No M_{n+1} cost-explosion on substrates that ship more invariants than the prior pilot; per-feature cost stays within range observed across post-T-ab51 pilots. |
 | **Per-milestone branching prevents memory-bleed wedges** (Pillar 4; T-a2 + T-ab52). Memory isolation across milestone boundaries prevents the wedge pattern mvp-demo's M4 exhibited. | A future pilot wedging on cross-milestone memory bleed despite T-a2 + T-ab52 active. Three pilots post-T-ab52 have shown zero such wedges; the next pilot's wedge counts test the claim. | Zero cross-milestone memory-bleed wedges (no design pass re-derives a wedge from episodic memory after the substrate has fixed it). |
@@ -4765,9 +4790,19 @@ Forcing a small model to ship findings in a structured
 schema with required verbatim citation makes hallucination
 **structurally harder than honest reading**. Across 7+
 Caterpillar M8 review passes on Haiku 4.5 during mvp-demo,
-every review finding was grounded — citing real code at real
-`file:line` locations with verbatim quotes matching disk.
-Zero hallucinated findings.
+review findings were grounded — citing real code at real
+`file:line` locations with quotes. No fabricated findings were
+noticed in operator review.
+
+**Correction (2026-10-14):** this section previously claimed
+"zero hallucinated findings" with "verbatim quotes matching
+disk." Neither is verified: `ReviewFinding.quote` is required
+but nothing compares it to the file, and
+[analysis 042](https://github.com/KohlJary/wonderland-ai/blob/main/analyses/042-contracts-finally-flowed-and-caterpillar-misquoted-once.md) records a review (squathero2, substrate 0.3.4)
+that misquoted `isinstance(obj.date, date)` as
+`isinstance(obj.date, datetime)` and reasoned to a bug that
+did not exist. The claim below is therefore "rare and
+self-correcting in what the operator read," not "zero."
 
 This is non-trivial. The standard small-model failure mode on
 code review is fabrication: "this function on line 47 has a
@@ -4813,10 +4848,10 @@ Three complementary data points:
   each), obol-260522-1 (4+ milestones × multiple
   iterations), mvp-demo-redux (3 milestones × multiple
   iterations), and LDR (5 milestones × multiple
-  iterations). **Across all five pilots, zero hallucinated
-  findings observed.** Every cited line existed; every
-  cited quote matched. The forced-citation discipline
-  continues to hold on Haiku 4.5 across substrate
+  iterations). **Across all five pilots, no fabricated
+  findings were noticed in operator review** (not a
+  mechanical check; see the correction above). The
+  forced-citation discipline appears to hold on Haiku 4.5 across substrate
   generations 0.6 through 0.10.2.
 - **Outside the substrate, as a probe:** the independent
   cold reviewer agent we spawned for the
@@ -4837,11 +4872,14 @@ Three complementary data points:
 
 ### Honest scope
 
-- "Zero hallucinated findings" is the observation across the
-  recorded review passes; we don't claim Caterpillar will
-  *never* hallucinate. If a future pilot surfaces one, it's
-  a counterexample worth understanding (what slipped past
-  the schema?).
+- "No fabricated findings noticed" is an operator-review
+  observation across the recorded passes, not a verified
+  count; we don't claim Caterpillar will *never*
+  hallucinate. Analysis 042's misquote is one known
+  counterexample (a quote that didn't match disk, slipped
+  past the schema because the schema never checks it). A
+  mechanical quote-vs-disk check is the obvious next
+  instrument.
 - The pattern (forced citation → reduced hallucination) is
   specific to *review-shaped* artifacts. Less directly
   applicable to generation-shaped artifacts where there's
@@ -6585,7 +6623,7 @@ methodological work of constructing fair comparator frameworks
 for identity-engineering claims (per §5.X). These are
 project-internal research notes rather than experiments this
 paper proposes for the next 6-12 months; they appear in the
-[project memory](`memory/MEMORY.md`) and roadmap and would be
+project memory (local, not in repo) and roadmap and would be
 the natural research agenda for whoever picks up identity
 engineering as a discipline.
 

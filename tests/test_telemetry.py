@@ -13,6 +13,7 @@ from wonderland.telemetry import (
     HAIKU_4_5_OUTPUT_PER_MTOK,
     Telemetry,
     estimate_cost,
+    pricing_for_model,
     get_current_thread_id,
     reset_current_thread_id,
     set_current_thread_id,
@@ -84,6 +85,61 @@ def test_estimate_cost_full_cast_run_matches_post_hoc_calc() -> None:
     )
     cost = estimate_cost(usage)
     assert 8.0 <= cost <= 10.0
+
+
+def test_estimate_cost_prices_per_model() -> None:
+    """Non-Haiku-4.5 models are priced at their own rates, not Haiku's."""
+    usage = TokenUsage(input_tokens=1_000_000, output_tokens=1_000_000)
+    assert estimate_cost(usage, "claude-sonnet-4-6") == 3.00 + 15.00
+    assert estimate_cost(usage, "claude-opus-4-7") == 5.00 + 25.00
+    assert estimate_cost(usage, "claude-haiku-3-5-20241022") == 0.80 + 4.00
+    assert estimate_cost(usage, "claude-haiku-4-5-20251001") == 1.00 + 5.00
+
+
+def test_estimate_cost_reads_model_stamped_on_usage() -> None:
+    usage = TokenUsage(input_tokens=1_000_000, model="claude-sonnet-4-6")
+    assert estimate_cost(usage) == 3.00
+
+
+def test_estimate_cost_unknown_model_is_none_not_haiku() -> None:
+    usage = TokenUsage(input_tokens=1_000_000)
+    assert estimate_cost(usage, "claude-mystery-9") is None
+    assert pricing_for_model("claude-mystery-9") is None
+
+
+def test_pricing_prefix_match_requires_exact_family() -> None:
+    """``claude-opus-4`` must not swallow ``claude-opus-4-5`` (3x cheaper)
+    and a dated snapshot resolves to its alias."""
+    assert pricing_for_model("claude-opus-4-5-20251101").input == 5.00
+    assert pricing_for_model("claude-opus-4-20250514").input == 15.00
+    assert pricing_for_model("claude-haiku-4.5").input == 1.00
+
+
+def test_unpriced_calls_are_counted_and_excluded_from_totals(
+    tmp_path: Path,
+) -> None:
+    tel = Telemetry()
+    tel.record("alice", TokenUsage(input_tokens=1_000_000))  # default → $1
+    entry = tel.record(
+        "alice", TokenUsage(input_tokens=1_000_000, model="claude-mystery-9")
+    )
+    assert entry.cost is None
+    assert tel.unpriced_calls == 1
+    assert tel.total_cost == 1.00
+    record = json.loads(tel.write_run_record(tmp_path, "u").read_text())
+    assert record["unpriced_calls"] == 1
+    assert record["pricing_by_model"]["claude-mystery-9"] is None
+    assert record["entries"][1]["cost"] is None
+    assert record["entries"][1]["model"] == "claude-mystery-9"
+
+
+def test_run_record_reports_actual_model(tmp_path: Path) -> None:
+    tel = Telemetry()
+    tel.record("alice", TokenUsage(input_tokens=1000, model="claude-sonnet-4-6"))
+    record = json.loads(tel.write_run_record(tmp_path, "s").read_text())
+    assert record["model"] == "claude-sonnet-4-6"
+    assert record["pricing_per_mtok"]["input"] == 3.00
+    assert record["models"] == {"claude-sonnet-4-6": 1}
 
 
 # --------------------------------------------------------------------- #

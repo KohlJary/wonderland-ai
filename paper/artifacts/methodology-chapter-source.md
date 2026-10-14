@@ -312,7 +312,7 @@ that lets the substrate's maturity be measured operationally:
 | **Tier 3 — Designer** | Edits tickets, fixes wedges, surgically wipes memory, kills runs. | The substrate's baseline before specific gaps are closed. |
 
 Per
-[`project_first_tier2_pilot_completion.md`](https://github.com/KohlJary/wonderland-ai/blob/main/.daedalus/.../memory/project_first_tier2_pilot_completion.md):
+`project_first_tier2_pilot_completion.md` (local project memory, not in repo):
 mvp was the first end-to-end Tier 2 completion. Since
 then, the substrate has supported multiple Tier 2 pilots:
 

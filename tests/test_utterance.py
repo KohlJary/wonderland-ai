@@ -33,8 +33,10 @@ def test_substantive_and_procedural_partition_the_enum() -> None:
 
 def test_substantive_count_matches_spec() -> None:
     # 13 from WONDERLAND_SPEC §6 + contract_note added in P6.T35
-    # + feature added for the M2.5 composition phase.
-    assert len(SUBSTANTIVE_ACTS) == 15
+    # + feature added for the M2.5 composition phase
+    # + interview_questions / interview_review (P14)
+    # + milestone_plan / retract (P15) + diagram (P21).
+    assert len(SUBSTANTIVE_ACTS) == 20
 
 
 def test_procedural_count_matches_spec() -> None:

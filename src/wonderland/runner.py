@@ -267,8 +267,13 @@ class Runner:
         telemetry: Telemetry | None = None,
         run_id: str | None = None,
         roster: ThreadRoster | None = None,
+        model: str | None = None,
     ) -> None:
         self.bus = bus
+        # Model override the agents were built with (None → llm.py's
+        # DEFAULT_MODEL). Runner-owned LLM calls outside the agent
+        # cast (the T-ab77 question resolver) use the same model.
+        self.model = model
         self.agents = agents  # includes dodo
         self.dodo = dodo
         self.project_root = project_root
@@ -559,6 +564,7 @@ class Runner:
             telemetry=telemetry,
             run_id=run_id,
             roster=roster,
+            model=model,
         )
 
     # ------------------------------------------------------------------ #
@@ -1103,9 +1109,12 @@ class Runner:
                         options = [str(o) for o in raw if o]
                     break
 
-            client = LLMClient(
-                on_token_usage=self.telemetry.record_for("question_resolver")
-            )
+            client_kwargs: dict[str, Any] = {
+                "on_token_usage": self.telemetry.record_for("question_resolver"),
+            }
+            if self.model is not None:
+                client_kwargs["model"] = self.model
+            client = LLMClient(**client_kwargs)
             resolution = await resolve_operator_question(
                 project_root=self.project_root,
                 scope=scope,

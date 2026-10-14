@@ -152,7 +152,9 @@ async def test_directive_produces_cat_proposal_and_rabbit_tickets(tmp_path: Path
                     "tier": "v1",
                     "estimate": "1-2 days, 60% confident",
                     "description": "Wrap the translation API; handle errors per Cat proposal.",
-                    "sources": ["adr-001"],
+                    # ADRs stopped being valid ticket parents (tickets
+                    # descend from features); cite a feature slug.
+                    "sources": ["translation-pipeline"],
                 },
                 {
                     "title": "Frontend send-message integration",

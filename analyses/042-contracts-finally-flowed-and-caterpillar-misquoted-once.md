@@ -1,7 +1,7 @@
 # Analysis 042 — Contracts finally flowed through M7, and Caterpillar misquoted code once
 
 **Date:** 2026-05-10
-**Run:** squathero2 tdd-implement on `database-migrations-and-schema-versioning`, [squathero2/.wonderland/telemetry/run-20260510T154027.json](file:///home/jaryk/squathero2/.wonderland/telemetry/run-20260510T154027.json), $4.449 / no cap, 386 calls, two tickets in one feature lane through the two-level pipeline.
+**Run:** squathero2 tdd-implement on `database-migrations-and-schema-versioning`, squathero2/.wonderland/telemetry/run-20260510T154027.json (local file, not in repo), $4.449 / no cap, 386 calls, two tickets in one feature lane through the two-level pipeline.
 
 **Substrate state:** 0.3.4 + nine post-release patches (`1546581`, `54a1c24`, `d3ff8b6`, `dcec940`, `170fa61`, `428775e`, `40dfadb`, `d0b36a1`, `d8b387e`, `20e6d8b`, `8739d83`, `0fdea88`, `eb37ed0`, `d65e46f`, `230b446`). First implement run after the M5-contract-flow fix (`0fdea88`) which split the M6/M7/M8 seed bindings so contract notes reach the Tweedles instead of being filtered out by the iteration-kind slice. First run with M8 budget bumped $0.40 → $0.60 (`230b446`). Pre-M6-roster-rework (the Hatter+Alice change in `d65e46f` ships before next run, not this one).
 

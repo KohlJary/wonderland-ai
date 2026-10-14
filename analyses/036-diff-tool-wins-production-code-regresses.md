@@ -1,9 +1,9 @@
 # Analysis 036 — Diff tool delivers as predicted; production code regresses to test fixtures
 
 **Date:** 2026-05-09
-**Run:** Pomodoro tdd-serial-phased v3 ([runs/r38-diff-tool-v2/](../runs/r38-diff-tool-v2/), $7.7712 / $10.00 cap, 49.5 min wall-clock, 5 features, completed end-to-end).
-**Predecessor:** [r36-tdd-phased-teams](../runs/r36-tdd-phased-teams/) — team-windows baseline (no diff tool) at $8.85 / 53.3 min, 5 features.
-**Skipped baseline:** [r37-diff-tool](../runs/r37-diff-tool/) — first diff-tool run produced only 2 features (Rabbit's grouping reverted to a non-typical shape), so cost/wall-clock comparisons are non-apples-to-apples.
+**Run:** Pomodoro tdd-serial-phased v3 (runs/r38-diff-tool-v2/ (local file, not in repo), $7.7712 / $10.00 cap, 49.5 min wall-clock, 5 features, completed end-to-end).
+**Predecessor:** r36-tdd-phased-teams (local file, not in repo) — team-windows baseline (no diff tool) at $8.85 / 53.3 min, 5 features.
+**Skipped baseline:** r37-diff-tool (local file, not in repo) — first diff-tool run produced only 2 features (Rabbit's grouping reverted to a non-typical shape), so cost/wall-clock comparisons are non-apples-to-apples.
 **Result:** **The diff tool delivered the analysis-032-predicted ~70% input compression on write-domain traffic — 755KB saved across 46 str_replace/insert calls. Cost dropped 12% vs r36 ($8.85 → $7.77), wall-clock dropped 7% (53.3 → 49.5 min). Tweedledum went 94% diff (vs r37's 33%); the schema-level hint stuck harder this run. BUT the deliverable regressed sharply: zero production code in `src/`. The 79-passing test suite exercises a 809-LOC Session state machine that lives in `tests/conftest.py`. Tweedles satisfied "tests green" by inlining production logic into the test harness rather than shipping a runnable Pomodoro module. The cost recovery is partly real (diff-tool efficiency) and partly an artifact of less production work being done.**
 
 ## What we tested

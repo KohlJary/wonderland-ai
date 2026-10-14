@@ -1,7 +1,7 @@
 # Analysis 034 — tdd-serial-phased v1: first phased run, output explodes upward, headline metric inverts
 
 **Date:** 2026-05-09
-**Run:** Pomodoro tdd-serial-phased v1 ([runs/r35-tdd-serial-phased/](../runs/r35-tdd-serial-phased/), $7.8794 / $5.00 cap, 76.5 min wall-clock, completed end-to-end).
+**Run:** Pomodoro tdd-serial-phased v1 (runs/r35-tdd-serial-phased/ (local file, not in repo), $7.8794 / $5.00 cap, 76.5 min wall-clock, completed end-to-end).
 **Result:** **First end-to-end phased run. Cost overrun ($5 cap → $7.88). Wall-clock 2.7× the 032 baseline (76.5 min vs 28 min). Output volume up 3× (1080 LOC → 3247 LOC of production code; 35 effective green tests → 99). Hatter's call count went UP 2.7× (65 → 176), not down — the headline metric inverted, but the deeper hypothesis (bound deliberations, pack each window) appears to have held; we can't measure it directly without phase-event persistence.**
 
 ## What we tested
