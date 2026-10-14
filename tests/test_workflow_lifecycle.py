@@ -1118,8 +1118,24 @@ class TestTicketSourceAttribution:
             stack_span=TicketStackSpan.BACKEND,
             estimate="1d",
             acceptance=["a"],
-            sources=sources or ["seed-feature"],
+            sources=["seed-feature"],
         ))
+        # TicketPayload has rejected story-first sources since T-ab33
+        # (0.10.0), so a legacy story-first ticket can no longer be
+        # written through the registry. Rewrite the Sources line on
+        # disk to simulate the pre-validator file the helper repairs.
+        if sources:
+            import re
+
+            text = record.path.read_text(encoding="utf-8")
+            text = re.sub(
+                r"^\*\*Sources:\*\*.*$",
+                f"**Sources:** {', '.join(sources)}",
+                text,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            record.path.write_text(text, encoding="utf-8")
         return record.path
 
     def test_no_op_when_meeting_not_per_item_feature(

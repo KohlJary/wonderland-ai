@@ -309,6 +309,9 @@ def test_parse_accepts_feature_with_no_tickets_at_m2_ship_time() -> None:
                 "tickets": [],
                 "stack_span": "frontend",
                 "tier": "v1",
+                # ``sources`` is required + non-empty on FeaturePayload
+                # (T-m8b coverage walk needs the story chain).
+                "sources": ["story-placeholder"],
             }
         ],
     }

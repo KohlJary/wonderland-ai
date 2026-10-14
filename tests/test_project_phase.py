@@ -108,7 +108,11 @@ class TestDeriveProjectPhase:
     def test_milestones_without_features_returns_design(
         self, tmp_path: Path
     ):
-        _write_req(tmp_path, 1, "req-a", "scope")
+        # ``integration`` rather than ``scope``: since 0.8.0, scope /
+        # constraint / success_criterion are exempt from the
+        # milestone-realization check, so a scope-only milestone counts
+        # as designed without features.
+        _write_req(tmp_path, 1, "req-a", "integration")
         _write_milestone(tmp_path, 1, "m1", consumes=["req-a"])
         snap = derive_project_phase(tmp_path)
         assert snap.phase is ProjectPhase.DESIGN
@@ -121,8 +125,8 @@ class TestDeriveProjectPhase:
     ):
         """When M1 is fully realized but M2 isn't, the phase
         recommendation points at M2."""
-        _write_req(tmp_path, 1, "req-a", "scope")
-        _write_req(tmp_path, 2, "req-b", "scope")
+        _write_req(tmp_path, 1, "req-a", "integration")
+        _write_req(tmp_path, 2, "req-b", "integration")
         _write_milestone(tmp_path, 1, "m1", consumes=["req-a"])
         _write_milestone(tmp_path, 2, "m2", consumes=["req-b"])
         _write_story(tmp_path, 1, "story-a", realizes=["req-a"])

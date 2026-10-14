@@ -39,6 +39,14 @@ from wonderland.observer import (
     RunSummary,
     UtteranceEmitted,
 )
+from wonderland.observer.events import (
+    ArtifactRetracted,
+    ArtifactSuppressed,
+    InterviewAnswersReceived,
+    InterviewEnded,
+    InterviewQuestionsPosted,
+    InterviewStarted,
+)
 from wonderland.utterance import (
     AgentIdentity,
     SpeechAct,
@@ -316,6 +324,14 @@ class TestRunEventUnion:
             AgentActed,
             AgentPassed,
             RotationCompleted,
+            # Interview lifecycle (P14)
+            InterviewStarted,
+            InterviewQuestionsPosted,
+            InterviewAnswersReceived,
+            InterviewEnded,
+            # Artifact suppression / retraction (P15)
+            ArtifactSuppressed,
+            ArtifactRetracted,
         }
 
     def test_union_members_are_frozen_dataclasses(self) -> None:

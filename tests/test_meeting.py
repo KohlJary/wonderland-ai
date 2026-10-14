@@ -70,7 +70,8 @@ class _ScriptedResponse:
 
 class FakePhaseAgent:
     """Mimics the WonderlandAgent surface that run_phased_meeting
-    touches: ``identity``, ``compose_context``, ``deliberate``."""
+    touches: ``identity``, ``compose_context``, ``deliberate``,
+    ``_apply_allowed_decisions_filter``."""
 
     def __init__(self, name: str, *, responses: list[_ScriptedResponse] | None = None) -> None:
         self.identity = AgentIdentity(name=name, constitution_version="0.1")
@@ -79,12 +80,22 @@ class FakePhaseAgent:
         self.compose_calls: list[list[Utterance]] = []
         self.deliberate_calls: int = 0
 
-    async def compose_context(self, triggers: list[Utterance]) -> Context:
+    async def compose_context(
+        self, triggers: list[Utterance], *, memory_scope=None
+    ) -> Context:
+        # ``memory_scope`` mirrors the real WonderlandAgent signature;
+        # the meeting orchestrator passes the phase's memory_scope.
+        del memory_scope
         self.compose_calls.append(list(triggers))
         return Context(
             constitution=f"<{self.identity.name} constitution>",
             triggers=tuple(triggers),
         )
+
+    def _apply_allowed_decisions_filter(self, utterance: Utterance) -> Utterance:
+        # The orchestrator re-applies the agent's allowed_decisions
+        # filter before publishing; the fake has no restrictions.
+        return utterance
 
     async def deliberate(self, context: Context) -> Utterance | None:
         self.deliberate_calls += 1

@@ -336,7 +336,8 @@ def test_tool_definitions_returns_full_set() -> None:
     retrospective — for the runtime-only bug class (SQL CHECK
     constraints, schema drift, framework wiring) that even
     verify_imports can't catch because the code is syntactically
-    fine; only running it surfaces the failure."""
+    fine; only running it surfaces the failure. verify_wiring added
+    in P21 (d) — the hollow-build catcher."""
     defs = Tools.tool_definitions()
     names = {d["name"] for d in defs}
     assert names == {
@@ -352,6 +353,7 @@ def test_tool_definitions_returns_full_set() -> None:
         "run_tests",
         "verify_imports",
         "exec_smoke_probe",
+        "verify_wiring",
     }
 
 
