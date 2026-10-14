@@ -1,7 +1,7 @@
 # Analysis 044 — M7 roster filter (`stack_span`-aware Tweedle scoping): 60% M7 cost cut on 9-ticket pass, run total stays flat while feature scope triples
 
 **Date:** 2026-05-11
-**Run:** squathero3 tdd-implement on the full-stack workout-logging feature (9 tickets), [squathero3/.wonderland/telemetry/run-20260511T004125.json](file:///home/jaryk/squathero3/.wonderland/telemetry/run-20260511T004125.json), $6.826 / no cap, 555 calls, 12.2 min wall-clock, outcome COMPLETE.
+**Run:** squathero3 tdd-implement on the full-stack workout-logging feature (9 tickets), squathero3/.wonderland/telemetry/run-20260511T004125.json (local file, not in repo), $6.826 / no cap, 555 calls, 12.2 min wall-clock, outcome COMPLETE.
 
 **Substrate state:** 0.5.1 — per-item roster filter declared on M7 reading `Ticket.stack_span`; M3 directive + Rabbit's output schema teach the field; `_run_one_meeting.apply_roster_filter` narrows roster + team_groupings per iteration. Single-Tweedle iterations on frontend-only and backend-only tickets; full-Tweedle iterations on full-stack.
 

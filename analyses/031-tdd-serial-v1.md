@@ -9,7 +9,7 @@
 
 The hypothesis from the tdd-serial workflow's design document: **per-feature M4/M5 iteration should be cheaper, more focused, and produce better output than parallel-fan-out** (the existing tdd workflow's shape, which pins all features into one M4 + one M5). The cheapness argument rested on cache locality (smaller per-iteration payloads) and focused attention (no Hatter sprawl across 5 features at once). The composability primitive — `per_item: feature` as the foreach Wonderland needs anyway — was the orthogonal win regardless of cost outcome.
 
-The substrate ([commit 651cb64](../../../commit/651cb64)):
+The substrate (commit 651cb64 — pre-squash, not in published history):
 - `Meeting.per_item: str | None` declares the iteration kind
 - `resolve_seeds()` slices iteration-kind seeds to the current item, routes per_item-meeting seeds through the paired iteration thread, rewrites multi-artifact utterances to keep only the matching one
 - `run_workflow()` detects per_item meetings and convenes once per item with `thread_id = {meeting.id}-{slug}`
@@ -109,7 +109,7 @@ The directive refinement: **frame their M4 work-product positively.** "Your role
 
 The substrate runs serially: iteration 2 doesn't start until iteration 1 closes. For 5 features that's 5×~180s = ~900s for M4 alone, vs ~350s for parallel-TDD's single M4. Even with refined directives compressing each iteration ~30-40%, the M4 inner loop is 10+ min serial vs ~5 min parallel.
 
-This compounds painfully with the TUI live-watch UX (P8.4): staring at one iteration progress bar for 20+ minutes is bad UX; watching 5 cells fill in over ~3 minutes is the experience we want. The parallelization roadmap item ([roadmap entry 0b785ab0](../.daedalus/roadmap/items/0b785ab0)) gets sharper teeth from this run — per-iteration independence (same M3 contracts in, disjoint feature files out) makes asyncio.gather natural; the only real concern is shared-infrastructure write contention (e.g., `src/backend/api/__init__.py` router registration from two iterations at once), addressable with feature-disjoint paths or a serialized integration hook.
+This compounds painfully with the TUI live-watch UX (P8.4): staring at one iteration progress bar for 20+ minutes is bad UX; watching 5 cells fill in over ~3 minutes is the experience we want. The parallelization roadmap item (roadmap entry 0b785ab0 in `.daedalus/roadmap/index.json`) gets sharper teeth from this run — per-iteration independence (same M3 contracts in, disjoint feature files out) makes asyncio.gather natural; the only real concern is shared-infrastructure write contention (e.g., `src/backend/api/__init__.py` router registration from two iterations at once), addressable with feature-disjoint paths or a serialized integration hook.
 
 ### F6 — Substrate divergence: bus event accounting undercounts disk reality
 
@@ -119,7 +119,7 @@ Late-publish messages contained the giveaway: `[bus record coerced to implementa
 
 Why this matters: downstream meeting seeds use the bus capture. M5 iteration N's seed binding `from: test-scenarios, kinds: [test_scenario, story]` returns nothing for the divergent iterations, so M5 has to rely on Tweedles using `read_file` to discover Hatter's tests. Works, but fragile. Analyses + telemetry undercount actual output. The "iteration produced no artifacts" framing reads as degenerate when in fact substantive work shipped.
 
-Filed as [roadmap entry 92cec468](../.daedalus/roadmap/items/92cec468). Fix shape: synthesize a bus-visible record from the disk side effect when the speech-act emission fails.
+Filed as roadmap entry 92cec468 in `.daedalus/roadmap/index.json`. Fix shape: synthesize a bus-visible record from the disk side effect when the speech-act emission fails.
 
 ### F7 — Empty-response parse errors compound under sustained iteration
 
@@ -130,7 +130,7 @@ Three empty-response parse errors across 6 iterations (50% rate):
 
 The Anthropic API returned `len=0` strings with no JSON block. The parse-retry substrate ([analysis 023](023-quiescence-and-split-phases.md) fix) caught and retried; sometimes recovered (iter 4, iter M5-1), sometimes didn't (iter 3). Worst case (iter 3): Hatter's parse-retry chain didn't produce a usable speech-act emission, even though the file write side effect landed (compounds with F6).
 
-Hypotheses worth investigating: cumulative episodic-memory context across iterations without compaction; specific prompt shapes triggering the model's silent-decline behavior; Anthropic API instability we're not surfacing usable headers from. Filed as [roadmap entry 884bbad2](../.daedalus/roadmap/items/884bbad2).
+Hypotheses worth investigating: cumulative episodic-memory context across iterations without compaction; specific prompt shapes triggering the model's silent-decline behavior; Anthropic API instability we're not surfacing usable headers from. Filed as roadmap entry 884bbad2 in `.daedalus/roadmap/index.json`.
 
 ### F8 — Quiescence-fires-fast still suppresses substantive work
 
@@ -142,7 +142,7 @@ Six late-publish suppressions across the run, all with substantive content the t
 
 The pattern is consistent across analyses 026-031: the ThreadMonitor's quiescence detector fires when (a) bus is silent and (b) no open expectations, but agents have outstanding `deliberate()` coroutines that haven't shipped yet. Bus is silent because they're still thinking, not because they're done. The late-publish guard correctly catches the orphans (no data corruption), but the team loses substantive contributions.
 
-Filed as [roadmap entry 3925b46f](../.daedalus/roadmap/items/3925b46f) at P1 — needs to ship before P8.4 (live-watch) lands so the UI doesn't render premature-close-then-late-suppress as visible event pairs. Fix shape: surface in-flight `deliberate()` coroutines to the ThreadMonitor as additional open-expectation source.
+Filed as roadmap entry 3925b46f in `.daedalus/roadmap/index.json` at P1 — needs to ship before P8.4 (live-watch) lands so the UI doesn't render premature-close-then-late-suppress as visible event pairs. Fix shape: surface in-flight `deliberate()` coroutines to the ThreadMonitor as additional open-expectation source.
 
 ## What the run accomplished beyond the substrate validation
 
@@ -182,10 +182,10 @@ The run is a partial banner: feature 001's backend is real and likely tests-gree
    - Both stay domain-agnostic — no Pomodoro-specific anchor
 
 2. **Roadmap items already filed**:
-   - [3925b46f](../.daedalus/roadmap/items/3925b46f) P1 bug — Quiescence tracks in-flight `deliberate()` calls
-   - [92cec468](../.daedalus/roadmap/items/92cec468) P1 bug — Substrate divergence: bus accounting vs disk reality
-   - [884bbad2](../.daedalus/roadmap/items/884bbad2) P2 bug — Empty-response parse errors compound
-   - [0b785ab0](../.daedalus/roadmap/items/0b785ab0) P2 feature — Parallelize per_item iterations
+   - 3925b46f in `.daedalus/roadmap/index.json` P1 bug — Quiescence tracks in-flight `deliberate()` calls
+   - 92cec468 in `.daedalus/roadmap/index.json` P1 bug — Substrate divergence: bus accounting vs disk reality
+   - 884bbad2 in `.daedalus/roadmap/index.json` P2 bug — Empty-response parse errors compound
+   - 0b785ab0 in `.daedalus/roadmap/index.json` P2 feature — Parallelize per_item iterations
 
 3. **Re-run with refined directives** for the cost-comparison: same Pomodoro directive, tdd-serial v2. Expected to land cheaper than v1 (Hatter sprawl bounded), still ~2-3× parallel-TDD on wall-clock until parallelization ships.
 

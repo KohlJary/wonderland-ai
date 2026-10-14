@@ -169,7 +169,7 @@ COMPLETING). The ThreadMonitor reads agent-state events instead of (or
 alongside) bus-event timestamps. A meeting is quiescent iff all members
 are IDLE — by construction can't happen mid-deliberation.
 
-This is roadmap item [22eef6fd](.daedalus/roadmap/) and the next P1.
+This is roadmap item 22eef6fd in `.daedalus/roadmap/index.json` and the next P1.
 
 ## What we filed
 

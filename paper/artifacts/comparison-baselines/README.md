@@ -27,7 +27,7 @@ All four runs are reproducible — A and B1 via [`run_single_shot.py`](./run_sin
 
 Before evaluating *how well* the baselines build, we have to
 check *whether* they built what was asked. The directive's
-[notebook.yaml](../../src/wonderland/closet/directives/notebook.yaml)
+[notebook.yaml](../../../src/wonderland/closet/directives/notebook.yaml)
 names six core capabilities. Audit each baseline against the
 list, code-read + actually-exercised:
 
@@ -229,7 +229,7 @@ For a more complex project the gap should widen, because each substrate primitiv
 - **More elaborate schema** → more migration work that Wonderland's lifecycle tracking + audit log capture; baselines tend to ship monolithic schemas that have to be unwound later.
 - **Larger attack surface** → more Queen rulings with citations (OWASP / SOC 2 / GDPR). Already a serious gap on the notebook; load-bearing for anything with user data + retention requirements.
 - **Longer trajectory** → more milestones where the substrate's branching memory + Mock Turtle consolidation matter, vs single-agent baselines whose context window is the only memory they have.
-- **More implementation surface** → more places where static-time bugs (e.g. squathero3's Pydantic field-shadow bug per [`project_caterpillar_static_blindspot.md`](../../.claude/projects/-home-jaryk-wonderland-ai/memory/project_caterpillar_static_blindspot.md)) get caught by M9's verify build-checks, vs baselines that ship the bug into the working tree.
+- **More implementation surface** → more places where static-time bugs (e.g. squathero3's Pydantic field-shadow bug per analysis [045](../../../analyses/045-caterpillar-misses-import-time-traps.md)) get caught by M9's verify build-checks, vs baselines that ship the bug into the working tree.
 
 Per pilot evidence: the `squathero` family of pilots (more complex than mvp-demo / mvp — migrations, multiple architectural domains, ~11 ADRs in a single M4 pass) consistently surfaced substrate primitives the simpler notebook directive didn't stress. The Caterpillar `verify_imports` tool, the M3.5 ticket-consolidation pass, the convergence-failure detection — all earned their place on more complex pilots, then carried forward to the simpler ones for free.
 

@@ -56,7 +56,7 @@ The operator's flow through Wonderland mirrors the four-phase arc of an actual s
 
 Cross-cutting through all four phases: agents can ``retract`` artifacts they shipped earlier when they realize they drifted off-scope. A workflow-level kill-list blocks speech_acts from leaking between phases (e.g., a stray ``milestone_plan`` utterance during ``tdd-design`` is silently stripped). The project dashboard derives the current phase from disk and surfaces the next-recommended workflow as a one-line CTA.
 
-See [`projects/discovery2/.wonderland`](./projects/discovery2) (or any of the discovery* projects) for the actual artifact shapes the team produces.
+See [`demo/mvp/wonderland-trail/`](./demo/mvp/wonderland-trail) for the actual artifact shapes the team produces (requirements, milestones, stories, features, tickets, contract notes, ADRs) from a full pilot. (The `projects/discovery*` pilots referenced in earlier versions are local, not in repo.)
 
 ## Status
 

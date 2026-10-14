@@ -1,8 +1,8 @@
 # Analysis 038 — Skeleton scales the substrate; per-meeting budget gate is the new ceiling
 
 **Date:** 2026-05-09
-**Run:** Pomodoro tdd-serial-phased v5 ([runs/r40-tui-skeleton/](../runs/r40-tui-skeleton/), $10.0005 / $10.00 cap, 47.2 min wall-clock, 10 features (2 near-duplicates → 8 distinct), `fullstack-fastapi-react` skeleton applied via the new T71 picker, completed-with-budget-exceeded escalation).
-**Predecessor:** [r39-question-user](../runs/r39-question-user/) — 3 features, $5.12, 36.7 min, 602 LOC production code, no skeleton (analysis 037).
+**Run:** Pomodoro tdd-serial-phased v5 (runs/r40-tui-skeleton/ (local file, not in repo), $10.0005 / $10.00 cap, 47.2 min wall-clock, 10 features (2 near-duplicates → 8 distinct), `fullstack-fastapi-react` skeleton applied via the new T71 picker, completed-with-budget-exceeded escalation).
+**Predecessor:** r39-question-user (local file, not in repo) — 3 features, $5.12, 36.7 min, 602 LOC production code, no skeleton (analysis 037).
 **Result:** **First TUI run to use the T70/T71 skeleton system end-to-end. Shipped 1,243 LOC of working production shape (FastAPI Python backend + React/Vite/TS frontend) on top of the `fullstack-fastapi-react` skeleton — best per-feature efficiency on every axis (cost, wall-clock, LOC-per-dollar) since the substrate began. The skeleton paid back the analysis-037 reframe: when production structure is pre-declared, the team writes into it instead of inventing scattered shapes. But this run also surfaced the next ceiling: the per-meeting budget gate (analysis 035 F2) reproduced — meeting budgets summed past the $10.00 cap and the team STUCK on the main thread, escalating to human review. r40 is the strongest deliverable substrate has produced and the cleanest demonstration that the post-skeleton bottleneck is the budget reconciliation issue, not directive content or model capability.**
 
 ## What we tested

@@ -3,7 +3,7 @@
 **Date:** 2026-05-10
 **Run:** obol2 tdd-design + tdd-implement, 4 telemetry runs totaling **$18.25** across the design + implement arc:
 - 3 design passes: $2.95, $1.57, $2.12 (~$6.62 total)
-- 1 implement pass: $11.62, [obol2/.wonderland/telemetry/run-20260510T124928.json](file:///home/jaryk/obol2/.wonderland/telemetry/run-20260510T124928.json), 927 calls, two queued features through the new two-level pipeline.
+- 1 implement pass: $11.62, obol2/.wonderland/telemetry/run-20260510T124928.json (local file, not in repo), 927 calls, two queued features through the new two-level pipeline.
 
 **Substrate state:** 0.3.3 + five post-release patches (`1546581`, `54a1c24`, `d3ff8b6`, `dcec940`, `170fa61`, `428775e`, `40dfadb`). First end-to-end run with the two-level pipeline shape (outer feature sequential, inner ticket parallel) and the `Feature.kind` discriminator both live. Stack: Python TUI (Textual + SQLite), one project rooted in `~/obol2` from the standard `python-tui` skeleton.
 

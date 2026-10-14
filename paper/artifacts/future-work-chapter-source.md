@@ -823,7 +823,7 @@ methodological work of constructing fair comparator frameworks
 for identity-engineering claims (per §5.X). These are
 project-internal research notes rather than experiments this
 paper proposes for the next 6-12 months; they appear in the
-[project memory](`memory/MEMORY.md`) and roadmap and would be
+project memory (local, not in repo) and roadmap and would be
 the natural research agenda for whoever picks up identity
 engineering as a discipline.
 

@@ -1,7 +1,7 @@
 # Analysis 040 — Cross-ticket coherence vs. review scope: a contract drift M8 didn't catch
 
 **Date:** 2026-05-10
-**Run:** obol tdd-implement on feature-003 (budget-vs-spend tracker), [obol/.wonderland/telemetry/run-20260510T063934.json](file:///home/jaryk/obol/.wonderland/telemetry/run-20260510T063934.json), $6.63 / $10.00 cap, 28.4 min wall-clock, 744 calls, `outcome: complete`.
+**Run:** obol tdd-implement on feature-003 (budget-vs-spend tracker), obol/.wonderland/telemetry/run-20260510T063934.json (local file, not in repo), $6.63 / $10.00 cap, 28.4 min wall-clock, 744 calls, `outcome: complete`.
 **Substrate state:** post-031 design phase, post-cost-attribution fix (`f36bbf7`), post-pipeline-mode (`156e76e`), post-directive-as-seed (`ed082bd`). Run thread ids show legacy `{meeting_id}-{slug}` shape (no `pipe.` prefix), so this was tdd-implement *before* the pipeline-mode commit's YAML wiring took effect on the running session — stage-style dispatch with the new per-thread cost attribution active.
 **Result:** **Team produced ~70% of feature-003. The backend half is excellent — `budget_calculator.py` ships with explicit invariants tied back to scenario IDs (refund sign preservation, zero-budget edge, deleted-category defense), 359-line test file, period boundary math handled in UTC. The frontend half has three misses, all of which fall outside what M8's two reviews opened. The gap is not skill — it's *review scope*. M8 reviewed each file in isolation; the missed defects all live in the spaces *between* files: a contract note says one thing, the backend implements 50% of it, the frontend assumes 100% of it, and `App.tsx` never imports the component the work produced. M8's directive lists "cross-ticket coherence" as the third of three review checks — the most expensive one (multi-file context) and naturally the one that gets cut when the meeting budget tightens.**
 
@@ -42,7 +42,7 @@ What broke is not (1) directly — that miss was already locked in by the prior 
 
 ## The systemic miss — contract drift across the M5 → M7 → M7 chain
 
-Reading the design-phase artifacts produced by the prior tdd-design run, the contract is clearly written. From [`contract-notes/contract-note-005-budget-summary-endpoint-contract.md`](file:///home/jaryk/obol/.wonderland/contract-notes/contract-note-005-budget-summary-endpoint-contract.md):
+Reading the design-phase artifacts produced by the prior tdd-design run, the contract is clearly written. From `contract-notes/contract-note-005-budget-summary-endpoint-contract.md` (local file, not in repo):
 
 > Frontend assumption: spending is pre-computed per category; overspend flags (**>80%, >100%**) are backend-computed; last_updated supports staleness UX.
 
@@ -90,9 +90,9 @@ This isn't a design failure — the design phase produced a contract that explic
 
 Two reviews shipped. Both are technically rigorous within their scope:
 
-**[review-001](file:///home/jaryk/obol/.wonderland/reviews/review-001-budgetdisplay-polling-logic-dependency-array-causes-state-loop.md):** `BudgetDisplay.tsx` polling logic — verdict: request-changes. Two real bugs caught: (1) `useCallback` dependency array includes transient state (`pollInFlight`, `loading`), causing the callback to be recreated on every poll cycle and triggering the parent useEffect to clear/restart the interval — defeating the 30s cadence. (2) The overlap guard reads `pollInFlight` (React state, asynchronous) instead of a synchronously-updated ref. Quote-perfect line numbers, accurate API misuse diagnosis.
+**review-001 (local file, not in repo):** `BudgetDisplay.tsx` polling logic — verdict: request-changes. Two real bugs caught: (1) `useCallback` dependency array includes transient state (`pollInFlight`, `loading`), causing the callback to be recreated on every poll cycle and triggering the parent useEffect to clear/restart the interval — defeating the 30s cadence. (2) The overlap guard reads `pollInFlight` (React state, asynchronous) instead of a synchronously-updated ref. Quote-perfect line numbers, accurate API misuse diagnosis.
 
-**[review-002](file:///home/jaryk/obol/.wonderland/reviews/review-002-budget-calculator-refund-and-edge-case-handling.md):** `budget_calculator.py` refund + edge cases — verdict: accept. Praises the refund sign-preservation invariant, zero-budget handling, period boundary math, deleted-category defense.
+**review-002 (local file, not in repo):** `budget_calculator.py` refund + edge cases — verdict: accept. Praises the refund sign-preservation invariant, zero-budget handling, period boundary math, deleted-category defense.
 
 Both reviews opened *one file*. Neither review opened the contract notes. Neither opened files from across the backend/frontend boundary. Neither read `App.tsx` to see whether the BudgetDisplay component was actually wired in.
 

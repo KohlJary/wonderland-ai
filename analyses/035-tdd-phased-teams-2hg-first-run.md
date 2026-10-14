@@ -1,8 +1,8 @@
 # Analysis 035 — Team windows first run: wall-clock recovers 30%, cost worsens, output quality up, substrate tension surfaces
 
 **Date:** 2026-05-09
-**Run:** Pomodoro tdd-serial-phased v2 ([runs/r36-tdd-phased-teams/](../runs/r36-tdd-phased-teams/), $8.8537 / $5.00 cap, 53.3 min wall-clock, completed end-to-end).
-**Predecessor:** [r35-tdd-serial-phased](../runs/r35-tdd-serial-phased/) — strict-serial baseline ($7.88 / 76.5 min) for the apples-to-apples A/B.
+**Run:** Pomodoro tdd-serial-phased v2 (runs/r36-tdd-phased-teams/ (local file, not in repo), $8.8537 / $5.00 cap, 53.3 min wall-clock, completed end-to-end).
+**Predecessor:** r35-tdd-serial-phased (local file, not in repo) — strict-serial baseline ($7.88 / 76.5 min) for the apples-to-apples A/B.
 **Result:** **First live run of team windows (P9.5 / T64). Output quality up substantially: 107 cleanly-passing tests vs r35's 99 (where 84 were xpassed-because-xfail-decorator-uncleared bookkeeping); pure-Python layered MVC architecture vs r35's Python+TS shadow-implementation hack; broader feature coverage (all 5 features vs r35's depth-on-2). Wall-clock dropped 30% (76.5 min → 53.3 min) per analysis 034 F2's prediction. Cost rose 12% ($7.88 → $8.85) — the right direction given quality is up; cost reflects how much structural work the run actually shipped. The substrate gap surfaced: 10 of 18 phases aborted via meeting_budget, including M6's defend phase at zero windows, leaving Caterpillar's review findings unaddressed. Phase events finally on disk (T58d): Hatter shipped 9 deliberations across all 5 M4 iterations — the structural cap was real all along; "Hatter calls" was the wrong unit to measure.**
 
 ## What we tested

@@ -247,8 +247,8 @@ The Axis-0 finding is uniform: **none of the three single-shot runs delivers a r
 The Haiku single-shot output was already analyzed quantitatively in `paper/artifacts/comparison-baselines/README.md` Axis 0: "doesn't cover the feature surface at all (truncated)." It is the upper-bound bad case — one truncated backend file, four partial frontend files, zero tests, zero config. We did not produce a structured adversarial review for that run because the truncation made a per-category rubric pass not meaningful: the dispositive finding is "almost no code shipped."
 
 Full per-baseline adversarial reviews:
-- [`single-shot-sonnet-4-6/adversarial-review.md`](./artifacts/comparison-baselines/single-shot-sonnet-4-6/adversarial-review.md)
-- [`single-shot-opus-4-7/adversarial-review.md`](./artifacts/comparison-baselines/single-shot-opus-4-7/adversarial-review.md)
+- [`single-shot-sonnet-4-6/adversarial-review.md`](./single-shot-sonnet-4-6/adversarial-review.md)
+- [`single-shot-opus-4-7/adversarial-review.md`](./single-shot-opus-4-7/adversarial-review.md)
 
 ### 6.4 Sonnet 4.6 — blockers
 

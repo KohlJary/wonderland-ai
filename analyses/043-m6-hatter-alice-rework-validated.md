@@ -1,7 +1,7 @@
 # Analysis 043 — M6 reworked to Hatter + Alice: 40% per-ticket cost cut, 42% wall-clock cut, scenarios got sharper
 
 **Date:** 2026-05-10
-**Run:** squathero2 tdd-implement on `earn-xp-and-level-up-through-completed-workouts` (4 tickets), [squathero2/.wonderland/telemetry/run-20260510T162133.json](file:///home/jaryk/squathero2/.wonderland/telemetry/run-20260510T162133.json), $8.443 / no cap, 509 calls, 9.7 min wall-clock, outcome COMPLETE.
+**Run:** squathero2 tdd-implement on `earn-xp-and-level-up-through-completed-workouts` (4 tickets), squathero2/.wonderland/telemetry/run-20260510T162133.json (local file, not in repo), $8.443 / no cap, 509 calls, 9.7 min wall-clock, outcome COMPLETE.
 
 **Substrate state:** 0.3.4 + commit `d65e46f` (M6 roster: Hatter + both Tweedles → Hatter + Alice). Direct A/B comparison against `run-20260510T154027.json` (analysis 042) — same project, same operator session, single variable changed.
 

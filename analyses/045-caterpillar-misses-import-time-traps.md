@@ -1,7 +1,7 @@
 # Analysis 045 — Caterpillar reads for coherence, not for import-time correctness; squathero3 shipped a Pydantic `date: date` shadow that no one caught until the operator tried to run it
 
 **Date:** 2026-05-11
-**Trigger:** [squathero3/.wonderland/reviews/review-001-full-stack-workout-logging-implementation.md](file:///home/jaryk/squathero3/.wonderland/reviews/review-001-full-stack-workout-logging-implementation.md)
+**Trigger:** squathero3/.wonderland/reviews/review-001-full-stack-workout-logging-implementation.md (local file, not in repo)
 **Substrate state:** 0.5.2. M8 routing now synthesizes follow-up tickets from findings (per 0.5.2); this run pre-dates that pivot so its `request-changes` verdict marked the originals ABORTED — but that's not the interesting failure mode here.
 
 **Result:** Tweedledum shipped a `WorkoutSessionCreate(BaseModel)` with `date: date = Field(...)` after a `from datetime import date` at module top. Pydantic 2.13's "field name clashing with a type annotation" check rejects this at import time with `PydanticUserError`. The model literally can't load — the API surface is dead before the first request hits it. Caterpillar's `request-changes` verdict cited three findings: a schema mismatch between frontend/backend, a missing migration, and a component not wired into the entry point — all real, all coherence-grade. **The Pydantic shadow wasn't in her findings list.** The operator caught it manually trying to `uv run uvicorn` the backend.

@@ -4,8 +4,8 @@
 **Phase milestone:** P6.T34 follow-on (CLI smoke test surfaces a primer side-effect)
 **Component:** `src/wonderland/primer.py` (T32 framework primer)
 **Smoke runs:**
-[`/tmp/cli-smoke/run.log`](/tmp/cli-smoke/run.log) (A — current primer) and
-[`/tmp/cli-smoke-b/run.log`](/tmp/cli-smoke-b/run.log) (B — trimmed primer)
+`/tmp/cli-smoke/run.log` (local file, not in repo) (A — current primer) and
+`/tmp/cli-smoke-b/run.log` (local file, not in repo) (B — trimmed primer)
 
 > The first end-to-end smoke of the T34 CLI runner exposed a second-
 > order effect of the T32 framework primer: the team is *much*
