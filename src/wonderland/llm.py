@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from wonderland.config import load_config
@@ -70,6 +70,11 @@ class TokenUsage:
     output_tokens: int = 0
     cache_creation_input_tokens: int = 0
     cache_read_input_tokens: int = 0
+    # Model id that produced this usage, stamped by ``LLMClient`` so
+    # telemetry can price per model. None = unknown / constructed by
+    # hand (telemetry treats that as ``DEFAULT_MODEL``). Excluded from
+    # equality so token-count comparisons stay model-agnostic.
+    model: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -193,7 +198,7 @@ class LLMClient:
             messages=messages,
             **extra,
         )
-        usage = _extract_usage(response)
+        usage = replace(_extract_usage(response), model=self._model)
         if self._on_token_usage is not None:
             self._on_token_usage(usage)
         return CompletionResult(

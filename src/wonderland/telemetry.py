@@ -1,4 +1,4 @@
-"""Token telemetry — per-run cost tracking using actual Haiku 4.5 pricing.
+"""Token telemetry — per-run cost tracking at per-model Anthropic pricing.
 
 Per WONDERLAND_SPEC §11 token-telemetry mitigation, and per the T34
 restructure after the $8 polite-deadlock surprise: every multi-agent
@@ -6,9 +6,11 @@ run produces a structured per-run record under
 ``<project_root>/.wonderland/telemetry/run-NNN.json`` capturing per-
 call usage by agent, the running cost, and the budget headroom.
 
-Pricing constants are sourced from the live Anthropic docs (see
-the reference_haiku_pricing memory). They live as module-level
-constants here so a future model upgrade is a one-line change. The
+Pricing is a small per-model table (``MODEL_PRICING``) sourced from
+the live Anthropic docs, keyed by model-id prefix. A model that isn't
+in the table is priced as ``None`` (flagged, counted in
+``unpriced_calls``) rather than silently billed at Haiku rates — the
+pre-2026-10 behavior that under-reported any non-Haiku run. The
 formula handles the four cost components the API reports —
 uncached input, cache writes (5-minute), cache reads, and output —
 so the cost number matches what the dashboard actually charges.
@@ -18,12 +20,14 @@ from __future__ import annotations
 
 import contextvars
 import json
+import re
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
-from wonderland.llm import TokenUsage
+from wonderland.llm import DEFAULT_MODEL, TokenUsage
 
 # --------------------------------------------------------------------- #
 # Per-thread cost attribution (parallel meeting fix)
@@ -117,29 +121,85 @@ def get_current_run_started_at() -> datetime | None:
     return _current_run_started_at.get()
 
 # --------------------------------------------------------------------- #
-# Pricing — Claude Haiku 4.5 per-MTok rates (USD)
+# Pricing — per-model per-MTok rates (USD)
 # --------------------------------------------------------------------- #
 
 
-HAIKU_4_5_INPUT_PER_MTOK = 1.00
-HAIKU_4_5_OUTPUT_PER_MTOK = 5.00
-HAIKU_4_5_CACHE_WRITE_5M_PER_MTOK = 1.25
-HAIKU_4_5_CACHE_READ_PER_MTOK = 0.10
+@dataclass(frozen=True)
+class ModelPricing:
+    """Per-MTok USD rates for one model family."""
+
+    input: float
+    output: float
+    cache_write_5m: float
+    cache_read: float
 
 
-def estimate_cost(usage: TokenUsage) -> float:
-    """Compute the dollar cost of one TokenUsage record at Haiku 4.5 prices.
+# Keyed by model-id prefix (the undated alias). A model id matches a
+# key when it equals the key or is the key plus a ``-YYYYMMDD``
+# snapshot suffix, so ``claude-opus-4`` never swallows
+# ``claude-opus-4-1``. Rates from
+# https://platform.claude.com/docs/en/about-claude/pricing (2026-10-14).
+# Add a row when a workflow starts using a new model; until then its
+# cost reports as None rather than a wrong number.
+MODEL_PRICING: dict[str, ModelPricing] = {
+    "claude-haiku-4-5": ModelPricing(1.00, 5.00, 1.25, 0.10),
+    # Haiku 3.5 — both the official id and the spelling the
+    # tdd-serial-phased-dev workflow uses.
+    "claude-3-5-haiku": ModelPricing(0.80, 4.00, 1.00, 0.08),
+    "claude-haiku-3-5": ModelPricing(0.80, 4.00, 1.00, 0.08),
+    "claude-sonnet-4": ModelPricing(3.00, 15.00, 3.75, 0.30),
+    "claude-sonnet-4-5": ModelPricing(3.00, 15.00, 3.75, 0.30),
+    "claude-sonnet-4-6": ModelPricing(3.00, 15.00, 3.75, 0.30),
+    "claude-opus-4": ModelPricing(15.00, 75.00, 18.75, 1.50),
+    "claude-opus-4-1": ModelPricing(15.00, 75.00, 18.75, 1.50),
+    "claude-opus-4-5": ModelPricing(5.00, 25.00, 6.25, 0.50),
+    "claude-opus-4-6": ModelPricing(5.00, 25.00, 6.25, 0.50),
+    "claude-opus-4-7": ModelPricing(5.00, 25.00, 6.25, 0.50),
+}
+
+_SNAPSHOT_SUFFIX = re.compile(r"-\d{8}$")
+
+
+def pricing_for_model(model: str | None) -> ModelPricing | None:
+    """Return the pricing row for ``model``, or None when unknown.
+
+    ``None`` model means "not stamped" (hand-built TokenUsage, older
+    callers) and resolves to ``DEFAULT_MODEL``. Dots are normalized to
+    dashes so ``claude-haiku-4.5`` resolves too.
+    """
+    model_id = (model or DEFAULT_MODEL).strip().lower().replace(".", "-")
+    base = _SNAPSHOT_SUFFIX.sub("", model_id)
+    return MODEL_PRICING.get(base)
+
+
+# Back-compat: the Haiku 4.5 constants other code and analyses cite.
+HAIKU_4_5_INPUT_PER_MTOK = MODEL_PRICING["claude-haiku-4-5"].input
+HAIKU_4_5_OUTPUT_PER_MTOK = MODEL_PRICING["claude-haiku-4-5"].output
+HAIKU_4_5_CACHE_WRITE_5M_PER_MTOK = MODEL_PRICING["claude-haiku-4-5"].cache_write_5m
+HAIKU_4_5_CACHE_READ_PER_MTOK = MODEL_PRICING["claude-haiku-4-5"].cache_read
+
+
+def estimate_cost(usage: TokenUsage, model: str | None = None) -> float | None:
+    """Compute the dollar cost of one TokenUsage record at its model's prices.
+
+    ``model`` overrides ``usage.model``; when both are None the call is
+    priced as ``DEFAULT_MODEL``. Returns None for a model with no row
+    in ``MODEL_PRICING`` — callers must not treat that as free.
 
     The formula matches what the Anthropic dashboard charges:
     uncached input tokens at the base rate, cache writes at the
     5-minute cache rate (1.25x base), cache reads at 0.10x base, and
     output tokens at the output rate.
     """
+    pricing = pricing_for_model(model if model is not None else usage.model)
+    if pricing is None:
+        return None
     return (
-        usage.input_tokens * HAIKU_4_5_INPUT_PER_MTOK / 1_000_000
-        + usage.cache_creation_input_tokens * HAIKU_4_5_CACHE_WRITE_5M_PER_MTOK / 1_000_000
-        + usage.cache_read_input_tokens * HAIKU_4_5_CACHE_READ_PER_MTOK / 1_000_000
-        + usage.output_tokens * HAIKU_4_5_OUTPUT_PER_MTOK / 1_000_000
+        usage.input_tokens * pricing.input / 1_000_000
+        + usage.cache_creation_input_tokens * pricing.cache_write_5m / 1_000_000
+        + usage.cache_read_input_tokens * pricing.cache_read / 1_000_000
+        + usage.output_tokens * pricing.output / 1_000_000
     )
 
 
@@ -160,7 +220,8 @@ class TelemetryEntry:
 
     agent: str
     usage: TokenUsage
-    cost: float
+    # None when the model has no pricing row (see ``MODEL_PRICING``).
+    cost: float | None
     timestamp: datetime
     thread_id: str = ""
 
@@ -188,6 +249,10 @@ class Telemetry:
     _total_cost: float = 0.0
     _per_thread_cost: dict[str, float] = field(default_factory=dict)
     _per_thread_calls: dict[str, int] = field(default_factory=dict)
+    # Calls whose model had no pricing row: their cost is excluded
+    # from every total, so totals are a lower bound when this is > 0.
+    unpriced_calls: int = 0
+    _warned_models: set[str] = field(default_factory=set)
 
     def record_for(self, agent: str):
         """Return a callback that, when invoked with TokenUsage, records it.
@@ -202,6 +267,15 @@ class Telemetry:
 
     def record(self, agent: str, usage: TokenUsage) -> TelemetryEntry:
         cost = estimate_cost(usage)
+        if cost is None:
+            self.unpriced_calls += 1
+            model = usage.model or DEFAULT_MODEL
+            if model not in self._warned_models:
+                self._warned_models.add(model)
+                sys.stderr.write(
+                    f"[telemetry] no pricing for model {model!r}; its calls "
+                    f"are excluded from cost totals and budget checks\n"
+                )
         thread_id = _current_thread_id.get()
         entry = TelemetryEntry(
             agent=agent,
@@ -211,10 +285,11 @@ class Telemetry:
             thread_id=thread_id,
         )
         self.entries.append(entry)
-        self._total_cost += cost
+        priced = cost or 0.0
+        self._total_cost += priced
         if thread_id:
             self._per_thread_cost[thread_id] = (
-                self._per_thread_cost.get(thread_id, 0.0) + cost
+                self._per_thread_cost.get(thread_id, 0.0) + priced
             )
             self._per_thread_calls[thread_id] = (
                 self._per_thread_calls.get(thread_id, 0) + 1
@@ -273,8 +348,15 @@ class Telemetry:
             row["cache_read_input_tokens"] = (
                 int(row["cache_read_input_tokens"]) + entry.usage.cache_read_input_tokens
             )
-            row["cost"] = float(row["cost"]) + entry.cost
+            row["cost"] = float(row["cost"]) + (entry.cost or 0.0)
         return dict(per_agent)
+
+    def models_used(self) -> dict[str, int]:
+        """Call count per model id (unstamped usage → ``DEFAULT_MODEL``)."""
+        counts: dict[str, int] = defaultdict(int)
+        for entry in self.entries:
+            counts[entry.usage.model or DEFAULT_MODEL] += 1
+        return dict(counts)
 
     def write_run_record(
         self, project_root: Path, run_id: str, *, extra: dict | None = None
@@ -288,15 +370,31 @@ class Telemetry:
         directory = project_root / ".wonderland" / "telemetry"
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"run-{run_id}.json"
+        models = self.models_used() or {DEFAULT_MODEL: 0}
+        primary = max(models, key=lambda m: models[m])
+        pricing = {
+            m: (
+                {
+                    "input": p.input,
+                    "output": p.output,
+                    "cache_write_5m": p.cache_write_5m,
+                    "cache_read": p.cache_read,
+                }
+                if (p := pricing_for_model(m)) is not None
+                else None
+            )
+            for m in models
+        }
         record = {
             "run_id": run_id,
-            "model": "claude-haiku-4-5-20251001",
-            "pricing_per_mtok": {
-                "input": HAIKU_4_5_INPUT_PER_MTOK,
-                "output": HAIKU_4_5_OUTPUT_PER_MTOK,
-                "cache_write_5m": HAIKU_4_5_CACHE_WRITE_5M_PER_MTOK,
-                "cache_read": HAIKU_4_5_CACHE_READ_PER_MTOK,
-            },
+            # ``model`` / ``pricing_per_mtok`` describe the most-used
+            # model (kept for readers of the single-model shape);
+            # ``models`` + ``pricing_by_model`` carry the full picture.
+            "model": primary,
+            "pricing_per_mtok": pricing[primary],
+            "models": models,
+            "pricing_by_model": pricing,
+            "unpriced_calls": self.unpriced_calls,
             "total_cost": round(self._total_cost, 6),
             "total_calls": self.call_count,
             "per_agent": self.per_agent_summary(),
@@ -312,7 +410,8 @@ class Telemetry:
                     "output_tokens": e.usage.output_tokens,
                     "cache_creation_input_tokens": e.usage.cache_creation_input_tokens,
                     "cache_read_input_tokens": e.usage.cache_read_input_tokens,
-                    "cost": round(e.cost, 6),
+                    "model": e.usage.model or DEFAULT_MODEL,
+                    "cost": round(e.cost, 6) if e.cost is not None else None,
                     "timestamp": e.timestamp.isoformat(),
                 }
                 for e in self.entries
@@ -328,7 +427,10 @@ __all__ = [
     "HAIKU_4_5_CACHE_WRITE_5M_PER_MTOK",
     "HAIKU_4_5_INPUT_PER_MTOK",
     "HAIKU_4_5_OUTPUT_PER_MTOK",
+    "MODEL_PRICING",
+    "ModelPricing",
     "Telemetry",
     "TelemetryEntry",
     "estimate_cost",
+    "pricing_for_model",
 ]
