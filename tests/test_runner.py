@@ -161,6 +161,37 @@ async def test_make_full_cast_default_model_when_unspecified(
         assert agent.llm.model == DEFAULT_MODEL
 
 
+async def test_question_resolver_client_uses_runner_model_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The T-ab77 question resolver builds its own LLMClient outside
+    the agent factory. It previously ignored ``model=`` and always
+    ran (and was billed) as DEFAULT_MODEL; it should follow the
+    runner's override like the rest of the cast."""
+    import wonderland.question_resolver as qr
+
+    captured: dict[str, str] = {}
+
+    async def _fake_resolve(**kwargs):
+        captured["model"] = kwargs["llm_client"].model
+        return SimpleNamespace(answer=None)
+
+    monkeypatch.setenv("WONDERLAND_AUTO_RESOLVE_QUESTIONS", "1")
+    monkeypatch.setattr(qr, "resolve_operator_question", _fake_resolve)
+    runner = await Runner.make_full_cast(
+        tmp_path,
+        budget_dollars=10.0,
+        timeout_seconds=2.0,
+        model="claude-sonnet-4-6",
+    )
+    monkeypatch.setattr(runner, "_record_question_resolution", lambda *a: None)
+    u = SimpleNamespace(
+        content=SimpleNamespace(body="Is M2 backend only?", artifacts=[]),
+    )
+    await runner._maybe_auto_resolve_question(u)
+    assert captured["model"] == "claude-sonnet-4-6"
+
+
 async def test_runner_setup_and_teardown_clean(tmp_path: Path) -> None:
     """Setup spins up the consumer tasks; teardown cancels them all and
     writes the run record."""
