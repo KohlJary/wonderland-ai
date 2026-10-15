@@ -174,6 +174,10 @@ WONDERLAND_LLM_SMOKE=1 \
 
 Wonderland runs on a personal Anthropic budget — one person, one API key. The architecture is designed to be cheap (small models, heavy caching) but multi-agent runs at scale still add up. If any of my work has been useful to you — to read, build on, or argue with — [GitHub Sponsors](https://github.com/sponsors/KohlJary) keeps the Cheshire Cat in tea and the Hatter in scenarios.
 
+## How this was built
+
+Wonderland's code, analyses and the *Drink Me* paper were written mostly by Claude instances working as Daedalus (the author on most commits), with Kohl Jary designing the system, directing the work and reviewing it. That's part of the claim, not a footnote: an identity-native toolchain was used to build an identity-native toolchain. It also means the paper's prose and analysis should be read with that in mind, and why outside checking of its claims matters. Corrections are dated in place.
+
 ## License
 
 [MIT](./LICENSE).
